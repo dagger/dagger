@@ -18,7 +18,7 @@ func New(
 func (m *GoProgrammer) Run(
 	assignment string,
 ) *dagger.Container {
-	return m.llm(assignment).ToyWorkspace().Container()
+	return m.llm(assignment).Loop().Env().Output("result").AsToyWorkspace().Container()
 }
 
 // this is a hack at least until we can return the LLM type to have a better way to save/replay history
@@ -33,14 +33,16 @@ func (m *GoProgrammer) llm(
 	assignment string,
 ) *dagger.LLM {
 	return dag.LLM(dagger.LLMOpts{Model: m.Model}).
-		WithToyWorkspace(dag.ToyWorkspace()).
-		WithPromptVar("assignment", assignment).
+		WithEnv(dag.Env().
+			WithToyWorkspaceInput("workspace", dag.ToyWorkspace(), "A toy workspace that can edit files and run 'go build'").
+			WithToyWorkspaceOutput("result", "The workspace after running the assignment"),
+		).
 		WithPrompt(
 			"You are an expert go programmer. You have access to a workspace.\n" +
 				"Use the read, write, build tools to complete the following assignment.\n" +
 				"Do not try to access the container directly.\n" +
 				"Don't stop until your code builds.\n" +
 				"\n" +
-				"Assignment: $assignment\n",
+				"Assignment: " + assignment + "\n",
 		)
 }

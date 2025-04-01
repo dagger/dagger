@@ -135,7 +135,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::note
-Modifications made to a directory's contents after it is written to a container filesystem do not appear on the source. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory back to the host filesystem.
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
 :::
 
 :::note
@@ -2051,6 +2051,10 @@ The following Dagger Function tags a just-in-time container image multiple times
 ### Export a directory or file to the host
 
 The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+:::note
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
+:::
 
 <Tabs groupId="language">
 <TabItem value="Go">

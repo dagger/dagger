@@ -123,6 +123,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Initialize a new environment"
+  @spec env(t()) :: Dagger.Env.t()
+  def env(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("env")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Create a new error."
   @spec error(t(), String.t()) :: Dagger.Error.t()
   def error(%__MODULE__{} = client, message) do
@@ -226,6 +238,18 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
 
     %Dagger.LLM{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Binding from its ID."
+  @spec load_binding_from_id(t(), Dagger.BindingID.t()) :: Dagger.Binding.t()
+  def load_binding_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadBindingFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Binding{
       query_builder: query_builder,
       client: client.client
     }
@@ -349,6 +373,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnumValueTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnumValueTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Env from its ID."
+  @spec load_env_from_id(t(), Dagger.EnvID.t()) :: Dagger.Env.t()
+  def load_env_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Env{
       query_builder: query_builder,
       client: client.client
     }
@@ -555,18 +591,6 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadLLMTokenUsageFromID") |> QB.put_arg("id", id)
 
     %Dagger.LLMTokenUsage{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a LLMVariable from its ID."
-  @spec load_llm_variable_from_id(t(), Dagger.LLMVariableID.t()) :: Dagger.LLMVariable.t()
-  def load_llm_variable_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadLLMVariableFromID") |> QB.put_arg("id", id)
-
-    %Dagger.LLMVariable{
       query_builder: query_builder,
       client: client.client
     }

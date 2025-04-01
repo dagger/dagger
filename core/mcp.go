@@ -39,7 +39,7 @@ type LLMTool struct {
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
-	env *Environment
+	env *Env
 	// The currently selected object.
 	current dagql.Object
 	// Whether the LLM needs instructions on how to use the tool scheme
@@ -50,7 +50,7 @@ type MCP struct {
 
 func NewMCP(endpoint *LLMEndpoint) *MCP {
 	return &MCP{
-		env:               NewEnvironment(),
+		env:               NewEnv(),
 		functionMask:      map[string]bool{},
 		needsSystemPrompt: endpoint.Provider == Google,
 	}
@@ -64,6 +64,13 @@ func (m *MCP) DefaultSystemPrompt() string {
 		return defaultSystemPrompt
 	}
 	return ""
+}
+
+func (m *MCP) WithEnvironment(env *Env) *MCP {
+	m = m.Clone()
+	m.env = env
+	// We keep the current selection even if underlying environment is swapped out
+	return m
 }
 
 func (m *MCP) Clone() *MCP {
@@ -87,11 +94,6 @@ func (m *MCP) Select(obj dagql.Object, functions ...string) {
 	}
 }
 
-// Save a value at the given key
-func (m *MCP) Set(key string, obj dagql.Object) {
-	m.env = m.env.WithBinding(key, obj)
-}
-
 // Get an object saved at a given key
 func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	if expectedType != "" {
@@ -100,18 +102,13 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 			key = fmt.Sprintf("%s#%d", expectedType, onlyNum)
 		}
 	}
-	if b, exists := m.env.Binding(key); exists {
+	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
 			return obj, nil
 		}
 		return nil, fmt.Errorf("type error: %q exists but is not an object", key)
 	}
 	return nil, fmt.Errorf("unknown object %q", key)
-}
-
-// Unset a saved value
-func (m *MCP) Unset(key string) {
-	m.env = m.env.WithoutBinding(key)
 }
 
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
@@ -172,6 +169,10 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 	var tools []LLMTool
 	masked := len(m.functionMask) > 0
 	for _, field := range typeDef.Fields {
+		if _, found := m.env.Input(field.Name); found {
+			// If field conflicts with user input, user input wins
+			continue
+		}
 		if masked && !m.functionMask[field.Name] {
 			continue
 		}
@@ -485,40 +486,75 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
-func (m *MCP) WriteVariable(name, value string) {
-	m.env = m.env.WithVariable(name, value)
-}
-
-func (m *MCP) ReadVariable(name string) (string, bool) {
-	v, found := m.env.Variable(name)
-	if found {
-		return v.AsString()
+func (m *MCP) returnBuiltin() LLMTool {
+	props := map[string]any{}
+	required := []string{}
+	for name, b := range m.env.outputsByName {
+		typeName := b.expectedType.TypeName()
+		required = append(required, name)
+		props[name] = map[string]any{
+			"type":           "string",
+			"pattern":        idPattern(typeName),
+			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format. %s", typeName, typeName, b.Description),
+			jsonSchemaIDAttr: typeName,
+		}
 	}
-	return "", false
+	return LLMTool{
+		Name: "return",
+		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
+
+Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           props,
+			"strict":               true,
+			"required":             required,
+			"additionalProperties": false,
+		},
+		Call: func(ctx context.Context, args any) (any, error) {
+			vals, ok := args.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid arguments: %T", args)
+			}
+			for name := range m.env.outputsByName {
+				arg, ok := vals[name]
+				if !ok {
+					return nil, fmt.Errorf("required argument %s not provided", name)
+				}
+				argStr, ok := arg.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
+				}
+				bnd, ok := m.env.objsByID[argStr]
+				if !ok {
+					return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
+				}
+				obj := bnd.Value
+				if output, found := m.env.Output(name); found {
+					if expected := output.expectedType; expected != nil {
+						expectedType := expected.TypeName()
+						actualType := obj.Type().Name()
+						if expectedType != actualType {
+							return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, expectedType, actualType)
+						}
+					}
+					output.Value = obj
+				} else {
+					return nil, fmt.Errorf("undefined output: %q", name)
+				}
+			}
+			return "ok", nil
+		},
+	}
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{
-		{
-			Name: "currentSelection", // TODO: double this as "return"?
-			// NOTE: this description is load-bearing! It allows the LLM to know its
-			// current state, without even calling this tool. Without this sort of
-			// hint the model tends to give you instructions instead of acting on its
-			// own. That could be addressed with a system prompt, but we don't want to
-			// rely on those.
-			Description: "Your current selection: " + m.describe(m.Current()),
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
-				return m.currentState(nil)
-			}),
-		},
+	builtins := []LLMTool{}
+
+	if len(m.env.outputsByName) > 0 {
+		builtins = append(builtins, m.returnBuiltin())
 	}
+
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
 		if err != nil {
@@ -570,6 +606,10 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+
+	// register getters for all the env vars
+	builtins = append(builtins, m.envGetters()...)
+
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
@@ -611,6 +651,37 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		}
 	}
 	return builtins, nil
+}
+
+func (m *MCP) envGetters() []LLMTool {
+	var tools []LLMTool
+	for _, input := range m.env.Inputs() {
+		description := input.Description
+		if description == "" {
+			description = fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName())
+		}
+		tools = append(tools, LLMTool{
+			Name:        input.Key,
+			Returns:     input.TypeName(),
+			Description: description,
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: func(ctx context.Context, args any) (_ any, rerr error) {
+				if obj, isObj := input.AsObject(); isObj {
+					prev := m.Current()
+					m.Select(obj)
+					return m.currentState(prev)
+				}
+				return input.Value, nil
+			},
+		})
+	}
+	return tools
 }
 
 func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
@@ -811,14 +882,6 @@ func (m *MCP) currentState(previous dagql.Object) (string, error) {
 	}
 	if previous != nil {
 		res["previous"] = m.describe(previous)
-	}
-	if cur != nil {
-		// show when it's already a bound var to avoid unnecessary _saveAs
-		for name, b := range m.env.Bindings() {
-			if cur.ID().Digest() == b.Digest() {
-				res["variable"] = name
-			}
-		}
 	}
 	return toolStructuredResponse(res)
 }

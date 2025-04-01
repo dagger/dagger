@@ -627,6 +627,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			"engine",
 			"git",
 			"host",
+			"env",
 			"http",
 			"set-secret",
 			"version",

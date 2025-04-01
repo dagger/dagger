@@ -12,7 +12,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
-	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -174,9 +173,9 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 		}
 	}
 
-	syncedLLMQ := s.dag.QueryBuilder().
-		Select("loadLLMFromID").
-		Arg("id", s.llm)
+	syncedEnvQ := s.dag.QueryBuilder().
+		Select("loadEnvFromID").
+		Arg("id", s.llm.Env())
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
@@ -192,7 +191,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			continue
 		}
 
-		dbg.Printf("syncing var %q => llm\n", name)
+		dbg.Printf("syncing var %q => llm env\n", name)
 
 		changed = true
 
@@ -217,28 +216,30 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 					return err
 				}
 				typeName := typeDef.Name()
-				syncedLLMQ = syncedLLMQ.
-					Select(fmt.Sprintf("set%s", typeName)).
+				syncedEnvQ = syncedEnvQ.
+					Select(fmt.Sprintf("with%sInput", typeName)).
 					Arg("name", name).
+					Arg("description", ""). // TODO
 					Arg("value", id)
 				s.syncedVars[name] = digest
 			}
 		} else {
 			s.syncedVars[name] = dagql.HashFrom(value.String())
-			syncedLLMQ = syncedLLMQ.
-				Select("setString").
+			syncedEnvQ = syncedEnvQ.
+				Select("withStringInput").
 				Arg("name", name).
+				Arg("description", ""). // TODO
 				Arg("value", value.String())
 		}
 	}
 	if !changed {
 		return nil
 	}
-	var llmID dagger.LLMID
-	if err := syncedLLMQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
+	var envID dagger.EnvID
+	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}
-	s.llm = s.dag.LoadLLMFromID(llmID)
+	s.llm = s.llm.WithEnv(s.dag.LoadEnvFromID(envID))
 	return nil
 }
 
@@ -246,7 +247,8 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
 		return err
 	}
-	typeName, err := s.llm.CurrentType(ctx)
+	bnd := s.llm.BindResult("_")
+	typeName, err := bnd.TypeName(ctx)
 	if err != nil {
 		return err
 	}
@@ -256,9 +258,9 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	var objID string
 	if err :=
 		s.dag.QueryBuilder().
-			Select("loadLLMFromID").
-			Arg("id", s.llm).
-			Select(strcase.ToLowerCamel(typeName)).
+			Select("loadBindingFromID").
+			Arg("id", bnd).
+			Select("as" + typeName).
 			Select("id").
 			Bind(&objID).
 			Execute(ctx); err != nil {

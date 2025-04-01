@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -32,6 +31,10 @@ func (s llmSchema) Install() {
 			Doc("return the raw llm message history as json"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
+		dagql.Func("withEnv", s.withEnv).
+			Doc("allow the LLM to interact with an environment via MCP"),
+		dagql.Func("env", s.env).
+			Doc("return the LLM's current environment"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
 			ArgDoc("model", "The model to use"),
@@ -47,20 +50,9 @@ func (s llmSchema) Install() {
 			ArgDoc("file", "The file to read the prompt from"),
 		dagql.Func("withQuery", s.withQuery).
 			Doc("Provide the entire Query object to the LLM"),
-		dagql.Func("withPromptVar", s.withPromptVar).
-			Doc("Add a string variable to the LLM's environment").
-			ArgDoc("name", "The variable name").
-			ArgDoc("value", "The variable value"),
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
 			ArgDoc("prompt", "The system prompt to send"),
-		dagql.Func("setString", s.withPromptVar).
-			Doc("Add a string variable to the LLM's environment").
-			ArgDoc("name", "The variable name").
-			ArgDoc("value", "The variable value"),
-		dagql.Func("getString", s.getString).
-			Doc("Get a string variable from the LLM's environment").
-			ArgDoc("name", "The variable name"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
 			var zero dagql.ID[*core.LLM]
 			var inst dagql.Instance[*core.LLM]
@@ -79,22 +71,28 @@ func (s llmSchema) Install() {
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
-		dagql.Func("variables", s.variables).
-			Doc("list variables in the LLM environment"),
-		dagql.Func("currentType", s.currentType).
+		dagql.Func("bindResult", s.bindResult).
 			Doc("returns the type of the current state"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
 	}.Install(s.srv)
-	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
-	hook := core.LLMHook{Server: s.srv}
-	llmObjType, ok := s.srv.ObjectType(new(core.LLM).Type().Name())
-	if !ok {
-		panic("llm type not found after dagql install")
+}
+func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
+	Env core.EnvID
+}) (*core.LLM, error) {
+	env, err := args.Env.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
 	}
-	hook.ExtendLLMType(llmObjType)
-	s.srv.AddInstallHook(hook)
+	return llm.WithEnv(env.Self), nil
+}
+
+func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+	if err := llm.Sync(ctx, s.srv); err != nil {
+		return nil, err
+	}
+	return llm.Env(), nil
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
@@ -135,26 +133,6 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	return llm.WithSystemPrompt(args.Prompt), nil
 }
 
-func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.LLM, args struct {
-	Name  string
-	Value string
-}) (*core.LLM, error) {
-	return llm.WithPromptVar(args.Name, args.Value), nil
-}
-
-func (s *llmSchema) getString(ctx context.Context, llm *core.LLM, args struct {
-	Name string
-}) (dagql.String, error) {
-	val, err := llm.Get(ctx, s.srv, args.Name)
-	if err != nil {
-		return "", err
-	}
-	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
-		return str, nil
-	}
-	return "", fmt.Errorf("expected string value for %q, got %T", args.Name, val)
-}
-
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
@@ -166,7 +144,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.Sync(ctx, s.srv)
+	return llm, llm.Sync(ctx, s.srv)
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
@@ -212,12 +190,10 @@ func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql
 	return dagql.NewString(doc), err
 }
 
-func (s *llmSchema) variables(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMVariable, error) {
-	return llm.Variables(ctx, s.srv)
-}
-
-func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
-	return llm.CurrentType(ctx, s.srv)
+func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
+	Name string
+}) (dagql.Nullable[*core.Binding], error) {
+	return llm.BindResult(ctx, s.srv, args.Name)
 }
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {

@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -63,14 +63,13 @@ type LLM struct {
 	apiCalls    int
 	Endpoint    *LLMEndpoint
 
-	// If true: has un-synced state
-	dirty bool
+	once *sync.Once
 
 	// History of messages
 	messages []ModelMessage
 
 	// The environment accessible to the LLM, exposed over MCP
-	env *MCP
+	mcp *MCP
 }
 
 type LLMEndpoint struct {
@@ -441,7 +440,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		env:         NewMCP(endpoint),
+		mcp:         NewMCP(endpoint),
 	}, nil
 }
 
@@ -469,13 +468,14 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.env = cp.env.Clone()
+	cp.mcp = cp.mcp.Clone()
+	cp.once = &sync.Once{}
 	return &cp
 }
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.env.Tools(srv)
+	tools, err := llm.mcp.Tools(srv)
 	if err != nil {
 		return "", err
 	}
@@ -515,16 +515,11 @@ func (llm *LLM) WithPrompt(
 	srv *dagql.Server,
 ) (*LLM, error) {
 	prompt = os.Expand(prompt, func(key string) string {
-		obj, err := llm.env.GetObject(key, "")
-		if err == nil {
-			return llm.env.describe(obj)
+		if binding, found := llm.mcp.env.Input(key); found {
+			return binding.String()
 		}
-		val, ok := llm.env.ReadVariable(key)
-		if !ok {
-			// leave unexpanded, perhaps it refers to an object var
-			return fmt.Sprintf("$%s", key)
-		}
-		return val
+		// leave unexpanded, perhaps it refers to an object var
+		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
 	func() {
@@ -542,7 +537,6 @@ func (llm *LLM) WithPrompt(
 		Role:    "user",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm, nil
 }
 
@@ -555,12 +549,6 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 	return llm.WithPrompt(ctx, string(contents), srv)
 }
 
-func (llm *LLM) WithPromptVar(name, value string) *LLM {
-	llm = llm.Clone()
-	llm.env.WriteVariable(name, value)
-	return llm
-}
-
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
@@ -568,14 +556,12 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 		Role:    "system",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm
 }
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	var reply string = "(no reply)"
@@ -603,7 +589,7 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	messages := llm.messages
 
 	// inject default system prompt if none are found
-	if prompt := llm.env.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
@@ -615,39 +601,55 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	return messages
 }
 
+type ModelFinishedError struct {
+	Reason string
+}
+
+func (err *ModelFinishedError) Error() string {
+	return fmt.Sprintf("model finished: %s", err.Reason)
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
+func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
-		return nil, err
+		return err
 	}
+	var err error
+	llm.once.Do(func() {
+		err = llm.loop(ctx, dag)
+	})
+	return err
+}
 
-	if !llm.dirty {
-		return llm, nil
-	}
+func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 	if len(llm.messages) == 0 {
 		// dirty but no messages, possibly just a state change, nothing to do
 		// until a prompt is given
-		return llm, nil
+		return nil
 	}
-	llm = llm.Clone()
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
+			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 		llm.apiCalls++
 
-		tools, err := llm.env.Tools(dag)
+		tools, err := llm.mcp.Tools(dag)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
-			return nil, err
+			var finished *ModelFinishedError
+			if errors.As(err, &finished) {
+				// model finished
+				break
+			}
+			return err
 		}
 
 		// Add the model reply to the history
@@ -663,7 +665,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
-			content, isError := llm.env.Call(ctx, tools, toolCall)
+			content, isError := llm.mcp.Call(ctx, tools, toolCall)
 			llm.messages = append(llm.messages, ModelMessage{
 				Role:        "user", // Anthropic only allows tool calls in user messages
 				Content:     content,
@@ -672,8 +674,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			})
 		}
 	}
-	llm.dirty = false
-	return llm, nil
+	return nil
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -710,8 +711,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var history []string
@@ -754,8 +754,7 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
@@ -765,25 +764,19 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 	return string(result), nil
 }
 
-func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
+func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.env.Set(key, value)
-	llm.dirty = true
-	return llm, nil
+	llm.mcp.env = env
+	return llm
 }
 
-func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	return llm.env.GetObject(key, "")
+func (llm *LLM) Env() *Env {
+	return llm.mcp.env
 }
 
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
-	llm.env.Select(value)
-	llm.dirty = true
+	llm.mcp.Select(value)
 	return llm
 }
 
@@ -806,46 +799,25 @@ func (v *LLMVariable) Type() *ast.Type {
 	}
 }
 
-func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariable, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	// FIXME: if we keep the concept of "variables" separate for "objects", clean this up.
-	// Otherwise, remove it
-	vars := []*LLMVariable{}
-	for _, b := range llm.env.env.Variables() {
-		vars = append(vars, &LLMVariable{
-			Name:     b.Key,
-			TypeName: b.TypeName(),
-			Hash:     b.Digest().String(),
-		})
-	}
-	// NOTE: order matters! when a client is grabbing these values they'll be
-	// "calling back" using IDs that embed index positions
-	sort.Slice(vars, func(i, j int) bool {
-		return vars[i].Name < vars[j].Name
-	})
-	return vars, nil
-}
-
-func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
-	var res dagql.Nullable[dagql.String]
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
+	var res dagql.Nullable[*Binding]
+	if err := llm.Sync(ctx, dag); err != nil {
 		return res, err
 	}
-	if llm.env.Current() == nil {
+	if llm.mcp.Current() == nil {
 		return res, nil
 	}
-	res.Value = dagql.String(llm.env.Current().Type().Name())
+	res.Value = &Binding{
+		Key:   name,
+		Value: llm.mcp.Current(),
+		env:   llm.mcp.env,
+	}
 	res.Valid = true
 	return res, nil
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var res LLMTokenUsage
@@ -855,185 +827,4 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
-}
-
-type LLMHook struct {
-	Server *dagql.Server
-}
-
-// We don't expose these types to modules SDK codegen, but
-// we still want their graphql schemas to be available for
-// internal usage. So we use this list to scrub them from
-// the introspection JSON that module SDKs use for codegen.
-var TypesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-
-	&Engine{},
-	&EngineCache{},
-	&EngineCacheEntry{},
-	&EngineCacheEntrySet{},
-}
-
-func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
-	llmType, ok := s.Server.ObjectType(new(LLM).Type().Name())
-	if !ok {
-		return fmt.Errorf("failed to lookup llm type")
-	}
-	idType, ok := targetType.IDType()
-	if !ok {
-		return fmt.Errorf("failed to lookup ID type for %T", targetType)
-	}
-	typename := targetType.TypeName()
-	// Install get<TargetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "set" + typename,
-			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:        llmType.Typed(),
-			Args: dagql.InputSpecs{
-				{
-					Name:        "name",
-					Description: "The name of the variable",
-					Type:        dagql.NewString(""),
-				},
-				{
-					Name:        "value",
-					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
-					Type:        idType,
-				},
-			},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			name := args["name"].(dagql.String).String()
-			value := args["value"].(dagql.IDType)
-			obj, err := s.Server.Load(ctx, value.ID())
-			if err != nil {
-				return nil, err
-			}
-			return llm.Set(ctx, name, obj)
-		},
-		dagql.CacheSpec{},
-	)
-	// Install get<targetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "get" + typename,
-			Description: fmt.Sprintf("Retrieve a variable in the llm environment, of type %s", typename),
-			Type:        targetType.Typed(),
-			Args: dagql.InputSpecs{{
-				Name:        "name",
-				Description: "The name of the variable",
-				Type:        dagql.NewString(""),
-			}},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			name := args["name"].(dagql.String).String()
-			val, err := llm.Get(ctx, s.Server, name)
-			if err != nil {
-				return nil, err
-			}
-			if val.Type().Name() != typename {
-				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
-			}
-			return val, nil
-		},
-		dagql.CacheSpec{},
-	)
-
-	// BACKWARDS COMPATIBILITY:
-
-	// Install with<TargetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "with" + typename,
-			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:        llmType.Typed(),
-			// DeprecatedReason: "use set<TargetType> instead",
-			Args: dagql.InputSpecs{
-				{
-					Name:        "value",
-					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
-					Type:        idType,
-				},
-			},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			value := args["value"].(dagql.IDType)
-			obj, err := s.Server.Load(ctx, value.ID())
-			if err != nil {
-				return nil, err
-			}
-			return llm.With(obj), nil
-		},
-		dagql.CacheSpec{},
-	)
-	// Install <targetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        gqlFieldName(typename),
-			Description: fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
-			Type:        targetType.Typed(),
-			// DeprecatedReason: "use get<TargetType> instead",
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			llm, err := llm.Sync(ctx, s.Server)
-			if err != nil {
-				return nil, err
-			}
-			val := llm.env.Current()
-			if val == nil {
-				return nil, fmt.Errorf("no value set for %s", typename)
-			}
-			if val.Type().Name() != typename {
-				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
-			}
-			return val, nil
-		},
-		dagql.CacheSpec{},
-	)
-	return nil
-}
-
-func (s LLMHook) InstallObject(targetType dagql.ObjectType) {
-	typename := targetType.TypeName()
-	if strings.HasPrefix(typename, "_") {
-		return
-	}
-
-	// don't extend LLM for types that we hide from modules, lest the codegen yield a
-	// WithEngine(*Engine) that refers to an unknown *Engine type.
-	//
-	// FIXME: in principle LLM should be able to refer to these types, so this should
-	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
-	// hidden, don't codegen the field.
-	for _, hiddenType := range TypesHiddenFromModuleSDKs {
-		if hiddenType.Type().Name() == typename {
-			return
-		}
-	}
-
-	if err := s.ExtendLLMType(targetType); err != nil {
-		panic(err)
-	}
-}
-
-func (s LLMHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
-	// Install the target type
-	mod, err := mod.WithObject(ctx, targetTypedef)
-	if err != nil {
-		return nil, err
-	}
-	typename := targetTypedef.Type().Name()
-	targetType, ok := s.Server.ObjectType(typename)
-	if !ok {
-		return nil, fmt.Errorf("can't retrieve object type %s", typename)
-	}
-	if err := s.ExtendLLMType(targetType); err != nil {
-		return nil, err
-	}
-	return mod, nil
 }

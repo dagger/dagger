@@ -17,6 +17,11 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
+/**
+ * The `BindingID` scalar type represents an identifier for an object of type Binding.
+ */
+export type BindingID = string & { __BindingID: never }
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -832,6 +837,11 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 /**
+ * The `EnvID` scalar type represents an identifier for an object of type Env.
+ */
+export type EnvID = string & { __EnvID: never }
+
+/**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
@@ -1037,11 +1047,6 @@ export type LLMID = string & { __LLMID: never }
  * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
  */
 export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
-
-/**
- * The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
- */
-export type LLMVariableID = string & { __LLMVariableID: never }
 
 /**
  * The `LabelID` scalar type represents an identifier for an object of type Label.
@@ -1438,6 +1443,203 @@ export type __TypeEnumValuesOpts = {
 
 export type __TypeFieldsOpts = {
   includeDeprecated?: boolean
+}
+
+export class Binding extends BaseClient {
+  private readonly _id?: BindingID = undefined
+  private readonly _digest?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _typeName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: BindingID,
+    _digest?: string,
+    _name?: string,
+    _typeName?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._digest = _digest
+    this._name = _name
+    this._typeName = _typeName
+  }
+
+  /**
+   * A unique identifier for this Binding.
+   */
+  id = async (): Promise<BindingID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<BindingID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the binding value, as type CacheVolume
+   */
+  asCacheVolume = (): CacheVolume => {
+    const ctx = this._ctx.select("asCacheVolume")
+    return new CacheVolume(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Container
+   */
+  asContainer = (): Container => {
+    const ctx = this._ctx.select("asContainer")
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Directory
+   */
+  asDirectory = (): Directory => {
+    const ctx = this._ctx.select("asDirectory")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Env
+   */
+  asEnv = (): Env => {
+    const ctx = this._ctx.select("asEnv")
+    return new Env(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type File
+   */
+  asFile = (): File => {
+    const ctx = this._ctx.select("asFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type GitRef
+   */
+  asGitRef = (): GitRef => {
+    const ctx = this._ctx.select("asGitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type GitRepository
+   */
+  asGitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("asGitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type LLM
+   */
+  asLLM = (): LLM => {
+    const ctx = this._ctx.select("asLLM")
+    return new LLM(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Module
+   */
+  asModule = (): Module_ => {
+    const ctx = this._ctx.select("asModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type ModuleConfigClient
+   */
+  asModuleConfigClient = (): ModuleConfigClient => {
+    const ctx = this._ctx.select("asModuleConfigClient")
+    return new ModuleConfigClient(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type ModuleSource
+   */
+  asModuleSource = (): ModuleSource => {
+    const ctx = this._ctx.select("asModuleSource")
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Secret
+   */
+  asSecret = (): Secret => {
+    const ctx = this._ctx.select("asSecret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Service
+   */
+  asService = (): Service => {
+    const ctx = this._ctx.select("asService")
+    return new Service(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Socket
+   */
+  asSocket = (): Socket => {
+    const ctx = this._ctx.select("asSocket")
+    return new Socket(ctx)
+  }
+
+  /**
+   * The digest of the binding value
+   */
+  digest = async (): Promise<string> => {
+    if (this._digest) {
+      return this._digest
+    }
+
+    const ctx = this._ctx.select("digest")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The binding name
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The binding type
+   */
+  typeName = async (): Promise<string> => {
+    if (this._typeName) {
+      return this._typeName
+    }
+
+    const ctx = this._ctx.select("typeName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
 }
 
 /**
@@ -3646,6 +3848,482 @@ export class EnumValueTypeDef extends BaseClient {
   }
 }
 
+export class Env extends BaseClient {
+  private readonly _id?: EnvID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: EnvID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Env.
+   */
+  id = async (): Promise<EnvID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * retrieve an input value by name
+   */
+  input = (name: string): Binding => {
+    const ctx = this._ctx.select("input", { name })
+    return new Binding(ctx)
+  }
+
+  /**
+   * return all input values for the environment
+   */
+  inputs = async (): Promise<Binding[]> => {
+    type inputs = {
+      id: BindingID
+    }
+
+    const ctx = this._ctx.select("inputs").select("id")
+
+    const response: Awaited<inputs[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * retrieve an output value by name
+   */
+  output = (name: string): Binding => {
+    const ctx = this._ctx.select("output", { name })
+    return new Binding(ctx)
+  }
+
+  /**
+   * return all output values for the environment
+   */
+  outputs = async (): Promise<Binding[]> => {
+    type outputs = {
+      id: BindingID
+    }
+
+    const ctx = this._ctx.select("outputs").select("id")
+
+    const response: Awaited<outputs[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * Create or update a binding of type CacheVolume in the environment
+   * @param name The name of the binding
+   * @param value The CacheVolume value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCacheVolumeInput = (
+    name: string,
+    value: CacheVolume,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCacheVolumeInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CacheVolume output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCacheVolumeOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Container in the environment
+   * @param name The name of the binding
+   * @param value The Container value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withContainerInput = (
+    name: string,
+    value: Container,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withContainerInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Container output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withContainerOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withContainerOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Directory in the environment
+   * @param name The name of the binding
+   * @param value The Directory value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withDirectoryInput = (
+    name: string,
+    value: Directory,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withDirectoryInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Directory output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withDirectoryOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withDirectoryOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Env in the environment
+   * @param name The name of the binding
+   * @param value The Env value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvInput = (name: string, value: Env, description: string): Env => {
+    const ctx = this._ctx.select("withEnvInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Env output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type File in the environment
+   * @param name The name of the binding
+   * @param value The File value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withFileInput = (name: string, value: File, description: string): Env => {
+    const ctx = this._ctx.select("withFileInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired File output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withFileOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type GitRef in the environment
+   * @param name The name of the binding
+   * @param value The GitRef value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGitRefInput = (name: string, value: GitRef, description: string): Env => {
+    const ctx = this._ctx.select("withGitRefInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GitRef output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGitRefOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGitRefOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type GitRepository in the environment
+   * @param name The name of the binding
+   * @param value The GitRepository value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGitRepositoryInput = (
+    name: string,
+    value: GitRepository,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGitRepositoryInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GitRepository output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGitRepositoryOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGitRepositoryOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type LLM in the environment
+   * @param name The name of the binding
+   * @param value The LLM value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withLLMInput = (name: string, value: LLM, description: string): Env => {
+    const ctx = this._ctx.select("withLLMInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired LLM output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withLLMOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withLLMOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ModuleConfigClient in the environment
+   * @param name The name of the binding
+   * @param value The ModuleConfigClient value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleConfigClientInput = (
+    name: string,
+    value: ModuleConfigClient,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleConfigClientInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ModuleConfigClient output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleConfigClientOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleConfigClientOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Module in the environment
+   * @param name The name of the binding
+   * @param value The Module value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleInput = (
+    name: string,
+    value: Module_,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Module output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ModuleSource in the environment
+   * @param name The name of the binding
+   * @param value The ModuleSource value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleSourceInput = (
+    name: string,
+    value: ModuleSource,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleSourceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ModuleSource output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleSourceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleSourceOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Secret in the environment
+   * @param name The name of the binding
+   * @param value The Secret value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSecretInput = (name: string, value: Secret, description: string): Env => {
+    const ctx = this._ctx.select("withSecretInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Secret output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSecretOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSecretOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Service in the environment
+   * @param name The name of the binding
+   * @param value The Service value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withServiceInput = (
+    name: string,
+    value: Service,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withServiceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Service output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withServiceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withServiceOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Socket in the environment
+   * @param name The name of the binding
+   * @param value The Socket value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSocketInput = (name: string, value: Socket, description: string): Env => {
+    const ctx = this._ctx.select("withSocketInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Socket output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSocketOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSocketOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update an input value of type string
+   * @param name The name of the binding
+   * @param value The string value to assign to the binding
+   */
+  withStringInput = (name: string, value: string, description: string): Env => {
+    const ctx = this._ctx.select("withStringInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Call the provided function with current Env.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Env) => Env) => {
+    return arg(this)
+  }
+}
+
 /**
  * An environment variable name and value.
  */
@@ -5159,8 +5837,6 @@ export class InterfaceTypeDef extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
-  private readonly _currentType?: string = undefined
-  private readonly _getString?: string = undefined
   private readonly _historyJSON?: string = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
@@ -5174,8 +5850,6 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
-    _currentType?: string,
-    _getString?: string,
     _historyJSON?: string,
     _lastReply?: string,
     _model?: string,
@@ -5186,8 +5860,6 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._currentType = _currentType
-    this._getString = _getString
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
@@ -5222,467 +5894,19 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type CacheVolume
-   */
-  cacheVolume = (): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume")
-    return new CacheVolume(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Container
-   */
-  container = (): Container => {
-    const ctx = this._ctx.select("container")
-    return new Container(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type CurrentModule
-   */
-  currentModule = (): CurrentModule => {
-    const ctx = this._ctx.select("currentModule")
-    return new CurrentModule(ctx)
-  }
-
-  /**
    * returns the type of the current state
    */
-  currentType = async (): Promise<string> => {
-    if (this._currentType) {
-      return this._currentType
-    }
-
-    const ctx = this._ctx.select("currentType")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+  bindResult = (name: string): Binding => {
+    const ctx = this._ctx.select("bindResult", { name })
+    return new Binding(ctx)
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type Directory
+   * return the LLM's current environment
    */
-  directory = (): Directory => {
-    const ctx = this._ctx.select("directory")
-    return new Directory(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type EnumTypeDef
-   */
-  enumTypeDef = (): EnumTypeDef => {
-    const ctx = this._ctx.select("enumTypeDef")
-    return new EnumTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-   */
-  enumValueTypeDef = (): EnumValueTypeDef => {
-    const ctx = this._ctx.select("enumValueTypeDef")
-    return new EnumValueTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Error
-   */
-  error = (): Error => {
-    const ctx = this._ctx.select("error")
-    return new Error(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type ErrorValue
-   */
-  errorValue = (): ErrorValue => {
-    const ctx = this._ctx.select("errorValue")
-    return new ErrorValue(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type FieldTypeDef
-   */
-  fieldTypeDef = (): FieldTypeDef => {
-    const ctx = this._ctx.select("fieldTypeDef")
-    return new FieldTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type File
-   */
-  file = (): File => {
-    const ctx = this._ctx.select("file")
-    return new File(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Function
-   */
-  function_ = (): Function_ => {
-    const ctx = this._ctx.select("function")
-    return new Function_(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type FunctionArg
-   */
-  functionArg = (): FunctionArg => {
-    const ctx = this._ctx.select("functionArg")
-    return new FunctionArg(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type FunctionCall
-   */
-  functionCall = (): FunctionCall => {
-    const ctx = this._ctx.select("functionCall")
-    return new FunctionCall(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-   */
-  functionCallArgValue = (): FunctionCallArgValue => {
-    const ctx = this._ctx.select("functionCallArgValue")
-    return new FunctionCallArgValue(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type GeneratedCode
-   */
-  generatedCode = (): GeneratedCode => {
-    const ctx = this._ctx.select("generatedCode")
-    return new GeneratedCode(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type CacheVolume
-   * @param name The name of the variable
-   */
-  getCacheVolume = (name: string): CacheVolume => {
-    const ctx = this._ctx.select("getCacheVolume", { name })
-    return new CacheVolume(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Container
-   * @param name The name of the variable
-   */
-  getContainer = (name: string): Container => {
-    const ctx = this._ctx.select("getContainer", { name })
-    return new Container(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type CurrentModule
-   * @param name The name of the variable
-   */
-  getCurrentModule = (name: string): CurrentModule => {
-    const ctx = this._ctx.select("getCurrentModule", { name })
-    return new CurrentModule(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Directory
-   * @param name The name of the variable
-   */
-  getDirectory = (name: string): Directory => {
-    const ctx = this._ctx.select("getDirectory", { name })
-    return new Directory(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type EnumTypeDef
-   * @param name The name of the variable
-   */
-  getEnumTypeDef = (name: string): EnumTypeDef => {
-    const ctx = this._ctx.select("getEnumTypeDef", { name })
-    return new EnumTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type EnumValueTypeDef
-   * @param name The name of the variable
-   */
-  getEnumValueTypeDef = (name: string): EnumValueTypeDef => {
-    const ctx = this._ctx.select("getEnumValueTypeDef", { name })
-    return new EnumValueTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Error
-   * @param name The name of the variable
-   */
-  getError = (name: string): Error => {
-    const ctx = this._ctx.select("getError", { name })
-    return new Error(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ErrorValue
-   * @param name The name of the variable
-   */
-  getErrorValue = (name: string): ErrorValue => {
-    const ctx = this._ctx.select("getErrorValue", { name })
-    return new ErrorValue(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type FieldTypeDef
-   * @param name The name of the variable
-   */
-  getFieldTypeDef = (name: string): FieldTypeDef => {
-    const ctx = this._ctx.select("getFieldTypeDef", { name })
-    return new FieldTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type File
-   * @param name The name of the variable
-   */
-  getFile = (name: string): File => {
-    const ctx = this._ctx.select("getFile", { name })
-    return new File(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Function
-   * @param name The name of the variable
-   */
-  getFunction = (name: string): Function_ => {
-    const ctx = this._ctx.select("getFunction", { name })
-    return new Function_(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type FunctionArg
-   * @param name The name of the variable
-   */
-  getFunctionArg = (name: string): FunctionArg => {
-    const ctx = this._ctx.select("getFunctionArg", { name })
-    return new FunctionArg(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type FunctionCall
-   * @param name The name of the variable
-   */
-  getFunctionCall = (name: string): FunctionCall => {
-    const ctx = this._ctx.select("getFunctionCall", { name })
-    return new FunctionCall(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type FunctionCallArgValue
-   * @param name The name of the variable
-   */
-  getFunctionCallArgValue = (name: string): FunctionCallArgValue => {
-    const ctx = this._ctx.select("getFunctionCallArgValue", { name })
-    return new FunctionCallArgValue(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type GeneratedCode
-   * @param name The name of the variable
-   */
-  getGeneratedCode = (name: string): GeneratedCode => {
-    const ctx = this._ctx.select("getGeneratedCode", { name })
-    return new GeneratedCode(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type GitRef
-   * @param name The name of the variable
-   */
-  getGitRef = (name: string): GitRef => {
-    const ctx = this._ctx.select("getGitRef", { name })
-    return new GitRef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type GitRepository
-   * @param name The name of the variable
-   */
-  getGitRepository = (name: string): GitRepository => {
-    const ctx = this._ctx.select("getGitRepository", { name })
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type InputTypeDef
-   * @param name The name of the variable
-   */
-  getInputTypeDef = (name: string): InputTypeDef => {
-    const ctx = this._ctx.select("getInputTypeDef", { name })
-    return new InputTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type InterfaceTypeDef
-   * @param name The name of the variable
-   */
-  getInterfaceTypeDef = (name: string): InterfaceTypeDef => {
-    const ctx = this._ctx.select("getInterfaceTypeDef", { name })
-    return new InterfaceTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type LLM
-   * @param name The name of the variable
-   */
-  getLLM = (name: string): LLM => {
-    const ctx = this._ctx.select("getLLM", { name })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ListTypeDef
-   * @param name The name of the variable
-   */
-  getListTypeDef = (name: string): ListTypeDef => {
-    const ctx = this._ctx.select("getListTypeDef", { name })
-    return new ListTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Module
-   * @param name The name of the variable
-   */
-  getModule = (name: string): Module_ => {
-    const ctx = this._ctx.select("getModule", { name })
-    return new Module_(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ModuleConfigClient
-   * @param name The name of the variable
-   */
-  getModuleConfigClient = (name: string): ModuleConfigClient => {
-    const ctx = this._ctx.select("getModuleConfigClient", { name })
-    return new ModuleConfigClient(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ModuleSource
-   * @param name The name of the variable
-   */
-  getModuleSource = (name: string): ModuleSource => {
-    const ctx = this._ctx.select("getModuleSource", { name })
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ObjectTypeDef
-   * @param name The name of the variable
-   */
-  getObjectTypeDef = (name: string): ObjectTypeDef => {
-    const ctx = this._ctx.select("getObjectTypeDef", { name })
-    return new ObjectTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type SDKConfig
-   * @param name The name of the variable
-   */
-  getSDKConfig = (name: string): SDKConfig => {
-    const ctx = this._ctx.select("getSDKConfig", { name })
-    return new SDKConfig(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type ScalarTypeDef
-   * @param name The name of the variable
-   */
-  getScalarTypeDef = (name: string): ScalarTypeDef => {
-    const ctx = this._ctx.select("getScalarTypeDef", { name })
-    return new ScalarTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Secret
-   * @param name The name of the variable
-   */
-  getSecret = (name: string): Secret => {
-    const ctx = this._ctx.select("getSecret", { name })
-    return new Secret(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Service
-   * @param name The name of the variable
-   */
-  getService = (name: string): Service => {
-    const ctx = this._ctx.select("getService", { name })
-    return new Service(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Socket
-   * @param name The name of the variable
-   */
-  getSocket = (name: string): Socket => {
-    const ctx = this._ctx.select("getSocket", { name })
-    return new Socket(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type SourceMap
-   * @param name The name of the variable
-   */
-  getSourceMap = (name: string): SourceMap => {
-    const ctx = this._ctx.select("getSourceMap", { name })
-    return new SourceMap(ctx)
-  }
-
-  /**
-   * Get a string variable from the LLM's environment
-   * @param name The variable name
-   */
-  getString = async (name: string): Promise<string> => {
-    if (this._getString) {
-      return this._getString
-    }
-
-    const ctx = this._ctx.select("getString", { name })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type Terminal
-   * @param name The name of the variable
-   */
-  getTerminal = (name: string): Terminal => {
-    const ctx = this._ctx.select("getTerminal", { name })
-    return new Terminal(ctx)
-  }
-
-  /**
-   * Retrieve a variable in the llm environment, of type TypeDef
-   * @param name The name of the variable
-   */
-  getTypeDef = (name: string): TypeDef => {
-    const ctx = this._ctx.select("getTypeDef", { name })
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type GitRef
-   */
-  gitRef = (): GitRef => {
-    const ctx = this._ctx.select("gitRef")
-    return new GitRef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type GitRepository
-   */
-  gitRepository = (): GitRepository => {
-    const ctx = this._ctx.select("gitRepository")
-    return new GitRepository(ctx)
+  env = (): Env => {
+    const ctx = this._ctx.select("env")
+    return new Env(ctx)
   }
 
   /**
@@ -5712,30 +5936,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type InputTypeDef
-   */
-  inputTypeDef = (): InputTypeDef => {
-    const ctx = this._ctx.select("inputTypeDef")
-    return new InputTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-   */
-  interfaceTypeDef = (): InterfaceTypeDef => {
-    const ctx = this._ctx.select("interfaceTypeDef")
-    return new InterfaceTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type LLM
-   */
-  lLM = (): LLM => {
-    const ctx = this._ctx.select("lLM")
-    return new LLM(ctx)
-  }
-
-  /**
    * return the last llm reply from the history
    */
   lastReply = async (): Promise<string> => {
@@ -5748,14 +5948,6 @@ export class LLM extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type ListTypeDef
-   */
-  listTypeDef = (): ListTypeDef => {
-    const ctx = this._ctx.select("listTypeDef")
-    return new ListTypeDef(ctx)
   }
 
   /**
@@ -5782,38 +5974,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type Module
-   */
-  module_ = (): Module_ => {
-    const ctx = this._ctx.select("module")
-    return new Module_(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-   */
-  moduleConfigClient = (): ModuleConfigClient => {
-    const ctx = this._ctx.select("moduleConfigClient")
-    return new ModuleConfigClient(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type ModuleSource
-   */
-  moduleSource = (): ModuleSource => {
-    const ctx = this._ctx.select("moduleSource")
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-   */
-  objectTypeDef = (): ObjectTypeDef => {
-    const ctx = this._ctx.select("objectTypeDef")
-    return new ObjectTypeDef(ctx)
-  }
-
-  /**
    * return the provider used by the llm
    */
   provider = async (): Promise<string> => {
@@ -5829,397 +5989,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-   */
-  scalarTypeDef = (): ScalarTypeDef => {
-    const ctx = this._ctx.select("scalarTypeDef")
-    return new ScalarTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type SDKConfig
-   */
-  sdkconfig = (): SDKConfig => {
-    const ctx = this._ctx.select("sdkconfig")
-    return new SDKConfig(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Secret
-   */
-  secret = (): Secret => {
-    const ctx = this._ctx.select("secret")
-    return new Secret(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Service
-   */
-  service = (): Service => {
-    const ctx = this._ctx.select("service")
-    return new Service(ctx)
-  }
-
-  /**
-   * Set a variable of type CacheVolume in the llm environment
-   * @param name The name of the variable
-   * @param value The CacheVolume value to assign to the variable
-   */
-  setCacheVolume = (name: string, value: CacheVolume): LLM => {
-    const ctx = this._ctx.select("setCacheVolume", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Container in the llm environment
-   * @param name The name of the variable
-   * @param value The Container value to assign to the variable
-   */
-  setContainer = (name: string, value: Container): LLM => {
-    const ctx = this._ctx.select("setContainer", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type CurrentModule in the llm environment
-   * @param name The name of the variable
-   * @param value The CurrentModule value to assign to the variable
-   */
-  setCurrentModule = (name: string, value: CurrentModule): LLM => {
-    const ctx = this._ctx.select("setCurrentModule", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Directory in the llm environment
-   * @param name The name of the variable
-   * @param value The Directory value to assign to the variable
-   */
-  setDirectory = (name: string, value: Directory): LLM => {
-    const ctx = this._ctx.select("setDirectory", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type EnumTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The EnumTypeDef value to assign to the variable
-   */
-  setEnumTypeDef = (name: string, value: EnumTypeDef): LLM => {
-    const ctx = this._ctx.select("setEnumTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type EnumValueTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The EnumValueTypeDef value to assign to the variable
-   */
-  setEnumValueTypeDef = (name: string, value: EnumValueTypeDef): LLM => {
-    const ctx = this._ctx.select("setEnumValueTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Error in the llm environment
-   * @param name The name of the variable
-   * @param value The Error value to assign to the variable
-   */
-  setError = (name: string, value: Error): LLM => {
-    const ctx = this._ctx.select("setError", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ErrorValue in the llm environment
-   * @param name The name of the variable
-   * @param value The ErrorValue value to assign to the variable
-   */
-  setErrorValue = (name: string, value: ErrorValue): LLM => {
-    const ctx = this._ctx.select("setErrorValue", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FieldTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The FieldTypeDef value to assign to the variable
-   */
-  setFieldTypeDef = (name: string, value: FieldTypeDef): LLM => {
-    const ctx = this._ctx.select("setFieldTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type File in the llm environment
-   * @param name The name of the variable
-   * @param value The File value to assign to the variable
-   */
-  setFile = (name: string, value: File): LLM => {
-    const ctx = this._ctx.select("setFile", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Function in the llm environment
-   * @param name The name of the variable
-   * @param value The Function value to assign to the variable
-   */
-  setFunction = (name: string, value: Function_): LLM => {
-    const ctx = this._ctx.select("setFunction", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionArg in the llm environment
-   * @param name The name of the variable
-   * @param value The FunctionArg value to assign to the variable
-   */
-  setFunctionArg = (name: string, value: FunctionArg): LLM => {
-    const ctx = this._ctx.select("setFunctionArg", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionCall in the llm environment
-   * @param name The name of the variable
-   * @param value The FunctionCall value to assign to the variable
-   */
-  setFunctionCall = (name: string, value: FunctionCall): LLM => {
-    const ctx = this._ctx.select("setFunctionCall", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionCallArgValue in the llm environment
-   * @param name The name of the variable
-   * @param value The FunctionCallArgValue value to assign to the variable
-   */
-  setFunctionCallArgValue = (
-    name: string,
-    value: FunctionCallArgValue,
-  ): LLM => {
-    const ctx = this._ctx.select("setFunctionCallArgValue", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GeneratedCode in the llm environment
-   * @param name The name of the variable
-   * @param value The GeneratedCode value to assign to the variable
-   */
-  setGeneratedCode = (name: string, value: GeneratedCode): LLM => {
-    const ctx = this._ctx.select("setGeneratedCode", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GitRef in the llm environment
-   * @param name The name of the variable
-   * @param value The GitRef value to assign to the variable
-   */
-  setGitRef = (name: string, value: GitRef): LLM => {
-    const ctx = this._ctx.select("setGitRef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GitRepository in the llm environment
-   * @param name The name of the variable
-   * @param value The GitRepository value to assign to the variable
-   */
-  setGitRepository = (name: string, value: GitRepository): LLM => {
-    const ctx = this._ctx.select("setGitRepository", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type InputTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The InputTypeDef value to assign to the variable
-   */
-  setInputTypeDef = (name: string, value: InputTypeDef): LLM => {
-    const ctx = this._ctx.select("setInputTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type InterfaceTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The InterfaceTypeDef value to assign to the variable
-   */
-  setInterfaceTypeDef = (name: string, value: InterfaceTypeDef): LLM => {
-    const ctx = this._ctx.select("setInterfaceTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type LLM in the llm environment
-   * @param name The name of the variable
-   * @param value The LLM value to assign to the variable
-   */
-  setLLM = (name: string, value: LLM): LLM => {
-    const ctx = this._ctx.select("setLLM", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ListTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The ListTypeDef value to assign to the variable
-   */
-  setListTypeDef = (name: string, value: ListTypeDef): LLM => {
-    const ctx = this._ctx.select("setListTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Module in the llm environment
-   * @param name The name of the variable
-   * @param value The Module value to assign to the variable
-   */
-  setModule = (name: string, value: Module_): LLM => {
-    const ctx = this._ctx.select("setModule", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ModuleConfigClient in the llm environment
-   * @param name The name of the variable
-   * @param value The ModuleConfigClient value to assign to the variable
-   */
-  setModuleConfigClient = (name: string, value: ModuleConfigClient): LLM => {
-    const ctx = this._ctx.select("setModuleConfigClient", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ModuleSource in the llm environment
-   * @param name The name of the variable
-   * @param value The ModuleSource value to assign to the variable
-   */
-  setModuleSource = (name: string, value: ModuleSource): LLM => {
-    const ctx = this._ctx.select("setModuleSource", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ObjectTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The ObjectTypeDef value to assign to the variable
-   */
-  setObjectTypeDef = (name: string, value: ObjectTypeDef): LLM => {
-    const ctx = this._ctx.select("setObjectTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type SDKConfig in the llm environment
-   * @param name The name of the variable
-   * @param value The SDKConfig value to assign to the variable
-   */
-  setSDKConfig = (name: string, value: SDKConfig): LLM => {
-    const ctx = this._ctx.select("setSDKConfig", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ScalarTypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The ScalarTypeDef value to assign to the variable
-   */
-  setScalarTypeDef = (name: string, value: ScalarTypeDef): LLM => {
-    const ctx = this._ctx.select("setScalarTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Secret in the llm environment
-   * @param name The name of the variable
-   * @param value The Secret value to assign to the variable
-   */
-  setSecret = (name: string, value: Secret): LLM => {
-    const ctx = this._ctx.select("setSecret", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Service in the llm environment
-   * @param name The name of the variable
-   * @param value The Service value to assign to the variable
-   */
-  setService = (name: string, value: Service): LLM => {
-    const ctx = this._ctx.select("setService", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Socket in the llm environment
-   * @param name The name of the variable
-   * @param value The Socket value to assign to the variable
-   */
-  setSocket = (name: string, value: Socket): LLM => {
-    const ctx = this._ctx.select("setSocket", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type SourceMap in the llm environment
-   * @param name The name of the variable
-   * @param value The SourceMap value to assign to the variable
-   */
-  setSourceMap = (name: string, value: SourceMap): LLM => {
-    const ctx = this._ctx.select("setSourceMap", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Add a string variable to the LLM's environment
-   * @param name The variable name
-   * @param value The variable value
-   */
-  setString = (name: string, value: string): LLM => {
-    const ctx = this._ctx.select("setString", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Terminal in the llm environment
-   * @param name The name of the variable
-   * @param value The Terminal value to assign to the variable
-   */
-  setTerminal = (name: string, value: Terminal): LLM => {
-    const ctx = this._ctx.select("setTerminal", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type TypeDef in the llm environment
-   * @param name The name of the variable
-   * @param value The TypeDef value to assign to the variable
-   */
-  setTypeDef = (name: string, value: TypeDef): LLM => {
-    const ctx = this._ctx.select("setTypeDef", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Socket
-   */
-  socket = (): Socket => {
-    const ctx = this._ctx.select("socket")
-    return new Socket(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type SourceMap
-   */
-  sourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("sourceMap")
-    return new SourceMap(ctx)
-  }
-
-  /**
    * synchronize LLM state
    */
   sync = async (): Promise<LLM> => {
@@ -6228,14 +5997,6 @@ export class LLM extends BaseClient {
     const response: Awaited<LLMID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadLLMFromID(response)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type Terminal
-   */
-  terminal = (): Terminal => {
-    const ctx = this._ctx.select("terminal")
-    return new Terminal(ctx)
   }
 
   /**
@@ -6262,216 +6023,10 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Retrieve a the current value in the LLM environment, of type TypeDef
+   * allow the LLM to interact with an environment via MCP
    */
-  typeDef = (): TypeDef => {
-    const ctx = this._ctx.select("typeDef")
-    return new TypeDef(ctx)
-  }
-
-  /**
-   * list variables in the LLM environment
-   */
-  variables = async (): Promise<LLMVariable[]> => {
-    type variables = {
-      id: LLMVariableID
-    }
-
-    const ctx = this._ctx.select("variables").select("id")
-
-    const response: Awaited<variables[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadLLMVariableFromID(r.id),
-    )
-  }
-
-  /**
-   * Set a variable of type CacheVolume in the llm environment
-   * @param value The CacheVolume value to assign to the variable
-   */
-  withCacheVolume = (value: CacheVolume): LLM => {
-    const ctx = this._ctx.select("withCacheVolume", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Container in the llm environment
-   * @param value The Container value to assign to the variable
-   */
-  withContainer = (value: Container): LLM => {
-    const ctx = this._ctx.select("withContainer", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type CurrentModule in the llm environment
-   * @param value The CurrentModule value to assign to the variable
-   */
-  withCurrentModule = (value: CurrentModule): LLM => {
-    const ctx = this._ctx.select("withCurrentModule", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Directory in the llm environment
-   * @param value The Directory value to assign to the variable
-   */
-  withDirectory = (value: Directory): LLM => {
-    const ctx = this._ctx.select("withDirectory", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type EnumTypeDef in the llm environment
-   * @param value The EnumTypeDef value to assign to the variable
-   */
-  withEnumTypeDef = (value: EnumTypeDef): LLM => {
-    const ctx = this._ctx.select("withEnumTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type EnumValueTypeDef in the llm environment
-   * @param value The EnumValueTypeDef value to assign to the variable
-   */
-  withEnumValueTypeDef = (value: EnumValueTypeDef): LLM => {
-    const ctx = this._ctx.select("withEnumValueTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Error in the llm environment
-   * @param value The Error value to assign to the variable
-   */
-  withError = (value: Error): LLM => {
-    const ctx = this._ctx.select("withError", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ErrorValue in the llm environment
-   * @param value The ErrorValue value to assign to the variable
-   */
-  withErrorValue = (value: ErrorValue): LLM => {
-    const ctx = this._ctx.select("withErrorValue", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FieldTypeDef in the llm environment
-   * @param value The FieldTypeDef value to assign to the variable
-   */
-  withFieldTypeDef = (value: FieldTypeDef): LLM => {
-    const ctx = this._ctx.select("withFieldTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type File in the llm environment
-   * @param value The File value to assign to the variable
-   */
-  withFile = (value: File): LLM => {
-    const ctx = this._ctx.select("withFile", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Function in the llm environment
-   * @param value The Function value to assign to the variable
-   */
-  withFunction = (value: Function_): LLM => {
-    const ctx = this._ctx.select("withFunction", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionArg in the llm environment
-   * @param value The FunctionArg value to assign to the variable
-   */
-  withFunctionArg = (value: FunctionArg): LLM => {
-    const ctx = this._ctx.select("withFunctionArg", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionCall in the llm environment
-   * @param value The FunctionCall value to assign to the variable
-   */
-  withFunctionCall = (value: FunctionCall): LLM => {
-    const ctx = this._ctx.select("withFunctionCall", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type FunctionCallArgValue in the llm environment
-   * @param value The FunctionCallArgValue value to assign to the variable
-   */
-  withFunctionCallArgValue = (value: FunctionCallArgValue): LLM => {
-    const ctx = this._ctx.select("withFunctionCallArgValue", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GeneratedCode in the llm environment
-   * @param value The GeneratedCode value to assign to the variable
-   */
-  withGeneratedCode = (value: GeneratedCode): LLM => {
-    const ctx = this._ctx.select("withGeneratedCode", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GitRef in the llm environment
-   * @param value The GitRef value to assign to the variable
-   */
-  withGitRef = (value: GitRef): LLM => {
-    const ctx = this._ctx.select("withGitRef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type GitRepository in the llm environment
-   * @param value The GitRepository value to assign to the variable
-   */
-  withGitRepository = (value: GitRepository): LLM => {
-    const ctx = this._ctx.select("withGitRepository", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type InputTypeDef in the llm environment
-   * @param value The InputTypeDef value to assign to the variable
-   */
-  withInputTypeDef = (value: InputTypeDef): LLM => {
-    const ctx = this._ctx.select("withInputTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type InterfaceTypeDef in the llm environment
-   * @param value The InterfaceTypeDef value to assign to the variable
-   */
-  withInterfaceTypeDef = (value: InterfaceTypeDef): LLM => {
-    const ctx = this._ctx.select("withInterfaceTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type LLM in the llm environment
-   * @param value The LLM value to assign to the variable
-   */
-  withLLM = (value: LLM): LLM => {
-    const ctx = this._ctx.select("withLLM", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ListTypeDef in the llm environment
-   * @param value The ListTypeDef value to assign to the variable
-   */
-  withListTypeDef = (value: ListTypeDef): LLM => {
-    const ctx = this._ctx.select("withListTypeDef", { value })
+  withEnv = (env: Env): LLM => {
+    const ctx = this._ctx.select("withEnv", { env })
     return new LLM(ctx)
   }
 
@@ -6481,42 +6036,6 @@ export class LLM extends BaseClient {
    */
   withModel = (model: string): LLM => {
     const ctx = this._ctx.select("withModel", { model })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Module in the llm environment
-   * @param value The Module value to assign to the variable
-   */
-  withModule = (value: Module_): LLM => {
-    const ctx = this._ctx.select("withModule", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ModuleConfigClient in the llm environment
-   * @param value The ModuleConfigClient value to assign to the variable
-   */
-  withModuleConfigClient = (value: ModuleConfigClient): LLM => {
-    const ctx = this._ctx.select("withModuleConfigClient", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ModuleSource in the llm environment
-   * @param value The ModuleSource value to assign to the variable
-   */
-  withModuleSource = (value: ModuleSource): LLM => {
-    const ctx = this._ctx.select("withModuleSource", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ObjectTypeDef in the llm environment
-   * @param value The ObjectTypeDef value to assign to the variable
-   */
-  withObjectTypeDef = (value: ObjectTypeDef): LLM => {
-    const ctx = this._ctx.select("withObjectTypeDef", { value })
     return new LLM(ctx)
   }
 
@@ -6539,74 +6058,10 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Add a string variable to the LLM's environment
-   * @param name The variable name
-   * @param value The variable value
-   */
-  withPromptVar = (name: string, value: string): LLM => {
-    const ctx = this._ctx.select("withPromptVar", { name, value })
-    return new LLM(ctx)
-  }
-
-  /**
    * Provide the entire Query object to the LLM
    */
   withQuery = (): LLM => {
     const ctx = this._ctx.select("withQuery")
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type SDKConfig in the llm environment
-   * @param value The SDKConfig value to assign to the variable
-   */
-  withSDKConfig = (value: SDKConfig): LLM => {
-    const ctx = this._ctx.select("withSDKConfig", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type ScalarTypeDef in the llm environment
-   * @param value The ScalarTypeDef value to assign to the variable
-   */
-  withScalarTypeDef = (value: ScalarTypeDef): LLM => {
-    const ctx = this._ctx.select("withScalarTypeDef", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Secret in the llm environment
-   * @param value The Secret value to assign to the variable
-   */
-  withSecret = (value: Secret): LLM => {
-    const ctx = this._ctx.select("withSecret", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Service in the llm environment
-   * @param value The Service value to assign to the variable
-   */
-  withService = (value: Service): LLM => {
-    const ctx = this._ctx.select("withService", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Socket in the llm environment
-   * @param value The Socket value to assign to the variable
-   */
-  withSocket = (value: Socket): LLM => {
-    const ctx = this._ctx.select("withSocket", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type SourceMap in the llm environment
-   * @param value The SourceMap value to assign to the variable
-   */
-  withSourceMap = (value: SourceMap): LLM => {
-    const ctx = this._ctx.select("withSourceMap", { value })
     return new LLM(ctx)
   }
 
@@ -6616,24 +6071,6 @@ export class LLM extends BaseClient {
    */
   withSystemPrompt = (prompt: string): LLM => {
     const ctx = this._ctx.select("withSystemPrompt", { prompt })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type Terminal in the llm environment
-   * @param value The Terminal value to assign to the variable
-   */
-  withTerminal = (value: Terminal): LLM => {
-    const ctx = this._ctx.select("withTerminal", { value })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set a variable of type TypeDef in the llm environment
-   * @param value The TypeDef value to assign to the variable
-   */
-  withTypeDef = (value: TypeDef): LLM => {
-    const ctx = this._ctx.select("withTypeDef", { value })
     return new LLM(ctx)
   }
 
@@ -6715,79 +6152,6 @@ export class LLMTokenUsage extends BaseClient {
     const ctx = this._ctx.select("totalTokens")
 
     const response: Awaited<number> = await ctx.execute()
-
-    return response
-  }
-}
-
-export class LLMVariable extends BaseClient {
-  private readonly _id?: LLMVariableID = undefined
-  private readonly _hash?: string = undefined
-  private readonly _name?: string = undefined
-  private readonly _typeName?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: LLMVariableID,
-    _hash?: string,
-    _name?: string,
-    _typeName?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._hash = _hash
-    this._name = _name
-    this._typeName = _typeName
-  }
-
-  /**
-   * A unique identifier for this LLMVariable.
-   */
-  id = async (): Promise<LLMVariableID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<LLMVariableID> = await ctx.execute()
-
-    return response
-  }
-  hash = async (): Promise<string> => {
-    if (this._hash) {
-      return this._hash
-    }
-
-    const ctx = this._ctx.select("hash")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-  typeName = async (): Promise<string> => {
-    if (this._typeName) {
-      return this._typeName
-    }
-
-    const ctx = this._ctx.select("typeName")
-
-    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -8117,6 +7481,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a new environment
+   */
+  env = (): Env => {
+    const ctx = this._ctx.select("env")
+    return new Env(ctx)
+  }
+
+  /**
    * Create a new error.
    * @param message A brief description of the error.
    */
@@ -8186,6 +7558,14 @@ export class Client extends BaseClient {
   llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
+  }
+
+  /**
+   * Load a Binding from its ID.
+   */
+  loadBindingFromID = (id: BindingID): Binding => {
+    const ctx = this._ctx.select("loadBindingFromID", { id })
+    return new Binding(ctx)
   }
 
   /**
@@ -8268,6 +7648,14 @@ export class Client extends BaseClient {
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a Env from its ID.
+   */
+  loadEnvFromID = (id: EnvID): Env => {
+    const ctx = this._ctx.select("loadEnvFromID", { id })
+    return new Env(ctx)
   }
 
   /**
@@ -8406,14 +7794,6 @@ export class Client extends BaseClient {
   loadLLMTokenUsageFromID = (id: LLMTokenUsageID): LLMTokenUsage => {
     const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
     return new LLMTokenUsage(ctx)
-  }
-
-  /**
-   * Load a LLMVariable from its ID.
-   */
-  loadLLMVariableFromID = (id: LLMVariableID): LLMVariable => {
-    const ctx = this._ctx.select("loadLLMVariableFromID", { id })
-    return new LLMVariable(ctx)
   }
 
   /**
