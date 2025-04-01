@@ -22,7 +22,7 @@ class CodingAgent
         $workspace = dag()->toyWorkspace();
         $environment = dag()->env()
             ->withToyWorkspaceInput("before", $workspace, "tools to complete the assignment")
-            ->withStringInput("assignment", $assignment, "the assignment to complete)
+            ->withStringInput("assignment", $assignment, "the assignment to complete")
             ->withToyWorkspaceOutput("after", "the completed assignment");
         return dag()
             ->llm()
