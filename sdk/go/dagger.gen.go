@@ -387,15 +387,6 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	}
 }
 
-// Retrieve the binding value, as type SDKConfig
-func (r *Binding) AsSDKConfig() *SDKConfig {
-	q := r.query.Select("asSDKConfig")
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Secret
 func (r *Binding) AsSecret() *Secret {
 	q := r.query.Select("asSecret")
@@ -419,15 +410,6 @@ func (r *Binding) AsSocket() *Socket {
 	q := r.query.Select("asSocket")
 
 	return &Socket{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type Terminal
-func (r *Binding) AsTerminal() *Terminal {
-	q := r.query.Select("asTerminal")
-
-	return &Terminal{
 		query: q,
 	}
 }
@@ -498,7 +480,7 @@ func (r *Binding) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding type name
+// The binding type
 func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	if r.typeName != nil {
 		return *r.typeName, nil
@@ -3630,49 +3612,6 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
-// retrieve a binding by name
-func (r *Env) Binding(name string) *Binding {
-	q := r.query.Select("binding")
-	q = q.Arg("name", name)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// return all bindings in the environment
-func (r *Env) Bindings(ctx context.Context) ([]Binding, error) {
-	q := r.query.Select("bindings")
-
-	q = q.Select("id")
-
-	type bindings struct {
-		Id BindingID
-	}
-
-	convert := func(fields []bindings) []Binding {
-		out := []Binding{}
-
-		for i := range fields {
-			val := Binding{id: &fields[i].Id}
-			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []bindings
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -3713,12 +3652,99 @@ func (r *Env) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// retrieve an input value by name
+func (r *Env) Input(name string) *Binding {
+	q := r.query.Select("input")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all input values for the environment
+func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("inputs")
+
+	q = q.Select("id")
+
+	type inputs struct {
+		Id BindingID
+	}
+
+	convert := func(fields []inputs) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []inputs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// retrieve an output value by name
+func (r *Env) Output(name string) *Binding {
+	q := r.query.Select("output")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all output values for the environment
+func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("outputs")
+
+	q = q.Select("id")
+
+	type outputs struct {
+		Id BindingID
+	}
+
+	convert := func(fields []outputs) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []outputs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Create or update a binding of type CacheVolume in the environment
-func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume) *Env {
+func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withCacheVolumeInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3737,11 +3763,12 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Container in the environment
-func (r *Env) WithContainerInput(name string, value *Container) *Env {
+func (r *Env) WithContainerInput(name string, value *Container, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withContainerInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3760,11 +3787,12 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Directory in the environment
-func (r *Env) WithDirectoryInput(name string, value *Directory) *Env {
+func (r *Env) WithDirectoryInput(name string, value *Directory, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withDirectoryInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3783,11 +3811,12 @@ func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Env in the environment
-func (r *Env) WithEnvInput(name string, value *Env) *Env {
+func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withEnvInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3806,11 +3835,12 @@ func (r *Env) WithEnvOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type File in the environment
-func (r *Env) WithFileInput(name string, value *File) *Env {
+func (r *Env) WithFileInput(name string, value *File, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withFileInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3829,11 +3859,12 @@ func (r *Env) WithFileOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type GitRef in the environment
-func (r *Env) WithGitRefInput(name string, value *GitRef) *Env {
+func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRefInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3852,11 +3883,12 @@ func (r *Env) WithGitRefOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type GitRepository in the environment
-func (r *Env) WithGitRepositoryInput(name string, value *GitRepository) *Env {
+func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRepositoryInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3875,11 +3907,12 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM) *Env {
+func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withLLMInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3898,11 +3931,12 @@ func (r *Env) WithLLMOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type ModuleConfigClient in the environment
-func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient) *Env {
+func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleConfigClientInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3921,11 +3955,12 @@ func (r *Env) WithModuleConfigClientOutput(name string, description string) *Env
 }
 
 // Create or update a binding of type Module in the environment
-func (r *Env) WithModuleInput(name string, value *Module) *Env {
+func (r *Env) WithModuleInput(name string, value *Module, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3944,11 +3979,12 @@ func (r *Env) WithModuleOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type ModuleSource in the environment
-func (r *Env) WithModuleSourceInput(name string, value *ModuleSource) *Env {
+func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleSourceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -3966,35 +4002,13 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type SDKConfig in the environment
-func (r *Env) WithSDKConfigInput(name string, value *SDKConfig) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withSDKConfigInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired SDKConfig output to be assigned in the environment
-func (r *Env) WithSDKConfigOutput(name string, description string) *Env {
-	q := r.query.Select("withSDKConfigOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type Secret in the environment
-func (r *Env) WithSecretInput(name string, value *Secret) *Env {
+func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withSecretInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -4013,11 +4027,12 @@ func (r *Env) WithSecretOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Service in the environment
-func (r *Env) WithServiceInput(name string, value *Service) *Env {
+func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withServiceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -4036,11 +4051,12 @@ func (r *Env) WithServiceOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Socket in the environment
-func (r *Env) WithSocketInput(name string, value *Socket) *Env {
+func (r *Env) WithSocketInput(name string, value *Socket, description string) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withSocketInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -4058,33 +4074,11 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type string in the environment
-func (r *Env) WithStringInput(name string, value string) *Env {
+// Create or update an input value of type string
+func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Terminal in the environment
-func (r *Env) WithTerminalInput(name string, value *Terminal) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withTerminalInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Terminal output to be assigned in the environment
-func (r *Env) WithTerminalOutput(name string, description string) *Env {
-	q := r.query.Select("withTerminalOutput")
-	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{

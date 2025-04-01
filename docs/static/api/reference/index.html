@@ -36,7 +36,7 @@
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
               <li><a href="#query-engine">engine</a></li>
-              <li><a href="#query-environment">environment</a></li>
+              <li><a href="#query-env">env</a></li>
               <li><a href="#query-error">error</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
@@ -55,8 +55,8 @@
               <li><a href="#query-loadEngineFromID">loadEngineFromID</a></li>
               <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
               <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
+              <li><a href="#query-loadEnvFromID">loadEnvFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
-              <li><a href="#query-loadEnvironmentFromID">loadEnvironmentFromID</a></li>
               <li><a href="#query-loadErrorFromID">loadErrorFromID</a></li>
               <li><a href="#query-loadErrorValueFromID">loadErrorValueFromID</a></li>
               <li><a href="#query-loadFieldTypeDefFromID">loadFieldTypeDefFromID</a></li>
@@ -126,10 +126,10 @@
               <li><a href="#definition-EnumTypeDefID">EnumTypeDefID</a></li>
               <li><a href="#definition-EnumValueTypeDef">EnumValueTypeDef</a></li>
               <li><a href="#definition-EnumValueTypeDefID">EnumValueTypeDefID</a></li>
+              <li><a href="#definition-Env">Env</a></li>
+              <li><a href="#definition-EnvID">EnvID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
-              <li><a href="#definition-Environment">Environment</a></li>
-              <li><a href="#definition-EnvironmentID">EnvironmentID</a></li>
               <li><a href="#definition-Error">Error</a></li>
               <li><a href="#definition-ErrorID">ErrorID</a></li>
               <li><a href="#definition-ErrorValue">ErrorValue</a></li>
@@ -567,12 +567,12 @@
               </div>
             </div>
           </section>
-          <section id="query-environment" class="operation operation-query" data-traverse-target="query-environment">
+          <section id="query-env" class="operation operation-query" data-traverse-target="query-env">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
             </div>
             <h2 class="operation-heading ">
-              <code>environment</code>
+              <code>env</code>
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
@@ -587,7 +587,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-Environment"><code>Environment!</code></a>
+                    <a href="#definition-Env"><code>Env!</code></a>
                   </p>
                 </div>
               </div>
@@ -1615,6 +1615,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadEnvFromID" class="operation operation-query" data-traverse-target="query-loadEnvFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEnvFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Env from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Env"><code>Env!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadEnvVariableFromID" class="operation operation-query" data-traverse-target="query-loadEnvVariableFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1651,59 +1704,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnvVariableID"><code>EnvVariableID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadEnvironmentFromID" class="operation operation-query" data-traverse-target="query-loadEnvironmentFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadEnvironmentFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a Environment from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Environment"><code>Environment!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnvironmentID"><code>EnvironmentID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3804,60 +3804,16 @@
                         <td> Retrieve the binding value, as type Container </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asCurrentModule" href="#Binding-asCurrentModule"><code>asCurrentModule</code></a> - <span class="property-type"><a href="#definition-CurrentModule"><code>CurrentModule!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type CurrentModule </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asDirectory" href="#Binding-asDirectory"><code>asDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Directory </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asEnumTypeDef" href="#Binding-asEnumTypeDef"><code>asEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type EnumTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asEnumValueTypeDef" href="#Binding-asEnumValueTypeDef"><code>asEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type EnumValueTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asEnvironment" href="#Binding-asEnvironment"><code>asEnvironment</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type Environment </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asError" href="#Binding-asError"><code>asError</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type Error </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asErrorValue" href="#Binding-asErrorValue"><code>asErrorValue</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>ErrorValue!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type ErrorValue </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asFieldTypeDef" href="#Binding-asFieldTypeDef"><code>asFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-FieldTypeDef"><code>FieldTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type FieldTypeDef </td>
+                        <td data-property-name=""><a class="property-name" id="Binding-asEnv" href="#Binding-asEnv"><code>asEnv</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Env </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asFile" href="#Binding-asFile"><code>asFile</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td> Retrieve the binding value, as type File </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asFunction" href="#Binding-asFunction"><code>asFunction</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type Function </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asFunctionArg" href="#Binding-asFunctionArg"><code>asFunctionArg</code></a> - <span class="property-type"><a href="#definition-FunctionArg"><code>FunctionArg!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type FunctionArg </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asFunctionCall" href="#Binding-asFunctionCall"><code>asFunctionCall</code></a> - <span class="property-type"><a href="#definition-FunctionCall"><code>FunctionCall!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type FunctionCall </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asFunctionCallArgValue" href="#Binding-asFunctionCallArgValue"><code>asFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type FunctionCallArgValue </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asGeneratedCode" href="#Binding-asGeneratedCode"><code>asGeneratedCode</code></a> - <span class="property-type"><a href="#definition-GeneratedCode"><code>GeneratedCode!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type GeneratedCode </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGitRef" href="#Binding-asGitRef"><code>asGitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
@@ -3868,24 +3824,8 @@
                         <td> Retrieve the binding value, as type GitRepository </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asInputTypeDef" href="#Binding-asInputTypeDef"><code>asInputTypeDef</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type InputTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asInterfaceTypeDef" href="#Binding-asInterfaceTypeDef"><code>asInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type InterfaceTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asListTypeDef" href="#Binding-asListTypeDef"><code>asListTypeDef</code></a> - <span class="property-type"><a href="#definition-ListTypeDef"><code>ListTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type ListTypeDef </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asLLM" href="#Binding-asLLM"><code>asLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> Retrieve the binding value, as type LLM </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLMTokenUsage" href="#Binding-asLLMTokenUsage"><code>asLLMTokenUsage</code></a> - <span class="property-type"><a href="#definition-LLMTokenUsage"><code>LLMTokenUsage!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLMTokenUsage </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModule" href="#Binding-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
@@ -3900,18 +3840,6 @@
                         <td> Retrieve the binding value, as type ModuleSource </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asObjectTypeDef" href="#Binding-asObjectTypeDef"><code>asObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type ObjectTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asScalarTypeDef" href="#Binding-asScalarTypeDef"><code>asScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type ScalarTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asSDKConfig" href="#Binding-asSDKConfig"><code>asSDKConfig</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
-                        <td> Retrieve the binding value, as type SDKConfig </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asSecret" href="#Binding-asSecret"><code>asSecret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Secret </td>
                       </tr>
@@ -3922,18 +3850,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asSocket" href="#Binding-asSocket"><code>asSocket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Socket </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asSourceMap" href="#Binding-asSourceMap"><code>asSourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type SourceMap </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asTerminal" href="#Binding-asTerminal"><code>asTerminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type Terminal </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asTypeDef" href="#Binding-asTypeDef"><code>asTypeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type TypeDef </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -3949,7 +3865,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-typeName" href="#Binding-typeName"><code>typeName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The binding type name </td>
+                        <td> The binding type </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6563,6 +6479,755 @@
               </div>
             </div>
           </section>
+          <section id="definition-Env" class="definition definition-object" data-traverse-target="definition-Env">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Env</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-id" href="#Env-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span> </td>
+                        <td> A unique identifier for this Env. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-input" href="#Env-input"><code>input</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
+                        <td> retrieve an input value by name </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-inputs" href="#Env-inputs"><code>inputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
+                        <td> return all input values for the environment </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-output" href="#Env-output"><code>output</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
+                        <td> retrieve an output value by name </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-outputs" href="#Env-outputs"><code>outputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
+                        <td> return all output values for the environment </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeInput" href="#Env-withCacheVolumeInput"><code>withCacheVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type CacheVolume in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
+                                <p>The CacheVolume value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeOutput" href="#Env-withCacheVolumeOutput"><code>withCacheVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired CacheVolume output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withContainerInput" href="#Env-withContainerInput"><code>withContainerInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Container in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
+                                <p>The Container value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withContainerOutput" href="#Env-withContainerOutput"><code>withContainerOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Container output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDirectoryInput" href="#Env-withDirectoryInput"><code>withDirectoryInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Directory in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The Directory value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withDirectoryOutput" href="#Env-withDirectoryOutput"><code>withDirectoryOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Directory output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withEnvInput" href="#Env-withEnvInput"><code>withEnvInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Env in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span></h6>
+                                <p>The Env value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withEnvOutput" href="#Env-withEnvOutput"><code>withEnvOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Env output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withFileInput" href="#Env-withFileInput"><code>withFileInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type File in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The File value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withFileOutput" href="#Env-withFileOutput"><code>withFileOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired File output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitRefInput" href="#Env-withGitRefInput"><code>withGitRefInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type GitRef in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The GitRef value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitRefOutput" href="#Env-withGitRefOutput"><code>withGitRefOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired GitRef output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitRepositoryInput" href="#Env-withGitRepositoryInput"><code>withGitRepositoryInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type GitRepository in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
+                                <p>The GitRepository value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitRepositoryOutput" href="#Env-withGitRepositoryOutput"><code>withGitRepositoryOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired GitRepository output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withLLMInput" href="#Env-withLLMInput"><code>withLLMInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type LLM in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
+                                <p>The LLM value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withLLMOutput" href="#Env-withLLMOutput"><code>withLLMOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired LLM output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleConfigClientInput" href="#Env-withModuleConfigClientInput"><code>withModuleConfigClientInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type ModuleConfigClient in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
+                                <p>The ModuleConfigClient value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleConfigClientOutput" href="#Env-withModuleConfigClientOutput"><code>withModuleConfigClientOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired ModuleConfigClient output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleInput" href="#Env-withModuleInput"><code>withModuleInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Module in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                                <p>The Module value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleOutput" href="#Env-withModuleOutput"><code>withModuleOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Module output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleSourceInput" href="#Env-withModuleSourceInput"><code>withModuleSourceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type ModuleSource in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The ModuleSource value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withModuleSourceOutput" href="#Env-withModuleSourceOutput"><code>withModuleSourceOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired ModuleSource output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSecretInput" href="#Env-withSecretInput"><code>withSecretInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Secret in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>The Secret value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSecretOutput" href="#Env-withSecretOutput"><code>withSecretOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Secret output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withServiceInput" href="#Env-withServiceInput"><code>withServiceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Service in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The Service value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withServiceOutput" href="#Env-withServiceOutput"><code>withServiceOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Service output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSocketInput" href="#Env-withSocketInput"><code>withSocketInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Socket in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
+                                <p>The Socket value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSocketOutput" href="#Env-withSocketOutput"><code>withSocketOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Socket output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withStringInput" href="#Env-withStringInput"><code>withStringInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update an input value of type string </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The string value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnvID" class="definition definition-scalar" data-traverse-target="definition-EnvID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnvID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EnvID</code> scalar type represents an identifier for an object of type Env.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-EnvVariable" class="definition definition-object" data-traverse-target="definition-EnvVariable">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -6612,823 +7277,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>EnvVariableID</code> scalar type represents an identifier for an object of type EnvVariable.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-Environment" class="definition definition-object" data-traverse-target="definition-Environment">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">Environment</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-binding" href="#Environment-binding"><code>binding</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
-                        <td> retrieve a binding by name </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Environment-bindings" href="#Environment-bindings"><code>bindings</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
-                        <td> return all bindings in the environment </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Environment-id" href="#Environment-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvironmentID"><code>EnvironmentID!</code></a></span> </td>
-                        <td> A unique identifier for this Environment. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withCacheVolumeBinding" href="#Environment-withCacheVolumeBinding"><code>withCacheVolumeBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type CacheVolume in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
-                                <p>The CacheVolume value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withContainerBinding" href="#Environment-withContainerBinding"><code>withContainerBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Container in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
-                                <p>The Container value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withCurrentModuleBinding" href="#Environment-withCurrentModuleBinding"><code>withCurrentModuleBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type CurrentModule in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span></h6>
-                                <p>The CurrentModule value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withDirectoryBinding" href="#Environment-withDirectoryBinding"><code>withDirectoryBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Directory in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>The Directory value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withEnumTypeDefBinding" href="#Environment-withEnumTypeDefBinding"><code>withEnumTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type EnumTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span></h6>
-                                <p>The EnumTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withEnumValueTypeDefBinding" href="#Environment-withEnumValueTypeDefBinding"><code>withEnumValueTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type EnumValueTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span></h6>
-                                <p>The EnumValueTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withEnvironmentBinding" href="#Environment-withEnvironmentBinding"><code>withEnvironmentBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Environment in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnvironmentID"><code>EnvironmentID!</code></a></span></h6>
-                                <p>The Environment value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withErrorBinding" href="#Environment-withErrorBinding"><code>withErrorBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Error in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
-                                <p>The Error value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withErrorValueBinding" href="#Environment-withErrorValueBinding"><code>withErrorValueBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ErrorValue in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span></h6>
-                                <p>The ErrorValue value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFieldTypeDefBinding" href="#Environment-withFieldTypeDefBinding"><code>withFieldTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type FieldTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FieldTypeDefID"><code>FieldTypeDefID!</code></a></span></h6>
-                                <p>The FieldTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFileBinding" href="#Environment-withFileBinding"><code>withFileBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type File in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
-                                <p>The File value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFunctionArgBinding" href="#Environment-withFunctionArgBinding"><code>withFunctionArgBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type FunctionArg in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span></h6>
-                                <p>The FunctionArg value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFunctionBinding" href="#Environment-withFunctionBinding"><code>withFunctionBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Function in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
-                                <p>The Function value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFunctionCallArgValueBinding" href="#Environment-withFunctionCallArgValueBinding"><code>withFunctionCallArgValueBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type FunctionCallArgValue in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallArgValueID"><code>FunctionCallArgValueID!</code></a></span></h6>
-                                <p>The FunctionCallArgValue value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withFunctionCallBinding" href="#Environment-withFunctionCallBinding"><code>withFunctionCallBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type FunctionCall in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallID"><code>FunctionCallID!</code></a></span></h6>
-                                <p>The FunctionCall value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withGeneratedCodeBinding" href="#Environment-withGeneratedCodeBinding"><code>withGeneratedCodeBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type GeneratedCode in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratedCodeID"><code>GeneratedCodeID!</code></a></span></h6>
-                                <p>The GeneratedCode value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withGitRefBinding" href="#Environment-withGitRefBinding"><code>withGitRefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type GitRef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
-                                <p>The GitRef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withGitRepositoryBinding" href="#Environment-withGitRepositoryBinding"><code>withGitRepositoryBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type GitRepository in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
-                                <p>The GitRepository value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withInputTypeDefBinding" href="#Environment-withInputTypeDefBinding"><code>withInputTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type InputTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InputTypeDefID"><code>InputTypeDefID!</code></a></span></h6>
-                                <p>The InputTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withInterfaceTypeDefBinding" href="#Environment-withInterfaceTypeDefBinding"><code>withInterfaceTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type InterfaceTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span></h6>
-                                <p>The InterfaceTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withListTypeDefBinding" href="#Environment-withListTypeDefBinding"><code>withListTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ListTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span></h6>
-                                <p>The ListTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withLLMBinding" href="#Environment-withLLMBinding"><code>withLLMBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type LLM in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
-                                <p>The LLM value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withLLMTokenUsageBinding" href="#Environment-withLLMTokenUsageBinding"><code>withLLMTokenUsageBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type LLMTokenUsage in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMTokenUsageID"><code>LLMTokenUsageID!</code></a></span></h6>
-                                <p>The LLMTokenUsage value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withModuleBinding" href="#Environment-withModuleBinding"><code>withModuleBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Module in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
-                                <p>The Module value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withModuleConfigClientBinding" href="#Environment-withModuleConfigClientBinding"><code>withModuleConfigClientBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ModuleConfigClient in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
-                                <p>The ModuleConfigClient value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withModuleSourceBinding" href="#Environment-withModuleSourceBinding"><code>withModuleSourceBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ModuleSource in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
-                                <p>The ModuleSource value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withObjectTypeDefBinding" href="#Environment-withObjectTypeDefBinding"><code>withObjectTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ObjectTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ObjectTypeDefID"><code>ObjectTypeDefID!</code></a></span></h6>
-                                <p>The ObjectTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withScalarTypeDefBinding" href="#Environment-withScalarTypeDefBinding"><code>withScalarTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type ScalarTypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span></h6>
-                                <p>The ScalarTypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withSDKConfigBinding" href="#Environment-withSDKConfigBinding"><code>withSDKConfigBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type SDKConfig in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span></h6>
-                                <p>The SDKConfig value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withSecretBinding" href="#Environment-withSecretBinding"><code>withSecretBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Secret in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>The Secret value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withServiceBinding" href="#Environment-withServiceBinding"><code>withServiceBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Service in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
-                                <p>The Service value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withSocketBinding" href="#Environment-withSocketBinding"><code>withSocketBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Socket in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
-                                <p>The Socket value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withSourceMapBinding" href="#Environment-withSourceMapBinding"><code>withSourceMapBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type SourceMap in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
-                                <p>The SourceMap value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withStringBinding" href="#Environment-withStringBinding"><code>withStringBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type string in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The string value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withTerminalBinding" href="#Environment-withTerminalBinding"><code>withTerminalBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type Terminal in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span></h6>
-                                <p>The Terminal value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withTypeDefBinding" href="#Environment-withTypeDefBinding"><code>withTypeDefBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type TypeDef in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
-                                <p>The TypeDef value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-EnvironmentID" class="definition definition-scalar" data-traverse-target="definition-EnvironmentID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">EnvironmentID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>EnvironmentID</code> scalar type represents an identifier for an object of type Environment.</p>
                 </div>
               </div>
             </div>
@@ -8910,12 +8758,24 @@
                           </div>
                         </td>
                       </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-currentType" href="#LLM-currentType"><code>currentType</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-bindResult" href="#LLM-bindResult"><code>bindResult</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding</code></a></span> </td>
                         <td> returns the type of the current state </td>
                       </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-environment" href="#LLM-environment"><code>environment</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="LLM-env" href="#LLM-env"><code>env</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> return the LLM's current environment </td>
                       </tr>
                       <tr>
@@ -8959,7 +8819,7 @@
                         <td> print documentation for available tools </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="LLM-withEnvironment" href="#LLM-withEnvironment"><code>withEnvironment</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="LLM-withEnv" href="#LLM-withEnv"><code>withEnv</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> allow the LLM to interact with an environment via MCP </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -8968,7 +8828,7 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>environment</code></span> - <span class="property-type"><a href="#definition-EnvironmentID"><code>EnvironmentID!</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>env</code></span> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span></h6>
                               </div>
                             </div>
                           </div>

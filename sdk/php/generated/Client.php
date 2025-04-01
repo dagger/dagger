@@ -99,10 +99,10 @@ class Client extends Client\AbstractClient
     /**
      * Initialize a new environment
      */
-    public function environment(): Environment
+    public function env(): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('environment');
-        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -311,6 +311,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Env from its ID.
+     */
+    public function loadEnvFromID(EnvId|Env $id): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a EnvVariable from its ID.
      */
     public function loadEnvVariableFromID(EnvVariableId|EnvVariable $id): EnvVariable
@@ -318,16 +328,6 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvVariableFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnvVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a Environment from its ID.
-     */
-    public function loadEnvironmentFromID(EnvironmentId|Environment $id): Environment
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvironmentFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

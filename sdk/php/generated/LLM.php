@@ -23,19 +23,20 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * returns the type of the current state
      */
-    public function currentType(): string
+    public function bindResult(string $name): Binding
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentType');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'currentType');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('bindResult');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * return the LLM's current environment
      */
-    public function environment(): Environment
+    public function env(): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('environment');
-        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -131,10 +132,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * allow the LLM to interact with an environment via MCP
      */
-    public function withEnvironment(EnvironmentId|Environment $environment): LLM
+    public function withEnv(EnvId|Env $env): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvironment');
-        $innerQueryBuilder->setArgument('environment', $environment);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
+        $innerQueryBuilder->setArgument('env', $env);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

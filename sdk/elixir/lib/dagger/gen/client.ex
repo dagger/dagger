@@ -124,12 +124,12 @@ defmodule Dagger.Client do
   end
 
   @doc "Initialize a new environment"
-  @spec environment(t()) :: Dagger.Environment.t()
-  def environment(%__MODULE__{} = client) do
+  @spec env(t()) :: Dagger.Env.t()
+  def env(%__MODULE__{} = client) do
     query_builder =
-      client.query_builder |> QB.select("environment")
+      client.query_builder |> QB.select("env")
 
-    %Dagger.Environment{
+    %Dagger.Env{
       query_builder: query_builder,
       client: client.client
     }
@@ -378,6 +378,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a Env from its ID."
+  @spec load_env_from_id(t(), Dagger.EnvID.t()) :: Dagger.Env.t()
+  def load_env_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a EnvVariable from its ID."
   @spec load_env_variable_from_id(t(), Dagger.EnvVariableID.t()) :: Dagger.EnvVariable.t()
   def load_env_variable_from_id(%__MODULE__{} = client, id) do
@@ -385,18 +397,6 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnvVariableFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnvVariable{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a Environment from its ID."
-  @spec load_environment_from_id(t(), Dagger.EnvironmentID.t()) :: Dagger.Environment.t()
-  def load_environment_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadEnvironmentFromID") |> QB.put_arg("id", id)
-
-    %Dagger.Environment{
       query_builder: query_builder,
       client: client.client
     }

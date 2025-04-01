@@ -24,21 +24,24 @@ defmodule Dagger.LLM do
   end
 
   @doc "returns the type of the current state"
-  @spec current_type(t()) :: {:ok, String.t() | nil} | {:error, term()}
-  def current_type(%__MODULE__{} = llm) do
+  @spec bind_result(t(), String.t()) :: Dagger.Binding.t() | nil
+  def bind_result(%__MODULE__{} = llm, name) do
     query_builder =
-      llm.query_builder |> QB.select("currentType")
+      llm.query_builder |> QB.select("bindResult") |> QB.put_arg("name", name)
 
-    Client.execute(llm.client, query_builder)
+    %Dagger.Binding{
+      query_builder: query_builder,
+      client: llm.client
+    }
   end
 
   @doc "return the LLM's current environment"
-  @spec environment(t()) :: Dagger.Environment.t()
-  def environment(%__MODULE__{} = llm) do
+  @spec env(t()) :: Dagger.Env.t()
+  def env(%__MODULE__{} = llm) do
     query_builder =
-      llm.query_builder |> QB.select("environment")
+      llm.query_builder |> QB.select("env")
 
-    %Dagger.Environment{
+    %Dagger.Env{
       query_builder: query_builder,
       client: llm.client
     }
@@ -150,12 +153,10 @@ defmodule Dagger.LLM do
   end
 
   @doc "allow the LLM to interact with an environment via MCP"
-  @spec with_environment(t(), Dagger.Environment.t()) :: Dagger.LLM.t()
-  def with_environment(%__MODULE__{} = llm, environment) do
+  @spec with_env(t(), Dagger.Env.t()) :: Dagger.LLM.t()
+  def with_env(%__MODULE__{} = llm, env) do
     query_builder =
-      llm.query_builder
-      |> QB.select("withEnvironment")
-      |> QB.put_arg("environment", Dagger.ID.id!(environment))
+      llm.query_builder |> QB.select("withEnv") |> QB.put_arg("env", Dagger.ID.id!(env))
 
     %Dagger.LLM{
       query_builder: query_builder,

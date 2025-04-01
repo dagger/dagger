@@ -26,47 +26,14 @@ type Binding {
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
 
-  """Retrieve the binding value, as type CurrentModule"""
-  asCurrentModule: CurrentModule!
-
   """Retrieve the binding value, as type Directory"""
   asDirectory: Directory!
 
-  """Retrieve the binding value, as type EnumTypeDef"""
-  asEnumTypeDef: EnumTypeDef!
-
-  """Retrieve the binding value, as type EnumValueTypeDef"""
-  asEnumValueTypeDef: EnumValueTypeDef!
-
-  """Retrieve the binding value, as type Environment"""
-  asEnvironment: Environment!
-
-  """Retrieve the binding value, as type Error"""
-  asError: Error!
-
-  """Retrieve the binding value, as type ErrorValue"""
-  asErrorValue: ErrorValue!
-
-  """Retrieve the binding value, as type FieldTypeDef"""
-  asFieldTypeDef: FieldTypeDef!
+  """Retrieve the binding value, as type Env"""
+  asEnv: Env!
 
   """Retrieve the binding value, as type File"""
   asFile: File!
-
-  """Retrieve the binding value, as type Function"""
-  asFunction: Function!
-
-  """Retrieve the binding value, as type FunctionArg"""
-  asFunctionArg: FunctionArg!
-
-  """Retrieve the binding value, as type FunctionCall"""
-  asFunctionCall: FunctionCall!
-
-  """Retrieve the binding value, as type FunctionCallArgValue"""
-  asFunctionCallArgValue: FunctionCallArgValue!
-
-  """Retrieve the binding value, as type GeneratedCode"""
-  asGeneratedCode: GeneratedCode!
 
   """Retrieve the binding value, as type GitRef"""
   asGitRef: GitRef!
@@ -74,20 +41,8 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
-  """Retrieve the binding value, as type InputTypeDef"""
-  asInputTypeDef: InputTypeDef!
-
-  """Retrieve the binding value, as type InterfaceTypeDef"""
-  asInterfaceTypeDef: InterfaceTypeDef!
-
-  """Retrieve the binding value, as type ListTypeDef"""
-  asListTypeDef: ListTypeDef!
-
   """Retrieve the binding value, as type LLM"""
   asLLM: LLM!
-
-  """Retrieve the binding value, as type LLMTokenUsage"""
-  asLLMTokenUsage: LLMTokenUsage!
 
   """Retrieve the binding value, as type Module"""
   asModule: Module!
@@ -98,15 +53,6 @@ type Binding {
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
 
-  """Retrieve the binding value, as type ObjectTypeDef"""
-  asObjectTypeDef: ObjectTypeDef!
-
-  """Retrieve the binding value, as type ScalarTypeDef"""
-  asScalarTypeDef: ScalarTypeDef!
-
-  """Retrieve the binding value, as type SDKConfig"""
-  asSDKConfig: SDKConfig
-
   """Retrieve the binding value, as type Secret"""
   asSecret: Secret!
 
@@ -115,15 +61,6 @@ type Binding {
 
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
-
-  """Retrieve the binding value, as type SourceMap"""
-  asSourceMap: SourceMap!
-
-  """Retrieve the binding value, as type Terminal"""
-  asTerminal: Terminal!
-
-  """Retrieve the binding value, as type TypeDef"""
-  asTypeDef: TypeDef!
 
   """The digest of the binding value"""
   digest: String!
@@ -134,7 +71,7 @@ type Binding {
   """The binding name"""
   name: String!
 
-  """The binding type name"""
+  """The binding type"""
   typeName: String!
 }
 
@@ -1712,349 +1649,340 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 """
 scalar EnumValueTypeDefID
 
-type Environment {
-  """retrieve a binding by name"""
-  binding(name: String!): Binding!
+type Env {
+  """A unique identifier for this Env."""
+  id: EnvID!
 
-  """return all bindings in the environment"""
-  bindings: [Binding!]!
+  """retrieve an input value by name"""
+  input(name: String!): Binding!
 
-  """A unique identifier for this Environment."""
-  id: EnvironmentID!
+  """return all input values for the environment"""
+  inputs: [Binding!]!
+
+  """retrieve an output value by name"""
+  output(name: String!): Binding!
+
+  """return all output values for the environment"""
+  outputs: [Binding!]!
 
   """Create or update a binding of type CacheVolume in the environment"""
-  withCacheVolumeBinding(
+  withCacheVolumeInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The CacheVolume value to assign to the binding"""
     value: CacheVolumeID!
-  ): Environment!
+  ): Env!
+
+  """Declare a desired CacheVolume output to be assigned in the environment"""
+  withCacheVolumeOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
 
   """Create or update a binding of type Container in the environment"""
-  withContainerBinding(
+  withContainerInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The Container value to assign to the binding"""
     value: ContainerID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type CurrentModule in the environment"""
-  withCurrentModuleBinding(
+  """Declare a desired Container output to be assigned in the environment"""
+  withContainerOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The CurrentModule value to assign to the binding"""
-    value: CurrentModuleID!
-  ): Environment!
+  ): Env!
 
   """Create or update a binding of type Directory in the environment"""
-  withDirectoryBinding(
+  withDirectoryInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The Directory value to assign to the binding"""
     value: DirectoryID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type EnumTypeDef in the environment"""
-  withEnumTypeDefBinding(
+  """Declare a desired Directory output to be assigned in the environment"""
+  withDirectoryOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Env in the environment"""
+  withEnvInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
-    """The EnumTypeDef value to assign to the binding"""
-    value: EnumTypeDefID!
-  ): Environment!
+    """The Env value to assign to the binding"""
+    value: EnvID!
+  ): Env!
 
-  """Create or update a binding of type EnumValueTypeDef in the environment"""
-  withEnumValueTypeDefBinding(
+  """Declare a desired Env output to be assigned in the environment"""
+  withEnvOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The EnumValueTypeDef value to assign to the binding"""
-    value: EnumValueTypeDefID!
-  ): Environment!
-
-  """Create or update a binding of type Environment in the environment"""
-  withEnvironmentBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The Environment value to assign to the binding"""
-    value: EnvironmentID!
-  ): Environment!
-
-  """Create or update a binding of type Error in the environment"""
-  withErrorBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The Error value to assign to the binding"""
-    value: ErrorID!
-  ): Environment!
-
-  """Create or update a binding of type ErrorValue in the environment"""
-  withErrorValueBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The ErrorValue value to assign to the binding"""
-    value: ErrorValueID!
-  ): Environment!
-
-  """Create or update a binding of type FieldTypeDef in the environment"""
-  withFieldTypeDefBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The FieldTypeDef value to assign to the binding"""
-    value: FieldTypeDefID!
-  ): Environment!
+  ): Env!
 
   """Create or update a binding of type File in the environment"""
-  withFileBinding(
+  withFileInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The File value to assign to the binding"""
     value: FileID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type FunctionArg in the environment"""
-  withFunctionArgBinding(
+  """Declare a desired File output to be assigned in the environment"""
+  withFileOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The FunctionArg value to assign to the binding"""
-    value: FunctionArgID!
-  ): Environment!
-
-  """Create or update a binding of type Function in the environment"""
-  withFunctionBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The Function value to assign to the binding"""
-    value: FunctionID!
-  ): Environment!
-
-  """
-  Create or update a binding of type FunctionCallArgValue in the environment
-  """
-  withFunctionCallArgValueBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The FunctionCallArgValue value to assign to the binding"""
-    value: FunctionCallArgValueID!
-  ): Environment!
-
-  """Create or update a binding of type FunctionCall in the environment"""
-  withFunctionCallBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The FunctionCall value to assign to the binding"""
-    value: FunctionCallID!
-  ): Environment!
-
-  """Create or update a binding of type GeneratedCode in the environment"""
-  withGeneratedCodeBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The GeneratedCode value to assign to the binding"""
-    value: GeneratedCodeID!
-  ): Environment!
+  ): Env!
 
   """Create or update a binding of type GitRef in the environment"""
-  withGitRefBinding(
+  withGitRefInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The GitRef value to assign to the binding"""
     value: GitRefID!
-  ): Environment!
+  ): Env!
+
+  """Declare a desired GitRef output to be assigned in the environment"""
+  withGitRefOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
 
   """Create or update a binding of type GitRepository in the environment"""
-  withGitRepositoryBinding(
+  withGitRepositoryInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The GitRepository value to assign to the binding"""
     value: GitRepositoryID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type InputTypeDef in the environment"""
-  withInputTypeDefBinding(
+  """
+  Declare a desired GitRepository output to be assigned in the environment
+  """
+  withGitRepositoryOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The InputTypeDef value to assign to the binding"""
-    value: InputTypeDefID!
-  ): Environment!
-
-  """Create or update a binding of type InterfaceTypeDef in the environment"""
-  withInterfaceTypeDefBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The InterfaceTypeDef value to assign to the binding"""
-    value: InterfaceTypeDefID!
-  ): Environment!
-
-  """Create or update a binding of type ListTypeDef in the environment"""
-  withListTypeDefBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The ListTypeDef value to assign to the binding"""
-    value: ListTypeDefID!
-  ): Environment!
+  ): Env!
 
   """Create or update a binding of type LLM in the environment"""
-  withLLMBinding(
+  withLLMInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The LLM value to assign to the binding"""
     value: LLMID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type LLMTokenUsage in the environment"""
-  withLLMTokenUsageBinding(
+  """Declare a desired LLM output to be assigned in the environment"""
+  withLLMOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The LLMTokenUsage value to assign to the binding"""
-    value: LLMTokenUsageID!
-  ): Environment!
-
-  """Create or update a binding of type Module in the environment"""
-  withModuleBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The Module value to assign to the binding"""
-    value: ModuleID!
-  ): Environment!
+  ): Env!
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
   """
-  withModuleConfigClientBinding(
+  withModuleConfigClientInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The ModuleConfigClient value to assign to the binding"""
     value: ModuleConfigClientID!
-  ): Environment!
+  ): Env!
+
+  """
+  Declare a desired ModuleConfigClient output to be assigned in the environment
+  """
+  withModuleConfigClientOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Module in the environment"""
+  withModuleInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Module value to assign to the binding"""
+    value: ModuleID!
+  ): Env!
+
+  """Declare a desired Module output to be assigned in the environment"""
+  withModuleOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
 
   """Create or update a binding of type ModuleSource in the environment"""
-  withModuleSourceBinding(
+  withModuleSourceInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The ModuleSource value to assign to the binding"""
     value: ModuleSourceID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type ObjectTypeDef in the environment"""
-  withObjectTypeDefBinding(
+  """
+  Declare a desired ModuleSource output to be assigned in the environment
+  """
+  withModuleSourceOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
-
-    """The ObjectTypeDef value to assign to the binding"""
-    value: ObjectTypeDefID!
-  ): Environment!
-
-  """Create or update a binding of type ScalarTypeDef in the environment"""
-  withScalarTypeDefBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The ScalarTypeDef value to assign to the binding"""
-    value: ScalarTypeDefID!
-  ): Environment!
-
-  """Create or update a binding of type SDKConfig in the environment"""
-  withSDKConfigBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The SDKConfig value to assign to the binding"""
-    value: SDKConfigID!
-  ): Environment!
+  ): Env!
 
   """Create or update a binding of type Secret in the environment"""
-  withSecretBinding(
+  withSecretInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The Secret value to assign to the binding"""
     value: SecretID!
-  ): Environment!
+  ): Env!
+
+  """Declare a desired Secret output to be assigned in the environment"""
+  withSecretOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
 
   """Create or update a binding of type Service in the environment"""
-  withServiceBinding(
+  withServiceInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The Service value to assign to the binding"""
     value: ServiceID!
-  ): Environment!
+  ): Env!
+
+  """Declare a desired Service output to be assigned in the environment"""
+  withServiceOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
 
   """Create or update a binding of type Socket in the environment"""
-  withSocketBinding(
+  withSocketInput(
+    """The purpose of the input"""
+    description: String!
+
     """The name of the binding"""
     name: String!
 
     """The Socket value to assign to the binding"""
     value: SocketID!
-  ): Environment!
+  ): Env!
 
-  """Create or update a binding of type SourceMap in the environment"""
-  withSourceMapBinding(
+  """Declare a desired Socket output to be assigned in the environment"""
+  withSocketOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
     """The name of the binding"""
     name: String!
+  ): Env!
 
-    """The SourceMap value to assign to the binding"""
-    value: SourceMapID!
-  ): Environment!
+  """Create or update an input value of type string"""
+  withStringInput(
+    description: String!
 
-  """Create or update a binding of type string in the environment"""
-  withStringBinding(
     """The name of the binding"""
     name: String!
 
     """The string value to assign to the binding"""
     value: String!
-  ): Environment!
-
-  """Create or update a binding of type Terminal in the environment"""
-  withTerminalBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The Terminal value to assign to the binding"""
-    value: TerminalID!
-  ): Environment!
-
-  """Create or update a binding of type TypeDef in the environment"""
-  withTypeDefBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The TypeDef value to assign to the binding"""
-    value: TypeDefID!
-  ): Environment!
+  ): Env!
 }
 
 """
-The `EnvironmentID` scalar type represents an identifier for an object of type Environment.
+The `EnvID` scalar type represents an identifier for an object of type Env.
 """
-scalar EnvironmentID
+scalar EnvID
 
 """An environment variable name and value."""
 type EnvVariable {
@@ -2682,10 +2610,10 @@ type LLM {
   attempt(number: Int!): LLM!
 
   """returns the type of the current state"""
-  currentType: String
+  bindResult(name: String!): Binding
 
   """return the LLM's current environment"""
-  environment: Environment!
+  env: Env!
 
   """return the llm message history"""
   history: [String!]!
@@ -2718,7 +2646,7 @@ type LLM {
   tools: String!
 
   """allow the LLM to interact with an environment via MCP"""
-  withEnvironment(environment: EnvironmentID!): LLM!
+  withEnv(env: EnvID!): LLM!
 
   """swap out the llm model"""
   withModel(
@@ -3200,7 +3128,7 @@ type Query {
   engine: Engine!
 
   """Initialize a new environment"""
-  environment: Environment!
+  env: Env!
 
   """Create a new error."""
   error(
@@ -3302,8 +3230,8 @@ type Query {
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
 
-  """Load a Environment from its ID."""
-  loadEnvironmentFromID(id: EnvironmentID!): Environment!
+  """Load a Env from its ID."""
+  loadEnvFromID(id: EnvID!): Env!
 
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!

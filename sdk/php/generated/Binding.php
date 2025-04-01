@@ -29,15 +29,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type CurrentModule
-     */
-    public function asCurrentModule(): CurrentModule
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCurrentModule');
-        return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type Directory
      */
     public function asDirectory(): Directory
@@ -47,57 +38,12 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type EnumTypeDef
+     * Retrieve the binding value, as type Env
      */
-    public function asEnumTypeDef(): EnumTypeDef
+    public function asEnv(): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnumTypeDef');
-        return new \Dagger\EnumTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type EnumValueTypeDef
-     */
-    public function asEnumValueTypeDef(): EnumValueTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnumValueTypeDef');
-        return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type Environment
-     */
-    public function asEnvironment(): Environment
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvironment');
-        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type Error
-     */
-    public function asError(): Error
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asError');
-        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type ErrorValue
-     */
-    public function asErrorValue(): ErrorValue
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asErrorValue');
-        return new \Dagger\ErrorValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type FieldTypeDef
-     */
-    public function asFieldTypeDef(): FieldTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFieldTypeDef');
-        return new \Dagger\FieldTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnv');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -107,51 +53,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFile');
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type Function
-     */
-    public function asFunction(): Function_
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFunction');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type FunctionArg
-     */
-    public function asFunctionArg(): FunctionArg
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFunctionArg');
-        return new \Dagger\FunctionArg($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type FunctionCall
-     */
-    public function asFunctionCall(): FunctionCall
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFunctionCall');
-        return new \Dagger\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type FunctionCallArgValue
-     */
-    public function asFunctionCallArgValue(): FunctionCallArgValue
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFunctionCallArgValue');
-        return new \Dagger\FunctionCallArgValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type GeneratedCode
-     */
-    public function asGeneratedCode(): GeneratedCode
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGeneratedCode');
-        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -173,48 +74,12 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type InputTypeDef
-     */
-    public function asInputTypeDef(): InputTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInputTypeDef');
-        return new \Dagger\InputTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type InterfaceTypeDef
-     */
-    public function asInterfaceTypeDef(): InterfaceTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInterfaceTypeDef');
-        return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type LLM
      */
     public function asLLM(): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLM');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type LLMTokenUsage
-     */
-    public function asLLMTokenUsage(): LLMTokenUsage
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLMTokenUsage');
-        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type ListTypeDef
-     */
-    public function asListTypeDef(): ListTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asListTypeDef');
-        return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -245,39 +110,12 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type ObjectTypeDef
-     */
-    public function asObjectTypeDef(): ObjectTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asObjectTypeDef');
-        return new \Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type PhpSdk
      */
     public function asPhpSdk(): PhpSdk
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPhpSdk');
         return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type SDKConfig
-     */
-    public function asSDKConfig(): SDKConfig
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSDKConfig');
-        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type ScalarTypeDef
-     */
-    public function asScalarTypeDef(): ScalarTypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asScalarTypeDef');
-        return new \Dagger\ScalarTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -308,33 +146,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type SourceMap
-     */
-    public function asSourceMap(): SourceMap
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSourceMap');
-        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type Terminal
-     */
-    public function asTerminal(): Terminal
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTerminal');
-        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve the binding value, as type TypeDef
-     */
-    public function asTypeDef(): TypeDef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTypeDef');
-        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The digest of the binding value
      */
     public function digest(): string
@@ -362,7 +173,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding type name
+     * The binding type
      */
     public function typeName(): string
     {

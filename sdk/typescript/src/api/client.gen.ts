@@ -837,14 +837,14 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 /**
+ * The `EnvID` scalar type represents an identifier for an object of type Env.
+ */
+export type EnvID = string & { __EnvID: never }
+
+/**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
-
-/**
- * The `EnvironmentID` scalar type represents an identifier for an object of type Environment.
- */
-export type EnvironmentID = string & { __EnvironmentID: never }
 
 /**
  * The `ErrorID` scalar type represents an identifier for an object of type Error.
@@ -1501,14 +1501,6 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type CurrentModule
-   */
-  asCurrentModule = (): CurrentModule => {
-    const ctx = this._ctx.select("asCurrentModule")
-    return new CurrentModule(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type Directory
    */
   asDirectory = (): Directory => {
@@ -1517,51 +1509,11 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type EnumTypeDef
+   * Retrieve the binding value, as type Env
    */
-  asEnumTypeDef = (): EnumTypeDef => {
-    const ctx = this._ctx.select("asEnumTypeDef")
-    return new EnumTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type EnumValueTypeDef
-   */
-  asEnumValueTypeDef = (): EnumValueTypeDef => {
-    const ctx = this._ctx.select("asEnumValueTypeDef")
-    return new EnumValueTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Environment
-   */
-  asEnvironment = (): Environment => {
-    const ctx = this._ctx.select("asEnvironment")
-    return new Environment(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Error
-   */
-  asError = (): Error => {
-    const ctx = this._ctx.select("asError")
-    return new Error(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ErrorValue
-   */
-  asErrorValue = (): ErrorValue => {
-    const ctx = this._ctx.select("asErrorValue")
-    return new ErrorValue(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type FieldTypeDef
-   */
-  asFieldTypeDef = (): FieldTypeDef => {
-    const ctx = this._ctx.select("asFieldTypeDef")
-    return new FieldTypeDef(ctx)
+  asEnv = (): Env => {
+    const ctx = this._ctx.select("asEnv")
+    return new Env(ctx)
   }
 
   /**
@@ -1570,46 +1522,6 @@ export class Binding extends BaseClient {
   asFile = (): File => {
     const ctx = this._ctx.select("asFile")
     return new File(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Function
-   */
-  asFunction = (): Function_ => {
-    const ctx = this._ctx.select("asFunction")
-    return new Function_(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type FunctionArg
-   */
-  asFunctionArg = (): FunctionArg => {
-    const ctx = this._ctx.select("asFunctionArg")
-    return new FunctionArg(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type FunctionCall
-   */
-  asFunctionCall = (): FunctionCall => {
-    const ctx = this._ctx.select("asFunctionCall")
-    return new FunctionCall(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type FunctionCallArgValue
-   */
-  asFunctionCallArgValue = (): FunctionCallArgValue => {
-    const ctx = this._ctx.select("asFunctionCallArgValue")
-    return new FunctionCallArgValue(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GeneratedCode
-   */
-  asGeneratedCode = (): GeneratedCode => {
-    const ctx = this._ctx.select("asGeneratedCode")
-    return new GeneratedCode(ctx)
   }
 
   /**
@@ -1629,43 +1541,11 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type InputTypeDef
-   */
-  asInputTypeDef = (): InputTypeDef => {
-    const ctx = this._ctx.select("asInputTypeDef")
-    return new InputTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type InterfaceTypeDef
-   */
-  asInterfaceTypeDef = (): InterfaceTypeDef => {
-    const ctx = this._ctx.select("asInterfaceTypeDef")
-    return new InterfaceTypeDef(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type LLM
    */
   asLLM = (): LLM => {
     const ctx = this._ctx.select("asLLM")
     return new LLM(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMTokenUsage
-   */
-  asLLMTokenUsage = (): LLMTokenUsage => {
-    const ctx = this._ctx.select("asLLMTokenUsage")
-    return new LLMTokenUsage(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ListTypeDef
-   */
-  asListTypeDef = (): ListTypeDef => {
-    const ctx = this._ctx.select("asListTypeDef")
-    return new ListTypeDef(ctx)
   }
 
   /**
@@ -1693,30 +1573,6 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type ObjectTypeDef
-   */
-  asObjectTypeDef = (): ObjectTypeDef => {
-    const ctx = this._ctx.select("asObjectTypeDef")
-    return new ObjectTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SDKConfig
-   */
-  asSDKConfig = (): SDKConfig => {
-    const ctx = this._ctx.select("asSDKConfig")
-    return new SDKConfig(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ScalarTypeDef
-   */
-  asScalarTypeDef = (): ScalarTypeDef => {
-    const ctx = this._ctx.select("asScalarTypeDef")
-    return new ScalarTypeDef(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type Secret
    */
   asSecret = (): Secret => {
@@ -1738,30 +1594,6 @@ export class Binding extends BaseClient {
   asSocket = (): Socket => {
     const ctx = this._ctx.select("asSocket")
     return new Socket(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SourceMap
-   */
-  asSourceMap = (): SourceMap => {
-    const ctx = this._ctx.select("asSourceMap")
-    return new SourceMap(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Terminal
-   */
-  asTerminal = (): Terminal => {
-    const ctx = this._ctx.select("asTerminal")
-    return new Terminal(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type TypeDef
-   */
-  asTypeDef = (): TypeDef => {
-    const ctx = this._ctx.select("asTypeDef")
-    return new TypeDef(ctx)
   }
 
   /**
@@ -1795,7 +1627,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding type name
+   * The binding type
    */
   typeName = async (): Promise<string> => {
     if (this._typeName) {
@@ -4016,6 +3848,482 @@ export class EnumValueTypeDef extends BaseClient {
   }
 }
 
+export class Env extends BaseClient {
+  private readonly _id?: EnvID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: EnvID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Env.
+   */
+  id = async (): Promise<EnvID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * retrieve an input value by name
+   */
+  input = (name: string): Binding => {
+    const ctx = this._ctx.select("input", { name })
+    return new Binding(ctx)
+  }
+
+  /**
+   * return all input values for the environment
+   */
+  inputs = async (): Promise<Binding[]> => {
+    type inputs = {
+      id: BindingID
+    }
+
+    const ctx = this._ctx.select("inputs").select("id")
+
+    const response: Awaited<inputs[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * retrieve an output value by name
+   */
+  output = (name: string): Binding => {
+    const ctx = this._ctx.select("output", { name })
+    return new Binding(ctx)
+  }
+
+  /**
+   * return all output values for the environment
+   */
+  outputs = async (): Promise<Binding[]> => {
+    type outputs = {
+      id: BindingID
+    }
+
+    const ctx = this._ctx.select("outputs").select("id")
+
+    const response: Awaited<outputs[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * Create or update a binding of type CacheVolume in the environment
+   * @param name The name of the binding
+   * @param value The CacheVolume value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCacheVolumeInput = (
+    name: string,
+    value: CacheVolume,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCacheVolumeInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CacheVolume output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCacheVolumeOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Container in the environment
+   * @param name The name of the binding
+   * @param value The Container value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withContainerInput = (
+    name: string,
+    value: Container,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withContainerInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Container output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withContainerOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withContainerOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Directory in the environment
+   * @param name The name of the binding
+   * @param value The Directory value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withDirectoryInput = (
+    name: string,
+    value: Directory,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withDirectoryInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Directory output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withDirectoryOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withDirectoryOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Env in the environment
+   * @param name The name of the binding
+   * @param value The Env value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvInput = (name: string, value: Env, description: string): Env => {
+    const ctx = this._ctx.select("withEnvInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Env output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type File in the environment
+   * @param name The name of the binding
+   * @param value The File value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withFileInput = (name: string, value: File, description: string): Env => {
+    const ctx = this._ctx.select("withFileInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired File output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withFileOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type GitRef in the environment
+   * @param name The name of the binding
+   * @param value The GitRef value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGitRefInput = (name: string, value: GitRef, description: string): Env => {
+    const ctx = this._ctx.select("withGitRefInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GitRef output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGitRefOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGitRefOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type GitRepository in the environment
+   * @param name The name of the binding
+   * @param value The GitRepository value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGitRepositoryInput = (
+    name: string,
+    value: GitRepository,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGitRepositoryInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GitRepository output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGitRepositoryOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGitRepositoryOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type LLM in the environment
+   * @param name The name of the binding
+   * @param value The LLM value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withLLMInput = (name: string, value: LLM, description: string): Env => {
+    const ctx = this._ctx.select("withLLMInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired LLM output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withLLMOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withLLMOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ModuleConfigClient in the environment
+   * @param name The name of the binding
+   * @param value The ModuleConfigClient value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleConfigClientInput = (
+    name: string,
+    value: ModuleConfigClient,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleConfigClientInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ModuleConfigClient output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleConfigClientOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleConfigClientOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Module in the environment
+   * @param name The name of the binding
+   * @param value The Module value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleInput = (
+    name: string,
+    value: Module_,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Module output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ModuleSource in the environment
+   * @param name The name of the binding
+   * @param value The ModuleSource value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleSourceInput = (
+    name: string,
+    value: ModuleSource,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleSourceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ModuleSource output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleSourceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleSourceOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Secret in the environment
+   * @param name The name of the binding
+   * @param value The Secret value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSecretInput = (name: string, value: Secret, description: string): Env => {
+    const ctx = this._ctx.select("withSecretInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Secret output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSecretOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSecretOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Service in the environment
+   * @param name The name of the binding
+   * @param value The Service value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withServiceInput = (
+    name: string,
+    value: Service,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withServiceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Service output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withServiceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withServiceOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Socket in the environment
+   * @param name The name of the binding
+   * @param value The Socket value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSocketInput = (name: string, value: Socket, description: string): Env => {
+    const ctx = this._ctx.select("withSocketInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Socket output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSocketOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSocketOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update an input value of type string
+   * @param name The name of the binding
+   * @param value The string value to assign to the binding
+   */
+  withStringInput = (name: string, value: string, description: string): Env => {
+    const ctx = this._ctx.select("withStringInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Call the provided function with current Env.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Env) => Env) => {
+    return arg(this)
+  }
+}
+
 /**
  * An environment variable name and value.
  */
@@ -4083,474 +4391,6 @@ export class EnvVariable extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-}
-
-export class Environment extends BaseClient {
-  private readonly _id?: EnvironmentID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: EnvironmentID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this Environment.
-   */
-  id = async (): Promise<EnvironmentID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<EnvironmentID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * retrieve a binding by name
-   */
-  binding = (name: string): Binding => {
-    const ctx = this._ctx.select("binding", { name })
-    return new Binding(ctx)
-  }
-
-  /**
-   * return all bindings in the environment
-   */
-  bindings = async (): Promise<Binding[]> => {
-    type bindings = {
-      id: BindingID
-    }
-
-    const ctx = this._ctx.select("bindings").select("id")
-
-    const response: Awaited<bindings[]> = await ctx.execute()
-
-    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
-  }
-
-  /**
-   * Create or update a binding of type CacheVolume in the environment
-   * @param name The name of the binding
-   * @param value The CacheVolume value to assign to the binding
-   */
-  withCacheVolumeBinding = (name: string, value: CacheVolume): Environment => {
-    const ctx = this._ctx.select("withCacheVolumeBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Container in the environment
-   * @param name The name of the binding
-   * @param value The Container value to assign to the binding
-   */
-  withContainerBinding = (name: string, value: Container): Environment => {
-    const ctx = this._ctx.select("withContainerBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModule in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModule value to assign to the binding
-   */
-  withCurrentModuleBinding = (
-    name: string,
-    value: CurrentModule,
-  ): Environment => {
-    const ctx = this._ctx.select("withCurrentModuleBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Directory in the environment
-   * @param name The name of the binding
-   * @param value The Directory value to assign to the binding
-   */
-  withDirectoryBinding = (name: string, value: Directory): Environment => {
-    const ctx = this._ctx.select("withDirectoryBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type EnumTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The EnumTypeDef value to assign to the binding
-   */
-  withEnumTypeDefBinding = (name: string, value: EnumTypeDef): Environment => {
-    const ctx = this._ctx.select("withEnumTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type EnumValueTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The EnumValueTypeDef value to assign to the binding
-   */
-  withEnumValueTypeDefBinding = (
-    name: string,
-    value: EnumValueTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withEnumValueTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Environment in the environment
-   * @param name The name of the binding
-   * @param value The Environment value to assign to the binding
-   */
-  withEnvironmentBinding = (name: string, value: Environment): Environment => {
-    const ctx = this._ctx.select("withEnvironmentBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Error in the environment
-   * @param name The name of the binding
-   * @param value The Error value to assign to the binding
-   */
-  withErrorBinding = (name: string, value: Error): Environment => {
-    const ctx = this._ctx.select("withErrorBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ErrorValue in the environment
-   * @param name The name of the binding
-   * @param value The ErrorValue value to assign to the binding
-   */
-  withErrorValueBinding = (name: string, value: ErrorValue): Environment => {
-    const ctx = this._ctx.select("withErrorValueBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type FieldTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The FieldTypeDef value to assign to the binding
-   */
-  withFieldTypeDefBinding = (
-    name: string,
-    value: FieldTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withFieldTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type File in the environment
-   * @param name The name of the binding
-   * @param value The File value to assign to the binding
-   */
-  withFileBinding = (name: string, value: File): Environment => {
-    const ctx = this._ctx.select("withFileBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type FunctionArg in the environment
-   * @param name The name of the binding
-   * @param value The FunctionArg value to assign to the binding
-   */
-  withFunctionArgBinding = (name: string, value: FunctionArg): Environment => {
-    const ctx = this._ctx.select("withFunctionArgBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Function in the environment
-   * @param name The name of the binding
-   * @param value The Function value to assign to the binding
-   */
-  withFunctionBinding = (name: string, value: Function_): Environment => {
-    const ctx = this._ctx.select("withFunctionBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type FunctionCallArgValue in the environment
-   * @param name The name of the binding
-   * @param value The FunctionCallArgValue value to assign to the binding
-   */
-  withFunctionCallArgValueBinding = (
-    name: string,
-    value: FunctionCallArgValue,
-  ): Environment => {
-    const ctx = this._ctx.select("withFunctionCallArgValueBinding", {
-      name,
-      value,
-    })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type FunctionCall in the environment
-   * @param name The name of the binding
-   * @param value The FunctionCall value to assign to the binding
-   */
-  withFunctionCallBinding = (
-    name: string,
-    value: FunctionCall,
-  ): Environment => {
-    const ctx = this._ctx.select("withFunctionCallBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GeneratedCode in the environment
-   * @param name The name of the binding
-   * @param value The GeneratedCode value to assign to the binding
-   */
-  withGeneratedCodeBinding = (
-    name: string,
-    value: GeneratedCode,
-  ): Environment => {
-    const ctx = this._ctx.select("withGeneratedCodeBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRef in the environment
-   * @param name The name of the binding
-   * @param value The GitRef value to assign to the binding
-   */
-  withGitRefBinding = (name: string, value: GitRef): Environment => {
-    const ctx = this._ctx.select("withGitRefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRepository in the environment
-   * @param name The name of the binding
-   * @param value The GitRepository value to assign to the binding
-   */
-  withGitRepositoryBinding = (
-    name: string,
-    value: GitRepository,
-  ): Environment => {
-    const ctx = this._ctx.select("withGitRepositoryBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type InputTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The InputTypeDef value to assign to the binding
-   */
-  withInputTypeDefBinding = (
-    name: string,
-    value: InputTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withInputTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type InterfaceTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The InterfaceTypeDef value to assign to the binding
-   */
-  withInterfaceTypeDefBinding = (
-    name: string,
-    value: InterfaceTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withInterfaceTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLM in the environment
-   * @param name The name of the binding
-   * @param value The LLM value to assign to the binding
-   */
-  withLLMBinding = (name: string, value: LLM): Environment => {
-    const ctx = this._ctx.select("withLLMBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLMTokenUsage in the environment
-   * @param name The name of the binding
-   * @param value The LLMTokenUsage value to assign to the binding
-   */
-  withLLMTokenUsageBinding = (
-    name: string,
-    value: LLMTokenUsage,
-  ): Environment => {
-    const ctx = this._ctx.select("withLLMTokenUsageBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ListTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The ListTypeDef value to assign to the binding
-   */
-  withListTypeDefBinding = (name: string, value: ListTypeDef): Environment => {
-    const ctx = this._ctx.select("withListTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Module in the environment
-   * @param name The name of the binding
-   * @param value The Module value to assign to the binding
-   */
-  withModuleBinding = (name: string, value: Module_): Environment => {
-    const ctx = this._ctx.select("withModuleBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleConfigClient in the environment
-   * @param name The name of the binding
-   * @param value The ModuleConfigClient value to assign to the binding
-   */
-  withModuleConfigClientBinding = (
-    name: string,
-    value: ModuleConfigClient,
-  ): Environment => {
-    const ctx = this._ctx.select("withModuleConfigClientBinding", {
-      name,
-      value,
-    })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleSource in the environment
-   * @param name The name of the binding
-   * @param value The ModuleSource value to assign to the binding
-   */
-  withModuleSourceBinding = (
-    name: string,
-    value: ModuleSource,
-  ): Environment => {
-    const ctx = this._ctx.select("withModuleSourceBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ObjectTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The ObjectTypeDef value to assign to the binding
-   */
-  withObjectTypeDefBinding = (
-    name: string,
-    value: ObjectTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withObjectTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SDKConfig in the environment
-   * @param name The name of the binding
-   * @param value The SDKConfig value to assign to the binding
-   */
-  withSDKConfigBinding = (name: string, value: SDKConfig): Environment => {
-    const ctx = this._ctx.select("withSDKConfigBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ScalarTypeDef in the environment
-   * @param name The name of the binding
-   * @param value The ScalarTypeDef value to assign to the binding
-   */
-  withScalarTypeDefBinding = (
-    name: string,
-    value: ScalarTypeDef,
-  ): Environment => {
-    const ctx = this._ctx.select("withScalarTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Secret in the environment
-   * @param name The name of the binding
-   * @param value The Secret value to assign to the binding
-   */
-  withSecretBinding = (name: string, value: Secret): Environment => {
-    const ctx = this._ctx.select("withSecretBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Service in the environment
-   * @param name The name of the binding
-   * @param value The Service value to assign to the binding
-   */
-  withServiceBinding = (name: string, value: Service): Environment => {
-    const ctx = this._ctx.select("withServiceBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Socket in the environment
-   * @param name The name of the binding
-   * @param value The Socket value to assign to the binding
-   */
-  withSocketBinding = (name: string, value: Socket): Environment => {
-    const ctx = this._ctx.select("withSocketBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SourceMap in the environment
-   * @param name The name of the binding
-   * @param value The SourceMap value to assign to the binding
-   */
-  withSourceMapBinding = (name: string, value: SourceMap): Environment => {
-    const ctx = this._ctx.select("withSourceMapBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type string in the environment
-   * @param name The name of the binding
-   * @param value The string value to assign to the binding
-   */
-  withStringBinding = (name: string, value: string): Environment => {
-    const ctx = this._ctx.select("withStringBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Terminal in the environment
-   * @param name The name of the binding
-   * @param value The Terminal value to assign to the binding
-   */
-  withTerminalBinding = (name: string, value: Terminal): Environment => {
-    const ctx = this._ctx.select("withTerminalBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Create or update a binding of type TypeDef in the environment
-   * @param name The name of the binding
-   * @param value The TypeDef value to assign to the binding
-   */
-  withTypeDefBinding = (name: string, value: TypeDef): Environment => {
-    const ctx = this._ctx.select("withTypeDefBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
-   * Call the provided function with current Environment.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Environment) => Environment) => {
-    return arg(this)
   }
 }
 
@@ -5997,7 +5837,6 @@ export class InterfaceTypeDef extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
-  private readonly _currentType?: string = undefined
   private readonly _historyJSON?: string = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
@@ -6011,7 +5850,6 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
-    _currentType?: string,
     _historyJSON?: string,
     _lastReply?: string,
     _model?: string,
@@ -6022,7 +5860,6 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._currentType = _currentType
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
@@ -6059,24 +5896,17 @@ export class LLM extends BaseClient {
   /**
    * returns the type of the current state
    */
-  currentType = async (): Promise<string> => {
-    if (this._currentType) {
-      return this._currentType
-    }
-
-    const ctx = this._ctx.select("currentType")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+  bindResult = (name: string): Binding => {
+    const ctx = this._ctx.select("bindResult", { name })
+    return new Binding(ctx)
   }
 
   /**
    * return the LLM's current environment
    */
-  environment = (): Environment => {
-    const ctx = this._ctx.select("environment")
-    return new Environment(ctx)
+  env = (): Env => {
+    const ctx = this._ctx.select("env")
+    return new Env(ctx)
   }
 
   /**
@@ -6195,8 +6025,8 @@ export class LLM extends BaseClient {
   /**
    * allow the LLM to interact with an environment via MCP
    */
-  withEnvironment = (environment: Environment): LLM => {
-    const ctx = this._ctx.select("withEnvironment", { environment })
+  withEnv = (env: Env): LLM => {
+    const ctx = this._ctx.select("withEnv", { env })
     return new LLM(ctx)
   }
 
@@ -7653,9 +7483,9 @@ export class Client extends BaseClient {
   /**
    * Initialize a new environment
    */
-  environment = (): Environment => {
-    const ctx = this._ctx.select("environment")
-    return new Environment(ctx)
+  env = (): Env => {
+    const ctx = this._ctx.select("env")
+    return new Env(ctx)
   }
 
   /**
@@ -7821,19 +7651,19 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Env from its ID.
+   */
+  loadEnvFromID = (id: EnvID): Env => {
+    const ctx = this._ctx.select("loadEnvFromID", { id })
+    return new Env(ctx)
+  }
+
+  /**
    * Load a EnvVariable from its ID.
    */
   loadEnvVariableFromID = (id: EnvVariableID): EnvVariable => {
     const ctx = this._ctx.select("loadEnvVariableFromID", { id })
     return new EnvVariable(ctx)
-  }
-
-  /**
-   * Load a Environment from its ID.
-   */
-  loadEnvironmentFromID = (id: EnvironmentID): Environment => {
-    const ctx = this._ctx.select("loadEnvironmentFromID", { id })
-    return new Environment(ctx)
   }
 
   /**

@@ -394,16 +394,6 @@
                     <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withLLMVariableBinding">withLLMVariableBinding</a>(string $name, <abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr> $value)
-        
-                                            <p><p>Create or update a binding of type LLMVariable in the environment</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
-                </div>
-                <div class="col-md-8">
                     <a href="#method_withListTypeDefBinding">withListTypeDefBinding</a>(string $name, <abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $value)
         
                                             <p><p>Create or update a binding of type ListTypeDef in the environment</p></p>                </div>
@@ -517,6 +507,16 @@
                     <a href="#method_withSourceMapBinding">withSourceMapBinding</a>(string $name, <abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $value)
         
                                             <p><p>Create or update a binding of type SourceMap in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withStringBinding">withStringBinding</a>(string $name, string $value)
+        
+                                            <p><p>Create or update a binding of type string in the environment</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1775,55 +1775,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withLLMVariableBinding">
-        <div class="location">at line 288</div>
-        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
-    <strong>withLLMVariableBinding</strong>(string $name, <abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr> $value)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Create or update a binding of type LLMVariable in the environment</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr></td>
-                <td>$value</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_withListTypeDefBinding">
-        <div class="location">at line 299</div>
+        <div class="location">at line 288</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withListTypeDefBinding</strong>(string $name, <abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $value)
         </code>
@@ -1870,7 +1823,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModuleBinding">
-        <div class="location">at line 310</div>
+        <div class="location">at line 299</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withModuleBinding</strong>(string $name, <abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $value)
         </code>
@@ -1917,7 +1870,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModuleConfigClientBinding">
-        <div class="location">at line 321</div>
+        <div class="location">at line 310</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withModuleConfigClientBinding</strong>(string $name, <abbr title="Dagger\ModuleConfigClientId|Dagger\ModuleConfigClient">ModuleConfigClient</abbr> $value)
         </code>
@@ -1964,7 +1917,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModuleSourceBinding">
-        <div class="location">at line 334</div>
+        <div class="location">at line 323</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withModuleSourceBinding</strong>(string $name, <abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $value)
         </code>
@@ -2011,7 +1964,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObjectTypeDefBinding">
-        <div class="location">at line 345</div>
+        <div class="location">at line 334</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withObjectTypeDefBinding</strong>(string $name, <abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $value)
         </code>
@@ -2058,7 +2011,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPhpSdkBinding">
-        <div class="location">at line 356</div>
+        <div class="location">at line 345</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withPhpSdkBinding</strong>(string $name, <abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr> $value)
         </code>
@@ -2105,7 +2058,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSDKConfigBinding">
-        <div class="location">at line 367</div>
+        <div class="location">at line 356</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withSDKConfigBinding</strong>(string $name, <abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $value)
         </code>
@@ -2152,7 +2105,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withScalarTypeDefBinding">
-        <div class="location">at line 378</div>
+        <div class="location">at line 367</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withScalarTypeDefBinding</strong>(string $name, <abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $value)
         </code>
@@ -2199,7 +2152,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSecretBinding">
-        <div class="location">at line 389</div>
+        <div class="location">at line 378</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withSecretBinding</strong>(string $name, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $value)
         </code>
@@ -2246,7 +2199,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withServiceBinding">
-        <div class="location">at line 400</div>
+        <div class="location">at line 389</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withServiceBinding</strong>(string $name, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $value)
         </code>
@@ -2293,7 +2246,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSocketBinding">
-        <div class="location">at line 411</div>
+        <div class="location">at line 400</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withSocketBinding</strong>(string $name, <abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $value)
         </code>
@@ -2340,7 +2293,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceMapBinding">
-        <div class="location">at line 422</div>
+        <div class="location">at line 411</div>
         <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
     <strong>withSourceMapBinding</strong>(string $name, <abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $value)
         </code>
@@ -2363,6 +2316,53 @@
             </tr>
                     <tr>
                 <td><abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withStringBinding">
+        <div class="location">at line 422</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withStringBinding</strong>(string $name, string $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type string in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
                 <td>$value</td>
                 <td></td>
             </tr>
