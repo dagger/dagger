@@ -89,6 +89,10 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+	llm, err := llm.Sync(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
 	return llm.Env(), nil
 }
 
