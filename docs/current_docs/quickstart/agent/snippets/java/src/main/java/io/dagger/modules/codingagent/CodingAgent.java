@@ -14,11 +14,11 @@ public class CodingAgent {
   /** Write a Go program */
   @Function
   public Container goProgram(String assignment) {
-    ToyWorkspace workspace = dag.toyWorkspace();
-    Env environment = dag.env()
+    ToyWorkspace workspace = dag().toyWorkspace();
+    Env environment = dag().env()
         .withToyWorkspaceInput("before", workspace, "tools to complete the assignment")
         .withStringInput("assignment", assignment, "the assignment to complete")
-        .withStringOutput("after", "the completed assignment");
+        .withToyWorkspaceOutput("after", "the completed assignment");
     return dag()
       .llm()
       .withEnv(environment)
