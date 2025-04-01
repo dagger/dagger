@@ -1,6 +1,6 @@
 {
   "name": "recorder",
-  "engineVersion": "v0.17.2",
+  "engineVersion": "v0.18.0",
   "sdk": {
     "source": "go"
   },
@@ -16,8 +16,8 @@
     },
     {
       "name": "vhs",
-      "source": "github.com/sagikazarmark/daggerverse/vhs@vhs/v0.3.0",
-      "pin": "322b00485bc195163df4b81f22e52c5b2ca43472"
+      "source": "github.com/sagikazarmark/daggerverse/vhs@vhs/v0.4.0",
+      "pin": "0a18e45ba3bb64deb5f57b0d94f10ae45f8a6538"
     }
   ]
 }
