@@ -679,10 +679,14 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 func (m *MCP) envGetters() []LLMTool {
 	var tools []LLMTool
 	for _, input := range m.env.Inputs() {
+		description := input.Description
+		if description == "" {
+			description = fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName())
+		}
 		tools = append(tools, LLMTool{
 			Name:        input.Key,
 			Returns:     input.TypeName(),
-			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName()),
+			Description: description,
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
