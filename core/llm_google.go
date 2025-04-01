@@ -97,10 +97,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		}
 		fns = append(fns, fd)
 	}
-	model.Tools = []*genai.Tool{
-		{
-			FunctionDeclarations: fns,
-		},
+	if len(fns) > 0 {
+		model.Tools = []*genai.Tool{
+			{
+				FunctionDeclarations: fns,
+			},
+		}
 	}
 
 	// convert history to genai.Content
