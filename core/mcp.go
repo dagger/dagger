@@ -551,29 +551,6 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{}
 
-	// Only include currentSelection tool if the environment is not empty
-	if len(m.env.Inputs()) > 0 {
-		builtins = append(builtins, LLMTool{
-			Name: "currentSelection", // TODO: double this as "return"?
-			// NOTE: this description is load-bearing! It allows the LLM to know its
-			// current state, without even calling this tool. Without this sort of
-			// hint the model tends to give you instructions instead of acting on its
-			// own. That could be addressed with a system prompt, but we don't want to
-			// rely on those.
-			Description: "Your current selection: " + m.describe(m.Current()),
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
-				return m.currentState(nil)
-			}),
-		})
-	}
-
 	if len(m.env.outputsByName) > 0 {
 		builtins = append(builtins, m.returnBuiltin())
 	}
