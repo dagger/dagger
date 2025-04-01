@@ -567,13 +567,12 @@ func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, srv *dagql.Server) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	_, err = bk.MCPClient(ctx)
+	mcpServer, err := bk.MCPClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate MCP Client", err)
 	}
 
-	llm.env.mcpServers = append(llm.env.mcpServers)
-	llm.dirty = true
+	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{mcpServer, ctr})
 	return llm, nil
 }
 

@@ -50,7 +50,7 @@ type MCP struct {
 	// Indicates that the model has returned
 	returned bool
 	// attached MCP Servers... TODO: namespace collision really hurts here
-	mcpServers []*MCPClient
+	mcpServers []MCPClient
 }
 
 func NewMCP(endpoint *LLMEndpoint) *MCP {
