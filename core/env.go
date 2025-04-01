@@ -12,21 +12,16 @@ import (
 )
 
 type Env struct {
-	// Saved objects by prompt var name
-	objsByName map[string]*Binding
-	// Desired outputs of the environment by var name
-	outputsByName map[string]EnvOutput
+	// Input values
+	inputsByName map[string]*Binding
+	// Output values
+	outputsByName map[string]*Binding
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*Binding
 	// Auto incrementing number per-type
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
-}
-
-type EnvOutput struct {
-	Type        dagql.ObjectType
-	Description string
 }
 
 func (*Env) Type() *ast.Type {
@@ -38,8 +33,8 @@ func (*Env) Type() *ast.Type {
 
 func NewEnv() *Env {
 	return &Env{
-		objsByName:    map[string]*Binding{},
-		outputsByName: map[string]EnvOutput{},
+		inputsByName:  map[string]*Binding{},
+		outputsByName: map[string]*Binding{},
 		objsByID:      map[string]*Binding{},
 		typeCount:     map[string]int{},
 		idByHash:      map[digest.Digest]string{},
@@ -48,7 +43,8 @@ func NewEnv() *Env {
 
 func (env *Env) Clone() *Env {
 	cp := *env
-	cp.objsByName = cloneMap(cp.objsByName)
+	cp.inputsByName = cloneMap(cp.inputsByName)
+	cp.outputsByName = cloneMap(cp.outputsByName)
 	cp.objsByID = cloneMap(cp.objsByID)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
@@ -58,26 +54,45 @@ func (env *Env) Clone() *Env {
 // Add an input (read-only) binding to the environment
 func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()
-	binding := &Binding{Key: key, Value: val, Description: description, env: env}
-	_ = binding.ID() // If val is an object, force its ingestion
-	env.objsByName[key] = binding
+	input := &Binding{Key: key, Value: val, Description: description, env: env}
+	_ = input.ID() // If val is an object, force its ingestion
+	env.inputsByName[key] = input
 	return env
 }
 
 // Register the desire for a binding in the environment
-func (env *Env) WithOutput(key string, type_ dagql.ObjectType, description string) *Env {
+func (env *Env) WithOutput(key string, expectedType dagql.Type, description string) *Env {
 	env = env.Clone()
-	env.outputsByName[key] = EnvOutput{
-		Type:        type_,
-		Description: description,
+	env.outputsByName[key] = &Binding{
+		Value:        nil,
+		expectedType: expectedType,
+		Description:  description,
+		env:          env,
 	}
 	return env
 }
 
+// Lookup registered outputs in the environment
+func (env *Env) Output(key string) (*Binding, bool) {
+	if output, exists := env.outputsByName[key]; exists {
+		return output, true
+	}
+	return nil, false
+}
+
+// List all outputs in the environment
+func (env *Env) Outputs() []*Binding {
+	res := make([]*Binding, 0, len(env.outputsByName))
+	for _, v := range env.outputsByName {
+		res = append(res, v)
+	}
+	return res
+}
+
 // List all inputs in the environment
 func (env *Env) Inputs() []*Binding {
-	res := make([]*Binding, 0, len(env.objsByName))
-	for _, v := range env.objsByName {
+	res := make([]*Binding, 0, len(env.inputsByName))
+	for _, v := range env.inputsByName {
 		res = append(res, v)
 	}
 	return res
@@ -90,7 +105,7 @@ func (env *Env) Input(key string) (*Binding, bool) {
 		return val, true
 	}
 	// next check for values by name
-	if val, exists := env.objsByName[key]; exists {
+	if val, exists := env.inputsByName[key]; exists {
 		return val, true
 	}
 	return nil, false
@@ -99,7 +114,7 @@ func (env *Env) Input(key string) (*Binding, bool) {
 // Remove an input
 func (env *Env) WithoutInput(key string) *Env {
 	env = env.Clone()
-	delete(env.objsByName, key)
+	delete(env.inputsByName, key)
 	return env
 }
 
@@ -128,15 +143,14 @@ func (env *Env) Types() []string {
 	return types
 }
 
-func (env *Env) IsEmpty() bool {
-	return len(env.objsByName) == 0
-}
-
 type Binding struct {
 	Key         string
 	Value       dagql.Typed
 	Description string
 	env         *Env // TODO: wire this up
+	// The expected type
+	// Used when defining an output
+	expectedType dagql.Type
 }
 
 func (*Binding) Type() *ast.Type {

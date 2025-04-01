@@ -22,8 +22,12 @@ func (s environmentSchema) Install() {
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
 			Doc("return all input values for the environment"),
-		dagql.Func("input", s.binding).
+		dagql.Func("input", s.input).
 			Doc("retrieve an input value by name"),
+		dagql.Func("outputs", s.outputs).
+			Doc("return all output values for the environment"),
+		dagql.Func("output", s.output).
+			Doc("retrieve an output value by name"),
 		dagql.Func("withStringInput", s.withStringInput).
 			ArgDoc("name", "The name of the binding").
 			ArgDoc("value", "The string value to assign to the binding").
@@ -53,14 +57,28 @@ func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struc
 	return env.Inputs(), nil
 }
 
-func (s environmentSchema) binding(ctx context.Context, env *core.Env, args struct {
+func (s environmentSchema) input(ctx context.Context, env *core.Env, args struct {
 	Name string
 }) (*core.Binding, error) {
 	b, found := env.Input(args.Name)
 	if found {
 		return b, nil
 	}
-	return nil, fmt.Errorf("binding not found: %s", args.Name)
+	return nil, fmt.Errorf("input not found: %s", args.Name)
+}
+
+func (s environmentSchema) output(ctx context.Context, env *core.Env, args struct {
+	Name string
+}) (*core.Binding, error) {
+	b, found := env.Output(args.Name)
+	if found {
+		return b, nil
+	}
+	return nil, fmt.Errorf("output not found: %s", args.Name)
+}
+
+func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+	return env.Outputs(), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {

@@ -490,7 +490,7 @@ func (m *MCP) returnBuiltin() LLMTool {
 	props := map[string]any{}
 	required := []string{}
 	for name, b := range m.env.outputsByName {
-		typeName := b.Type.TypeName()
+		typeName := b.expectedType.TypeName()
 		required = append(required, name)
 		props[name] = map[string]any{
 			"type":           "string",
@@ -530,11 +530,17 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 					return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
 				}
 				obj := bnd.Value
-				// TODO: is it appropriate to just mutate directly here?
-				m.env.objsByName[name] = &Binding{
-					Key:   name,
-					Value: obj,
-					env:   m.env,
+				if output, found := m.env.Output(name); found {
+					if expected := output.expectedType; expected != nil {
+						expectedType := expected.TypeName()
+						actualType := obj.Type().Name()
+						if expectedType != actualType {
+							return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, expectedType, actualType)
+						}
+					}
+					output.Value = obj
+				} else {
+					return nil, fmt.Errorf("undefined output: %q", name)
 				}
 			}
 			return "ok", nil
@@ -546,7 +552,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{}
 
 	// Only include currentSelection tool if the environment is not empty
-	if !m.env.IsEmpty() {
+	if len(m.env.Inputs()) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name: "currentSelection", // TODO: double this as "return"?
 			// NOTE: this description is load-bearing! It allows the LLM to know its
