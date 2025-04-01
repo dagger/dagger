@@ -601,6 +601,14 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	return messages
 }
 
+type ModelFinishedError struct {
+	Reason string
+}
+
+func (err *ModelFinishedError) Error() string {
+	return fmt.Sprintf("model finished: %s", err.Reason)
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
