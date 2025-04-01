@@ -140,6 +140,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * attach a stdio MCP server to the LLM
+     */
+    public function withMCP(ContainerId|Container $container): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCP');
+        $innerQueryBuilder->setArgument('container', $container);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * swap out the llm model
      */
     public function withModel(string $model): LLM

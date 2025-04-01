@@ -164,6 +164,20 @@ defmodule Dagger.LLM do
     }
   end
 
+  @doc "attach a stdio MCP server to the LLM"
+  @spec with_mcp(t(), Dagger.Container.t()) :: Dagger.LLM.t()
+  def with_mcp(%__MODULE__{} = llm, container) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withMCP")
+      |> QB.put_arg("container", Dagger.ID.id!(container))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @doc "swap out the llm model"
   @spec with_model(t(), String.t()) :: Dagger.LLM.t()
   def with_model(%__MODULE__{} = llm, model) do

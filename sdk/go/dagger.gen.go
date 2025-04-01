@@ -6217,6 +6217,17 @@ func (r *LLM) WithEnv(env *Env) *LLM {
 	}
 }
 
+// attach a stdio MCP server to the LLM
+func (r *LLM) WithMCP(container *Container) *LLM {
+	assertNotNil("container", container)
+	q := r.query.Select("withMCP")
+	q = q.Arg("container", container)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // swap out the llm model
 func (r *LLM) WithModel(model string) *LLM {
 	q := r.query.Select("withModel")

@@ -6031,6 +6031,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * attach a stdio MCP server to the LLM
+   * @param container a container running an MCP server on stdin and stdout
+   */
+  withMCP = (container: Container): LLM => {
+    const ctx = this._ctx.select("withMCP", { container })
+    return new LLM(ctx)
+  }
+
+  /**
    * swap out the llm model
    * @param model The model to use
    */
