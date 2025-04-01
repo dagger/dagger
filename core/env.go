@@ -357,6 +357,9 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			val := self.(dagql.Instance[*Binding]).Self.Value
+			if val == nil {
+				return nil, fmt.Errorf("binding value is nil")
+			}
 			if val.Type().Name() != typeName {
 				return nil, fmt.Errorf("binding type mismatch: expected %s, got %s", typeName, val.Type().Name())
 			}
