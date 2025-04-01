@@ -262,7 +262,9 @@ var TypesHiddenFromEnvExtensions = []dagql.Typed{
 	&LLMTokenUsage{},
 	&ObjectTypeDef{},
 	&ScalarTypeDef{},
+	&SDKConfig{},
 	&SourceMap{},
+	&TerminalLegacy{},
 	&TypeDef{},
 }
 
