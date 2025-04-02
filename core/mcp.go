@@ -46,6 +46,8 @@ type MCP struct {
 	needsSystemPrompt bool
 	// Only show these functions, if non-empty
 	functionMask map[string]bool
+	// Indicates that the model has returned
+	returned bool
 }
 
 func NewMCP(endpoint *LLMEndpoint) *MCP {
@@ -543,6 +545,7 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 					return nil, fmt.Errorf("undefined output: %q", name)
 				}
 			}
+			m.returned = true
 			return "ok", nil
 		},
 	}
@@ -682,6 +685,10 @@ func (m *MCP) envGetters() []LLMTool {
 		})
 	}
 	return tools
+}
+
+func (m *MCP) IsDone() bool {
+	return len(m.env.outputsByName) == 0 || m.returned
 }
 
 func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {

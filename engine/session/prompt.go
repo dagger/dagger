@@ -86,6 +86,26 @@ func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*Bo
 	}, nil
 }
 
+func (p PromptAttachable) PromptString(ctx context.Context, req *StringRequest) (*StringResponse, error) {
+	if req.Prompt == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
+	}
+
+	promptMutex.Lock()
+	defer promptMutex.Unlock()
+
+	var response string = req.GetDefault()
+	if p.promptHandler != nil {
+		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &response); err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
+		}
+	}
+
+	return &StringResponse{
+		Response: response,
+	}, nil
+}
+
 // not threadsafe, must be holding promptMutex
 func (a *PromptResponses) load() error {
 	if err := a.ensureFileExists(); err != nil {

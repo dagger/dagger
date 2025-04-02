@@ -626,6 +626,69 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	return err
 }
 
+func (llm *LLM) Interject(ctx context.Context) error {
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return err
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+		attribute.String(telemetry.UIMessageAttr, "sent"),
+	))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+	var lastAssistantMessage string
+	for i := len(llm.messages) - 1; i >= 0; i-- {
+		if llm.messages[i].Role == "assistant" {
+			lastAssistantMessage = llm.messages[i].Content
+			break
+		}
+	}
+	if lastAssistantMessage == "" {
+		return fmt.Errorf("no message from assistant")
+	}
+	msg, err := bk.PromptHumanHelp(ctx, fmt.Sprintf("The LLM was unable to complete its task and needs help. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(stdio.Stdout, msg)
+	llm.messages = append(llm.messages, ModelMessage{
+		Role:    "user",
+		Content: msg,
+	})
+	return nil
+}
+
+func mdQuote(msg string) string {
+	lines := strings.Split(msg, "\n")
+	for i, line := range lines {
+		lines[i] = fmt.Sprintf("> %s", line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// autoInterject keeps the loop going if necessary, by prompting for a new
+// input, adding it to the message history, and returning true
+func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
+	if llm.mcp.IsDone() {
+		// we either didn't expect a return value, or got one - done!
+		return false, nil
+	}
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !bk.Opts.Interactive {
+		return false, nil
+	}
+	if err := llm.Interject(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 	if len(llm.messages) == 0 {
 		// dirty but no messages, possibly just a state change, nothing to do
@@ -647,8 +710,16 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		if err != nil {
 			var finished *ModelFinishedError
 			if errors.As(err, &finished) {
-				// model finished
-				break
+				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return errors.Join(err, interjectErr)
+				} else if interjected {
+					// interjected - continue
+					continue
+				} else {
+					// no interjection and none needed - we're just done
+					break
+				}
 			}
 			return err
 		}
@@ -663,6 +734,14 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		// Handle tool calls
 		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
+			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
+				// interjecting failed or was interrupted
+				return interjectErr
+			} else if interjected {
+				// interjected - continue
+				continue
+			}
+			// no interjection and none needed - we're just done
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
