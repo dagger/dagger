@@ -14,7 +14,7 @@ class BaseClient {
    * @hidden
    */
 
-  constructor(protected _ctx: Context = new Context()) {}
+  constructor(protected _ctx: Context = new Context()) { }
 }
 
 /**
@@ -7482,6 +7482,7 @@ export class Client extends BaseClient {
   /**
    * Initialize a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+   * @experimental Environments are not yet stabilized
    */
   env = (opts?: ClientEnvOpts): Env => {
     const ctx = this._ctx.select("env", { ...opts })
@@ -7554,6 +7555,7 @@ export class Client extends BaseClient {
    * Initialize a Large Language Model (LLM)
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
+   * @experimental LLM support is not yet stabilized
    */
   llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
