@@ -1928,7 +1928,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, message string
 	fe.program.Send(tea.Msg(promptString{
 		message: &Markdown{
 			Content: message,
-			Width:   min(max(fe.window.Width/2, 50), 80),
+			Width:   fe.window.Width,
 		},
 		result: result,
 	}))

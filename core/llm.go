@@ -639,7 +639,17 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
-	msg, err := bk.PromptHumanHelp(ctx, "Provide a message to help the model along:")
+	var lastAssistantMessage string
+	for i := len(llm.messages) - 1; i >= 0; i-- {
+		if llm.messages[i].Role == "assistant" {
+			lastAssistantMessage = llm.messages[i].Content
+			break
+		}
+	}
+	if lastAssistantMessage == "" {
+		return fmt.Errorf("no message from assistant")
+	}
+	msg, err := bk.PromptHumanHelp(ctx, lastAssistantMessage)
 	if err != nil {
 		return err
 	}
