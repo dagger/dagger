@@ -649,7 +649,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if lastAssistantMessage == "" {
 		return fmt.Errorf("no message from assistant")
 	}
-	msg, err := bk.PromptHumanHelp(ctx, lastAssistantMessage)
+	msg, err := bk.PromptHumanHelp(ctx, fmt.Sprintf("The LLM was unable to complete its task and needs help. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
 	if err != nil {
 		return err
 	}
@@ -659,6 +659,14 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		Content: msg,
 	})
 	return nil
+}
+
+func mdQuote(msg string) string {
+	lines := strings.Split(msg, "\n")
+	for i, line := range lines {
+		lines[i] = fmt.Sprintf("> %s", line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // autoInterject keeps the loop going if necessary, by prompting for a new
