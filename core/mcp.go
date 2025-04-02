@@ -594,9 +594,56 @@ func (ms *MCPClient) Tools(ctx context.Context) ([]LLMTool, error) {
 		ms.Client = client
 	}
 
-	slog.Warn("successfully initialized MCP client")
+	resp, err := ms.Client.ListTools(ctx, mcpc.NewRequest(&mcpc.ListToolsRequest{}))
+	if err != nil {
+		return nil, fmt.Errorf("failed listing tools: %w", err)
+	}
 
-	return []LLMTool{}, nil
+	tools := []LLMTool{}
+
+	// TODO: handle cursor pagination
+	for _, respTool := range resp.Result.Tools {
+		var schema map[string]any
+		err := json.Unmarshal(respTool.InputSchema, &schema)
+		if err != nil {
+			return nil, fmt.Errorf("failed unmarshalling MCP server inputSchema: %w", err)
+		}
+		tools = append(tools, LLMTool{
+			Name:        respTool.Name,
+			Returns:     "contents",
+			Description: respTool.Description,
+			Schema:      schema,
+			Call: func(ctx context.Context, args any) (any, error) {
+				vals, ok := args.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("invalid arguments: %T", args)
+				}
+
+				marshalledArgs, err := json.Marshal(vals)
+				if err != nil {
+					return nil, fmt.Errorf("failed marshalling json args: %w", err)
+				}
+
+				slog.Warn("HOLY", "vals", vals, "schema", schema)
+
+				toolResp, err := ms.Client.CallTool(ctx, mcpc.NewRequest(&mcpc.CallToolRequest{
+					Name:      respTool.Name,
+					Arguments: marshalledArgs,
+				}))
+				if err != nil {
+					return nil, fmt.Errorf("failed calling MCP tool: %w", err)
+				}
+				if toolResp.Result.IsError {
+					return nil, fmt.Errorf("mcp tool error: %v", toolResp.Result.Content)
+				}
+
+				return toolResp.Result.Content, nil
+			},
+		})
+
+	}
+
+	return tools, nil
 }
 
 func (ms *MCPClient) StartClient(ctx context.Context) (*mcpc.Client, error) {
@@ -609,7 +656,7 @@ func (ms *MCPClient) StartClient(ctx context.Context) (*mcpc.Client, error) {
 	clientStdout, svcStdout := io.Pipe()
 	clientStdout1 := io.TeeReader(clientStdout, os.Stderr)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	// irl this probably needs to wire through core/services.go, but for now we yolo
