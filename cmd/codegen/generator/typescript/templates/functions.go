@@ -36,6 +36,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 	return template.FuncMap{
 		"CommentToLines":            funcs.commentToLines,
 		"FormatDeprecation":         funcs.formatDeprecation,
+		"FormatExperimental":        funcs.formatExperimental,
 		"FormatReturnType":          commonFunc.FormatReturnType,
 		"FormatInputType":           commonFunc.FormatInputType,
 		"FormatOutputType":          commonFunc.FormatOutputType,
@@ -104,6 +105,14 @@ func (funcs typescriptTemplateFuncs) commentToLines(s string) []string {
 // format the deprecation reason
 // Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
 func (funcs typescriptTemplateFuncs) formatDeprecation(s string) []string {
+	return funcs.formatHelper("deprecated", s)
+}
+
+func (funcs typescriptTemplateFuncs) formatExperimental(_ string) []string {
+	return funcs.formatHelper("experimental", "")
+}
+
+func (funcs typescriptTemplateFuncs) formatHelper(name string, s string) []string {
 	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
 	matches := r.FindAllString(s, -1)
 	for _, match := range matches {
@@ -112,7 +121,7 @@ func (funcs typescriptTemplateFuncs) formatDeprecation(s string) []string {
 		replacement = funcs.formatName(replacement)
 		s = strings.ReplaceAll(s, match, replacement)
 	}
-	return funcs.commentToLines("@deprecated " + s)
+	return funcs.commentToLines("@" + name + " " + s)
 }
 
 // isCustomScalar checks if the type is actually custom.
