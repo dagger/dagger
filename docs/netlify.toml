@@ -38,7 +38,7 @@
 [[redirects]]
   # redirect /quickstart/basics pages
   from = "/quickstart/basics"
-  to = "/quickstart/"
+  to = "/quickstart"
   status = 301
 
 [[redirects]]
@@ -50,13 +50,7 @@
 [[redirects]]
   # redirect /ai-agents page to feature page
   from = "/ai-agents"
-  to = "/features/large-language-model"
-  status = 301
-
-[[redirects]]
-  # redirect /features/llm page
-  from = "/features/llm"
-  to = "/features/large-language-model"
+  to = "/features/llm"
   status = 301
 
 ###### end: specific redirects for ci+agent docs ######
