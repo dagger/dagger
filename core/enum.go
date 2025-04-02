@@ -1,18 +1,6 @@
 package core
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
-)
-
+/*
 type ModuleEnumType struct {
 	typeDef *EnumTypeDef
 	mod     *Module
@@ -126,6 +114,22 @@ func (e *ModuleEnum) TypeDefinition(view dagql.View) *ast.Definition {
 	return def
 }
 
+func (ModuleEnum) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ModuleEnum
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (e *ModuleEnum) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, e)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), e), nil
+}
+
 func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range e.TypeDef.Values {
@@ -179,3 +183,4 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 func (e *ModuleEnum) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.Value)
 }
+*/

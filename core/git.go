@@ -1,40 +1,6 @@
 package core
 
-import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/base64"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"slices"
-	"strings"
-	"syscall"
-	"time"
-
-	"github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/util/gitutil"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/executor/oci"
-	"github.com/moby/buildkit/snapshot"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/sys/mount"
-	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/sys/unix"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/network"
-)
-
+/*
 type GitRepository struct {
 	Query   *Query
 	Backend GitRepositoryBackend
@@ -1202,3 +1168,4 @@ func (md cacheRefMetadata) setGitSnapshot(key string) error {
 func (md cacheRefMetadata) setGitRemote(key string) error {
 	return md.SetString(keyGitRemote, key, gitRemoteIndex+key)
 }
+*/

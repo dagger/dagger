@@ -1,12 +1,7 @@
 package schema
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/moby/buildkit/identity"
 )
 
 type engineSchema struct {
@@ -16,32 +11,35 @@ type engineSchema struct {
 var _ SchemaResolvers = &engineSchema{}
 
 func (s *engineSchema) Install() {
-	dagql.Fields[*core.Query]{
-		dagql.Func("engine", s.engine).
-			Doc("The Dagger engine container configuration and state"),
-	}.Install(s.srv)
+	/*
+		dagql.Fields[*core.Query]{
+			dagql.Func("engine", s.engine).
+				Doc("The Dagger engine container configuration and state"),
+		}.Install(s.srv)
 
-	dagql.Fields[*core.Engine]{
-		dagql.Func("localCache", s.localCache).
-			Doc("The local (on-disk) cache for the Dagger engine"),
-	}.Install(s.srv)
+		dagql.Fields[*core.Engine]{
+			dagql.Func("localCache", s.localCache).
+				Doc("The local (on-disk) cache for the Dagger engine"),
+		}.Install(s.srv)
 
-	dagql.Fields[*core.EngineCache]{
-		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
-			Doc("The current set of entries in the cache"),
-		dagql.Func("prune", s.cachePrune).
-			DoNotCache("Mutates mutable state").
-			Doc("Prune the cache of releaseable entries"),
-	}.Install(s.srv)
+		dagql.Fields[*core.EngineCache]{
+			dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
+				Doc("The current set of entries in the cache"),
+			dagql.Func("prune", s.cachePrune).
+				DoNotCache("Mutates mutable state").
+				Doc("Prune the cache of releaseable entries"),
+		}.Install(s.srv)
 
-	dagql.Fields[*core.EngineCacheEntrySet]{
-		dagql.Func("entries", s.cacheEntrySetEntries).
-			Doc("The list of individual cache entries in the set"),
-	}.Install(s.srv)
+		dagql.Fields[*core.EngineCacheEntrySet]{
+			dagql.Func("entries", s.cacheEntrySetEntries).
+				Doc("The list of individual cache entries in the set"),
+		}.Install(s.srv)
 
-	dagql.Fields[*core.EngineCacheEntry]{}.Install(s.srv)
+		dagql.Fields[*core.EngineCacheEntry]{}.Install(s.srv)
+	*/
 }
 
+/*
 func (s *engineSchema) engine(ctx context.Context, parent *core.Query, args struct{}) (*core.Engine, error) {
 	return &core.Engine{Query: parent}, nil
 }
@@ -110,3 +108,4 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) ([]*core.EngineCacheEntry, error) {
 	return parent.EntriesList, nil
 }
+*/

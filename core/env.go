@@ -1,18 +1,10 @@
 package core
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
-
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
+/*
 type Env struct {
 	// Input values
 	inputsByName map[string]*Binding
@@ -359,42 +351,51 @@ type EnvHook struct {
 	Server *dagql.Server
 }
 
+*/
+
 // We don't expose these types to modules SDK codegen, but
 // we still want their graphql schemas to be available for
 // internal usage. So we use this list to scrub them from
 // the introspection JSON that module SDKs use for codegen.
 var TypesHiddenFromModuleSDKs = []dagql.Typed{
-	&Engine{},
-	&EngineCache{},
-	&EngineCacheEntry{},
-	&EngineCacheEntrySet{},
+	/*
+		&Engine{},
+		&EngineCache{},
+		&EngineCacheEntry{},
+		&EngineCacheEntrySet{},
+	*/
 }
 
 var TypesHiddenFromEnvExtensions = []dagql.Typed{
-	&CurrentModule{},
-	&EnumTypeDef{},
-	&EnumValueTypeDef{},
-	&Env{},
+	/*
+		&CurrentModule{},
+		&EnumTypeDef{},
+		&EnumValueTypeDef{},
+		&Env{},
+	*/
 	&Error{},
 	&ErrorValue{},
-	&FieldTypeDef{},
-	&FunctionArg{},
-	&FunctionCallArgValue{},
-	&FunctionCall{},
+	/*
+		&FieldTypeDef{},
+		&FunctionArg{},
+		&FunctionCallArgValue{},
+		&FunctionCall{},
+	*/
 	&Function{},
-	&GeneratedCode{},
+	// &GeneratedCode{},
 	&InputTypeDef{},
 	&InterfaceTypeDef{},
 	&ListTypeDef{},
-	&LLMTokenUsage{},
+	// &LLMTokenUsage{},
 	&ObjectTypeDef{},
 	&ScalarTypeDef{},
-	&SDKConfig{},
-	&SourceMap{},
-	&TerminalLegacy{},
-	&TypeDef{},
+	// &SDKConfig{},
+	// &SourceMap{},
+	// &TerminalLegacy{},
+	// &TypeDef{},
 }
 
+/*
 func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 	envType, ok := s.Server.ObjectType(new(Env).Type().Name())
 	if !ok {
@@ -545,3 +546,4 @@ func (s EnvHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypede
 	}
 	return mod, nil
 }
+*/

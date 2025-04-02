@@ -4,21 +4,24 @@ import (
 	"context"
 	"crypto/hmac"
 	"encoding/hex"
-	"errors"
 
 	"github.com/opencontainers/go-digest"
 )
 
 func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName string) (string, error) {
+	/* TODO:
 	m, err := parent.CurrentModule(ctx)
 	if err != nil && !errors.Is(err, ErrNoCurrentModule) {
 		return "", err
 	}
+	*/
 
 	var scopeDigest digest.Digest
-	if m != nil {
-		scopeDigest = digest.Digest(m.Source.Self.Digest)
-	}
+	/*
+		if m != nil {
+			scopeDigest = digest.Digest(m.Source.Self.Digest)
+		}
+	*/
 
 	// Use an HMAC, which allows us to keep the externalName un-inferrable.
 	// This also protects from length-extension attacks (where if we had

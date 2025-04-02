@@ -1,23 +1,9 @@
 package core
 
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	stdlog "log"
-	"slices"
-	"strings"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/mark3labs/mcp-go/mcp"
-	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/moby/buildkit/util/bklog"
-)
-
-// mcpDefaultAny lets us skip the typed defaults
-func mcpDefaultAny(v any) mcp.PropertyOption {
+/*
+// mcpDefaultArray is a stop-gap until mcp.DefaultArray exists upstream.
+func mcpDefaultArray[T any](v []T) mcp.PropertyOption {
+>>>>>>> a2cec232f (wip)
 	return func(schema map[string]any) {
 		schema["default"] = v
 	}
@@ -218,3 +204,4 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 
 	return s.run(ctx)
 }
+*/

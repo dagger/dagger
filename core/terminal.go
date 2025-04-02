@@ -1,22 +1,6 @@
 package core
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"io"
-
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
-	"github.com/muesli/termenv"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/distconsts"
-)
-
+/*
 const (
 	defaultTerminalImage = distconsts.AlpineImage
 )
@@ -197,3 +181,4 @@ func (dir *Directory) Terminal(
 	}
 	return ctr.Terminal(ctx, svcID, args)
 }
+*/

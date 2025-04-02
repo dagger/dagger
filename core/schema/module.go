@@ -1,13 +1,6 @@
 package schema
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"path/filepath"
-
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -18,211 +11,214 @@ type moduleSchema struct {
 var _ SchemaResolvers = &moduleSchema{}
 
 func (s *moduleSchema) Install() {
-	dagql.Fields[*core.Query]{
-		dagql.Func("module", s.module).
-			Doc(`Create a new module.`),
+	/*
+			dagql.Fields[*core.Query]{
+				dagql.Func("module", s.module).
+					Doc(`Create a new module.`),
 
-		dagql.Func("typeDef", s.typeDef).
-			Doc(`Create a new TypeDef.`),
+				dagql.Func("typeDef", s.typeDef).
+					Doc(`Create a new TypeDef.`),
 
-		dagql.Func("generatedCode", s.generatedCode).
-			Doc(`Create a code generation result, given a directory containing the generated code.`),
+				dagql.Func("generatedCode", s.generatedCode).
+					Doc(`Create a code generation result, given a directory containing the generated code.`),
 
-		dagql.Func("function", s.function).
-			Doc(`Creates a function.`).
-			Args(
-				dagql.Arg("name").Doc(`Name of the function, in its original format from the implementation language.`),
-				dagql.Arg("returnType").Doc(`Return type of the function.`),
-			),
+			dagql.Func("function", s.function).
+				Doc(`Creates a function.`).
+				Args(
+					dagql.Arg("name").Doc(`Name of the function, in its original format from the implementation language.`),
+					dagql.Arg("returnType").Doc(`Return type of the function.`),
+				),
 
-		dagql.Func("sourceMap", s.sourceMap).
-			Doc(`Creates source map metadata.`).
-			Args(
-				dagql.Arg("filename").Doc("The filename from the module source."),
-				dagql.Arg("line").Doc("The line number within the filename."),
-				dagql.Arg("column").Doc("The column number within the line."),
-			),
+			dagql.Func("sourceMap", s.sourceMap).
+				Doc(`Creates source map metadata.`).
+				Args(
+					dagql.Arg("filename").Doc("The filename from the module source."),
+					dagql.Arg("line").Doc("The line number within the filename."),
+					dagql.Arg("column").Doc("The column number within the line."),
+				),
 
-		dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
-			Doc(`The module currently being served in the session, if any.`),
+				dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
+					Doc(`The module currently being served in the session, if any.`),
 
-		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
-			Doc(`The TypeDef representations of the objects currently being served in the session.`),
+				dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
+					Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
-		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
-			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
-				`If the caller is not currently executing in a function, this will
-				return an error.`),
-	}.Install(s.dag)
+				dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
+					Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
+						`If the caller is not currently executing in a function, this will
+						return an error.`),
+			}.Install(s.dag)
 
-	dagql.Fields[*core.FunctionCall]{
-		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
-			Doc(`Set the return value of the function call to the provided value.`).
-			Args(
-				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
-			),
-		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
-			Doc(`Return an error from the function.`).
-			Args(
-				dagql.Arg("error").Doc(`The error to return.`),
-			),
-	}.Install(s.dag)
+		dagql.Fields[*core.FunctionCall]{
+			dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
+				Doc(`Set the return value of the function call to the provided value.`).
+				Args(
+					dagql.Arg("value").Doc(`JSON serialization of the return value.`),
+				),
+			dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
+				Doc(`Return an error from the function.`).
+				Args(
+					dagql.Arg("error").Doc(`The error to return.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.Module]{
-		// sync is used by external dependencies like daggerverse
-		Syncer[*core.Module]().
-			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
+			dagql.Fields[*core.Module]{
+				// sync is used by external dependencies like daggerverse
+				Syncer[*core.Module]().
+					Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
 
-		dagql.Func("dependencies", s.moduleDependencies).
-			Doc(`The dependencies of the module.`),
+				dagql.Func("dependencies", s.moduleDependencies).
+					Doc(`The dependencies of the module.`),
 
-		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
-			Doc(`The generated files and directories made on top of the module source's context directory.`),
+				dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
+					Doc(`The generated files and directories made on top of the module source's context directory.`),
 
-		dagql.Func("withDescription", s.moduleWithDescription).
-			Doc(`Retrieves the module with the given description`).
-			Args(
-				dagql.Arg("description").Doc(`The description to set`),
-			),
+			dagql.Func("withDescription", s.moduleWithDescription).
+				Doc(`Retrieves the module with the given description`).
+				Args(
+					dagql.Arg("description").Doc(`The description to set`),
+				),
 
-		dagql.Func("withObject", s.moduleWithObject).
-			Doc(`This module plus the given Object type and associated functions.`),
+				dagql.Func("withObject", s.moduleWithObject).
+					Doc(`This module plus the given Object type and associated functions.`),
 
-		dagql.Func("withInterface", s.moduleWithInterface).
-			Doc(`This module plus the given Interface type and associated functions`),
+				dagql.Func("withInterface", s.moduleWithInterface).
+					Doc(`This module plus the given Interface type and associated functions`),
 
-		dagql.Func("withEnum", s.moduleWithEnum).
-			Doc(`This module plus the given Enum type and associated values`),
+				dagql.Func("withEnum", s.moduleWithEnum).
+					Doc(`This module plus the given Enum type and associated values`),
 
-		dagql.NodeFunc("serve", s.moduleServe).
-			DoNotCache(`Mutates the calling session's global schema.`).
-			Doc(`Serve a module's API in the current session.`,
-				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
-			Args(
-				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
-			),
-	}.Install(s.dag)
+			dagql.NodeFunc("serve", s.moduleServe).
+				DoNotCache(`Mutates the calling session's global schema.`).
+				Doc(`Serve a module's API in the current session.`,
+					`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
+				Args(
+					dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.CurrentModule]{
-		dagql.Func("name", s.currentModuleName).
-			Doc(`The name of the module being executed in`),
+			dagql.Fields[*core.CurrentModule]{
+				dagql.Func("name", s.currentModuleName).
+					Doc(`The name of the module being executed in`),
 
-		dagql.Func("source", s.currentModuleSource).
-			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
+				dagql.Func("source", s.currentModuleSource).
+					Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
-			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
-			Args(
-				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
-				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
-				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
-			),
+			dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
+				Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
+				Args(
+					dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
+					dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+					dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				),
 
-		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
-			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
-			Args(
-				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
-			),
-	}.Install(s.dag)
+			dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
+				Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
+				Args(
+					dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.Function]{
-		dagql.Func("withDescription", s.functionWithDescription).
-			Doc(`Returns the function with the given doc string.`).
-			Args(
-				dagql.Arg("description").Doc(`The doc string to set.`),
-			),
+		dagql.Fields[*core.Function]{
+			dagql.Func("withDescription", s.functionWithDescription).
+				Doc(`Returns the function with the given doc string.`).
+				Args(
+					dagql.Arg("description").Doc(`The doc string to set.`),
+				),
 
-		dagql.Func("withSourceMap", s.functionWithSourceMap).
-			Doc(`Returns the function with the given source map.`).
-			Args(
-				dagql.Arg("sourceMap").Doc(`The source map for the function definition.`),
-			),
+			dagql.Func("withSourceMap", s.functionWithSourceMap).
+				Doc(`Returns the function with the given source map.`).
+				Args(
+					dagql.Arg("sourceMap").Doc(`The source map for the function definition.`),
+				),
 
-		dagql.Func("withArg", s.functionWithArg).
-			Doc(`Returns the function with the provided argument`).
-			Args(
-				dagql.Arg("name").Doc(`The name of the argument`),
-				dagql.Arg("typeDef").Doc(`The type of the argument`),
-				dagql.Arg("description").Doc(`A doc string for the argument, if any`),
-				dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
-				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
-				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
-				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
-			),
-	}.Install(s.dag)
+			dagql.Func("withArg", s.functionWithArg).
+				Doc(`Returns the function with the provided argument`).
+				Args(
+					dagql.Arg("name").Doc(`The name of the argument`),
+					dagql.Arg("typeDef").Doc(`The type of the argument`),
+					dagql.Arg("description").Doc(`A doc string for the argument, if any`),
+					dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
+					dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
+					dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
+					dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
+			dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
 
-	dagql.Fields[*core.FunctionCallArgValue]{}.Install(s.dag)
+			dagql.Fields[*core.FunctionCallArgValue]{}.Install(s.dag)
 
-	dagql.Fields[*core.SourceMap]{}.Install(s.dag)
+			dagql.Fields[*core.SourceMap]{}.Install(s.dag)
 
-	dagql.Fields[*core.TypeDef]{
-		dagql.Func("withOptional", s.typeDefWithOptional).
-			Doc(`Sets whether this type can be set to null.`),
+			dagql.Fields[*core.TypeDef]{
+				dagql.Func("withOptional", s.typeDefWithOptional).
+					Doc(`Sets whether this type can be set to null.`),
 
-		dagql.Func("withKind", s.typeDefWithKind).
-			Doc(`Sets the kind of the type.`),
+				dagql.Func("withKind", s.typeDefWithKind).
+					Doc(`Sets the kind of the type.`),
 
-		dagql.Func("withScalar", s.typeDefWithScalar).
-			Doc(`Returns a TypeDef of kind Scalar with the provided name.`),
+				dagql.Func("withScalar", s.typeDefWithScalar).
+					Doc(`Returns a TypeDef of kind Scalar with the provided name.`),
 
-		dagql.Func("withListOf", s.typeDefWithListOf).
-			Doc(`Returns a TypeDef of kind List with the provided type for its elements.`),
+				dagql.Func("withListOf", s.typeDefWithListOf).
+					Doc(`Returns a TypeDef of kind List with the provided type for its elements.`),
 
-		dagql.Func("withObject", s.typeDefWithObject).
-			Doc(`Returns a TypeDef of kind Object with the provided name.`,
-				`Note that an object's fields and functions may be omitted if the
-				intent is only to refer to an object. This is how functions are able to
-				return their own object, or any other circular reference.`),
+				dagql.Func("withObject", s.typeDefWithObject).
+					Doc(`Returns a TypeDef of kind Object with the provided name.`,
+						`Note that an object's fields and functions may be omitted if the
+						intent is only to refer to an object. This is how functions are able to
+						return their own object, or any other circular reference.`),
 
-		dagql.Func("withInterface", s.typeDefWithInterface).
-			Doc(`Returns a TypeDef of kind Interface with the provided name.`),
+				dagql.Func("withInterface", s.typeDefWithInterface).
+					Doc(`Returns a TypeDef of kind Interface with the provided name.`),
 
-		dagql.Func("withField", s.typeDefWithObjectField).
-			Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
-			Args(
-				dagql.Arg("name").Doc(`The name of the field in the object`),
-				dagql.Arg("typeDef").Doc(`The type of the field`),
-				dagql.Arg("description").Doc(`A doc string for the field, if any`),
-				dagql.Arg("sourceMap").Doc(`The source map for the field definition.`),
-			),
+			dagql.Func("withField", s.typeDefWithObjectField).
+				Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
+				Args(
+					dagql.Arg("name").Doc(`The name of the field in the object`),
+					dagql.Arg("typeDef").Doc(`The type of the field`),
+					dagql.Arg("description").Doc(`A doc string for the field, if any`),
+					dagql.Arg("sourceMap").Doc(`The source map for the field definition.`),
+				),
 
-		dagql.Func("withFunction", s.typeDefWithFunction).
-			Doc(`Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.`),
+				dagql.Func("withFunction", s.typeDefWithFunction).
+					Doc(`Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.`),
 
-		dagql.Func("withConstructor", s.typeDefWithObjectConstructor).
-			Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
+				dagql.Func("withConstructor", s.typeDefWithObjectConstructor).
+					Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
 
-		dagql.Func("withEnum", s.typeDefWithEnum).
-			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
-				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
-				This is how functions are able to return their own, or any other circular reference.`).
-			Args(
-				dagql.Arg("name").Doc(`The name of the enum`),
-				dagql.Arg("description").Doc(`A doc string for the enum, if any`),
-				dagql.Arg("sourceMap").Doc(`The source map for the enum definition.`),
-			),
+			dagql.Func("withEnum", s.typeDefWithEnum).
+				Doc(`Returns a TypeDef of kind Enum with the provided name.`,
+					`Note that an enum's values may be omitted if the intent is only to refer to an enum.
+					This is how functions are able to return their own, or any other circular reference.`).
+				Args(
+					dagql.Arg("name").Doc(`The name of the enum`),
+					dagql.Arg("description").Doc(`A doc string for the enum, if any`),
+					dagql.Arg("sourceMap").Doc(`The source map for the enum definition.`),
+				),
 
-		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
-			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
-			Args(
-				dagql.Arg("value").Doc(`The name of the value in the enum`),
-				dagql.Arg("description").Doc(`A doc string for the value, if any`),
-				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
-			),
-	}.Install(s.dag)
+			dagql.Func("withEnumValue", s.typeDefWithEnumValue).
+				Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+				Args(
+					dagql.Arg("value").Doc(`The name of the value in the enum`),
+					dagql.Arg("description").Doc(`A doc string for the value, if any`),
+					dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
+			dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
+	*/
 }
 
+/*
 func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}) (*core.TypeDef, error) {
 	return &core.TypeDef{}, nil
 }
@@ -698,3 +694,4 @@ func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Option
 	}
 	return sourceMapI.Self, nil
 }
+*/

@@ -53,11 +53,13 @@ type Server struct {
 	// View is the view that is applied to all queries on this server
 	View View
 
+	cache *DagqlCache
+
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
 	//
 	// TODO: copy-on-write
-	Cache *SessionCache
+	// Cache *SessionCache
 }
 
 type InstallHook interface {
@@ -83,7 +85,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c *SessionCache) *Server {
+func NewServer[T Typed](root T, c *DagqlCache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -91,7 +93,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		NoIDs: true,
 	})
 	srv := &Server{
-		Cache: c,
+		cache: c,
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -110,6 +112,10 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
+}
+
+func (s *Server) Cache() *DagqlCache {
+	return s.cache
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
@@ -500,18 +506,7 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
-	var base Object
-	var err error
-	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
-		}
-	} else {
-		base = s.root
-	}
-
-	res, id, err := base.Call(ctx, s, id)
+	res, id, err := s.loadType(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -519,19 +514,51 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
+	res, _, err := s.loadType(ctx, id)
+	return res, err
+}
+
+func (s *Server) loadType(ctx context.Context, id *call.ID) (Typed, *call.ID, error) {
 	var base Object
 	var err error
 	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
+		nth := int(id.Nth())
+		if nth == 0 {
+			base, err = s.Load(ctx, id.Receiver())
+			if err != nil {
+				return nil, nil, fmt.Errorf("load base: %w", err)
+			}
+		} else {
+			// we are selecting the nth element of an enumerable, load the list
+			// we are selecting from and then select the nth element from it rather
+			// than trying to call the field on the object
+			baseTyped, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, nil, fmt.Errorf("load base enum: %w", err)
+			}
+			baseEnum, isEnum := UnwrapAs[Enumerable](baseTyped)
+			if !isEnum {
+				return nil, nil, fmt.Errorf("cannot select item %d from non-enumerable %T", nth, baseTyped)
+			}
+			res, err := baseEnum.Nth(nth)
+			if err != nil {
+				return nil, nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			if wrapped, ok := res.(Derefable); ok {
+				res, ok = wrapped.Deref()
+				if !ok {
+					// the nth element is nil, maybe this should be allowed but for now error out
+					return nil, nil, fmt.Errorf("item %d is null from enumerable", nth)
+				}
+			}
+			return res, id, nil
 		}
 	} else {
 		base = s.root
 	}
 
-	res, _, err := base.Call(ctx, s, id)
-	return res, err
+	res, id, err := base.Call(ctx, s, id)
+	return res, id, err
 }
 
 // Select evaluates a series of chained field selections starting from the
@@ -541,7 +568,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 	// user-calls in the UI.
 	ctx = withInternal(ctx)
 
-	var res Typed = self
+	var res Result = self
 	var id *call.ID
 	for i, sel := range sels {
 		var err error
@@ -565,7 +592,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 				break
 			}
 			isObj := s.isObjectType(res.Type().Elem.Name())
-			enum, isEnum := res.(Enumerable)
+			enum, isEnum := UnwrapAs[Enumerable](res)
 			if !isEnum {
 				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
 			}
@@ -589,7 +616,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 				}
 				if isObj {
 					nthID := id.SelectNth(nth)
-					val, err = s.toSelectable(nthID, val)
+					val, err = s.enumToSelectable(ctx, nthID, res)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -626,33 +653,6 @@ func (s *Server) AddInstallHook(hook InstallHook) {
 	s.installLock.Lock()
 	s.installHooks = append(s.installHooks, hook)
 	s.installLock.Unlock()
-}
-
-func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
-	var res Typed = self
-	var id *call.ID
-	for i, sel := range sels {
-		var err error
-		res, id, err = self.ReturnType(ctx, s, sel)
-		if err != nil {
-			return nil, fmt.Errorf("select: %w", err)
-		}
-
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			// if the result is an Object, set it as the next selection target, and
-			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(id, res)
-			if err != nil {
-				return nil, err
-			}
-			res = self
-		} else if i+1 < len(sels) {
-			// if the result is not an object and there are further selections,
-			// that's a logic error.
-			return nil, fmt.Errorf("cannot sub-select %s", res.Type())
-		}
-	}
-	return id, nil
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
@@ -833,33 +833,44 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		return nil, nil
 	}
 
-	enum, ok := val.(Enumerable)
+	enum, ok := UnwrapAs[Enumerable](val)
+
+	// TODO:
+	// fmt.Printf("resolvePath result: %T(%+v), enumerable: %v\n", val, val, ok)
+
 	if ok {
 		// we're sub-selecting into an enumerable value, so we need to resolve each
 		// element
 
+		// TODO:
+		// fmt.Printf("resolvePath enumerable: len: %d, subsels: %d\n", enum.Len(), len(sel.Subselections))
+
 		// TODO arrays of arrays
 		results := []any{} // TODO subtle: favor [] over null result
 		for nth := 1; nth <= enum.Len(); nth++ {
-			val, err := enum.Nth(nth)
+			nthVal, err := enum.Nth(nth)
 			if err != nil {
 				return nil, err
 			}
-			if wrapped, ok := val.(Derefable); ok {
-				val, ok = wrapped.Deref()
+			if wrapped, ok := UnwrapAs[Derefable](nthVal); ok {
+				nthVal, ok = wrapped.Deref()
 				if !ok {
 					results = append(results, nil)
 					continue
 				}
 			}
 			if len(sel.Subselections) == 0 {
-				results = append(results, val)
+				results = append(results, nthVal)
 			} else {
 				nthID := chainedID.SelectNth(nth)
-				node, err := s.toSelectable(nthID, val)
+				node, err := s.enumToSelectable(ctx, nthID, val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
+
+				// TODO:
+				// fmt.Printf("resolvePath enumerable: nth %d, node: %T(%+v), id: %s\n", nth, node, node, nthID.Display())
+
 				res, err := s.Resolve(ctx, node, sel.Subselections...)
 				if err != nil {
 					return nil, err
@@ -884,16 +895,37 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 }
 
 func (s *Server) toSelectable(chainedID *call.ID, val Typed) (Object, error) {
-	if sel, ok := val.(Object); ok {
+	/* TODO: ??
+	if sel, ok := UnwrapAs[Object](val); ok {
+		// TODO: reassess this now that our input is a Result?
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
 		return sel, nil
 	}
+	*/
 	class, ok := s.ObjectType(val.Type().Name())
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 	}
-	return class.New(chainedID, val)
+	obj, err := class.New(chainedID, val)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// TODO:
+	// fmt.Printf("toSelectable: val: %T(%+v), obj: %T(%+v), id: %s\n", val, val, obj, obj, chainedID.Display())
+
+	return obj, nil
+}
+
+// TODO: add a EnumerableResult type?
+func (s *Server) enumToSelectable(ctx context.Context, nthID *call.ID, enumRes Result) (Object, error) {
+	nthRes, err := s.cache.SelectNth(ctx, s, enumRes, int(nthID.Nth()))
+	if err != nil {
+		return nil, fmt.Errorf("select nth %d: %w", nthID.Nth(), err)
+	}
+	return s.toSelectable(nthID, nthRes)
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
@@ -1043,6 +1075,14 @@ func (InputObject[T]) Decoder() InputDecoder {
 			Value: obj,
 		}, nil
 	})
+}
+
+func (i InputObject[T]) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	panic("implement me")
+}
+
+func (InputObject[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	panic("implement me")
 }
 
 func setInputObjectFields(obj any, vals map[string]any) error {

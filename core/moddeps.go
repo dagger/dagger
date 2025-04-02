@@ -117,7 +117,14 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dagqlCache, err := d.root.Cache(ctx)
+	/*
+		dagqlCache, err := d.root.Cache(ctx)
+		if err != nil {
+			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+		}
+		dag := dagql.NewServer(d.root, dagqlCache)
+	*/
+	dagqlCache, err := d.root.DagqlCache(ctx)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
 	}
@@ -133,75 +140,79 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 
 	dagintro.Install[*Query](dag)
 
-	var objects []*ModuleObjectType
-	var ifaces []*InterfaceType
+	// var objects []*ModuleObjectType
+	// var ifaces []*InterfaceType
 	for _, mod := range d.Mods {
 		err := mod.Install(ctx, dag)
 		if err != nil {
 			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
-		// TODO support core interfaces types
-		if userMod, ok := mod.(*Module); ok {
-			defs, err := mod.TypeDefs(ctx, dag)
-			if err != nil {
-				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
-			}
-			for _, def := range defs {
-				switch def.Kind {
-				case TypeDefKindObject:
-					objects = append(objects, &ModuleObjectType{
-						typeDef: def.AsObject.Value,
-						mod:     userMod,
-					})
-				case TypeDefKindInterface:
-					ifaces = append(ifaces, &InterfaceType{
-						typeDef: def.AsInterface.Value,
-						mod:     userMod,
-					})
+		/*
+			// TODO support core interfaces types
+			if userMod, ok := mod.(*Module); ok {
+				defs, err := mod.TypeDefs(ctx, dag)
+				if err != nil {
+					return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
+				}
+				for _, def := range defs {
+					switch def.Kind {
+					case TypeDefKindObject:
+						objects = append(objects, &ModuleObjectType{
+							typeDef: def.AsObject.Value,
+							mod:     userMod,
+						})
+					case TypeDefKindInterface:
+						ifaces = append(ifaces, &InterfaceType{
+							typeDef: def.AsInterface.Value,
+							mod:     userMod,
+						})
+					}
 				}
 			}
-		}
+		*/
 	}
 
-	// add any extensions to objects for the interfaces they implement (if any)
-	for _, objType := range objects {
-		obj := objType.typeDef
-		class, found := dag.ObjectType(obj.Name)
-		if !found {
-			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
-		}
-		for _, ifaceType := range ifaces {
-			iface := ifaceType.typeDef
-			if !obj.IsSubtypeOf(iface) {
-				continue
+	/*
+		// add any extensions to objects for the interfaces they implement (if any)
+		for _, objType := range objects {
+			obj := objType.typeDef
+			class, found := dag.ObjectType(obj.Name)
+			if !found {
+				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
 			}
-			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
-			class.Extend(
-				dagql.FieldSpec{
-					Name:        asIfaceFieldName,
-					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:      ifaceType.mod.IDModule(),
-				},
-				func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-					inst, ok := self.(dagql.Instance[*ModuleObject])
-					if !ok {
-						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
+				for _, ifaceType := range ifaces {
+					iface := ifaceType.typeDef
+					if !obj.IsSubtypeOf(iface) {
+						continue
 					}
-					return &InterfaceAnnotatedValue{
-						TypeDef:        iface,
-						Fields:         inst.Self.Fields,
-						UnderlyingType: objType,
-						IfaceType:      ifaceType,
-					}, nil
-				},
-				dagql.CacheSpec{
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
-				},
-			)
+					asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
+					class.Extend(
+						dagql.FieldSpec{
+							Name:        asIfaceFieldName,
+							Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+							Type:        &InterfaceAnnotatedValue{TypeDef: iface},
+							Module:      ifaceType.mod.IDModule(),
+						},
+						func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+							inst, ok := self.(dagql.Instance[*ModuleObject])
+							if !ok {
+								return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
+							}
+							return &InterfaceAnnotatedValue{
+								TypeDef:        iface,
+								Fields:         inst.Self.Fields,
+								UnderlyingType: objType,
+								IfaceType:      ifaceType,
+							}, nil
+						},
+						dagql.CacheSpec{
+							GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+						},
+					)
+				}
 		}
-	}
+	*/
 
 	if err := dag.Select(ctx, dag.Root(), &loadedSchemaJSONFile,
 		dagql.Selector{

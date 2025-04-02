@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,10 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/distribution/reference"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
@@ -23,11 +28,6 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct {
@@ -627,8 +627,8 @@ func (s *containerSchema) Install() {
 		dagql.Func("withServiceBinding", s.withServiceBinding).
 			Doc(`Establish a runtime dependency on a from a container to a network service.`,
 				`The service will be started automatically when needed and detached
-				when it is no longer needed, executing the default command if none is
-				set.`,
+					when it is no longer needed, executing the default command if none is
+					set.`,
 				`The service will be reachable from the container via the provided hostname alias.`,
 				`The service dependency will also convey to any files or directories produced by the container.`).
 			Args(
@@ -658,35 +658,37 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.NodeFunc("terminal", s.terminal).
-			View(AfterVersion("v0.12.0")).
-			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
-			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
-			Args(
-				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("insecureRootCapabilities").Doc(
-					`Execute the command with all root capabilities. This is similar to
-				running a command with "sudo" or executing "docker run" with the
-				"--privileged" flag. Containerization does not provide any security
-				guarantees when using this option. It should only be used when
-				absolutely necessary and only with trusted commands.`),
-			),
-		dagql.NodeFunc("terminal", s.terminalLegacy).
-			View(BeforeVersion("v0.12.0")).
-			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
-			Args(
-				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("insecureRootCapabilities").Doc(
-					`Execute the command with all root capabilities. This is similar to
-				running a command with "sudo" or executing "docker run" with the
-				"--privileged" flag. Containerization does not provide any security
-				guarantees when using this option. It should only be used when
-				absolutely necessary and only with trusted commands.`),
-			),
+		/*
+			dagql.NodeFunc("terminal", s.terminal).
+				View(AfterVersion("v0.12.0")).
+				DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
+				Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+				Args(
+					dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
+					dagql.Arg("experimentalPrivilegedNesting").Doc(
+						`Provides Dagger access to the executed command.`),
+					dagql.Arg("insecureRootCapabilities").Doc(
+						`Execute the command with all root capabilities. This is similar to
+					running a command with "sudo" or executing "docker run" with the
+					"--privileged" flag. Containerization does not provide any security
+					guarantees when using this option. It should only be used when
+					absolutely necessary and only with trusted commands.`),
+				),
+			dagql.NodeFunc("terminal", s.terminalLegacy).
+				View(BeforeVersion("v0.12.0")).
+				Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+				Args(
+					dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
+					dagql.Arg("experimentalPrivilegedNesting").Doc(
+						`Provides Dagger access to the executed command.`),
+					dagql.Arg("insecureRootCapabilities").Doc(
+						`Execute the command with all root capabilities. This is similar to
+					running a command with "sudo" or executing "docker run" with the
+					"--privileged" flag. Containerization does not provide any security
+					guarantees when using this option. It should only be used when
+					absolutely necessary and only with trusted commands.`),
+				),
+		*/
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -702,16 +704,18 @@ func (s *containerSchema) Install() {
 				`This currently works for Nvidia devices only.`),
 	}.Install(s.srv)
 
-	dagql.Fields[*core.TerminalLegacy]{
-		Syncer[*core.TerminalLegacy]().
-			Doc(`Forces evaluation of the pipeline in the engine.`,
-				`It doesn't run the default command if no exec has been set.`),
+	/*
+		dagql.Fields[*core.TerminalLegacy]{
+			Syncer[*core.TerminalLegacy]().
+				Doc(`Forces evaluation of the pipeline in the engine.`,
+					`It doesn't run the default command if no exec has been set.`),
 
-		dagql.Func("websocketEndpoint", s.terminalLegacyWebsocketEndpoint).
-			View(BeforeVersion("v0.12.0")).
-			Deprecated("Use newer dagger to access the terminal").
-			Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
-	}.Install(s.srv)
+			dagql.Func("websocketEndpoint", s.terminalLegacyWebsocketEndpoint).
+				View(BeforeVersion("v0.12.0")).
+				Deprecated("Use newer dagger to access the terminal").
+				Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
+		}.Install(s.srv)
+	*/
 }
 
 type containerArgs struct {
@@ -1132,6 +1136,8 @@ type EnvVariable struct {
 	Value string `field:"true" doc:"The environment variable value."`
 }
 
+var _ dagql.Typed = EnvVariable{}
+
 func (EnvVariable) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "EnvVariable",
@@ -1145,6 +1151,14 @@ func (EnvVariable) TypeDescription() string {
 
 func (EnvVariable) Description() string {
 	return "A simple key value object that represents an environment variable."
+}
+
+func (EnvVariable) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x EnvVariable
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) ([]EnvVariable, error) {
@@ -1186,6 +1200,8 @@ type Label struct {
 	Value string `field:"true" doc:"The label value."`
 }
 
+var _ dagql.Typed = Label{}
+
 func (Label) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Label",
@@ -1195,6 +1211,14 @@ func (Label) Type() *ast.Type {
 
 func (Label) TypeDescription() string {
 	return "A simple key value object that represents a label."
+}
+
+func (Label) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x Label
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 func (s *containerSchema) labels(ctx context.Context, parent *core.Container, args struct{}) ([]Label, error) {
@@ -2075,6 +2099,7 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	return ctr, nil
 }
 
+/*
 type containerTerminalArgs struct {
 	core.TerminalArgs
 }
@@ -2151,3 +2176,4 @@ func (s *containerSchema) terminalLegacy(
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
 	return "", nil
 }
+*/

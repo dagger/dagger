@@ -18,6 +18,9 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
@@ -32,10 +35,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 )
 
 type DefaultTerminalCmdOpts struct {
@@ -55,7 +54,7 @@ type ContainerAnnotation struct {
 
 // Container is a content-addressed container.
 type Container struct {
-	Query *Query
+	Query *Query `json:"-"`
 
 	// The container's root filesystem.
 	FS *pb.Definition
@@ -113,6 +112,20 @@ func (*Container) Type() *ast.Type {
 
 func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
+}
+
+func (*Container) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var x Container
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	x.Query = query
+	return &x, nil
 }
 
 var _ HasPBDefinitions = (*Container)(nil)
@@ -1820,6 +1833,22 @@ func (proto ImageLayerCompression) ToLiteral() call.Literal {
 	return ImageLayerCompressions.Literal(proto)
 }
 
+func (ImageLayerCompression) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ImageLayerCompression
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (proto ImageLayerCompression) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, proto)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), proto), nil
+}
+
 type ImageMediaTypes string
 
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
@@ -1847,6 +1876,22 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 
 func (proto ImageMediaTypes) ToLiteral() call.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
+}
+
+func (ImageMediaTypes) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ImageMediaTypes
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (proto ImageMediaTypes) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, proto)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), proto), nil
 }
 
 type ReturnTypes string
@@ -1882,6 +1927,22 @@ func (expect ReturnTypes) Decoder() dagql.InputDecoder {
 
 func (expect ReturnTypes) ToLiteral() call.Literal {
 	return ReturnTypesEnum.Literal(expect)
+}
+
+func (ReturnTypes) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ReturnTypes
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (expect ReturnTypes) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, expect)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), expect), nil
 }
 
 // ReturnCodes gets the valid exit codes allowed for a specific return status

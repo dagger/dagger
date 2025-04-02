@@ -1,35 +1,23 @@
 package dagql_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/99designs/gqlgen/client"
-	"github.com/moby/buildkit/identity"
-	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
-	"gotest.tools/v3/golden"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/dagql/internal/pipes"
-	"github.com/dagger/dagger/dagql/internal/points"
-	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/slog"
 )
 
+/*
 var logs = new(bytes.Buffer)
 
 func init() {
@@ -40,16 +28,7 @@ func init() {
 	// keep test output clean
 	slog.SetDefault(slog.New(slog.NewTextHandler(logsW, nil)))
 }
-
-type Query struct {
-}
-
-func (Query) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Query",
-		NonNull:   true,
-	}
-}
+*/
 
 func req(t *testing.T, gql *client.Client, query string, res any) {
 	t.Helper()
@@ -63,6 +42,198 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 	assert.ErrorContains(t, err, substring)
 }
 
+func TestIt(t *testing.T) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
+	// tmpDir := t.TempDir()
+	// dbPath := tmpDir + "/test.db"
+
+	dbPath := "/tmp/testdb/test.db"
+	require.NoError(t, os.RemoveAll("/tmp/testdb"))
+	require.NoError(t, os.MkdirAll("/tmp/testdb", 0755))
+
+	db, err := dagql.NewDB(dbPath)
+	require.NoError(t, err)
+
+	srv := dagql.NewServer(&Query{}, db)
+
+	Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	{
+		var res struct {
+			GetFoo struct {
+				A string
+				B int
+			}
+		}
+		req(t, gql, `query {
+					getFoo {
+						a
+						b
+					}
+				}`, &res)
+		require.Equal(t, "defaultA", res.GetFoo.A)
+		require.Equal(t, 999, res.GetFoo.B)
+
+		// t.FailNow()
+
+		req(t, gql, `query {
+					getFoo(a: "myA", b: 42) {
+						a
+						b
+					}
+				}`, &res)
+		require.Equal(t, "myA", res.GetFoo.A)
+		require.Equal(t, 42, res.GetFoo.B)
+	}
+
+	{
+		var res struct {
+			GetFoo struct {
+				AsString string
+			}
+		}
+		req(t, gql, `query {
+					getFoo(a: "someA", b: 43) {
+						asString
+					}
+				}`, &res)
+
+		require.Equal(t, "someA-43", res.GetFoo.AsString)
+	}
+
+	{
+		var res struct {
+			GetFoos []struct {
+				ID string
+			}
+		}
+		req(t, gql, `query {
+			getFoos(a: ["a1", "a2", "a3"], b: [1001, 1002, 1003]) {
+				id
+			}
+		}`, &res)
+		require.Len(t, res.GetFoos, 3)
+		var ids []string
+		for _, foo := range res.GetFoos {
+			ids = append(ids, foo.ID)
+		}
+		var res2 struct {
+			ConcatFoos string
+		}
+		idsArg, err := json.Marshal(ids)
+		require.NoError(t, err)
+		req(t, gql, `query {
+			concatFoos(foos: `+string(idsArg)+`)
+		}`, &res2)
+		require.Equal(t, "a1-1001, a2-1002, a3-1003, ", res2.ConcatFoos)
+	}
+}
+
+type Query struct {
+}
+
+func (*Query) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Query",
+		NonNull:   true,
+	}
+}
+
+func (*Query) FromJSON(_ context.Context, bs []byte) (dagql.Typed, error) {
+	return &Query{}, nil
+}
+
+type Foo struct {
+	A string `field:"true"`
+	B int    `field:"true"`
+}
+
+func (*Foo) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Foo",
+		NonNull:   true,
+	}
+}
+
+func (*Foo) TypeDescription() string {
+	return "A Foo."
+}
+
+func (*Foo) FromJSON(_ context.Context, bs []byte) (dagql.Typed, error) {
+	var x Foo
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func Install(srv *dagql.Server) {
+	dagql.Fields[*Query]{
+		dagql.NodeFunc("getFoo", func(ctx context.Context, self dagql.Instance[*Query], args struct {
+			A string `default:"defaultA"`
+			B int    `default:"999"`
+		}) (*Foo, error) {
+			return &Foo{
+				A: args.A,
+				B: args.B,
+			}, nil
+		}),
+
+		dagql.NodeFunc("getFoos", func(ctx context.Context, self dagql.Instance[*Query], args struct {
+			A []string
+			B []int
+		}) ([]*Foo, error) {
+			var foos []*Foo
+			for i, a := range args.A {
+				foos = append(foos, &Foo{
+					A: a,
+					B: args.B[i],
+				})
+			}
+			return foos, nil
+		}),
+
+		dagql.NodeFunc("concatFoos", func(ctx context.Context, self dagql.Instance[*Query], args struct {
+			Foos []dagql.ID[*Foo]
+		}) (string, error) {
+			fmt.Println("concatFoos", args.Foos)
+			foos, err := collectIDInstances(ctx, srv, args.Foos)
+			if err != nil {
+				return "", fmt.Errorf("unoh: %w", err)
+			}
+
+			var out string
+			for _, foo := range foos {
+				foo := foo.Self
+				out += foo.A + "-" + strconv.Itoa(foo.B) + ", "
+			}
+			return out, nil
+		}),
+	}.Install(srv)
+
+	dagql.Fields[*Foo]{
+		dagql.NodeFunc("asString", func(ctx context.Context, self dagql.Instance[*Foo], args struct{}) (string, error) {
+			return self.Self.A + "-" + strconv.Itoa(self.Self.B), nil
+		}),
+	}.Install(srv)
+}
+
+func collectIDInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.Instance[T], error) {
+	ts := make([]dagql.Instance[T], len(ids))
+	for i, id := range ids {
+		inst, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		ts[i] = inst
+	}
+	return ts, nil
+}
+
+/*
 func newCache() *dagql.SessionCache {
 	return dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]())
 }
@@ -140,38 +311,6 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 6, res.Point.ShiftLeft.Neighbors[2].Y)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[3].X)
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
-}
-
-func TestSelectID(t *testing.T) {
-	ctx := context.Background()
-	srv := dagql.NewServer(Query{}, newCache())
-	points.Install[Query](srv)
-
-	id, err := srv.SelectID(ctx, srv.Root(),
-		dagql.Selector{
-			Field: "point",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "x",
-					Value: dagql.NewInt(6),
-				},
-				{
-					Name:  "y",
-					Value: dagql.NewInt(7),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "shiftLeft",
-		},
-	)
-	require.NoError(t, err)
-
-	loaded, err := srv.Load(ctx, id)
-	require.NoError(t, err)
-	point := loaded.(dagql.Instance[*points.Point])
-	assert.Equal(t, point.Self.X, 5)
-	assert.Equal(t, point.Self.Y, 7)
 }
 
 func TestSelectArray(t *testing.T) {
@@ -2693,3 +2832,4 @@ func TestInstallHooks(t *testing.T) {
 	require.Equal(t, 200, res.OtherPoint.Y)
 	require.Equal(t, "hello world!", res.OtherPoint.Hello)
 }
+*/

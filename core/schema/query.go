@@ -27,7 +27,12 @@ func (s *querySchema) Install() {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, dagql.CachePerCall).
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, dagql.CachePerCall).
+		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
@@ -42,7 +47,15 @@ func (s *querySchema) Install() {
 	core.ImageMediaTypesEnum.Install(s.srv)
 	core.CacheSharingModes.Install(s.srv)
 	core.TypeDefKinds.Install(s.srv)
-	core.ModuleSourceKindEnum.Install(s.srv)
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// core.ModuleSourceKindEnum.Install(s.srv)
 	core.ReturnTypesEnum.Install(s.srv)
 
 	dagql.MustInputSpec(PipelineLabel{}).Install(s.srv)
@@ -138,7 +151,8 @@ func (s *querySchema) schemaJSONFile(
 
 	// LLB marshalling takes up too much memory when file ops have a ton of contents, so we still go through
 	// the blob source for now simply to avoid that.
-	f, err = core.NewFileSt(ctx, parent.Self, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	// f, err = core.NewFileSt(ctx, parent.Self, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	f, err = core.NewFileSt(ctx, parent.Self, blob.LLB(dgst), f.File, f.Platform, nil)
 	if err != nil {
 		return inst, err
 	}

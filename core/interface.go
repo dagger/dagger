@@ -1,20 +1,6 @@
 package core
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-)
-
+/*
 type InterfaceType struct {
 	mod *Module
 
@@ -114,6 +100,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 		valType: modType,
 	}
 	return loadedImpl, nil
+	panic("implement me")
 }
 
 func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
@@ -288,15 +275,15 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
-				if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](res); ok {
-					var postCall func(context.Context) error
-					postCall, res = postCallRes.GetPostCall()
-					if postCall != nil {
-						if err := postCall(ctx); err != nil {
-							return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
+					if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](res); ok {
+						var postCall func(context.Context) error
+						postCall, res = postCallRes.GetPostCall()
+						if postCall != nil {
+							if err := postCall(ctx); err != nil {
+								return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
+							}
 						}
 					}
-				}
 
 				if fnTypeDef.ReturnType.Underlying().Kind != TypeDefKindInterface {
 					return res, nil
@@ -464,6 +451,14 @@ func (iface *InterfaceAnnotatedValue) TypeDefinition(view dagql.View) *ast.Defin
 	return def
 }
 
+func (InterfaceAnnotatedValue) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x InterfaceAnnotatedValue
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
 var _ HasPBDefinitions = (*InterfaceAnnotatedValue)(nil)
 
 func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -496,3 +491,4 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 	}
 	return defs, nil
 }
+*/

@@ -1,24 +1,6 @@
 package core
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/googleapis/gax-go/v2/apierror"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
-
-	genai "github.com/google/generative-ai-go/genai"
-)
-
+/*
 type GenaiClient struct {
 	client   *genai.Client
 	endpoint *LLMEndpoint
@@ -366,3 +348,4 @@ func bbiTypeToGenaiType(bbi string) genai.Type {
 		return genai.TypeUnspecified
 	}
 }
+*/

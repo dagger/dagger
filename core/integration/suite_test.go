@@ -72,6 +72,7 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 	return client
 }
 
+/*
 func newCache(t *testctx.T) core.CacheVolumeID {
 	res, err := testutil.Query[struct {
 		CacheVolume struct {
@@ -90,6 +91,7 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 
 	return res.CacheVolume.ID
 }
+*/
 
 func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 	res, err := testutil.Query[struct {

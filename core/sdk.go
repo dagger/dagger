@@ -69,7 +69,8 @@ type ClientGenerator interface {
 		context.Context,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
+		// dagql.Instance[*ModuleSource],
+		any,
 
 		// Current module dependencies.
 		*ModDeps,
@@ -124,7 +125,8 @@ type CodeGenerator interface {
 		*ModDeps,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
+		// dagql.Instance[*ModuleSource],
+		any,
 	) (*GeneratedCode, error)
 }
 
@@ -172,7 +174,8 @@ type Runtime interface {
 		*ModDeps,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
+		// dagql.Instance[*ModuleSource],
+		any,
 	) (*Container, error)
 }
 

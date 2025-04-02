@@ -13,13 +13,15 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 // Typed is any value that knows its GraphQL type.
 type Typed interface {
 	// Type returns the GraphQL type of the value.
 	Type() *ast.Type
+
+	// TODO:
+	FromJSON(context.Context, []byte) (Typed, error)
 }
 
 // Type is an object that defines a new GraphQL type.
@@ -53,6 +55,107 @@ type ObjectType interface {
 	Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view View) (FieldSpec, bool)
+	// Call calls a field on the class against an instance.
+	Call(ctx context.Context, parent Object, field string, view View, args map[string]Input) (Typed, error)
+}
+
+type Result interface {
+	Typed
+	Wrapper
+	ResultID() int
+	ResultDigest() string
+	json.Marshaler
+}
+
+type inputResult[I Input] struct {
+	resultID     int
+	resultDigest string
+	input        I
+}
+
+func NewInputResult[I Input](resultID int, resultDigest string, input I) Result {
+	return &inputResult[I]{
+		resultID:     resultID,
+		resultDigest: resultDigest,
+		input:        input,
+	}
+}
+
+var _ Result = &inputResult[Input]{}
+
+func (i *inputResult[I]) ResultID() int {
+	return i.resultID
+}
+
+func (i *inputResult[I]) ResultDigest() string {
+	return i.resultDigest
+}
+
+func (i *inputResult[I]) Type() *ast.Type {
+	return i.input.Type()
+}
+
+func (i *inputResult[I]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.input)
+}
+
+func (i *inputResult[I]) UnmarshalJSON(p []byte) error {
+	return json.Unmarshal(p, &i.input)
+}
+
+func (i *inputResult[I]) FromJSON(_ context.Context, p []byte) (Typed, error) {
+	if err := json.Unmarshal(p, i); err != nil {
+		return nil, err
+	}
+	return i, nil
+}
+
+func (i *inputResult[I]) withResultID(resultID int) Result {
+	i.resultID = resultID
+	return i
+}
+
+func (i *inputResult[I]) Unwrap() Typed {
+	return i.input
+}
+
+type typedResult struct {
+	resultID     int
+	resultDigest string
+	typed        Typed
+}
+
+var _ Result = &typedResult{}
+
+func (r *typedResult) ResultID() int {
+	return r.resultID
+}
+
+func (r *typedResult) ResultDigest() string {
+	return r.resultDigest
+}
+
+func (r *typedResult) Type() *ast.Type {
+	return r.typed.Type()
+}
+
+func (r *typedResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.typed)
+}
+
+func (r *typedResult) UnmarshalJSON(p []byte) error {
+	return json.Unmarshal(p, &r.typed)
+}
+
+func (r *typedResult) FromJSON(_ context.Context, p []byte) (Typed, error) {
+	if err := json.Unmarshal(p, r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (r *typedResult) Unwrap() Typed {
+	return r.typed
 }
 
 type IDType interface {
@@ -75,7 +178,7 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
-	PostCallable
+	// PostCallable
 
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
@@ -86,7 +189,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+	Call(context.Context, *Server, *call.ID) (Result, *call.ID, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
@@ -94,18 +197,14 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+	Select(context.Context, *Server, Selector) (Result, *call.ID, error)
 
-	// ReturnType gets the return type of the field selected by the given
-	// selector.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	ReturnType(context.Context, *Server, Selector) (Typed, *call.ID, error)
+	Result
+	// TODO: dumb but go's type system is annoying
+	WithResultID(int) Object
 }
 
+/*
 // A type that has a callback attached that needs to always run before returned to a caller
 // whether or not the type is being returned from cache or not
 type PostCallable interface {
@@ -119,6 +218,7 @@ type PostCallable interface {
 type OnReleaser interface {
 	OnRelease(context.Context) error
 }
+*/
 
 // ScalarType represents a GraphQL Scalar type.
 type ScalarType interface {
@@ -138,8 +238,9 @@ type Input interface {
 	// In principle all Inputs are able to be represented as JSON, but we don't
 	// require the interface to be implemented since builtins like strings
 	// (Enums) and slices (Arrays) already marshal appropriately.
-
 	// json.Marshaler
+
+	ToResult(context.Context, *Server) (Result, error)
 }
 
 // Setter allows a type to populate fields of a struct.
@@ -282,6 +383,26 @@ func (i Int) SetField(v reflect.Value) error {
 	}
 }
 
+func (i Int) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, i)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[Int]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        i,
+	}, nil
+}
+
+func (Int) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Int
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 // Float is a GraphQL Float scalar.
 type Float float64
 
@@ -374,6 +495,26 @@ func (f Float) SetField(v reflect.Value) error {
 	}
 }
 
+func (f Float) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, f)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[Float]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        f,
+	}, nil
+}
+
+func (Float) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Float
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 // Boolean is a GraphQL Boolean scalar.
 type Boolean bool
 
@@ -459,6 +600,26 @@ func (b Boolean) SetField(v reflect.Value) error {
 	}
 }
 
+func (b Boolean) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, b)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[Boolean]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        b,
+	}, nil
+}
+
+func (Boolean) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Boolean
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 // String is a GraphQL String scalar.
 type String string
 
@@ -538,6 +699,26 @@ func (s String) SetField(v reflect.Value) error {
 	}
 }
 
+func (s String) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, s)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[String]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        s,
+	}, nil
+}
+
+func (String) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x String
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 type ScalarValue interface {
 	ScalarType
 	Input
@@ -605,6 +786,26 @@ func (s Scalar[T]) MarshalJSON() ([]byte, error) {
 
 func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 	return json.Unmarshal(p, &s.Value)
+}
+
+func (s Scalar[T]) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, s)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[Scalar[T]]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        s,
+	}, nil
+}
+
+func (Scalar[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Scalar[T]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 // ID is a type-checked ID scalar.
@@ -769,6 +970,18 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	return i.Decode(str)
 }
 
+func (i ID[T]) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	return i.Load(ctx, srv)
+}
+
+func (ID[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x ID[T]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 // Load loads the instance with the given ID from the server.
 func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
 	val, err := server.Load(ctx, i.id)
@@ -881,6 +1094,27 @@ func (d ArrayInput[I]) SetField(val reflect.Value) error {
 	return nil
 }
 
+func (i ArrayInput[S]) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	// TODO: using scalar result is weird, but maybe works?
+	resultID, resultDgst, err := srv.ScalarResult(ctx, i)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[ArrayInput[S]]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        i,
+	}, nil
+}
+
+func (ArrayInput[S]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x ArrayInput[S]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 // Array is an array of GraphQL values.
 type Array[T Typed] []T
 
@@ -918,6 +1152,14 @@ func (i Array[T]) Type() *ast.Type {
 		Elem:    t.Type(),
 		NonNull: true,
 	}
+}
+
+func (i Array[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Array[T]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, fmt.Errorf("unmarshal array: %w", err)
+	}
+	return x, nil
 }
 
 var _ Enumerable = Array[Typed]{}
@@ -1024,6 +1266,14 @@ func (e *EnumValues[T]) Install(srv *Server) {
 	srv.scalars[zero.Type().Name()] = e
 }
 
+func (e *EnumValues[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	x := new(EnumValues[T])
+	if err := json.Unmarshal(bs, x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 type EnumValueName struct {
 	Enum  string
 	Value string
@@ -1076,6 +1326,26 @@ func (e *EnumValueName) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.Value)
 }
 
+func (e *EnumValueName) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, e)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[*EnumValueName]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        e,
+	}, nil
+}
+
+func (*EnumValueName) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	x := new(EnumValueName)
+	if err := json.Unmarshal(bs, x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
 func MustInputSpec(val Type) InputObjectSpec {
 	spec := InputObjectSpec{
 		Name: val.TypeName(),
@@ -1119,4 +1389,12 @@ func (spec InputObjectSpec) TypeDefinition(view View) *ast.Definition {
 		Description: spec.Description,
 		Fields:      spec.Fields.FieldDefinitions(view),
 	}
+}
+
+func (InputObjectSpec) FromJSON(ctx context.Context, bs []byte) (Typed, error) {
+	var x InputObjectSpec
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }

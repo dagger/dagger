@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -68,4 +69,33 @@ func (Platform) DecodeInput(val any) (dagql.Input, error) {
 
 func (p Platform) MarshalJSON() ([]byte, error) {
 	return json.Marshal(platforms.Format(specs.Platform(p)))
+}
+
+func (p *Platform) UnmarshalJSON(bs []byte) error {
+	var s string
+	if err := json.Unmarshal(bs, &s); err != nil {
+		return err
+	}
+	plat, err := platforms.Parse(s)
+	if err != nil {
+		return err
+	}
+	*p = Platform(plat)
+	return nil
+}
+
+func (Platform) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var p Platform
+	if err := p.UnmarshalJSON(bs); err != nil {
+		return nil, fmt.Errorf("unmarshal JSON: %w", err)
+	}
+	return p, nil
+}
+
+func (p Platform) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), p), nil
 }

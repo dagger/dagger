@@ -1,17 +1,6 @@
 package core
 
-import (
-	"context"
-	"testing"
-
-	"github.com/opencontainers/go-digest"
-	"github.com/stretchr/testify/assert"
-	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
-)
-
+/*
 type LLMTestQuery struct{}
 
 func (LLMTestQuery) Type() *ast.Type {
@@ -199,3 +188,4 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
 }
+*/

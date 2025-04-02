@@ -163,24 +163,27 @@ func (s *directorySchema) Install() {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-		dagql.Func("asGit", s.asGit).
-			Doc(`Converts this directory to a local git repository`),
-		dagql.NodeFunc("terminal", s.terminal).
-			View(AfterVersion("v0.12.0")).
-			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
-			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
-			Args(
-				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
-				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("insecureRootCapabilities").Doc(
-					`Execute the command with all root capabilities. This is similar to
-			running a command with "sudo" or executing "docker run" with the
-			"--privileged" flag. Containerization does not provide any security
-			guarantees when using this option. It should only be used when
-			absolutely necessary and only with trusted commands.`),
-			),
+
+		/*
+			dagql.Func("asGit", s.asGit).
+				Doc(`Converts this directory to a local git repository`),
+			dagql.NodeFunc("terminal", s.terminal).
+				View(AfterVersion("v0.12.0")).
+				DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
+				Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
+				Args(
+					dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
+					dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
+					dagql.Arg("experimentalPrivilegedNesting").Doc(
+						`Provides Dagger access to the executed command.`),
+					dagql.Arg("insecureRootCapabilities").Doc(
+						`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
+				),
+		*/
 	}.Install(s.srv)
 }
 
@@ -517,6 +520,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 	)
 }
 
+/*
 type directoryTerminalArgs struct {
 	core.TerminalArgs
 	Container dagql.Optional[core.ContainerID]
@@ -562,3 +566,4 @@ func (s *directorySchema) asGit(
 		},
 	}, nil
 }
+*/

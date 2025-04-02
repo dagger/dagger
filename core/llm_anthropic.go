@@ -1,20 +1,6 @@
 package core
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
+/*
 type AnthropicClient struct {
 	client   *anthropic.Client
 	endpoint *LLMEndpoint
@@ -284,3 +270,4 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		},
 	}, nil
 }
+*/

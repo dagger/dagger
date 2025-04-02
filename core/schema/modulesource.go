@@ -1,32 +1,7 @@
 package schema
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/url"
-	"os"
-	"path"
-	"path/filepath"
-	"sort"
-	"strings"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/opencontainers/go-digest"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type moduleSourceSchema struct {
@@ -36,164 +11,167 @@ type moduleSourceSchema struct {
 var _ SchemaResolvers = &moduleSourceSchema{}
 
 func (s *moduleSourceSchema) Install() {
-	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
-			Doc(`Create a new module source instance from a source ref string`).
-			Args(
-				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
-				dagql.Arg("refPin").Doc(`The pinned version of the module source`),
-				dagql.Arg("disableFindUp").Doc(`If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`),
-				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
-				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
-			),
-	}.Install(s.dag)
+	/*
+		dagql.Fields[*core.Query]{
+			dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
+				Doc(`Create a new module source instance from a source ref string`).
+				Args(
+					dagql.Arg("refString").Doc(`The string ref representation of the module source`),
+					dagql.Arg("refPin").Doc(`The pinned version of the module source`),
+					dagql.Arg("disableFindUp").Doc(`If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`),
+					dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
+					dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.Directory]{
-		dagql.NodeFunc("asModule", s.directoryAsModule).
-			Doc(`Load the directory as a Dagger module source`).
-			Args(
-				dagql.Arg("sourceRootPath").Doc(
-					`An optional subpath of the directory which contains the module's configuration file.`,
-					`If not set, the module source code is loaded from the root of the directory.`),
-			),
-		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
-			Doc(`Load the directory as a Dagger module source`).
-			Args(
-				dagql.Arg("sourceRootPath").Doc(
-					`An optional subpath of the directory which contains the module's configuration file.`,
-					`If not set, the module source code is loaded from the root of the directory.`),
-			),
-	}.Install(s.dag)
+		dagql.Fields[*core.Directory]{
+			dagql.NodeFunc("asModule", s.directoryAsModule).
+				Doc(`Load the directory as a Dagger module source`).
+				Args(
+					dagql.Arg("sourceRootPath").Doc(
+						`An optional subpath of the directory which contains the module's configuration file.`,
+						`If not set, the module source code is loaded from the root of the directory.`),
+				),
+			dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
+				Doc(`Load the directory as a Dagger module source`).
+				Args(
+					dagql.Arg("sourceRootPath").Doc(
+						`An optional subpath of the directory which contains the module's configuration file.`,
+						`If not set, the module source code is loaded from the root of the directory.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.ModuleSource]{
-		// sync is used by external dependencies like daggerverse
-		Syncer[*core.ModuleSource]().
-			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
+			dagql.Fields[*core.ModuleSource]{
+				// sync is used by external dependencies like daggerverse
+				Syncer[*core.ModuleSource]().
+					Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
 
-		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
-			Doc(`The path to the directory containing the module's source code, relative to the context directory.`),
+				dagql.Func("sourceSubpath", s.moduleSourceSubpath).
+					Doc(`The path to the directory containing the module's source code, relative to the context directory.`),
 
-		dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
-			Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
+				dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
+					Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
 
-		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
-			Doc(`Update the module source with a new source subpath.`).
-			Args(
-				dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
-			),
+			dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
+				Doc(`Update the module source with a new source subpath.`).
+				Args(
+					dagql.Arg("path").Doc(`The path to set as the source subpath. Must be relative to the module source's source root directory.`),
+				),
 
-		dagql.Func("withName", s.moduleSourceWithName).
-			Doc(`Update the module source with a new name.`).
-			Args(
-				dagql.Arg("name").Doc(`The name to set.`),
-			),
+			dagql.Func("withName", s.moduleSourceWithName).
+				Doc(`Update the module source with a new name.`).
+				Args(
+					dagql.Arg("name").Doc(`The name to set.`),
+				),
 
-		dagql.FuncWithCacheKey("withIncludes", s.moduleSourceWithIncludes, dagql.CachePerClient).
-			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
-			Args(
-				dagql.Arg("patterns").Doc(`The new additional include patterns.`),
-			),
+			dagql.FuncWithCacheKey("withIncludes", s.moduleSourceWithIncludes, dagql.CachePerClient).
+				Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
+				Args(
+					dagql.Arg("patterns").Doc(`The new additional include patterns.`),
+				),
 
-		dagql.Func("withSDK", s.moduleSourceWithSDK).
-			Doc(`Update the module source with a new SDK.`).
-			Args(
-				dagql.Arg("source").Doc(`The SDK source to set.`),
-			),
+			dagql.Func("withSDK", s.moduleSourceWithSDK).
+				Doc(`Update the module source with a new SDK.`).
+				Args(
+					dagql.Arg("source").Doc(`The SDK source to set.`),
+				),
 
-		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
-			Doc(`Upgrade the engine version of the module to the given value.`).
-			Args(
-				dagql.Arg("version").Doc(`The engine version to upgrade to.`),
-			),
+			dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
+				Doc(`Upgrade the engine version of the module to the given value.`).
+				Args(
+					dagql.Arg("version").Doc(`The engine version to upgrade to.`),
+				),
 
-		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
-			Doc(`Append the provided dependencies to the module source's dependency list.`).
-			Args(
-				dagql.Arg("dependencies").Doc(`The dependencies to append.`),
-			),
+			dagql.Func("withDependencies", s.moduleSourceWithDependencies).
+				Doc(`Append the provided dependencies to the module source's dependency list.`).
+				Args(
+					dagql.Arg("dependencies").Doc(`The dependencies to append.`),
+				),
 
-		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
-			Doc(`Update one or more module dependencies.`).
-			Args(
-				dagql.Arg("dependencies").Doc(`The dependencies to update.`),
-			),
+			dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+				Doc(`Update one or more module dependencies.`).
+				Args(
+					dagql.Arg("dependencies").Doc(`The dependencies to update.`),
+				),
 
-		dagql.Func("withoutDependencies", s.moduleSourceWithoutDependencies).
-			Doc(`Remove the provided dependencies from the module source's dependency list.`).
-			Args(
-				dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
-			),
+			dagql.Func("withoutDependencies", s.moduleSourceWithoutDependencies).
+				Doc(`Remove the provided dependencies from the module source's dependency list.`).
+				Args(
+					dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
+				),
 
-		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
-			Doc(`The generated files and directories made on top of the module source's context directory.`),
+				dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
+					Doc(`The generated files and directories made on top of the module source's context directory.`),
 
-		dagql.Func("asString", s.moduleSourceAsString).
-			Doc(`A human readable ref string representation of this module source.`),
+				dagql.Func("asString", s.moduleSourceAsString).
+					Doc(`A human readable ref string representation of this module source.`),
 
-		dagql.Func("pin", s.moduleSourcePin).
-			Doc(`The pinned version of this module source.`),
+				dagql.Func("pin", s.moduleSourcePin).
+					Doc(`The pinned version of this module source.`),
 
-		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
-			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
+				dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
+					Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+				dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+					Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
-		dagql.Func("directory", s.moduleSourceDirectory).
-			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
-			Args(
-				dagql.Arg(`path`).Doc(`A subpath from the source directory to select.`),
-			),
+			dagql.Func("directory", s.moduleSourceDirectory).
+				Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
+				Args(
+					dagql.Arg(`path`).Doc(`A subpath from the source directory to select.`),
+				),
 
-		dagql.Func("cloneRef", s.moduleSourceCloneRef).
-			Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
+				dagql.Func("cloneRef", s.moduleSourceCloneRef).
+					Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
 
-		dagql.Func("htmlURL", s.moduleSourceHTMLURL).
-			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
+				dagql.Func("htmlURL", s.moduleSourceHTMLURL).
+					Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
 
-		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
-			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
+				dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
+					Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
 
-		dagql.Func("version", s.moduleSourceVersion).
-			Doc(`The specified version of the git repo this source points to.`),
+				dagql.Func("version", s.moduleSourceVersion).
+					Doc(`The specified version of the git repo this source points to.`),
 
-		dagql.Func("commit", s.moduleSourceCommit).
-			Doc(`The resolved commit of the git repo this source points to.`),
+				dagql.Func("commit", s.moduleSourceCommit).
+					Doc(`The resolved commit of the git repo this source points to.`),
 
-		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
-			Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
+				dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
+					Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
 
-		dagql.Func("cloneURL", s.moduleSourceCloneURL).
-			View(BeforeVersion("v0.13.0")).
-			Doc(`The URL to clone the root of the git repo from`).
-			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
+				dagql.Func("cloneURL", s.moduleSourceCloneURL).
+					View(BeforeVersion("v0.13.0")).
+					Doc(`The URL to clone the root of the git repo from`).
+					Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
 
-		dagql.Func("withClient", s.moduleSourceWithClient).
-			Doc(`Update the module source with a new client to generate.`).
-			Args(
-				dagql.Arg("generator").Doc(`The generator to use`),
-				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
-				dagql.Arg("dev").Doc(`Generate in developer mode`),
-			),
+			dagql.Func("withClient", s.moduleSourceWithClient).
+				Doc(`Update the module source with a new client to generate.`).
+				Args(
+					dagql.Arg("generator").Doc(`The generator to use`),
+					dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
+					dagql.Arg("dev").Doc(`Generate in developer mode`),
+				),
 
-		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
-			Doc(`Remove a client from the module source.`).
-			Args(
-				dagql.Arg("path").Doc(`The path of the client to remove.`),
-			),
-	}.Install(s.dag)
+			dagql.Func("withoutClient", s.moduleSourceWithoutClient).
+				Doc(`Remove a client from the module source.`).
+				Args(
+					dagql.Arg("path").Doc(`The path of the client to remove.`),
+				),
+		}.Install(s.dag)
 
-	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
-	dagql.Fields[*modules.ModuleConfigClient]{}.Install(s.dag)
+		dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
+		dagql.Fields[*modules.ModuleConfigClient]{}.Install(s.dag)
 
-	dagql.Fields[*core.GeneratedCode]{
-		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
-			Doc(`Set the list of paths to mark generated in version control.`),
-		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
-			Doc(`Set the list of paths to ignore in version control.`),
-	}.Install(s.dag)
+		dagql.Fields[*core.GeneratedCode]{
+			dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
+				Doc(`Set the list of paths to mark generated in version control.`),
+			dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
+				Doc(`Set the list of paths to ignore in version control.`),
+		}.Install(s.dag)
+	*/
 }
 
+/*
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
 	RefString      string
@@ -834,11 +812,11 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 
 	if src.SourceSubpath != "" {
 		// load the source dir if set
-		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath+"/**"+"/*")
 	} else {
 		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
 		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
+		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**"+"/*")
 	}
 
 	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
@@ -2371,3 +2349,4 @@ func matchVersion(versions []string, match, subPath string) (string, error) {
 	}
 	return "", fmt.Errorf("unable to find version %s", match)
 }
+*/

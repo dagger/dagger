@@ -173,6 +173,10 @@ type Server struct {
 	// dagql cache
 	//
 	baseDagqlCache cache.Cache[digest.Digest, dagql.Typed]
+	// TODO: ...
+	// TODO: ...
+	// TODO: ...
+	theRealCacheNow *dagql.DagqlCache
 
 	//
 	// session+client state
@@ -579,6 +583,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
 		}
 	}
+
+	// TODO:
+	dbPath := "/var/lib/dagger/dagger.db"
+	if err := os.RemoveAll(dbPath); err != nil {
+		return nil, fmt.Errorf("failed to remove db file: %w", err)
+	}
+	dagqlCacheDB, err := dagql.NewDB(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create db: %w", err)
+	}
+	srv.theRealCacheNow = dagql.NewDagqlCache(dagqlCacheDB)
 
 	return srv, nil
 }

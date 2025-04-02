@@ -2,6 +2,7 @@ package introspection
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,16 +15,58 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+		/*
+			dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+				return WrapSchema(srv.Schema()), nil
+			}),
+
+			// custom dagger field
+			dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
+				return string(srv.View), nil
+			}).View(dagql.AllView{}),
+
+			dagql.Func("__type", func(ctx context.Context, self T, args struct {
+				Name string
+			}) (*Type, error) {
+				def, ok := srv.Schema().Types[args.Name]
+				if !ok {
+					return nil, fmt.Errorf("unknown type: %q", args.Name)
+				}
+				return WrapTypeFromDef(srv.Schema(), def), nil
+			}),
+
+				dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+					return WrapSchema(srv.Schema()), nil
+				}, dagql.CachePerCall),
+
+				// custom dagger field
+				dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
+					return string(srv.View), nil
+				}).View(dagql.AllView{}),
+
+				dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
+					Name string
+				}) (*Type, error) {
+					def, ok := srv.Schema().Types[args.Name]
+					if !ok {
+						return nil, fmt.Errorf("unknown type: %q", args.Name)
+					}
+					return WrapTypeFromDef(srv.Schema(), def), nil
+				}, dagql.CachePerCall),
+		*/
+
+		/*
+		 */
+		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
-		}, dagql.CachePerCall),
+		}).DoNotCache("TODO"),
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			return string(srv.View), nil
 		}).View(dagql.AllView{}),
 
-		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
+		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
 			def, ok := srv.Schema().Types[args.Name]
@@ -31,7 +74,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
-		}, dagql.CachePerCall),
+		}).DoNotCache("TODO"),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)
@@ -270,19 +313,27 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 }
 
 type Schema struct {
-	schema *ast.Schema
+	ASTSchema *ast.Schema
 }
 
 func (s *Schema) Description() string {
-	return s.schema.Description
+	return s.ASTSchema.Description
+}
+
+func (*Schema) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var s Schema
+	if err := json.Unmarshal(bs, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (s *Schema) Types() []*Type {
 	typeIndex := map[string]Type{}
-	typeNames := make([]string, 0, len(s.schema.Types))
-	for _, typ := range s.schema.Types {
+	typeNames := make([]string, 0, len(s.ASTSchema.Types))
+	for _, typ := range s.ASTSchema.Types {
 		typeNames = append(typeNames, typ.Name)
-		typeIndex[typ.Name] = *WrapTypeFromDef(s.schema, typ)
+		typeIndex[typ.Name] = *WrapTypeFromDef(s.ASTSchema, typ)
 	}
 	sort.Strings(typeNames)
 
@@ -295,22 +346,22 @@ func (s *Schema) Types() []*Type {
 }
 
 func (s *Schema) QueryType() *Type {
-	return WrapTypeFromDef(s.schema, s.schema.Query)
+	return WrapTypeFromDef(s.ASTSchema, s.ASTSchema.Query)
 }
 
 func (s *Schema) MutationType() *Type {
-	return WrapTypeFromDef(s.schema, s.schema.Mutation)
+	return WrapTypeFromDef(s.ASTSchema, s.ASTSchema.Mutation)
 }
 
 func (s *Schema) SubscriptionType() *Type {
-	return WrapTypeFromDef(s.schema, s.schema.Subscription)
+	return WrapTypeFromDef(s.ASTSchema, s.ASTSchema.Subscription)
 }
 
 func (s *Schema) Directives() []*Directive {
 	dIndex := map[string]Directive{}
-	dNames := make([]string, 0, len(s.schema.Directives))
+	dNames := make([]string, 0, len(s.ASTSchema.Directives))
 
-	for _, d := range s.schema.Directives {
+	for _, d := range s.ASTSchema.Directives {
 		dNames = append(dNames, d.Name)
 		dIndex[d.Name] = s.directiveFromDef(d)
 	}
@@ -337,7 +388,7 @@ func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
 			Name:         arg.Name,
 			description:  arg.Description,
 			DefaultValue: defaultValue(arg.DefaultValue),
-			Type_:        WrapTypeFromType(s.schema, arg.Type),
+			Type_:        WrapTypeFromType(s.ASTSchema, arg.Type),
 			deprecation:  arg.Directives.ForName("deprecated"),
 		}
 	}
@@ -467,6 +518,22 @@ func (k TypeKind) TypeDescription() string {
 	return "The kind of a GraphQL type."
 }
 
+func (TypeKind) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var k TypeKind
+	if err := json.Unmarshal(bs, &k); err != nil {
+		return nil, err
+	}
+	return k, nil
+}
+
+func (k TypeKind) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, k)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), k), nil
+}
+
 type DirectiveLocation string
 
 var DirectiveLocations = dagql.NewEnum[DirectiveLocation](
@@ -512,17 +579,33 @@ func (l DirectiveLocation) TypeDescription() string {
 	return "A location that a directive may be applied."
 }
 
+func (DirectiveLocation) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var l DirectiveLocation
+	if err := json.Unmarshal(bs, &l); err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+
+func (d DirectiveLocation) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, d)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), d), nil
+}
+
 type Type struct {
-	schema *ast.Schema
-	def    *ast.Definition
-	typ    *ast.Type
+	ASTSchema *ast.Schema
+	ASTDef    *ast.Definition
+	ASTType   *ast.Type
 }
 
 func WrapTypeFromDef(s *ast.Schema, def *ast.Definition) *Type {
 	if def == nil {
 		return nil
 	}
-	return &Type{schema: s, def: def}
+	return &Type{ASTSchema: s, ASTDef: def}
 }
 
 func WrapTypeFromType(s *ast.Schema, typ *ast.Type) *Type {
@@ -535,47 +618,55 @@ func WrapTypeFromType(s *ast.Schema, typ *ast.Type) *Type {
 		if !ok {
 			panic("unknown type: " + typ.NamedType)
 		}
-		return &Type{schema: s, def: def}
+		return &Type{ASTSchema: s, ASTDef: def}
 	}
-	return &Type{schema: s, typ: typ}
+	return &Type{ASTSchema: s, ASTType: typ}
+}
+
+func (*Type) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var t Type
+	if err := json.Unmarshal(bs, &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 func (t *Type) Kind() string {
-	if t.typ != nil {
-		if t.typ.NonNull {
+	if t.ASTType != nil {
+		if t.ASTType.NonNull {
 			return "NON_NULL"
 		}
 
-		if t.typ.Elem != nil {
+		if t.ASTType.Elem != nil {
 			return "LIST"
 		}
 	} else {
-		return string(t.def.Kind)
+		return string(t.ASTDef.Kind)
 	}
 
 	panic("UNKNOWN")
 }
 
 func (t *Type) Name() *string {
-	if t.def == nil {
+	if t.ASTDef == nil {
 		return nil
 	}
-	return &t.def.Name
+	return &t.ASTDef.Name
 }
 
 func (t *Type) Description() string {
-	if t.def == nil {
+	if t.ASTDef == nil {
 		return ""
 	}
-	return t.def.Description
+	return t.ASTDef.Description
 }
 
 func (t *Type) Fields(includeDeprecated bool) []*Field {
-	if t.def == nil || (t.def.Kind != ast.Object && t.def.Kind != ast.Interface) {
+	if t.ASTDef == nil || (t.ASTDef.Kind != ast.Object && t.ASTDef.Kind != ast.Interface) {
 		return []*Field{}
 	}
 	fields := []*Field{}
-	for _, f := range t.def.Fields {
+	for _, f := range t.ASTDef.Fields {
 		if strings.HasPrefix(f.Name, "_") {
 			continue
 		}
@@ -587,7 +678,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 		var args []*InputValue
 		for _, arg := range f.Arguments {
 			args = append(args, &InputValue{
-				Type_:        WrapTypeFromType(t.schema, arg.Type),
+				Type_:        WrapTypeFromType(t.ASTSchema, arg.Type),
 				Name:         arg.Name,
 				description:  arg.Description,
 				DefaultValue: defaultValue(arg.DefaultValue),
@@ -600,7 +691,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 			Name:        f.Name,
 			description: f.Description,
 			Args:        args,
-			Type_:       WrapTypeFromType(t.schema, f.Type),
+			Type_:       WrapTypeFromType(t.ASTSchema, f.Type),
 			directives:  f.Directives,
 			deprecation: f.Directives.ForName("deprecated"),
 		})
@@ -609,16 +700,16 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 }
 
 func (t *Type) InputFields() []*InputValue {
-	if t.def == nil || t.def.Kind != ast.InputObject {
+	if t.ASTDef == nil || t.ASTDef.Kind != ast.InputObject {
 		return []*InputValue{}
 	}
 
 	res := []*InputValue{}
-	for _, f := range t.def.Fields {
+	for _, f := range t.ASTDef.Fields {
 		res = append(res, &InputValue{
 			Name:         f.Name,
 			description:  f.Description,
-			Type_:        WrapTypeFromType(t.schema, f.Type),
+			Type_:        WrapTypeFromType(t.ASTSchema, f.Type),
 			DefaultValue: defaultValue(f.DefaultValue),
 			directives:   f.Directives,
 			deprecation:  f.Directives.ForName("deprecated"),
@@ -628,7 +719,7 @@ func (t *Type) InputFields() []*InputValue {
 }
 
 func (t *Type) Directives() []*DirectiveApplication {
-	return directiveApplications(t.def.Directives)
+	return directiveApplications(t.ASTDef.Directives)
 }
 
 func defaultValue(value *ast.Value) *string {
@@ -640,37 +731,37 @@ func defaultValue(value *ast.Value) *string {
 }
 
 func (t *Type) Interfaces() []*Type {
-	if t.def == nil || t.def.Kind != ast.Object {
+	if t.ASTDef == nil || t.ASTDef.Kind != ast.Object {
 		return []*Type{}
 	}
 
 	res := []*Type{}
-	for _, intf := range t.def.Interfaces {
-		res = append(res, WrapTypeFromDef(t.schema, t.schema.Types[intf]))
+	for _, intf := range t.ASTDef.Interfaces {
+		res = append(res, WrapTypeFromDef(t.ASTSchema, t.ASTSchema.Types[intf]))
 	}
 
 	return res
 }
 
 func (t *Type) PossibleTypes() []*Type {
-	if t.def == nil || (t.def.Kind != ast.Interface && t.def.Kind != ast.Union) {
+	if t.ASTDef == nil || (t.ASTDef.Kind != ast.Interface && t.ASTDef.Kind != ast.Union) {
 		return []*Type{}
 	}
 
 	res := []*Type{}
-	for _, pt := range t.schema.GetPossibleTypes(t.def) {
-		res = append(res, WrapTypeFromDef(t.schema, pt))
+	for _, pt := range t.ASTSchema.GetPossibleTypes(t.ASTDef) {
+		res = append(res, WrapTypeFromDef(t.ASTSchema, pt))
 	}
 	return res
 }
 
 func (t *Type) EnumValues(includeDeprecated bool) []*EnumValue {
-	if t.def == nil || t.def.Kind != ast.Enum {
+	if t.ASTDef == nil || t.ASTDef.Kind != ast.Enum {
 		return []*EnumValue{}
 	}
 
 	res := []*EnumValue{}
-	for _, val := range t.def.EnumValues {
+	for _, val := range t.ASTDef.EnumValues {
 		if !includeDeprecated && val.Directives.ForName("deprecated") != nil {
 			continue
 		}
@@ -686,25 +777,25 @@ func (t *Type) EnumValues(includeDeprecated bool) []*EnumValue {
 }
 
 func (t *Type) OfType() *Type {
-	if t.typ == nil {
+	if t.ASTType == nil {
 		return nil
 	}
-	if t.typ.NonNull {
+	if t.ASTType.NonNull {
 		// fake non null nodes
-		cpy := *t.typ
+		cpy := *t.ASTType
 		cpy.NonNull = false
 
-		return WrapTypeFromType(t.schema, &cpy)
+		return WrapTypeFromType(t.ASTSchema, &cpy)
 	}
-	if t.typ.Elem != nil {
-		return WrapTypeFromType(t.schema, t.typ.Elem)
+	if t.ASTType.Elem != nil {
+		return WrapTypeFromType(t.ASTSchema, t.ASTType.Elem)
 	}
 	return nil
 }
 
 func (t *Type) SpecifiedByURL() *string {
-	directive := t.def.Directives.ForName("specifiedBy")
-	if t.def.Kind != ast.Scalar || directive == nil {
+	directive := t.ASTDef.Directives.ForName("specifiedBy")
+	if t.ASTDef.Kind != ast.Scalar || directive == nil {
 		return nil
 	}
 	// def: directive @specifiedBy(url: String!) on SCALAR
@@ -757,8 +848,56 @@ type (
 	}
 )
 
+func (*Directive) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var d Directive
+	if err := json.Unmarshal(bs, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (*DirectiveApplication) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var d DirectiveApplication
+	if err := json.Unmarshal(bs, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (*DirectiveApplicationArg) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var d DirectiveApplicationArg
+	if err := json.Unmarshal(bs, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (*EnumValue) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var e EnumValue
+	if err := json.Unmarshal(bs, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+func (*Field) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var f Field
+	if err := json.Unmarshal(bs, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+func (*InputValue) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var i InputValue
+	if err := json.Unmarshal(bs, &i); err != nil {
+		return nil, err
+	}
+	return &i, nil
+}
+
 func WrapSchema(schema *ast.Schema) *Schema {
-	return &Schema{schema: schema}
+	return &Schema{ASTSchema: schema}
 }
 
 func (e *EnumValue) Description() string {

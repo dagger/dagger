@@ -29,9 +29,11 @@ func (m *CoreMod) Name() string {
 }
 
 // GetSource returns an empty module source
+/*
 func (m *CoreMod) GetSource() *core.ModuleSource {
 	return &core.ModuleSource{}
 }
+*/
 
 func (m *CoreMod) View() (dagql.View, bool) {
 	return m.Dag.View, true

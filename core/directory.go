@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -28,10 +29,11 @@ import (
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	Query *Query
+	Query *Query `json:"-"`
 
-	LLB    *pb.Definition
-	Result bkcache.ImmutableRef // only valid when returned by dagop
+	LLB *pb.Definition
+	// only valid when returned by dagop
+	Result bkcache.ImmutableRef `json:"-"`
 
 	Dir      string
 	Platform Platform
@@ -39,6 +41,8 @@ type Directory struct {
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 }
+
+var _ dagql.Typed = (*Directory)(nil)
 
 func (*Directory) Type() *ast.Type {
 	return &ast.Type{
@@ -49,6 +53,20 @@ func (*Directory) Type() *ast.Type {
 
 func (*Directory) TypeDescription() string {
 	return "A directory."
+}
+
+func (*Directory) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var dir Directory
+	if err := json.Unmarshal(bs, &dir); err != nil {
+		return nil, err
+	}
+	dir.Query = query
+	return &dir, nil
 }
 
 var _ HasPBDefinitions = (*Directory)(nil)
@@ -109,6 +127,7 @@ func (dir *Directory) Clone() *Directory {
 	return &cp
 }
 
+/* TODO:
 var _ dagql.OnReleaser = (*Directory)(nil)
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
@@ -117,6 +136,7 @@ func (dir *Directory) OnRelease(ctx context.Context) error {
 	}
 	return nil
 }
+*/
 
 func (dir *Directory) State() (llb.State, error) {
 	if dir.LLB == nil {
@@ -168,15 +188,15 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 		return nil, nil
 	}
 
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
@@ -247,15 +267,14 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
@@ -307,15 +326,15 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
@@ -424,15 +443,15 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	dir.Dir = path.Join(dir.Dir, subdir)
 
 	// check that the directory actually exists so the user gets an error earlier
@@ -450,15 +469,15 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	err = validateFileName(file)
 	if err != nil {
 		return nil, err
@@ -769,15 +788,15 @@ func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory,
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
 	var defPB *pb.Definition
 	if dir.Dir != "" && dir.Dir != "/" {
 		src, err := dir.State()
@@ -817,13 +836,14 @@ func (dir *Directory) Root() (*Directory, error) {
 }
 
 func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := dir.Query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
 	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {

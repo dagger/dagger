@@ -23,8 +23,6 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/core"
 )
 
 func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
@@ -89,10 +87,12 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 		var eg errgroup.Group
 
 		seenCacheMounts := map[string]struct{}{}
-		core.SeenCacheKeys.Range(func(k any, v any) bool {
-			seenCacheMounts[k.(string)] = struct{}{}
-			return true
-		})
+		/*
+			core.SeenCacheKeys.Range(func(k any, v any) bool {
+				seenCacheMounts[k.(string)] = struct{}{}
+				return true
+			})
+		*/
 
 		for cacheMountName := range seenCacheMounts {
 			eg.Go(func() error {
@@ -201,7 +201,8 @@ func cacheKeyFromMountName(name string) string {
 	// NOTE: this will be problematic if backwards incompatible changes are made
 	// to the key format and client<->server are out of sync. That's a general
 	// problem though too, so just accepting it for now.
-	return core.NewCache(name).Sum()
+	// return core.NewCache(name).Sum()
+	return "TODO"
 }
 
 func withCacheMount(ctx context.Context, mountManager *mounts.MountManager, cacheKey string, cb func(ctx context.Context, mnt mount.Mount) error) error {

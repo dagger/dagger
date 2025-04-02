@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -26,10 +27,11 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	Query *Query
+	Query *Query `json:"-"`
 
-	LLB    *pb.Definition
-	Result bkcache.ImmutableRef // only valid when returned by dagop
+	LLB *pb.Definition
+	// only valid when returned by dagop
+	Result bkcache.ImmutableRef `json:"-"`
 
 	File     string
 	Platform Platform
@@ -47,6 +49,20 @@ func (*File) Type() *ast.Type {
 
 func (*File) TypeDescription() string {
 	return "A file."
+}
+
+func (*File) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var file File
+	if err := json.Unmarshal(bs, &file); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal file: %w", err)
+	}
+	file.Query = query
+	return &file, nil
 }
 
 var _ HasPBDefinitions = (*File)(nil)
@@ -70,7 +86,7 @@ func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-var _ dagql.OnReleaser = (*File)(nil)
+// var _ dagql.OnReleaser = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
 	if file.Result != nil {
@@ -161,16 +177,16 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
 	defer detach()
+
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	ref, err := bkRef(ctx, bk, file.LLB)
 	if err != nil {
@@ -252,16 +268,16 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
 	defer detach()
+
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	ref, err := bkRef(ctx, bk, file.LLB)
 	if err != nil {

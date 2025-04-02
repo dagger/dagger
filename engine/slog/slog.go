@@ -57,6 +57,10 @@ func SetDefault(l *Logger) {
 	slog.SetDefault(l.Logger)
 }
 
+func SetLogLoggerLevel(level Level) (oldLevel Level) {
+	return slog.SetLogLoggerLevel(level)
+}
+
 func New(h slog.Handler) *Logger {
 	return &Logger{slog.New(h)}
 }

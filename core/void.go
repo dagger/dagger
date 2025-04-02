@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -45,4 +46,12 @@ var _ dagql.ScalarType = Void{}
 func (Void) DecodeInput(val any) (dagql.Input, error) {
 	// void types cannot be constructed - they have no corresponding valid values
 	return nil, fmt.Errorf("cannot convert %T to Void", val)
+}
+
+func (Void) FromJSON(_ context.Context, bs []byte) (dagql.Typed, error) {
+	return nil, fmt.Errorf("cannot convert %s to Void", string(bs))
+}
+
+func (p Void) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	return nil, fmt.Errorf("cannot convert %T to Void", p)
 }

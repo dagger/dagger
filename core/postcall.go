@@ -1,19 +1,6 @@
 package core
 
-import (
-	"context"
-	"fmt"
-	"slices"
-	"strings"
-	"sync"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
-)
-
+/*
 func ResourceTransferPostCall(
 	ctx context.Context,
 	query *Query,
@@ -165,3 +152,4 @@ func ResourceTransferPostCall(
 func nopTransfer(ctx context.Context) error {
 	return nil
 }
+*/

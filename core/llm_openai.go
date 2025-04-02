@@ -1,20 +1,6 @@
 package core
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/azure"
-	"github.com/openai/openai-go/option"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
-)
-
+/*
 type OpenAIClient struct {
 	client           openai.Client
 	endpoint         *LLMEndpoint
@@ -287,3 +273,4 @@ func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLM
 	}
 	return toolCalls, nil
 }
+*/

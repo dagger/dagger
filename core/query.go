@@ -14,7 +14,6 @@ import (
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -31,10 +30,10 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
+	// ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
 
 	// If the current client is coming from a function, return the module that function is from
-	CurrentModule(context.Context) (*Module, error)
+	// CurrentModule(context.Context) (*Module, error)
 
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
@@ -56,6 +55,12 @@ type Server interface {
 
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (*dagql.SessionCache, error)
+
+	// TODO: ...
+	// TODO: ...
+	// TODO: ...
+	// TODO: ...
+	DagqlCache(context.Context) (*dagql.DagqlCache, error)
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
@@ -112,8 +117,39 @@ type Server interface {
 	SecretSalt() []byte
 }
 
+type queryServerKey struct{}
+
+func ContextWithQueryServer(ctx context.Context, srv Server) context.Context {
+	return context.WithValue(ctx, queryServerKey{}, srv)
+}
+
+func queryServerFromContext(ctx context.Context) (Server, bool) {
+	srv, ok := ctx.Value(queryServerKey{}).(Server)
+	return srv, ok
+}
+
+type queryKey struct{}
+
+func ContextWithQuery(ctx context.Context, q *Query) context.Context {
+	return context.WithValue(ctx, queryKey{}, q)
+}
+
+func QueryFromContext(ctx context.Context) (*Query, bool) {
+	q, ok := ctx.Value(queryKey{}).(*Query)
+	return q, ok
+}
+
 func NewRoot(srv Server) *Query {
 	return &Query{Server: srv}
+}
+
+// TODO: query should just not be in the DB, but this creates consistency for now
+func (*Query) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	srv, ok := queryServerFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query server from context")
+	}
+	return NewRoot(srv), nil
 }
 
 func (*Query) Type() *ast.Type {
@@ -148,16 +184,19 @@ func (q *Query) NewHost() *Host {
 	}
 }
 
+/*
 func (q *Query) NewModule() *Module {
 	return &Module{
 		Query: q,
 	}
 }
+*/
 
 // IDDeps loads the module dependencies of a given ID.
 //
 // The returned ModDeps extends the inner DefaultDeps with all modules found in
 // the ID, loaded by using the DefaultDeps schema.
+/*
 func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
@@ -178,6 +217,7 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 	return deps, nil
 }
+*/
 
 func (q *Query) RequireMainClient(ctx context.Context) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

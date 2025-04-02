@@ -1,15 +1,16 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
-
-	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
@@ -36,6 +37,14 @@ func (cache *CacheVolume) Clone() *CacheVolume {
 	cp := *cache
 	cp.Keys = cloneSlice(cp.Keys)
 	return &cp
+}
+
+func (*CacheVolume) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x CacheVolume
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
@@ -101,4 +110,20 @@ func (mode *CacheSharingMode) UnmarshalJSON(payload []byte) error {
 	*mode = CacheSharingMode(strings.ToUpper(str))
 
 	return nil
+}
+
+func (CacheSharingMode) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x CacheSharingMode
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (mode CacheSharingMode) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, mode)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), mode), nil
 }

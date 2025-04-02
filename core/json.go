@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -71,6 +72,22 @@ func (p *JSON) UnmarshalJSON(bs []byte) error {
 	}
 	*p = JSON(s)
 	return nil
+}
+
+func (JSON) FromJSON(_ context.Context, bs []byte) (dagql.Typed, error) {
+	var x JSON
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+func (p JSON) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult[JSON](resultID, resultDgst.String(), p), nil
 }
 
 var _ dagql.ScalarType = JSON{}

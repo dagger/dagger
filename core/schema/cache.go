@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"errors"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -45,11 +44,14 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Inst
 		return &cacheCfg, nil
 	}
 
-	m, err := parent.Self.CurrentModule(ctx)
-	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-		return nil, err
-	}
-	namespaceKey := namespaceFromModule(m)
+	/*
+			m, err := parent.Self.CurrentModule(ctx)
+			if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+				return nil, err
+			}
+		namespaceKey := namespaceFromModule(m)
+	*/
+	namespaceKey := namespaceFromModule(nil)
 	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
 	return &cacheCfg, nil
 }
@@ -61,11 +63,15 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(args.Namespace+":"+args.Key))
 	}
 
-	m, err := parent.Self.CurrentModule(ctx)
-	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-		return inst, err
-	}
-	namespaceKey := namespaceFromModule(m)
+	/*
+		m, err := parent.Self.CurrentModule(ctx)
+		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+			return inst, err
+		}
+		namespaceKey := namespaceFromModule(m)
+	*/
+	var err error
+	namespaceKey := namespaceFromModule(nil)
 	err = s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
 		Field: "cacheVolume",
 		Args: []dagql.NamedInput{
@@ -86,22 +92,26 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 	return inst, nil
 }
 
-func namespaceFromModule(m *core.Module) string {
-	if m == nil {
-		return "mainClient"
-	}
+// func namespaceFromModule(m *core.Module) string {
+func namespaceFromModule(m any) string {
+	return "mainClient"
+	/*
+		if m == nil {
+			return "mainClient"
+		}
 
-	name := m.Source.Self.ModuleOriginalName
+		name := m.Source.Self.ModuleOriginalName
 
-	var symbolic string
-	switch m.Source.Self.Kind {
-	case core.ModuleSourceKindLocal:
-		symbolic = m.Source.Self.SourceRootSubpath
-	case core.ModuleSourceKindGit:
-		symbolic = m.Source.Self.Git.Symbolic
-	case core.ModuleSourceKindDir:
-		symbolic = m.Source.ID().Digest().String()
-	}
+		var symbolic string
+		switch m.Source.Self.Kind {
+		case core.ModuleSourceKindLocal:
+			symbolic = m.Source.Self.SourceRootSubpath
+		case core.ModuleSourceKindGit:
+			symbolic = m.Source.Self.Git.Symbolic
+		case core.ModuleSourceKindDir:
+			symbolic = m.Source.ID().Digest().String()
+		}
 
-	return "mod(" + name + symbolic + ")"
+		return "mod(" + name + symbolic + ")"
+	*/
 }

@@ -1,31 +1,6 @@
 package core
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vektah/gqlparser/v2/ast"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-)
-
+/*
 type ModuleSourceKind string
 
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
@@ -782,3 +757,4 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltype
 		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
 }
+*/

@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,10 +11,12 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -39,6 +40,14 @@ func (*Socket) Type() *ast.Type {
 
 func (*Socket) TypeDescription() string {
 	return "A Unix or TCP/IP socket that can be mounted into a container."
+}
+
+func (*Socket) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x Socket
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }
 
 func (socket *Socket) LLBID() string {

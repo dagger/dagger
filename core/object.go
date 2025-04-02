@@ -1,20 +1,6 @@
 package core
 
-import (
-	"context"
-	"fmt"
-	"sort"
-
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-)
-
+/*
 // indicates an ast field is a "trivial resolver"
 // ref: https://graphql.org/learn/execution/#trivial-resolvers
 const trivialFieldDirectiveName = "trivialResolveField"
@@ -215,6 +201,14 @@ func (obj *ModuleObject) Type() *ast.Type {
 		NamedType: obj.TypeDef.Name,
 		NonNull:   true,
 	}
+}
+
+func (ModuleObject) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ModuleObject
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }
 
 var _ HasPBDefinitions = (*ModuleObject)(nil)
@@ -515,3 +509,4 @@ func (f *CallableField) CacheConfigForCall(
 ) (*dagql.CacheConfig, error) {
 	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)
 }
+*/

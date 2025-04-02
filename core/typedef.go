@@ -72,6 +72,14 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
+func (Function) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x Function
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
 func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:        fn.Name,
@@ -302,6 +310,14 @@ func (d DynamicID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(enc)
 }
 
+func (d DynamicID) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	panic("implement me")
+}
+
+func (d DynamicID) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	panic("implement me")
+}
+
 type TypeDef struct {
 	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
 	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
@@ -361,13 +377,19 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindScalar:
 		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
 	case TypeDefKindEnum:
-		typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value}
+		// TODO:
+		// typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value}
+		panic("implement me")
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.ElementTypeDef.ToTyped()}
 	case TypeDefKindObject:
-		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
+		// TODO:
+		// typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
+		panic("implement me")
 	case TypeDefKindInterface:
-		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
+		// TODO:
+		// typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
+		panic("implement me")
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindInput:
@@ -619,6 +641,14 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
+func (ObjectTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ObjectTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
 func NewObjectTypeDef(name, description string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
@@ -839,6 +869,14 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 	return true
 }
 
+func (InterfaceTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x InterfaceTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
 type ScalarTypeDef struct {
 	Name        string `field:"true" doc:"The name of the scalar."`
 	Description string `field:"true" doc:"A doc string for the scalar, if any."`
@@ -872,6 +910,14 @@ func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 	return &typeDef
 }
 
+func (ScalarTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ScalarTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
 type ListTypeDef struct {
 	ElementTypeDef *TypeDef `field:"true" doc:"The type of the elements in the list."`
 }
@@ -893,6 +939,14 @@ func (typeDef ListTypeDef) Clone() *ListTypeDef {
 		cp.ElementTypeDef = typeDef.ElementTypeDef.Clone()
 	}
 	return &cp
+}
+
+func (ListTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x ListTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ListTypeDef: %w", err)
+	}
+	return &x, nil
 }
 
 type InputTypeDef struct {
@@ -937,6 +991,14 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 		})
 	}
 	return spec
+}
+
+func (InputTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x InputTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }
 
 type EnumTypeDef struct {
@@ -1002,6 +1064,14 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	}
 
 	return &cp
+}
+
+func (EnumTypeDef) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x EnumTypeDef
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
 }
 
 type EnumValueTypeDef struct {
@@ -1102,6 +1172,22 @@ func (k TypeDefKind) Decoder() dagql.InputDecoder {
 
 func (k TypeDefKind) ToLiteral() call.Literal {
 	return TypeDefKinds.Literal(k)
+}
+
+func (TypeDefKind) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x TypeDefKind
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (k TypeDefKind) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, k)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), k), nil
 }
 
 type FunctionCall struct {

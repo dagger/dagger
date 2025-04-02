@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -17,7 +18,7 @@ import (
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	Query *Query
+	Query *Query `json:"-"`
 
 	// The URI of the secret, if it's stored in a remote store.
 	URI string
@@ -29,7 +30,9 @@ type Secret struct {
 	Name string
 
 	// The secret plaintext, if created by setSecret
-	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
+	// TODO: never write plaintext to DB
+	// Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
+	Plaintext []byte
 }
 
 func (*Secret) Type() *ast.Type {
@@ -41,6 +44,20 @@ func (*Secret) Type() *ast.Type {
 
 func (*Secret) TypeDescription() string {
 	return "A reference to a secret value, which can be handled more safely than the value itself."
+}
+
+func (*Secret) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var x Secret
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	x.Query = query
+	return &x, nil
 }
 
 func (secret *Secret) Clone() *Secret {

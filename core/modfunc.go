@@ -1,34 +1,6 @@
 package core
 
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"path/filepath"
-	"strings"
-	"sync"
-
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
-	bksession "github.com/moby/buildkit/session"
-	bksolver "github.com/moby/buildkit/solver"
-	solvererror "github.com/moby/buildkit/solver/errdefs"
-	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
-	bkworker "github.com/moby/buildkit/worker"
-	"github.com/opencontainers/go-digest"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
-)
-
+/*
 type ModuleFunction struct {
 	root    *Query
 	mod     *Module
@@ -667,3 +639,4 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}
 }
+*/

@@ -1,21 +1,6 @@
 package core
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"path/filepath"
-	"strings"
-
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"golang.org/x/mod/semver"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/vcs"
-)
-
+/*
 func fastModuleSourceKindCheck(
 	refString string,
 	refPin string,
@@ -337,3 +322,4 @@ func matchVersion(versions []string, match, subPath string) (string, error) {
 	}
 	return "", fmt.Errorf("unable to find version %s", match)
 }
+*/

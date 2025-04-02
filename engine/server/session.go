@@ -135,7 +135,7 @@ type daggerClient struct {
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
-	mod *core.Module
+	// mod *core.Module
 
 	// the DAG of modules being served to this client
 	deps *core.ModDeps
@@ -575,7 +575,8 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	// client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	client.dag = dagql.NewServer(client.dagqlRoot, srv.theRealCacheNow)
 	client.dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: client.dag}
 	if err := coreMod.Install(ctx, client.dag); err != nil {
@@ -586,6 +587,7 @@ func (srv *Server) initializeDaggerClient(
 	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
+	/* TODO:
 	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
@@ -618,6 +620,7 @@ func (srv *Server) initializeDaggerClient(
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
+	*/
 
 	if opts.EncodedFunctionCall != nil {
 		var fnCall core.FunctionCall
@@ -1124,6 +1127,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// install a logger+meter provider that records to the client's DB
 	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
 	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
+
+	// plumbing for object initialization in core/
+	ctx = core.ContextWithQueryServer(ctx, srv)
+	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
+
 	r = r.WithContext(ctx)
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
@@ -1247,6 +1255,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
+/*
 // Stitch in the given module to the list being served to the current client
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
@@ -1292,7 +1301,9 @@ func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
 	client.deps = client.deps.Append(mod)
 	return nil
 }
+*/
 
+/*
 // Returns true if the module source a is the same as b or they come from the
 // core module.
 // Returns false if:
@@ -1312,22 +1323,7 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 
 	return true
 }
-
-// If the current client is coming from a function, return the module that function is from
-func (srv *Server) CurrentModule(ctx context.Context) (*core.Module, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if client.clientID == client.daggerSession.mainClientCallerID {
-		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
-	}
-	if client.mod != nil {
-		return client.mod, nil
-	}
-
-	return nil, core.ErrNoCurrentModule
-}
+*/
 
 // If the current client is coming from a function, return the function call metadata
 func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
@@ -1373,19 +1369,21 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 		return nil, err
 	}
 
-	if client.mod == nil {
-		// not a module client, return the metadata
-		return client.clientMetadata, nil
-	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
-		if parent.mod == nil {
-			// not a module client, return the metadata
-			return parent.clientMetadata, nil
-		}
-	}
+	// if client.mod == nil {
+	// not a module client, return the metadata
+	return client.clientMetadata, nil
+	// }
+	/*
+			for i := len(client.parents) - 1; i >= 0; i-- {
+				parent := client.parents[i]
+				if parent.mod == nil {
+					// not a module client, return the metadata
+					return parent.clientMetadata, nil
+				}
+			}
 
-	return nil, fmt.Errorf("no non-module parent found")
+		return nil, fmt.Errorf("no non-module parent found")
+	*/
 }
 
 // The default deps of every user module (currently just core)
@@ -1404,6 +1402,14 @@ func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
 		return nil, err
 	}
 	return client.daggerSession.dagqlCache, nil
+}
+
+func (srv *Server) DagqlCache(ctx context.Context) (*dagql.DagqlCache, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag.Cache(), nil
 }
 
 // The DagQL server for the current client's session

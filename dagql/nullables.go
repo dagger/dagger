@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -116,10 +117,40 @@ func (o Optional[I]) Deref() (Typed, bool) {
 }
 
 func (o *Optional[I]) UnmarshalJSON(p []byte) error {
+	if len(p) == 0 || string(p) == "null" {
+		o.Valid = false
+		return nil
+	}
+
 	if err := json.Unmarshal(p, &o.Value); err != nil {
 		return err
 	}
+	o.Valid = true
 	return nil
+}
+
+func (o Optional[I]) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	if !o.Valid {
+		return nil, nil
+	}
+	v := o.Value
+	resultID, resultDgst, err := srv.ScalarResult(ctx, v)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[I]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        v,
+	}, nil
+}
+
+func (Optional[I]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Optional[I]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 type DynamicOptional struct {
@@ -207,6 +238,44 @@ func (o DynamicOptional) MarshalJSON() ([]byte, error) {
 	return optional, nil
 }
 
+func (o DynamicOptional) UnmarshalJSON(p []byte) error {
+	if len(p) == 0 || string(p) == "null" {
+		o.Valid = false
+		return nil
+	}
+
+	if err := json.Unmarshal(p, &o.Value); err != nil {
+		return err
+	}
+	o.Valid = true
+	return nil
+}
+
+func (o DynamicOptional) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	if !o.Valid {
+		return nil, nil
+	}
+	v := o.Value
+	resultID, resultDgst, err := srv.ScalarResult(ctx, v)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[Input]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        v,
+	}, nil
+}
+
+func (o DynamicOptional) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x DynamicOptional
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	x.Elem = o.Elem
+	return x, nil
+}
+
 // Nullable wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.
@@ -248,10 +317,24 @@ func (n Nullable[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (n *Nullable[T]) UnmarshalJSON(p []byte) error {
+	if len(p) == 0 || string(p) == "null" {
+		n.Valid = false
+		return nil
+	}
+
 	if err := json.Unmarshal(p, &n.Value); err != nil {
 		return err
 	}
+	n.Valid = true
 	return nil
+}
+
+func (Nullable[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x Nullable[T]
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 type DynamicNullable struct {
@@ -281,9 +364,19 @@ func (n DynamicNullable) MarshalJSON() ([]byte, error) {
 	return json.Marshal(n.Value)
 }
 
-func (n *DynamicNullable) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &n.Value); err != nil {
-		return err
+func (n DynamicNullable) FromJSON(ctx context.Context, bs []byte) (Typed, error) {
+	var x DynamicNullable
+	x.Elem = n.Elem
+	if len(bs) == 0 || string(bs) == "null" {
+		return x, nil
 	}
-	return nil
+
+	x.Valid = true
+	var err error
+	x.Value, err = n.Elem.FromJSON(ctx, bs)
+	if err != nil {
+		return nil, err
+	}
+
+	return x, nil
 }

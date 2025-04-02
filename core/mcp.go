@@ -1,31 +1,6 @@
 package core
 
-import (
-	"context"
-	_ "embed"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"maps"
-	"regexp"
-	"slices"
-	"sort"
-	"strconv"
-	"strings"
-	"unicode/utf8"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/iancoleman/strcase"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
-)
-
+/*
 // A frontend for LLM tool calling
 type LLMTool struct {
 	// Tool name
@@ -1280,3 +1255,4 @@ func toolStructuredResponse(val any) (string, error) {
 	}
 	return str.String(), nil
 }
+*/

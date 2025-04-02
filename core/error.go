@@ -1,6 +1,10 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -23,6 +27,20 @@ func (e *Error) Type() *ast.Type {
 		NamedType: "Error",
 		NonNull:   true,
 	}
+}
+
+func (*Error) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var e Error
+	if err := json.Unmarshal(bs, &e); err != nil {
+		return nil, err
+	}
+	e.Query = query
+	return &e, nil
 }
 
 var _ error = (*Error)(nil)
@@ -51,4 +69,12 @@ func (e *ErrorValue) Type() *ast.Type {
 		NamedType: "ErrorValue",
 		NonNull:   true,
 	}
+}
+
+func (*ErrorValue) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var e ErrorValue
+	if err := json.Unmarshal(bs, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
 }

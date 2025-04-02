@@ -2,10 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"slices"
 	"strconv"
@@ -14,6 +14,13 @@ import (
 	"syscall"
 	"time"
 
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
@@ -21,13 +28,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/network"
 )
 
 const (
@@ -39,7 +39,7 @@ type Service struct {
 	// link to.
 	Creator trace.SpanContext
 
-	Query *Query
+	Query *Query `json:"-"`
 
 	// A custom hostname set by the user.
 	CustomHostname string
@@ -65,6 +65,20 @@ func (*Service) Type() *ast.Type {
 
 func (*Service) TypeDescription() string {
 	return "A content-addressed service providing TCP connectivity."
+}
+
+func (*Service) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var x Service
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	x.Query = query
+	return &x, nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -305,6 +319,7 @@ func (svc *Service) startContainer(
 	}()
 
 	var domain string
+	/* TODO:
 	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
@@ -317,6 +332,8 @@ func (svc *Service) startContainer(
 	} else {
 		domain = network.SessionDomain(clientMetadata.SessionID)
 	}
+	*/
+	domain = network.SessionDomain(clientMetadata.SessionID)
 
 	fullHost := host + "." + domain
 

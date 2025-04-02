@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
@@ -107,6 +106,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
 	}
 
+	/* TODO:
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
 		if mod.InstanceID == nil {
@@ -117,6 +117,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains,
 			network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID))
 	}
+	*/
 
 	// if GPU parameters are set for this container pass them over:
 	if len(execMD.EnabledGPUs) > 0 {

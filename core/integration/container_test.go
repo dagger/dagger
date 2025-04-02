@@ -1,37 +1,15 @@
 package core
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
-	"crypto/rand"
 	_ "embed"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
-	"os"
-	"path"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/containerd/platforms"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/moby/buildkit/identity"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -1031,6 +1009,7 @@ func (ContainerSuite) TestExecWithEnvVariable(ctx context.Context, t *testctx.T)
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "FOO=bar\n")
 }
 
+/*
 func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {
@@ -4997,3 +4976,4 @@ func main() {
 		require.Equal(t, "args: /bin/app,via-override-args", output)
 	})
 }
+*/

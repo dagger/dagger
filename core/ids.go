@@ -16,6 +16,7 @@ type FileID = dagql.ID[*File]
 
 type SecretID = dagql.ID[*Secret]
 
+/*
 type ModuleID = dagql.ID[*Module]
 
 type ModuleSourceID = dagql.ID[*ModuleSource]
@@ -33,9 +34,10 @@ type GeneratedCodeID = dagql.ID[*GeneratedCode]
 type GitRepositoryID = dagql.ID[*GitRepository]
 
 type GitRefID = dagql.ID[*GitRef]
+*/
 
 type SocketID = dagql.ID[*Socket]
 
-type LLMID = dagql.ID[*LLM]
+// type LLMID = dagql.ID[*LLM]
 
-type EnvID = dagql.ID[*Env]
+// type EnvID = dagql.ID[*Env]

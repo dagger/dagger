@@ -1,22 +1,6 @@
 package sdk
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/mitchellh/mapstructure"
-)
-
+/*
 const (
 	goSDKUserModContextDirPath  = "/src"
 	goSDKRuntimePath            = "/runtime"
@@ -33,6 +17,8 @@ The Codegen and Runtime methods are implemented by loading that tarball and
 executing the codegen binary inside it to generate user code and then execute
 it with the resulting /runtime binary.
 */
+
+/*
 type goSDK struct {
 	root      *core.Query
 	dag       *dagql.Server
@@ -747,3 +733,4 @@ func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Select
 
 	return selectors
 }
+*/

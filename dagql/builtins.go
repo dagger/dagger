@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -108,6 +109,27 @@ func (d DynamicArrayOutput) Nth(i int) (Typed, error) {
 
 func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Values)
+}
+
+func (d DynamicArrayOutput) FromJSON(ctx context.Context, bs []byte) (Typed, error) {
+	var x DynamicArrayOutput
+	x.Elem = d.Elem
+
+	// TODO:? making DynamicArrayOutput generic would probably be better
+	var anyVals []json.RawMessage
+	if err := json.Unmarshal(bs, &anyVals); err != nil {
+		return nil, fmt.Errorf("unmarshal dynamic array output: %w", err)
+	}
+	x.Values = make([]Typed, 0, len(anyVals))
+	for _, elem := range anyVals {
+		typed, err := x.Elem.FromJSON(ctx, elem)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal dynamic array output: %w", err)
+		}
+		x.Values = append(x.Values, typed)
+	}
+
+	return x, nil
 }
 
 func (d DynamicArrayOutput) SetField(val reflect.Value) error {
@@ -274,4 +296,39 @@ func (d DynamicArrayInput) Nth(i int) (Typed, error) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
+}
+
+func (d DynamicArrayInput) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, d)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return &inputResult[DynamicArrayInput]{
+		resultID:     resultID,
+		resultDigest: resultDgst.String(),
+		input:        d,
+	}, nil
+}
+
+func (d DynamicArrayInput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Values)
+}
+
+func (d DynamicArrayInput) UnmarshalJSON(p []byte) error {
+	if len(p) == 0 || string(p) == "null" {
+		return nil
+	}
+
+	if err := json.Unmarshal(p, &d.Values); err != nil {
+		return fmt.Errorf("unmarshal: %w", err)
+	}
+	return nil
+}
+
+func (DynamicArrayInput) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	var x DynamicArrayInput
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }

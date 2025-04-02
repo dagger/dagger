@@ -1,6 +1,8 @@
 package dagql
 
 import (
+	"context"
+
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -44,6 +46,14 @@ func (DirectiveLocation) Decoder() InputDecoder {
 
 func (d DirectiveLocation) ToLiteral() call.Literal {
 	return DirectiveLocations.Literal(d)
+}
+
+func (d DirectiveLocation) FromJSON(_ context.Context, bs []byte) (Typed, error) {
+	panic("idk")
+}
+
+func (d DirectiveLocation) ToResult(ctx context.Context, srv *Server) (Result, error) {
+	panic("idk")
 }
 
 var DirectiveLocations = NewEnum[DirectiveLocation]()

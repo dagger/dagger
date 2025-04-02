@@ -1,12 +1,14 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
-
-	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Port configures a port to exposed from a container or service.
@@ -17,6 +19,8 @@ type Port struct {
 	ExperimentalSkipHealthcheck bool            `field:"true" doc:"Skip the health check when run as a service."`
 }
 
+var _ dagql.Typed = Port{}
+
 func (Port) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Port",
@@ -26,6 +30,14 @@ func (Port) Type() *ast.Type {
 
 func (Port) TypeDescription() string {
 	return "A port exposed by a container."
+}
+
+func (Port) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x Port
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
 // NetworkProtocol is a GraphQL enum type.
@@ -47,6 +59,22 @@ func (proto NetworkProtocol) Type() *ast.Type {
 
 func (proto NetworkProtocol) TypeDescription() string {
 	return "Transport layer network protocol associated to a port."
+}
+
+func (NetworkProtocol) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x NetworkProtocol
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (mode NetworkProtocol) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, mode)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), mode), nil
 }
 
 func (proto NetworkProtocol) Decoder() dagql.InputDecoder {
@@ -77,6 +105,24 @@ func (pf PortForward) TypeName() string {
 func (pf PortForward) TypeDescription() string {
 	return "Port forwarding rules for tunneling network traffic."
 }
+
+/* ?
+func (PortForward) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	var x PortForward
+	if err := json.Unmarshal(bs, &x); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+func (pf PortForward) ToResult(ctx context.Context, srv *dagql.Server) (dagql.Result, error) {
+	resultID, resultDgst, err := srv.ScalarResult(ctx, pf)
+	if err != nil {
+		return nil, fmt.Errorf("scalar result: %w", err)
+	}
+	return dagql.NewInputResult(resultID, resultDgst.String(), pf), nil
+}
+*/
 
 func (pf PortForward) FrontendOrBackendPort() int {
 	if pf.Frontend != nil {
