@@ -17,6 +17,7 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
+			Experimental("Environments are not yet stabilized").
 			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
