@@ -66,6 +66,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 //
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
+{{- if $field.Directives.IsExperimental }}
+//
+{{ $field.Directives.ExperimentalReason | FormatExperimental }}
+{{- end }}
 {{- $convertID := $field | ConvertID }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
 {{ FieldFunction $field false $supportsVoid }} {

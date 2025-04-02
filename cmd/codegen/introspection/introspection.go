@@ -311,7 +311,7 @@ func (t Directives) IsExperimental() bool {
 }
 
 func (t Directives) ExperimentalReason() string {
-	return *t.Directive("experimental").Arg("reason").Value
+	return fromJSON[string](*t.Directive("experimental").Arg("reason").Value)
 }
 
 type SourceMap struct {
