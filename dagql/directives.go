@@ -84,3 +84,18 @@ func deprecated(reason string) *ast.Directive {
 		},
 	}
 }
+
+func experimental(reason string) *ast.Directive {
+	return &ast.Directive{
+		Name: "experimental",
+		Arguments: []*ast.Argument{
+			{
+				Name: "reason",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  reason,
+				},
+			},
+		},
+	}
+}

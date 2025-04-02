@@ -803,6 +803,8 @@ type FieldSpec struct {
 	Sensitive bool
 	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
+	// ExperimentalReason marks the field as experimental and provides a reason.
+	ExperimentalReason string
 	// Module is the module that provides the field's implementation.
 	Module *call.Module
 	// Directives is the list of GraphQL directives attached to this field.
@@ -826,6 +828,9 @@ func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
 	}
+	if spec.ExperimentalReason != "" {
+		def.Directives = append(def.Directives, experimental(spec.ExperimentalReason))
+	}
 	return def
 }
 
@@ -841,6 +846,8 @@ type InputSpec struct {
 	Default Input
 	// DeprecatedReason deprecates the input and provides a reason.
 	DeprecatedReason string
+	// ExperimentalReason marks the field as experimental and provides a reason.
+	ExperimentalReason string
 	// Sensitive indicates that the value of this arg is sensitive and should be
 	// omitted from telemetry.
 	Sensitive bool
@@ -876,31 +883,30 @@ func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
 		if spec.DeprecatedReason != "" {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(spec.DeprecatedReason))
 		}
+		if spec.ExperimentalReason != "" {
+			schemaArg.Directives = append(schemaArg.Directives, experimental(spec.ExperimentalReason))
+		}
 		defs[i] = schemaArg
 	}
 	return defs
 }
 
-func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
-	fields := make([]*ast.FieldDefinition, len(specs))
-	for i, spec := range specs {
-		field := &ast.FieldDefinition{
-			Name:        spec.Name,
-			Description: spec.Description,
-			Type:        spec.Type.Type(),
-		}
-		if spec.Default != nil {
-			field.DefaultValue = spec.Default.ToLiteral().ToAST()
-		}
-		if len(spec.Directives) > 0 {
-			field.Directives = append([]*ast.Directive{}, spec.Directives...)
-		}
-		if spec.DeprecatedReason != "" {
-			field.Directives = append(field.Directives, deprecated(spec.DeprecatedReason))
-		}
-		fields[i] = field
+func (specs InputSpecs) FieldDefinitions() (defs []*ast.FieldDefinition) {
+	for _, argDef := range specs.ArgumentDefinitions() {
+		fieldDef := argDefToFieldDef(argDef)
+		defs = append(defs, fieldDef)
 	}
-	return fields
+	return defs
+}
+
+func argDefToFieldDef(arg *ast.ArgumentDefinition) *ast.FieldDefinition {
+	return &ast.FieldDefinition{
+		Name:         arg.Name,
+		Description:  arg.Description,
+		Type:         arg.Type,
+		DefaultValue: arg.DefaultValue,
+		Directives:   arg.Directives,
+	}
 }
 
 // Descriptive is an interface for types that have a description.
@@ -933,10 +939,11 @@ func (fields Fields[T]) Install(server *Server) {
 		name := field.Name
 		fields = append(fields, Field[T]{
 			Spec: FieldSpec{
-				Name:             name,
-				Type:             field.Value,
-				Description:      field.Field.Tag.Get("doc"),
-				DeprecatedReason: field.Field.Tag.Get("deprecated"),
+				Name:               name,
+				Type:               field.Value,
+				Description:        field.Field.Tag.Get("doc"),
+				DeprecatedReason:   field.Field.Tag.Get("deprecated"),
+				ExperimentalReason: field.Field.Tag.Get("experimental"),
 			},
 			Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 				t, found, err := getField(self.Self, false, name)
@@ -1062,6 +1069,23 @@ func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
 	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
 }
 
+func (field Field[T]) ArgExperimental(name string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	for i, arg := range field.Spec.Args {
+		if arg.Name == name {
+			reason := FormatDescription(paras...)
+			field.Spec.Args[i].ExperimentalReason = reason
+			if field.Spec.Args[i].Description == "" {
+				field.Spec.Args[i].Description = experimentalDescription(reason)
+			}
+			return field
+		}
+	}
+	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+}
+
 func (field Field[T]) ArgRemove(name string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
@@ -1096,6 +1120,15 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
+	return field
+}
+
+// Deprecated marks the field as experimental
+func (field Field[T]) Experimental(paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.ExperimentalReason = FormatDescription(paras...)
 	return field
 }
 
@@ -1154,15 +1187,19 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			}
 		}
 		spec := InputSpec{
-			Name:             field.Name,
-			Description:      field.Field.Tag.Get("doc"),
-			Type:             input,
-			Default:          inputDef,
-			DeprecatedReason: field.Field.Tag.Get("deprecated"),
-			Sensitive:        field.Field.Tag.Get("sensitive") == "true",
+			Name:               field.Name,
+			Description:        field.Field.Tag.Get("doc"),
+			Type:               input,
+			Default:            inputDef,
+			DeprecatedReason:   field.Field.Tag.Get("deprecated"),
+			ExperimentalReason: field.Field.Tag.Get("experimental"),
+			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
 		}
 		if spec.Description == "" && spec.DeprecatedReason != "" {
 			spec.Description = deprecationDescription(spec.DeprecatedReason)
+		}
+		if spec.Description == "" && spec.ExperimentalReason != "" {
+			spec.Description = experimentalDescription(spec.ExperimentalReason)
 		}
 		specs[i] = spec
 	}
@@ -1171,6 +1208,10 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 
 func deprecationDescription(reason string) string {
 	return fmt.Sprintf("DEPRECATED: %s", reason)
+}
+
+func experimentalDescription(reason string) string {
+	return fmt.Sprintf("EXPERIMENTAL: %s", reason)
 }
 
 func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error)) ([]reflectField[T], error) {
