@@ -564,7 +564,7 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 // Add a stdio MCP service to the llm's tool set
 func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, mcpSvcId *call.ID) *LLM {
 	llm = llm.Clone()
-	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{container: ctr})
+	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{container: ctr, mcpSvcID: mcpSvcId})
 	return llm
 }
 

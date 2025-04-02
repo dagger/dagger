@@ -7,24 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	mcpc "github.com/metoro-io/mcp-golang"
-	"github.com/metoro-io/mcp-golang/transport/stdio"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
+	"github.com/riza-io/mcp-go"
+	mcpc "github.com/riza-io/mcp-go"
+	"github.com/riza-io/mcp-go/stdio"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 // A frontend for LLM tool calling
@@ -584,72 +587,96 @@ type MCPClient struct {
 
 func (ms *MCPClient) Tools(ctx context.Context) ([]LLMTool, error) {
 	if ms.Client == nil {
-		ms.StartClient(ctx)
+		client, err := ms.StartClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ms.Client = client
 	}
+
+	slog.Warn("successfully initialized MCP client")
 
 	return []LLMTool{}, nil
 }
 
-func (ms *MCPClient) StartClient(ctx context.Context) error {
-	svc, err := ms.container.AsService(ctx, ContainerAsServiceArgs{})
+func (ms *MCPClient) StartClient(ctx context.Context) (*mcpc.Client, error) {
+	svc, err := ms.container.AsService(ctx, ContainerAsServiceArgs{UseEntrypoint: true})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	svcStdin, clientStdin := io.Pipe()
 	clientStdout, svcStdout := io.Pipe()
+	clientStdout1 := io.TeeReader(clientStdout, os.Stderr)
 
-	// irl this probably needs to wire through core/services.go
-	eg, egctx := errgroup.WithContext(ctx)
-	runningSvc, err := svc.Start(
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// irl this probably needs to wire through core/services.go, but for now we yolo
+	_, err = svc.Start(
 		ctx,
 		ms.mcpSvcID,
 		false,
 		func(stdin io.Writer, _ bkgw.ContainerProcess) {
-			eg.Go(func() error {
+			go func() error {
 				defer clientStdin.Close()
 				_, err := io.Copy(stdin, svcStdin)
 				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
+					// if errors.Is(err, io.ErrClosedPipe) {
+					// 	return nil
+					// }
+					// return fmt.Errorf("error forwarding mcp client request to container stdin: %w", err)
+					slog.Error("error forwarding mcp client request to container stdin: %w", "error", err)
+					return err
 				}
 				return nil
-			})
+			}()
 		},
 		func(stdout io.Reader) {
-			eg.Go(func() error {
+			go func() error {
 				defer clientStdout.Close()
 				_, err := io.Copy(svcStdout, stdout)
 				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding container stdout to terminal: %w", err)
+					// if errors.Is(err, io.ErrClosedPipe) {
+					// 	return nil
+					// }
+					// return fmt.Errorf("error forwarding container stdout to mcp client response: %w", err)
+					slog.Error("error forwarding mcp client request to container stdin", "error", err)
+					return err
 				}
+				slog.Error("mcp io copy exited")
 				return nil
-			})
+			}()
 		},
 		nil,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to start MCP service: %w", err)
+		return nil, fmt.Errorf("failed to start MCP service: %w", err)
 	}
 
-	client := mcpc.NewClient(stdio.NewStdioServerTransportWithIO(clientStdout, clientStdin))
-	_, err = client.Initialize(egctx)
-	if err != nil {
-		return fmt.Errorf("failed initializing MCP client: %w", err)
+	client := mcpc.NewClient(
+		stdio.NewStream(clientStdout1, clientStdin),
+		&mcp.UnimplementedClient{})
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timeout initializing MCP client after 5s: %w", ctx.Err())
+		default:
+			slog.Warn("initializing MCP client")
+			fmt.Fprintln(os.Stderr, "WTF WHY")
+			_, err = client.Initialize(
+				ctx,
+				mcpc.NewRequest(&mcpc.InitializeRequest{ProtocolVersion: "1.0.0"}),
+			)
+			slog.Warn("initialized MCP client")
+			if err == nil {
+				return client, nil
+			}
+			slog.Warn("failed mcp client init retry", "error", err)
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	ms.Client = client
-
-	eg.Go(func() error {
-		return runningSvc.Wait(egctx)
-	})
-
-	// concurrency model is completely wrong here... this can't block.
-	return eg.Wait()
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
