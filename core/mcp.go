@@ -658,22 +658,23 @@ func (ms *MCPClient) StartClient(ctx context.Context) (*mcpc.Client, error) {
 		stdio.NewStream(clientStdout1, clientStdin),
 		&mcp.UnimplementedClient{})
 
+	go func() {
+		err := client.Listen(context.Background())
+		slog.Error("MCP client failed listening for messages", "error", err)
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("timeout initializing MCP client after 5s: %w", ctx.Err())
+			return nil, fmt.Errorf("timeout initializing MCP client", ctx.Err())
 		default:
-			slog.Warn("initializing MCP client")
-			fmt.Fprintln(os.Stderr, "WTF WHY")
 			_, err = client.Initialize(
 				ctx,
 				mcpc.NewRequest(&mcpc.InitializeRequest{ProtocolVersion: "1.0.0"}),
 			)
-			slog.Warn("initialized MCP client")
 			if err == nil {
 				return client, nil
 			}
-			slog.Warn("failed mcp client init retry", "error", err)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
