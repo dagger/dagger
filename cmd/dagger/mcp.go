@@ -25,6 +25,19 @@ func init() {
 var mcpCmd = &cobra.Command{
 	Use:   "mcp [options]",
 	Short: "Expose a dagger module as an MCP server",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if progress == "tty" {
+			return fmt.Errorf("cannot use tty progress output: it interferes with mcp stdio")
+		}
+
+		if progress == "auto" && hasTTY {
+			fmt.Fprintln(os.Stderr, "overriding 'auto' progress mode to 'plain' to avoid interference with mcp stdio")
+
+			Frontend = idtui.NewPlain()
+		}
+
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
