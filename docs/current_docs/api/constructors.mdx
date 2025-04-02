@@ -37,19 +37,6 @@ Here is an example module with a custom constructor:
 :::info
 In the Python SDK, the [`@dagger.object_type`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type) decorator wraps [`@dataclasses.dataclass`](https://docs.python.org/3/library/dataclasses.html), which means that an `__init__()` method is automatically generated, with parameters that match the declared class attributes.
 :::
-
-The code listing above is an example of an object that has typed attributes.
-
-If a constructor argument needs an asynchronous call to set the default value, it's
-possible to replace the default constructor function from `__init__()` to
-a factory class method named `create`, as in the following code listing:
-
-:::warning
-This factory class method must be named `create`.
-:::
-
-```python file=./snippets/constructors/python/async/main.py
-```
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
@@ -112,6 +99,10 @@ If you plan to use constructor fields in other module functions, ensure that the
 
 Constructors can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
 
+:::important
+Explicitly declare the type even when a default value is assigned, so that the Dagger SDK can extend the GraphQL schema correctly.
+:::
+
 Here is an example of a Dagger module with a default constructor argument of type `Container`:
 
 <Tabs groupId="language" queryString="sdk">
@@ -126,12 +117,26 @@ Here is an example of a Dagger module with a default constructor argument of typ
 ```python file=./snippets/constructors/python/default-object/main.py
 ```
 
+:::info
+You can use other [`@dataclasses.dataclass`](https://docs.python.org/3/library/dataclasses.html) decorators to generate more complex constructors. For example:
+
+```python file=./snippets/constructors/python/complex/main.py
+```
+
+A few important notes:
+
+- Class attributes become constructor arguments by default, unless specified as `field(init=False)`.
+- The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor. So by setting `init=False` on the container argument, it changes from being a constructor argument to a regular argument that is still required.
+- Setting a default value like `None` in an attribute is the same as setting `@dataclasses.field(default=None)`. `@dataclasses.field()` is only required to specify other non-default values, like `init` or to set the default using a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions).
+- The difference between `@dataclasses.field()` and `@dagger.field()` is that the latter exposes the attribute as a Dagger field, which automatically creates a getter function for it in the API.
+
 For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values),
 use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
 [dataclasses.field(default_factory=...)](https://docs.python.org/3/library/dataclasses.html#dataclasses.field):
 
 ```python file=./snippets/constructors/python/factory/main.py
 ```
+:::
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
@@ -162,8 +167,6 @@ When assigning default values to complex types in TypeScript, it is necessary to
 
 </TabItem>
 </Tabs>
-
-It is necessary to explicitly declare the type even when a default value is assigned, so that the Dagger SDK can extend the GraphQL schema correctly.
 
 Here is an example call for this Dagger Function:
 
