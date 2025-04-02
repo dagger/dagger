@@ -59,6 +59,10 @@ func Close() error {
 //
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
+{{- if $field.Directives.IsExperimental }}
+//
+{{ $field.Directives.ExperimentalReason | FormatExperimental }}
+{{- end }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
 {{ FieldFunction $field true $supportsVoid "dagger" }} {
 	client := initClient()

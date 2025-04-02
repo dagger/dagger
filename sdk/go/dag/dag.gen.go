@@ -99,6 +99,8 @@ func Engine() *dagger.Engine {
 }
 
 // Initialize a new environment
+//
+// Experimental: Environments are not yet stabilized
 func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	client := initClient()
 	return client.Env(opts...)
@@ -141,6 +143,8 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // Initialize a Large Language Model (LLM)
+//
+// Experimental: LLM support is not yet stabilized
 func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
 	return client.LLM(opts...)

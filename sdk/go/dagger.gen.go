@@ -7901,6 +7901,8 @@ type EnvOpts struct {
 }
 
 // Initialize a new environment
+//
+// Experimental: Environments are not yet stabilized
 func (r *Client) Env(opts ...EnvOpts) *Env {
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -8028,6 +8030,8 @@ type LLMOpts struct {
 }
 
 // Initialize a Large Language Model (LLM)
+//
+// Experimental: LLM support is not yet stabilized
 func (r *Client) LLM(opts ...LLMOpts) *LLM {
 	q := r.query.Select("llm")
 	for i := len(opts) - 1; i >= 0; i-- {
