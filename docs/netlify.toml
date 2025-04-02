@@ -24,13 +24,25 @@
   status = 301
 
 [[redirects]]
-  # redirect /quickstart pages to CI-specific ones
+  # redirect /integrations pages to CI-specific ones
   from = "/integrations/*"
   to = "/ci/integrations/:splat"
   status = 301
 
 [[redirects]]
-  # redirect /quickstart pages to CI-specific ones
+  # redirect /ci/quickstart pages
+  from = "/ci/quickstart/*"
+  to = "/quickstart/ci"
+  status = 301
+
+[[redirects]]
+  # redirect /quickstart/basics pages
+  from = "/quickstart/basics"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
+  # redirect /adopting page to CI-specific ones
   from = "/adopting"
   to = "/ci/adopting"
   status = 301
@@ -64,7 +76,7 @@
 [[redirects]]
   # redirect old quickstart index page
   from = "/648215/quickstart"
-  to = "/quickstart/basics"
+  to = "/quickstart/"
   status = 301
 
 [[redirects]]
