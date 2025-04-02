@@ -3,10 +3,9 @@
 	{{- $required := GetRequiredArgs .Args }}
 	{{- $optionals := GetOptionalArgs .Args }}
 	{{- $argsDesc := ArgsHaveDescription .Args }}
-	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 
 	{{- /* Write method description. */ -}}
-	{{- if or .Description $argsDesc .IsDeprecated }}
+	{{- if or .Description $argsDesc .IsDeprecated .Directives.IsExperimental }}
 {{""}}
   /**
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
@@ -51,14 +50,22 @@
 		{{- end }}
 	{{- end }}
 
-		{{- /* Write deprecation message. */ -}}
-		{{- if .IsDeprecated }}
-			{{- range $deprecationLines }}
+    {{- /* Write deprecation message. */ -}}
+    {{- if .IsDeprecated }}
+        {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
+        {{- range $deprecationLines }}
+   * {{ . }}
+		{{- end }}
+	{{- end }}
+    {{- /* Write experimental message. */ -}}
+    {{- if .Directives.IsExperimental }}
+        {{- $experimentalLines := FormatExperimental .Directives.ExperimentalReason }}
+        {{- range $experimentalLines }}
    * {{ . }}
 		{{- end }}
 	{{- end }}
 
-	{{- if or .Description $argsDesc .IsDeprecated }}
+	{{- if or .Description $argsDesc .IsDeprecated .Directives.IsExperimental }}
    */
 	{{- end }}
 {{ "" -}}
