@@ -306,6 +306,14 @@ func (t Directives) Directive(name string) *Directive {
 	return nil
 }
 
+func (t Directives) IsExperimental() bool {
+	return t.Directive("experimental") != nil
+}
+
+func (t Directives) ExperimentalReason() string {
+	return *t.Directive("experimental").Arg("reason").Value
+}
+
 type SourceMap struct {
 	Module   string
 	Filename string

@@ -153,6 +153,26 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
+		Name: "experimental",
+		Description: FormatDescription(
+			`Explains why this element is marked experimental.
+			Formatted in [Markdown](https://daringfireball.net/projects/markdown/).`),
+		Args: []InputSpec{
+			{
+				Name:        "reason",
+				Description: FormatDescription(`Explains why this element was marked experimental.`),
+				Type:        String(""),
+				Default:     String("Not stabilized"),
+			},
+		},
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationInputFieldDefinition,
+			DirectiveLocationEnumValue,
+		},
+	},
+	{
 		Name: "impure",
 		Description: FormatDescription(
 			`Indicates that a field may resolve to different values when called

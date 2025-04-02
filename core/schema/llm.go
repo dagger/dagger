@@ -16,6 +16,7 @@ var _ SchemaResolvers = &llmSchema{}
 func (s llmSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("llm", s.llm).
+			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a Large Language Model (LLM)`).
 			ArgDoc("model", "Model to use").
 			ArgDoc("maxAPICalls", "Cap the number of API calls for this LLM"),
