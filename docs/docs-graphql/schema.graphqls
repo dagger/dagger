@@ -2666,9 +2666,6 @@ type LLM {
     file: FileID!
   ): LLM!
 
-  """Provide the entire Query object to the LLM"""
-  withQuery: LLM!
-
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
     """The system prompt to send"""
@@ -3128,7 +3125,12 @@ type Query {
   engine: Engine!
 
   """Initialize a new environment"""
-  env: Env!
+  env(
+    """
+    Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+    """
+    privileged: Boolean = false
+  ): Env!
 
   """Create a new error."""
   error(
