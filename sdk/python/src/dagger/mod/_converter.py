@@ -2,22 +2,30 @@ import enum
 import functools
 import inspect
 import logging
+import time
 import typing
-from collections.abc import Collection
 
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
 
+from dagger.client.base import Interface, Scalar, Type
+from dagger.mod._resolver import Function
 from dagger.mod._utils import (
     get_doc,
     get_object_type,
     is_annotated,
+    is_dagger_interface,
+    is_dagger_object,
     is_initvar,
     is_nullable,
+    is_subclass,
     is_union,
+    list_of,
     non_null,
+    object_list_of,
     strip_annotations,
     syncify,
+    to_camel_case,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,21 +43,25 @@ def make_converter():
         detailed_validation=True,
     )
 
-    def dagger_type_structure(id_, cls):
+    def dagger_type_structure(id_: str | Scalar, cls: type[Type]):
         """Get dagger object type from id."""
         cls = strip_annotations(cls)
 
-        if not is_id_type_subclass(cls):
+        if not is_id_type_subclass(cls) and not is_dagger_interface(cls):
             msg = f"Unsupported type '{cls.__name__}'"
             raise TypeError(msg)
 
         return cls(
-            dag._select(f"load{cls.__name__}FromID", [Arg("id", id_)])  # noqa: SLF001
+            dag._select(f"load{cls._graphql_name()}FromID", [Arg("id", id_)])  # noqa: SLF001
         )
+
+    def dagger_interface_structure(id_, cls: type[Interface]):
+        """Get dagger interface implementation from id."""
+        return dagger_type_structure(id_, to_interface_impl(cls))
 
     def dagger_type_unstructure(obj):
         """Get id from dagger object."""
-        if not is_id_type(obj):
+        if not is_id_type(obj) and not isinstance(obj, Interface):
             msg = f"Expected dagger Type object, got `{type(obj)}`"
             raise TypeError(msg)
         return syncify(obj.id)
@@ -64,11 +76,91 @@ def make_converter():
         dagger_type_unstructure,
     )
 
+    conv.register_structure_hook_func(
+        is_dagger_interface,
+        dagger_interface_structure,
+    )
+
     return conv
 
 
 @functools.cache
-def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911, PLR0912
+def to_interface_impl(proto: type) -> type[Interface]:
+    """Return a dynamically generated implementation for the interface."""
+    start = time.time()
+    typ = get_object_type(proto)
+
+    if typ is None or not typ.interface:
+        msg = f"Unexpected interface type `{proto}`"
+        raise TypeError(msg)
+
+    methods = {
+        func.original_name: make_method(name, func)
+        for name, func in typ.functions.items()
+    }
+
+    cls = type(
+        proto.__name__ + "Impl",
+        (Interface,),
+        {"_declaration": proto, **methods},
+    )
+
+    logger.debug(
+        "Generated interface implementation %s in %.2f ms",
+        cls.__name__,
+        (time.time() - start) * 1000,
+    )
+
+    return cls
+
+
+def make_method(name: str, func: Function) -> typing.Callable:
+    from dagger.client._core import Arg
+
+    ret_type = func.return_type
+
+    # Need to convert names to GraphQL convention for query builder
+    gql_name = to_camel_case(name)
+    gql_arg_names = {
+        param.name: to_camel_case(param.name) for param in func.parameters.values()
+    }
+
+    # Generate query builder selection based on inputs
+    def select(obj: Interface, *args, **kwargs):
+        bound = func.signature.bind(obj, *args, **kwargs)
+        args = [
+            Arg(name=gql_arg_names[arg_name], value=arg_value)
+            for arg_name, arg_value in bound.arguments.items()
+            if arg_name != "self"
+        ]
+        return obj._select(gql_name, args)  # noqa: SLF001
+
+    # Mimic function signature defined in the interface
+    def wrap(c: typing.Callable):
+        c.__signature__ = func.signature
+        return functools.wraps(func.wrapped)(c)
+
+    # If return type is an object, then it's a lazy/chain method (sync)
+    if is_dagger_object(ret_type):
+
+        def chain_method(self, *args, **kwargs):
+            _ctx = select(self, *args, **kwargs)
+            return ret_type(_ctx)
+
+        return wrap(chain_method)
+
+    # Anything else triggers execution
+    async def exec_method(self, *args, **kwargs):
+        _ctx = select(self, *args, **kwargs)
+        if cls := object_list_of(ret_type):
+            return await _ctx.execute_object_list(cls)
+        return await _ctx.execute(ret_type)
+
+    return wrap(exec_method)
+
+
+@functools.cache
+def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
     """Convert Python object to API type."""
     if is_initvar(annotation):
         return to_typedef(annotation.type)
@@ -106,36 +198,27 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911, PLR0912
     if typ.hint in builtins:
         return td.with_kind(builtins[typ.hint])
 
-    if issubclass(cls := typ.hint, enum.Enum):
-        return td.with_enum(cls.__name__, description=get_doc(cls))
-
-    if issubclass(cls := typ.hint, Scalar):
-        return td.with_scalar(cls.__name__, description=get_doc(cls))
-
-    # NB: str is a Collection, but we've handled it above.
-    if typ.is_subhint(TypeHint(Collection)):
-        try:
-            return td.with_list_of(to_typedef(typ.args[0]))
-        except IndexError:
-            msg = (
-                "Expected collection type to be subscripted "
-                f"with 1 subtype, got {len(typ)}: {typ.hint!r}"
-            )
-            raise TypeError(msg) from None
+    if el := list_of(typ.hint):
+        return td.with_list_of(to_typedef(el))
 
     if inspect.isclass(cls := typ.hint):
+        name = cls.__name__
+
+        if is_subclass(cls, enum.Enum):
+            return td.with_enum(name, description=get_doc(cls))
+
+        if is_subclass(cls, Scalar):
+            return td.with_scalar(name, description=get_doc(cls))
+
+        # object defined in this module
         if obj_type := get_object_type(cls):
             if obj_type.interface:
-                return td.with_interface(cls.__name__)
-            return td.with_object(cls.__name__)
+                return td.with_interface(name)
+            return td.with_object(name)
 
+        # object type from API (codegen)
         if is_id_type_subclass(cls):
-            return td.with_object(cls.__name__)
-
-        return td.with_object(
-            cls.__name__,
-            description=get_doc(cls),
-        )
+            return td.with_object(name)
 
     msg = f"Unsupported type: {typ.hint!r}"
     raise TypeError(msg)

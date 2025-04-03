@@ -73,11 +73,17 @@ class Field:
 
 @dataclasses.dataclass(slots=True)
 class Context:
-    conn: BaseConnection = dataclasses.field(default_factory=SharedConnection)
+    conn: BaseConnection = dataclasses.field(
+        default_factory=SharedConnection,
+        compare=False,
+    )
     selections: collections.deque[Field] = dataclasses.field(
         default_factory=collections.deque
     )
-    converter: cattrs.Converter = dataclasses.field(init=False)
+    converter: cattrs.Converter = dataclasses.field(
+        init=False,
+        compare=False,
+    )
 
     def __post_init__(self):
         self.converter = make_converter(self)

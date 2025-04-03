@@ -248,7 +248,7 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 			return fmt.Errorf("get engine version: %w", err)
 		}
 		// if it's a dev build, vendor the library
-		if strings.Contains(version, "dev") {
+		if strings.Contains(version, "-") {
 			return nil
 		}
 		d.mu.Lock()

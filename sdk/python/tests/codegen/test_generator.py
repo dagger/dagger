@@ -40,7 +40,7 @@ def ctx():
         ("stdout", "stdout"),
         ("envVariable", "env_variable"),  # casing
         ("from", "from_"),  # reserved keyword
-        ("type", "type"),  # builtin
+        ("str", "str_"),  # builtin
         ("withFS", "with_fs"),  # initialism
     ],
 )
