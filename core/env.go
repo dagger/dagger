@@ -142,7 +142,19 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-func (env *Env) Ingest(obj dagql.Object) string {
+func (env *Env) ID(obj dagql.Object) string {
+	id := obj.ID()
+	if id == nil {
+		return ""
+	}
+	llmID, ok := env.idByHash[id.Digest()]
+	if !ok {
+		return ""
+	}
+	return llmID
+}
+
+func (env *Env) Ingest(obj dagql.Object, desc string) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
@@ -154,7 +166,12 @@ func (env *Env) Ingest(obj dagql.Object) string {
 		env.typeCount[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCount[typeName])
 		env.idByHash[hash] = llmID
-		env.objsByID[llmID] = &Binding{Key: llmID, Value: obj, env: env}
+		env.objsByID[llmID] = &Binding{
+			Key:         llmID,
+			Value:       obj,
+			Description: desc,
+			env:         env,
+		}
 	}
 	return llmID
 }
@@ -224,7 +241,7 @@ func (b *Binding) ID() string {
 	if !isObject {
 		return ""
 	}
-	return b.env.Ingest(obj)
+	return b.env.Ingest(obj, b.Description)
 }
 
 // Return a stable digest of the binding's value
