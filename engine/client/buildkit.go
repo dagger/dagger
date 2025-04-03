@@ -31,7 +31,7 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 		}),
 		bkclient.WithGRPCDialOption(grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoffConfig,
-			MinConnectTimeout: 3 * time.Second,
+			MinConnectTimeout: 10 * time.Second,
 		})),
 	}
 
