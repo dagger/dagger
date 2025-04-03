@@ -733,6 +733,26 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 			command:  `with-exec --redirect-stdout /out -- echo -n git checkout -- file | file /out | contents`,
 			expected: "git checkout -- file",
 		},
+		{
+			command:  `with-exec -- sh -c 'echo hello something,with,commas' | stdout`,
+			expected: "hello something,with,commas\n",
+		},
+		{
+			command:  `with-exec -- sh -c 'echo "with double quotes"' | stdout`,
+			expected: "with double quotes\n",
+		},
+		{
+			command:  `with-exec -- sh -c "echo 'with single quotes'" | stdout`,
+			expected: "with single quotes\n",
+		},
+		{
+			command:  `with-exec -- sh -c "echo $(directory | with-new-file foo "with state" | file foo | contents)" | stdout`,
+			expected: "with state\n",
+		},
+		{
+			command:  `with-exec echo,with,csv,support | stdout`,
+			expected: "with csv support\n",
+		},
 	} {
 		t.Run(strings.TrimSpace(tc.expected), func(ctx context.Context, t *testctx.T) {
 			script := fmt.Sprintf("container | from %s | %s", alpineImage, tc.command)
