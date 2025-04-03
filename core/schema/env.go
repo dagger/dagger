@@ -52,10 +52,10 @@ func (s environmentSchema) Install() {
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct {
-	Privileged dagql.Optional[dagql.Boolean]
+	Privileged bool `default:"false"`
 }) (*core.Env, error) {
 	env := core.NewEnv()
-	if args.Privileged.GetOr(dagql.Boolean(false)) {
+	if args.Privileged {
 		env = env.WithRoot(s.srv.Root())
 	}
 	return env, nil
