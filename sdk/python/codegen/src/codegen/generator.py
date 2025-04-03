@@ -24,6 +24,7 @@ from typing import (
     cast,
 )
 
+import graphql
 from graphql import (
     GraphQLArgument,
     GraphQLEnumType,
@@ -107,6 +108,9 @@ class Scalars(enum.Enum):
 @dataclass
 class Context:
     """Shared state during execution."""
+
+    schema: GraphQLSchema = field(default_factory=GraphQLSchema)
+    """GraphQL schema."""
 
     ids: frozenset[IDName] = field(default_factory=frozenset)
     """Set of ID scalar names."""
@@ -200,7 +204,7 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
     ids = frozenset(n for n, t in schema.type_map.items() if is_id_type(t))
 
     # shared state between all handler instances
-    ctx = Context(ids=ids)
+    ctx = Context(ids=ids, schema=schema)
 
     handlers: tuple[Handler, ...] = (
         Scalar(ctx),
@@ -637,6 +641,11 @@ class _ObjectField:
                     (".. deprecated::",),
                     wrap_indent(deprecated),
                 )
+            if experimental := self.experimental(":py:meth:`", "`"):
+                yield chain(
+                    (".. caution::",),
+                    wrap_indent("Experimental: " + experimental),
+                )
 
             if self.name == "id":
                 yield (
@@ -685,15 +694,24 @@ class _ObjectField:
         return "\n\n".join("\n".join(section) for section in _out())
 
     def deprecated(self, prefix='"', suffix='"') -> str:
+        return self._rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
+
+    def experimental(self, prefix='"', suffix='"') -> str:
+        reason = ""
+        if self.graphql.ast_node and (
+            directive := self.ctx.schema.get_directive("experimental")
+        ):
+            args = graphql.get_directive_values(directive, self.graphql.ast_node)
+            if args:
+                reason = args["reason"]
+        return self._rewrite_notice(reason, prefix, suffix)
+
+    def _rewrite_notice(self, reason, prefix='"', suffix='"') -> str:
         def _format_name(m):
             name = format_name(m.group().strip("`"))
             return f"{prefix}{name}{suffix}"
 
-        return (
-            DEPRECATION_RE.sub(_format_name, reason)
-            if (reason := self.graphql.deprecation_reason)
-            else ""
-        )
+        return DEPRECATION_RE.sub(_format_name, reason) if reason else ""
 
 
 @dataclass
