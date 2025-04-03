@@ -99,9 +99,12 @@ class Client extends Client\AbstractClient
     /**
      * Initialize a new environment
      */
-    public function env(): Env
+    public function env(?bool $privileged = false): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
+        if (null !== $privileged) {
+        $innerQueryBuilder->setArgument('privileged', $privileged);
+        }
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

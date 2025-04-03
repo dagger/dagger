@@ -7232,15 +7232,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Provide the entire Query object to the LLM
-    pub fn with_query(&self) -> Llm {
-        let query = self.selection.select("withQuery");
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Add a system prompt to the LLM's environment
     ///
     /// # Arguments
@@ -7995,6 +7986,12 @@ pub struct QueryContainerOpts {
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryEnvOpts {
+    /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+    #[builder(setter(into, strip_option), default)]
+    pub privileged: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
@@ -8165,8 +8162,28 @@ impl Query {
         }
     }
     /// Initialize a new environment
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn env(&self) -> Env {
         let query = self.selection.select("env");
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Initialize a new environment
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn env_opts(&self, opts: QueryEnvOpts) -> Env {
+        let mut query = self.selection.select("env");
+        if let Some(privileged) = opts.privileged {
+            query = query.arg("privileged", privileged);
+        }
         Env {
             proc: self.proc.clone(),
             selection: query,

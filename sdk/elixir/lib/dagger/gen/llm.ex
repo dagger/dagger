@@ -200,18 +200,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @doc "Provide the entire Query object to the LLM"
-  @spec with_query(t()) :: Dagger.LLM.t()
-  def with_query(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("withQuery")
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
   @doc "Add a system prompt to the LLM's environment"
   @spec with_system_prompt(t(), String.t()) :: Dagger.LLM.t()
   def with_system_prompt(%__MODULE__{} = llm, prompt) do

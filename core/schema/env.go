@@ -17,6 +17,7 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
+			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
@@ -50,9 +51,16 @@ func (s environmentSchema) Install() {
 	s.srv.AddInstallHook(hook)
 }
 
-func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct{}) (*core.Env, error) {
-	return core.NewEnv(), nil
+func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct {
+	Privileged bool `default:"false"`
+}) (*core.Env, error) {
+	env := core.NewEnv()
+	if args.Privileged {
+		env = env.WithRoot(s.srv.Root())
+	}
+	return env, nil
 }
+
 func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
 	return env.Inputs(), nil
 }
