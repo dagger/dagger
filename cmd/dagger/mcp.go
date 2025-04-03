@@ -65,19 +65,30 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 
 	var modID string
 	if err := makeRequest(ctx, q, &modID); err != nil {
-		return fmt.Errorf("error making request: %w", err)
+		return fmt.Errorf("error instantiating module: %w", err)
+	}
+
+	q = q.Root().Select("env").Select("with"+modDef.MainObject.AsObject.Name+"Input").
+		Arg("name", modName).
+		Arg("value", modID).
+		Arg("description", "module to expose as an MCP server").
+		Select("id")
+
+	var envID string
+	if err := makeRequest(ctx, q, &envID); err != nil {
+		return fmt.Errorf("error making environment: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Exposing module %q as an MCP server on standard input/output\n", modName)
 	q = q.Root().
 		Select("llm").
-		Select("with"+modDef.MainObject.AsObject.Name).
-		Arg("value", modID).
+		Select("withEnv").
+		Arg("env", envID).
 		Select("__mcp")
 
 	var response any
 	if err := makeRequest(ctx, q, &response); err != nil {
-		return fmt.Errorf("error making request: %w", err)
+		return fmt.Errorf("error starting MCP server: %w", err)
 	}
 
 	return nil
