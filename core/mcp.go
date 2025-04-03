@@ -26,8 +26,6 @@ import (
 type LLMTool struct {
 	// Tool name
 	Name string
-	// Return type (just a hint to the model)
-	Returns string
 	// Tool description
 	Description string
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
@@ -205,7 +203,6 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 		}
 		tools = append(tools, LLMTool{
 			Name:        typeDef.Name + "_" + field.Name,
-			Returns:     field.Type.String(),
 			Description: field.Description,
 			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
@@ -554,7 +551,6 @@ func (m *MCP) systemPromptBuiltin() LLMTool {
 	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
 	return LLMTool{
 		Name:        "SYSTEM_PROMPT",
-		Returns:     "string",
 		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",
@@ -583,8 +579,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:    "select" + typeName,
-			Returns: typeName,
+			Name: "select" + typeName,
 			Description: (func() string {
 				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
 				desc += "\n\nProvides the following tools:\n"
