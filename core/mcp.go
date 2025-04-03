@@ -1052,7 +1052,7 @@ func (m *MCP) newState(target dagql.Object) (string, error) {
 		"selected": m.env.Ingest(target, ""),
 	}
 	if prev != nil {
-		res["previous"] = m.env.Ingest(target, "")
+		res["previous"] = m.env.Ingest(prev, "")
 	}
 	return toolStructuredResponse(res)
 }
