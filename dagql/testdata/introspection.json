@@ -88,7 +88,7 @@
                 "args": [
                   {
                     "name": "reason",
-                    "value": "use something else"
+                    "value": "\"use something else\""
                   }
                 ]
               }
@@ -515,7 +515,7 @@
                     "args": [
                       {
                         "name": "reason",
-                        "value": "use something else"
+                        "value": "\"use something else\""
                       }
                     ]
                   }
@@ -556,7 +556,7 @@
                     "args": [
                       {
                         "name": "reason",
-                        "value": "because I said so"
+                        "value": "\"because I said so\""
                       }
                     ]
                   }
@@ -602,7 +602,7 @@
                 "args": [
                   {
                     "name": "reason",
-                    "value": "use something else\n\nanother para"
+                    "value": "\"use something else\\n\\nanother para\""
                   }
                 ]
               }

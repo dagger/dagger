@@ -263,7 +263,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			if self.Value == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.NonNull(dagql.NewString(self.Value.Raw)), nil
+				return dagql.NonNull(dagql.NewString(self.Value.String())), nil
 			}
 		}).DoNotCache("simple field selection"),
 	}.Install(srv)
