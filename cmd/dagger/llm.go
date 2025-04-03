@@ -158,7 +158,10 @@ func init() {
 	}
 }
 
-const agentVar = "agent"
+const (
+	agentVar     = "agent"
+	lastValueVar = "_"
+)
 
 func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
@@ -184,6 +187,10 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	for name, value := range s.shell.runner.Vars {
 		if name == agentVar {
 			// handled separately
+			continue
+		}
+		if name == lastValueVar {
+			// don't sync the auto-last-value var back to the LLM
 			continue
 		}
 		if s.skipEnv[name] {
@@ -250,7 +257,7 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
 		return err
 	}
-	bnd := s.llm.BindResult("_")
+	bnd := s.llm.BindResult(lastValueVar)
 	typeName, err := bnd.TypeName(ctx)
 	if err != nil {
 		return err
@@ -269,7 +276,7 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 			Execute(ctx); err != nil {
 		return err
 	}
-	return s.assignShell(ctx, "_", &dynamicObject{objID, typeName})
+	return s.assignShell(ctx, lastValueVar, &dynamicObject{objID, typeName})
 }
 
 type dagqlObject interface {
