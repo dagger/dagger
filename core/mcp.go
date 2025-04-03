@@ -68,9 +68,9 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
-	if m.needsSystemPrompt {
-		return defaultSystemPrompt
-	}
+	// if m.needsSystemPrompt {
+	// 	return defaultSystemPrompt
+	// }
 	return ""
 }
 
@@ -379,6 +379,7 @@ func (m *MCP) selectionToToolResult(
 	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
 ) (any, error) {
+	desc := fmt.Sprintf("%s.%s", m.env.ID(target), fieldSel)
 	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
 		// Handle object returns.
 		//
@@ -403,9 +404,7 @@ func (m *MCP) selectionToToolResult(
 			return nil, err
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-			prev := m.Current()
-			m.Select(obj)
-			return m.currentState(prev)
+			return m.newState(obj, desc)
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
 		}
@@ -418,8 +417,9 @@ func (m *MCP) selectionToToolResult(
 				return nil, fmt.Errorf("failed to sync: %w", err)
 			}
 			var res []any
-			for _, obj := range objs {
-				res = append(res, m.env.Ingest(obj))
+			for i, obj := range objs {
+				// TODO: dedupe with fieldSel Nth handling
+				res = append(res, m.env.Ingest(obj, fmt.Sprintf("%s[%d]", desc, i+1)))
 			}
 			return toolStructuredResponse(map[string]any{
 				"objects": res,
@@ -434,7 +434,7 @@ func (m *MCP) selectionToToolResult(
 	}
 	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 		// avoid dumping full IDs, show the type and hash instead
-		return m.describe(id), nil
+		return m.describe(id, desc), nil
 	} else if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
 		bytes := []byte(str.String())
 		if !utf8.Valid(bytes) {
@@ -512,13 +512,13 @@ func (m *MCP) toolCallToSelection(
 
 const maxStr = 80 * 1024
 
-func (m *MCP) describe(val dagql.Typed) string {
+func (m *MCP) describe(val dagql.Typed, desc string) string {
 	if val == nil {
 		return "Void"
 	}
 	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 		// NOTE: this covers both Objects and ID scalars
-		return m.env.Ingest(obj)
+		return m.env.Ingest(obj, desc)
 	}
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
 		return val.Type().String() + " (length: " + strconv.Itoa(list.Len()) + ")"
@@ -612,15 +612,17 @@ func (m *MCP) returnBuiltin() LLMTool {
 		props[name] = map[string]any{
 			"type":           "string",
 			"pattern":        idPattern(typeName),
-			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format. %s", typeName, typeName, b.Description),
+			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format.\n\n%s", typeName, typeName, b.Description),
 			jsonSchemaIDAttr: typeName,
 		}
 	}
 	return LLMTool{
-		Name: "return",
-		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
+		Name: "returnToUser",
+		Description: `Call this tool when you have FULLY completed your task and gathered ALL required values.
 
-Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
+Each parameter corresponds to a named result with a specific purpose.
+
+Do not call this tool until all values are ready.`,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
@@ -666,6 +668,31 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 	}
 }
 
+func (m *MCP) systemPromptBuiltin() LLMTool {
+	desc := defaultSystemPrompt
+	outputs := m.env.Outputs()
+	if len(outputs) > 0 {
+		desc += "\n\nWhen you have completed your task, use the `returnToUser` tool."
+	}
+	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
+	return LLMTool{
+		Name:        "SYSTEM_PROMPT",
+		Returns:     "string",
+		Description: desc,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"strict":               true,
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Call: ToolFunc(func(ctx context.Context, _ struct{}) (any, error) {
+			// shouldn't need to call this, but return it anyway if they ended up here
+			return desc, nil
+		}),
+	}
+}
+
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{}
 
@@ -686,6 +713,24 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				desc += "\n\nProvides the following tools:\n"
 				for _, tool := range tools {
 					desc += fmt.Sprintf("\n- %s", tool.Name)
+				}
+				var typeInputs []string
+				for _, bnd := range m.env.objsByID {
+					if bnd.TypeName() != typeName {
+						continue
+					}
+					if cur := m.Current(); cur != nil && bnd.ID() == m.env.ID(cur) {
+						typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
+					} else {
+						typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+					}
+				}
+				sort.Strings(typeInputs)
+				if len(typeInputs) > 0 {
+					desc += "\n\n## Available IDs"
+					for _, input := range typeInputs {
+						desc += fmt.Sprintf("\n- %s", input)
+					}
 				}
 				return desc
 			})(),
@@ -718,15 +763,12 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				if err != nil {
 					return nil, err
 				}
-				prev := m.Current()
-				m.Select(obj) // , args.Functions...)
-				return m.currentState(prev)
+				return m.newState(obj, "") // no desc needed; already exists
 			}),
 		})
 	}
 
-	// register getters for all the env vars
-	builtins = append(builtins, m.envGetters()...)
+	builtins = append(builtins, m.systemPromptBuiltin())
 
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
@@ -791,9 +833,7 @@ func (m *MCP) envGetters() []LLMTool {
 			},
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				if obj, isObj := input.AsObject(); isObj {
-					prev := m.Current()
-					m.Select(obj)
-					return m.currentState(prev)
+					return m.newState(obj, "") // no desc needed
 				}
 				return input.Value, nil
 			},
@@ -996,14 +1036,16 @@ func idPattern(typeName string) string {
 	return `^` + typeName + `#\d+$`
 }
 
-func (m *MCP) currentState(previous dagql.Object) (string, error) {
-	cur := m.Current()
+func (m *MCP) newState(target dagql.Object, desc string) (string, error) {
+	prev := m.Current()
+	m.env.Ingest(target, desc)
+	m.Select(target)
 	res := map[string]any{
 		// "selected" to hint to the model that it doesn't need to select it
-		"selected": m.describe(cur),
+		"selected": m.env.ID(target),
 	}
-	if previous != nil {
-		res["previous"] = m.describe(previous)
+	if prev != nil {
+		res["previous"] = m.env.ID(prev)
 	}
 	return toolStructuredResponse(res)
 }
