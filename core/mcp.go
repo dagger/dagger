@@ -754,6 +754,10 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		})
 	}
 
+	builtins = append(builtins, m.userProvidedValues()...)
+
+	// NOTE: This works better when it's the last tool. 40/40 evals when last,
+	// 24/40 when first. (gemini-2.0-flash, WorkspacePattern)
 	builtins = append(builtins, m.systemPromptBuiltin())
 
 	// Attach builtin telemetry
@@ -799,17 +803,40 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	return builtins, nil
 }
 
-func (m *MCP) envGetters() []LLMTool {
-	var tools []LLMTool
+func (m *MCP) userProvidedValues() []LLMTool {
+	desc := "The following values have been provided by the user:"
+	var anyProvided bool
 	for _, input := range m.env.Inputs() {
+		if _, isObj := input.AsObject(); isObj {
+			continue
+		}
+
+		anyProvided = true
+
+		desc += "\n\n---"
+
 		description := input.Description
 		if description == "" {
-			description = fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName())
+			description = input.Key
 		}
-		tools = append(tools, LLMTool{
-			Name:        input.Key,
-			Returns:     input.TypeName(),
-			Description: description,
+
+		desc += "\n\n" + description
+
+		payload, err := json.Marshal(input.Value)
+		if err != nil {
+			desc += "\n\nMARSHAL ERROR: " + err.Error()
+			continue
+		}
+		desc += "\n\n" + string(payload)
+	}
+	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
+	if !anyProvided {
+		return nil
+	}
+	return []LLMTool{
+		{
+			Name:        "userProvidedValues",
+			Description: desc,
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -817,15 +844,11 @@ func (m *MCP) envGetters() []LLMTool {
 				"required":             []string{},
 				"additionalProperties": false,
 			},
-			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				if obj, isObj := input.AsObject(); isObj {
-					return m.newState(obj)
-				}
-				return input.Value, nil
+			Call: func(ctx context.Context, args any) (any, error) {
+				return desc, nil
 			},
-		})
+		},
 	}
-	return tools
 }
 
 func (m *MCP) IsDone() bool {
