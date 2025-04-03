@@ -376,10 +376,6 @@ func (h *shellCallHandler) resolveResults(ctx context.Context, args []string) ([
 
 	err := eg.Wait()
 
-	if h.debug {
-		shellDebug(ctx, "resolve results", args, results)
-	}
-
 	return results, err
 }
 
