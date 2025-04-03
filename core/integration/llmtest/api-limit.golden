@@ -10,112 +10,11 @@
   },
   {
     "role": "assistant",
-    "content": "I'll help you check the PATH environment variable in an Alpine Linux container. I'll create an Alpine container and run the `echo $PATH` command to display the PATH value.",
-    "tool_calls": [
-      {
-        "id": "toolu_014ZHiMSHD7Z5PriRKkcNTnz",
-        "function": {
-          "name": "alpine",
-          "arguments": null
-        },
-        "type": "function"
-      },
-      {
-        "id": "toolu_016vP4yHUek4aJ2RPWLgiCHx",
-        "function": {
-          "name": "selectContainer",
-          "arguments": {
-            "id": "Container#0"
-          }
-        },
-        "type": "function"
-      }
-    ],
+    "content": "The `PATH` variable is an environment variable in Unix and Unix-like operating systems (such as Linux and macOS), as well as in Windows, that tells the shell which directories to search for executable files. Its value is a list of directories separated by colons (`:`) on Unix-like systems or semicolons (`;`) on Windows.\n\nThe specific value of `PATH` can vary depending on the system and the user's configuration, but here is a typical example for a Unix-like system:\n\n```\n/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n```\n\nAnd for Windows, it might look like:\n\n```\nC:\\Windows\\System32;C:\\Windows;C:\\Program Files\n```\n\nTo find the actual value of `PATH` on your system, you can open a terminal or command prompt and type `echo $PATH` on Unix-like systems or `echo %PATH%` on Windows.",
     "token_usage": {
-      "InputTokens": 1095,
-      "OutputTokens": 126,
-      "TotalTokens": 1221
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"selected\":\"Container#1\"}",
-    "tool_call_id": "toolu_014ZHiMSHD7Z5PriRKkcNTnz",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "user",
-    "content": "unknown object \"Container#0\"",
-    "tool_call_id": "toolu_016vP4yHUek4aJ2RPWLgiCHx",
-    "tool_errored": true,
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "toolu_014kVMtRHPzLPgFimm91uU3g",
-        "function": {
-          "name": "selectContainer",
-          "arguments": {
-            "id": "Container#1"
-          }
-        },
-        "type": "function"
-      },
-      {
-        "id": "toolu_013WShtSPdeQU57NTu3bkqGn",
-        "function": {
-          "name": "Container_envVariable",
-          "arguments": {
-            "name": "PATH"
-          }
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "InputTokens": 13203,
-      "OutputTokens": 92,
-      "TotalTokens": 13295
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"previous\":\"Container#1\",\"selected\":\"Container#1\"}",
-    "tool_call_id": "toolu_014kVMtRHPzLPgFimm91uU3g",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"}",
-    "tool_call_id": "toolu_013WShtSPdeQU57NTu3bkqGn",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "The PATH environment variable in the Alpine Linux container is:\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    "token_usage": {
-      "InputTokens": 116,
-      "OutputTokens": 43,
-      "TotalTokens": 159
+      "InputTokens": 523,
+      "OutputTokens": 194,
+      "TotalTokens": 717
     }
   },
   {
@@ -129,42 +28,11 @@
   },
   {
     "role": "assistant",
-    "content": "I'll check the TERM environment variable in the current Alpine container.",
-    "tool_calls": [
-      {
-        "id": "toolu_01P86eQdzWBWzHScu1gtq7ex",
-        "function": {
-          "name": "Container_envVariable",
-          "arguments": {
-            "name": "TERM"
-          }
-        },
-        "type": "function"
-      }
-    ],
+    "content": "The `TERM` environment variable specifies the type of terminal to emulate when running the shell. This variable tells applications how to interact with the terminal interface, particularly in terms of capabilities like color support, cursor movement, and screen manipulation.\n\nThe value of `TERM` can vary depending on the terminal emulator or environment you are using. Here are some common values:\n\n- `xterm`: A common default for many terminal emulators.\n- `xterm-256color`: Similar to `xterm` but with support for 256 colors.\n- `screen`: Used when running in a terminal multiplexer like GNU Screen.\n- `tmux`: Used when running inside the tmux terminal multiplexer.\n- `linux`: Used on the Linux console.\n- `vt100`: Emulates a VT100 terminal, often used for basic terminal compatibility.\n\nTo find the actual value of `TERM` on your system, you can open a terminal and type `echo $TERM`.",
     "token_usage": {
-      "InputTokens": 170,
-      "OutputTokens": 70,
-      "TotalTokens": 240
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"result\":null}",
-    "tool_call_id": "toolu_01P86eQdzWBWzHScu1gtq7ex",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "The TERM environment variable is not set in the Alpine container. This is normal for a fresh container as it doesn't have any terminal-related environment variables set by default unless specifically configured.",
-    "token_usage": {
-      "InputTokens": 255,
-      "OutputTokens": 42,
-      "TotalTokens": 297
+      "InputTokens": 730,
+      "OutputTokens": 195,
+      "TotalTokens": 925
     }
   }
 ]
