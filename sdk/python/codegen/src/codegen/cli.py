@@ -5,7 +5,7 @@ import sys
 
 import graphql
 
-from codegen import generator
+from codegen import ast, generator
 
 parser = argparse.ArgumentParser(
     prog="python -m codegen", description="Dagger Python SDK"
@@ -46,6 +46,7 @@ def main():
 def codegen(introspection: pathlib.Path, output: pathlib.Path | None):
     result = json.loads(introspection.read_text())
     schema = graphql.build_client_schema(result)
+    ast.insert_stubs(result["__schema"], schema)
     code = generator.generate(schema)
 
     if output:
