@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/googleapis/gax-go/v2/apierror"
@@ -41,49 +42,12 @@ func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	}, err
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, "received"),
-	))
-	defer telemetry.End(span, func() error { return rerr })
-
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
-
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
-		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
-		attribute.String("model", c.endpoint.Model),
-		attribute.String("provider", string(c.endpoint.Provider)),
+func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) []*genai.Tool {
+	// Gemini expects non empty FunctionDeclarations when tools are provided
+	if len(tools) == 0 {
+		return nil
 	}
 
-	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
-	if err != nil {
-		return nil, err
-	}
-
-	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
-	if err != nil {
-		return nil, err
-	}
-
-	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
-	if err != nil {
-		return nil, err
-	}
-
-	// set model
-	model := c.client.GenerativeModel(c.endpoint.Model)
-
-	// set system prompt
-	model.SystemInstruction = &genai.Content{
-		Role: "system",
-	}
-
-	// convert tools to Genai tool format.
 	fns := []*genai.FunctionDeclaration{}
 	for _, tool := range tools {
 		fd := &genai.FunctionDeclaration{
@@ -97,28 +61,22 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		}
 		fns = append(fns, fd)
 	}
-	model.Tools = []*genai.Tool{
-		{
-			FunctionDeclarations: fns,
-		},
-	}
 
-	// convert history to genai.Content
-	genaiHistory := []*genai.Content{}
-	if len(history) == 0 {
-		return nil, fmt.Errorf("genai history cannot be empty")
+	return []*genai.Tool{
+		{FunctionDeclarations: fns},
 	}
+}
 
-	model.SystemInstruction = &genai.Content{
+func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+	systemInstruction = &genai.Content{
 		Parts: []genai.Part{},
 		Role:  "system",
 	}
-
 	for _, msg := range history {
 		var content *genai.Content
 		switch msg.Role {
 		case "system":
-			content = model.SystemInstruction
+			content = systemInstruction
 		case "user", "function":
 			content = &genai.Content{
 				Parts: []genai.Part{},
@@ -130,7 +88,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 				Role:  "model",
 			}
 		default:
-			return nil, fmt.Errorf("unexpected role %s", msg.Role)
+			return nil, nil, fmt.Errorf("unexpected role %s", msg.Role)
 		}
 
 		// message was a tool call
@@ -164,26 +122,19 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			genaiHistory = append(genaiHistory, content)
 		}
 	}
-	if len(model.SystemInstruction.Parts) == 0 {
-		model.SystemInstruction = nil
+
+	if len(systemInstruction.Parts) == 0 {
+		systemInstruction = nil
 	}
 
-	// Pop last message from history for SendMessage
-	if len(genaiHistory) == 0 {
-		return nil, fmt.Errorf("no user prompt")
-	}
+	return genaiHistory, systemInstruction, nil
+}
 
-	userMessage := genaiHistory[len(genaiHistory)-1]
-	genaiHistory = genaiHistory[:len(genaiHistory)-1]
-
-	chat := model.StartChat()
-	chat.History = genaiHistory
-
-	stream := chat.SendMessageStream(ctx, userMessage.Parts...)
-
-	var content string
-	var toolCalls []ToolCall
-	var tokenUsage LLMTokenUsage
+func (c *GenaiClient) processStreamResponse(
+	stream *genai.GenerateContentResponseIterator,
+	stdout io.Writer,
+	onTokenUsage func(*genai.UsageMetadata) LLMTokenUsage,
+) (content string, toolCalls []ToolCall, tokenUsage LLMTokenUsage, err error) {
 	for {
 		res, err := stream.Next()
 		if err != nil {
@@ -191,62 +142,142 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 				break
 			}
 			if apiErr, ok := err.(*apierror.APIError); ok {
-				// unwrap the APIError
-				return nil, fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
+				err = fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
+				return content, toolCalls, tokenUsage, err
 			}
-			return nil, err
+
+			return content, toolCalls, tokenUsage, err
 		}
 
-		// Keep track of the token usage
 		if res.UsageMetadata != nil {
-			if res.UsageMetadata.CandidatesTokenCount > 0 {
-				count := int64(res.UsageMetadata.CandidatesTokenCount)
-				tokenUsage.OutputTokens += count
-				tokenUsage.TotalTokens += count
-				outputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
-			}
-			if res.UsageMetadata.PromptTokenCount > 0 {
-				count := int64(res.UsageMetadata.PromptTokenCount)
-				tokenUsage.InputTokens += count
-				tokenUsage.TotalTokens += count
-				inputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
-			}
-			if res.UsageMetadata.CachedContentTokenCount > 0 {
-				count := int64(res.UsageMetadata.CachedContentTokenCount)
-				inputTokensCacheReads.Record(ctx, count, metric.WithAttributes(attrs...))
-			}
+			tokenUsage = onTokenUsage(res.UsageMetadata)
 		}
 
 		if len(res.Candidates) == 0 {
-			return nil, &ModelFinishedError{
-				Reason: "no response from model",
-			}
+			err = &ModelFinishedError{Reason: "no response from model"}
+			return content, toolCalls, tokenUsage, err
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
-			return nil, &ModelFinishedError{
-				Reason: candidate.FinishReason.String(),
-			}
+			err = &ModelFinishedError{Reason: candidate.FinishReason.String()}
+			return content, toolCalls, tokenUsage, err
 		}
 
 		for _, part := range candidate.Content.Parts {
 			switch x := part.(type) {
 			case genai.Text:
-				fmt.Fprint(stdio.Stdout, x)
+				fmt.Fprint(stdout, x)
 				content += string(x)
 			case genai.FunctionCall:
 				toolCalls = append(toolCalls, ToolCall{
-					ID: x.Name,
-					Function: FuncCall{
-						Name:      x.Name,
-						Arguments: x.Args,
-					},
-					Type: "function",
+					ID:       x.Name,
+					Function: FuncCall{Name: x.Name, Arguments: x.Args},
+					Type:     "function",
 				})
 			default:
-				return nil, fmt.Errorf("unexpected genai part type %T", part)
+				err = fmt.Errorf("unexpected genai part type %T", part)
+				return content, toolCalls, tokenUsage, err
 			}
 		}
+	}
+
+	return content, toolCalls, tokenUsage, nil
+}
+
+func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	// setup tracing & telemetry
+	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, "received"),
+	))
+	defer telemetry.End(span, func() error { return rerr })
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String("model", c.endpoint.Model),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inputTokens gauge: %w", err)
+	}
+
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inputTokensCacheReads gauge: %w", err)
+	}
+
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
+	}
+
+	// setup model
+	model := c.client.GenerativeModel(c.endpoint.Model)
+
+	// convert tools
+	model.Tools = c.convertToolsToGenai(tools)
+
+	// convert history
+	if len(history) == 0 {
+		return nil, fmt.Errorf("genai history cannot be empty")
+	}
+
+	genaiHistory, systemInstruction, err := c.prepareGenaiHistory(history)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert history: %w", err)
+	}
+	model.SystemInstruction = systemInstruction
+
+	if len(genaiHistory) == 0 {
+		return nil, fmt.Errorf("no user prompt")
+	}
+
+	userMessage := genaiHistory[len(genaiHistory)-1]
+	chatHistoryForGenai := genaiHistory[:len(genaiHistory)-1]
+
+	chat := model.StartChat()
+	chat.History = chatHistoryForGenai
+
+	stream := chat.SendMessageStream(ctx, userMessage.Parts...)
+
+	// records token usage metrics and updates the final summary struct based on metadata from the stream.
+	tokenHandler := func(usageMeta *genai.UsageMetadata) (usageSummary LLMTokenUsage) {
+		candidatesTokens := int64(usageMeta.CandidatesTokenCount)
+		promptTokens := int64(usageMeta.PromptTokenCount)
+		cachedTokens := int64(usageMeta.CachedContentTokenCount)
+
+		if candidatesTokens > 0 {
+			outputTokens.Record(ctx, candidatesTokens, metric.WithAttributes(attrs...))
+		}
+		if promptTokens > 0 {
+			inputTokens.Record(ctx, promptTokens, metric.WithAttributes(attrs...))
+		}
+		if cachedTokens > 0 {
+			inputTokensCacheReads.Record(ctx, cachedTokens, metric.WithAttributes(attrs...))
+		}
+
+		usageSummary.OutputTokens += candidatesTokens
+		usageSummary.InputTokens += promptTokens
+		usageSummary.TotalTokens += candidatesTokens + promptTokens
+
+		return usageSummary
+	}
+
+	content, toolCalls, tokenUsage, err := c.processStreamResponse(
+		stream,
+		stdio.Stdout,
+		tokenHandler,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LLMResponse{
