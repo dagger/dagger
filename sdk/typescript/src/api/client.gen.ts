@@ -1152,6 +1152,13 @@ export type ClientContainerOpts = {
   platform?: Platform
 }
 
+export type ClientEnvOpts = {
+  /**
+   * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+   */
+  privileged?: boolean
+}
+
 export type ClientGitOpts = {
   /**
    * DEPRECATED: Set to true to keep .git directory.
@@ -6058,14 +6065,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Provide the entire Query object to the LLM
-   */
-  withQuery = (): LLM => {
-    const ctx = this._ctx.select("withQuery")
-    return new LLM(ctx)
-  }
-
-  /**
    * Add a system prompt to the LLM's environment
    * @param prompt The system prompt to send
    */
@@ -7482,9 +7481,10 @@ export class Client extends BaseClient {
 
   /**
    * Initialize a new environment
+   * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    */
-  env = (): Env => {
-    const ctx = this._ctx.select("env")
+  env = (opts?: ClientEnvOpts): Env => {
+    const ctx = this._ctx.select("env", { ...opts })
     return new Env(ctx)
   }
 

@@ -6248,15 +6248,6 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
-// Provide the entire Query object to the LLM
-func (r *LLM) WithQuery() *LLM {
-	q := r.query.Select("withQuery")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Add a system prompt to the LLM's environment
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
@@ -7885,9 +7876,21 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
+// EnvOpts contains options for Client.Env
+type EnvOpts struct {
+	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+	Privileged bool
+}
+
 // Initialize a new environment
-func (r *Client) Env() *Env {
+func (r *Client) Env(opts ...EnvOpts) *Env {
 	q := r.query.Select("env")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `privileged` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Privileged) {
+			q = q.Arg("privileged", opts[i].Privileged)
+		}
+	}
 
 	return &Env{
 		query: q,

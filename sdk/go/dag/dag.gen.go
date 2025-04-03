@@ -97,9 +97,9 @@ func Engine() *dagger.Engine {
 }
 
 // Initialize a new environment
-func Env() *dagger.Env {
+func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	client := initClient()
-	return client.Env()
+	return client.Env(opts...)
 }
 
 // Create a new error.

@@ -6598,12 +6598,6 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
-    def with_query(self) -> Self:
-        """Provide the entire Query object to the LLM"""
-        _args: list[Arg] = []
-        _ctx = self._select("withQuery", _args)
-        return LLM(_ctx)
-
     def with_system_prompt(self, prompt: str) -> Self:
         """Add a system prompt to the LLM's environment
 
@@ -8228,9 +8222,18 @@ class Client(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
-    def env(self) -> Env:
-        """Initialize a new environment"""
-        _args: list[Arg] = []
+    def env(self, *, privileged: bool | None = False) -> Env:
+        """Initialize a new environment
+
+        Parameters
+        ----------
+        privileged:
+            Give the environment the same privileges as the caller: core API
+            including host access, current module, and dependencies
+        """
+        _args = [
+            Arg("privileged", privileged, False),
+        ]
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
