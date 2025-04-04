@@ -80,7 +80,7 @@ func (s *gitSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", s.tree).
+		dagql.NodeFuncWithCacheKey("tree", s.tree, s.treeCacheKey).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
@@ -92,6 +92,8 @@ func (s *gitSchema) Install() {
 			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
+		dagql.NodeFunc("ref", s.fetchRef).
+			Doc(`The resolved ref name at this ref.`),
 	}.Install(s.srv)
 }
 
@@ -262,9 +264,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, &core.GitRepository{
+		Query: parent.Self,
 		Backend: &core.RemoteGitRepository{
 			Query:         parent.Self,
-			URL:           args.URL,
+			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
 			SSHAuthSocket: authSock,
 			Services:      svcs,
@@ -330,7 +333,7 @@ func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Q
 }
 
 func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {
-	return parent.Head(ctx)
+	return parent.Ref(ctx, "HEAD")
 }
 
 type refArgs struct {
@@ -394,7 +397,9 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 		return nil, err
 	}
 	repo := *parent
+	fmt.Printf("got token %T\n", repo.Backend)
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		fmt.Println("set token")
 		remote := *remote
 		remote.AuthToken = token.Self
 		repo.Backend = &remote
@@ -422,6 +427,7 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 
 type treeArgs struct {
 	DiscardGitDir bool `default:"false"`
+	Depth         int  `default:"1"`
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
@@ -429,7 +435,8 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
 	}
 
-	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	fmt.Println("doing tree")
+	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
 	if err != nil {
 		return inst, err
 	}
@@ -440,8 +447,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	return inst, nil
 }
 
+func (s *gitSchema) treeCacheKey(ctx context.Context, git dagql.Instance[*core.GitRef], args treeArgs, cacheConfig dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	// TODO: cache this cache key computation
+	fmt.Println("getting tree cache key")
+	commit, fullref, err := git.Self.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cacheConfig.Digest = dagql.HashFrom(cacheConfig.Digest.String(), commit, fullref)
+	return &cacheConfig, nil
+}
+
 type treeArgsLegacy struct {
 	DiscardGitDir bool `default:"false"`
+	Depth         int  `default:"1"`
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
@@ -452,6 +471,7 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.
 		return DagOpDirectory(ctx, s.srv, parent, args, s.treeLegacy, nil)
 	}
 
+	fmt.Println("doing tree")
 	var authSock *core.Socket
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
@@ -471,7 +491,7 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.
 		}
 		res.Self.Repo = &repo
 	}
-	dir, err := res.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	dir, err := res.Self.Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
 	if err != nil {
 		return inst, err
 	}
@@ -487,9 +507,23 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
 
-	str, err := parent.Self.Commit(ctx)
+	fmt.Println("doing commit")
+	commit, _, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
 	}
-	return dagql.NewString(str), nil
+	return dagql.NewString(commit), nil
+}
+
+func (s *gitSchema) fetchRef(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
+	}
+
+	fmt.Println("doing ref fetch")
+	_, ref, err := parent.Self.Resolve(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(ref), nil
 }
