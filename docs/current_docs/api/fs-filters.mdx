@@ -344,6 +344,17 @@ var dirOpts = new Container.WithDirectoryArguments()
 </TabItem>
 </Tabs>
 
+## Mounts
+
+When working with directories and files, you can choose whether to copy or mount them in the containers created by your Dagger Function. The Dagger API provides the following methods:
+
+- `Container.withDirectory()` returns a container plus a directory written at the given path
+- `Container.withFile()` returns a container plus a file written at the given path
+- `Container.withMountedDirectory()` returns a container plus a directory mounted at the given path
+- `Container.withMountedFile()` returns a container plus a file mounted at the given path
+
+Mounted directories or files are only available during the execution of the Dagger Function. They are not copied to, or included, in the final image. Dagger uses non-directional bind mounts; this means that changes made to the mounted directory or file, either in the container filesystem or in the source, will not be reflected in the other location.
+
 ## Debugging
 
 ### Using logs
