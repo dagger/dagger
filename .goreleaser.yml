@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v2.7.0/www/docs/static/schema-pro.json
+
 version: 2
 
 includes:
@@ -48,6 +50,36 @@ nix:
         --bash <($out/bin/dagger completion bash) \
         --fish <($out/bin/dagger completion fish) \
         --zsh <($out/bin/dagger completion zsh)
+
+# https://goreleaser.com/customization/winget/
+winget:
+  - name: dagger
+    repository:
+      owner: "{{ .Env.GH_ORG_NAME }}"
+      name: winget
+    commit_author:
+      name: dagger-bot
+      email: noreply@dagger.io
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://dagger.io"
+    publisher: Dagger
+    short_description: "Dagger is an integrated platform to orchestrate the delivery of applications"
+    license: "asl20"
+    publisher_url: "https://dagger.io"
+    publisher_support_url: https://github.com/dagger/dagger/issues/new/choose
+    package_identifier: Dagger.Cli
+    use: archive    
+    skip_upload: false
+    tags:
+      - dagger
+      - cli
+      - cicd
+      - workflows
+      - sandbox
+      - containers
+      - devops
+      - llm
+
 
 blobs:
   - provider: s3

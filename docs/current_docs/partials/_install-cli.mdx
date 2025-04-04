@@ -97,40 +97,57 @@ To see the installed version of dagger:
 
 <TabItem value="Windows">
 
+The Dagger CLI can be installed on Windows using either Windows Package Manager (winget) or PowerShell.
+
+<Tabs>
+<TabItem value="winget">
+
+The simplest way to install Dagger on Windows is using the Windows Package Manager:
+
+```powershell
+winget install Dagger.Cli
+```
+
+To verify the installation:
+
+```powershell
+dagger version
+```
+
+</TabItem>
+<TabItem value="pwsh">
+
 The Dagger CLI can be installed on Windows via a PowerShell 7.0 script.
 
 The quickest way of installing the latest stable release of `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
+iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger
 ```
 
 To install Dagger to a custom location, specify the location using the `-InstallPath` parameter.
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Install-Dagger -InstallPath C:\tools\dagger
+iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -InstallPath C:\tools\dagger
 ```
 
 To install a specific version of Dagger, specify the version with the `-DaggerVersion` parameter.
 
 <CodeBlock language="powershell">
-{`Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;\n`}
+{`iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex;\n`}
 {`Install-Dagger -DaggerVersion ${daggerVersion}`}
 </CodeBlock>
 
 For an interactive installation process, include the `-Interactive` switch.
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Install-Dagger -Interactive
+iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -Interactive
 ```
 
 For further customization, such as adding Dagger to your system's PATH, additional parameters are available. To view all available options:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Get-Command -Name Install-Dagger -Syntax
+iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; gcm -Name Install-Dagger -Syntax
 ```
 
 By default, without specifying the `-InstallPath`, Dagger will be installed in the `<your home folder>\dagger` directory.
@@ -141,6 +158,9 @@ To verify that Dagger has been installed correctly, use where.exe
 where.exe dagger
 # Expected output: C:\<your home folder>\dagger\dagger.exe
 ```
+
+</TabItem>
+</Tabs>
 
 </TabItem>
 </Tabs>
@@ -171,13 +191,19 @@ curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
 This will install the development release of the Dagger CLI in `./bin/dagger`.
 </TabItem>
 <TabItem value="Windows">
+
+<Tabs>
+<TabItem value="pwsh">
 To install the latest development release, use the following command:
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 -DaggerCommit head
+iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -DaggerCommit head
 ```
 
 This will install the development release of the Dagger CLI in the `<your home folder>\dagger` directory.
+</TabItem>
+</Tabs>
+
 </TabItem>
 </Tabs>
 
