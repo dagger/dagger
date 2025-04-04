@@ -83,11 +83,11 @@ spec:
           {{- if .Values.magicache.enabled }}
           envFrom:
             - secretRef:
-              {{- if .Values.magicache.secretName }}
-              name: {{ .Values.magicache.secretName }}
-              {{- else }}
-              name: {{ include "dagger.fullname" . }}-magicache-token
-              {{- end }}
+                {{- if .Values.magicache.secretName }}
+                name: {{ .Values.magicache.secretName }}
+                {{- else }}
+                name: {{ include "dagger.fullname" . }}-magicache-token
+                {{- end }}
           {{- end }}
           {{- if .Values.engine.port }}
           ports:
