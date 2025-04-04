@@ -302,6 +302,10 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			// with implementations
 			continue
 		}
+		if references(field, TypesHiddenFromEnvExtensions...) {
+			// references a banned type
+			continue
+		}
 		schema, err := fieldArgsToJSONSchema(schema, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
@@ -323,6 +327,22 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 		})
 	}
 	return tools, nil
+}
+
+func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
+	names := map[string]bool{}
+	for _, t := range types {
+		names[t.Type().Name()] = true
+	}
+	if names[fieldDef.Type.Name()] {
+		return true
+	}
+	for _, arg := range fieldDef.Arguments {
+		if names[arg.Type.Name()] {
+			return true
+		}
+	}
+	return false
 }
 
 // Low-level function call plumbing
