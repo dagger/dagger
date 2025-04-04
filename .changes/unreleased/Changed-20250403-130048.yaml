@@ -1,6 +1,0 @@
-kind: Changed
-body: 'shell: skip CSV flag parsing when spreading `with-exec` positional arguments'
-time: 2025-04-03T13:00:48.074591Z
-custom:
-    Author: helderco
-    PR: "10063"
