@@ -13,55 +13,26 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_rreQM3amv7xB9GdZQvK2snKZ",
+        "id": "call_9SOC3GrKUWfrzicltYErs8hF",
         "function": {
-          "name": "workspace",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "InputTokens": 261,
-      "OutputTokens": 10,
-      "TotalTokens": 271
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"selected\":\"ToyWorkspace#1\"}",
-    "tool_call_id": "call_rreQM3amv7xB9GdZQvK2snKZ",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "call_zvlMXZspUIE0kHBoSYqaCAqp",
-        "function": {
-          "name": "ToyWorkspace_write",
+          "name": "selectToyWorkspace",
           "arguments": {
-            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}"
+            "id": "ToyWorkspace#1"
           }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "InputTokens": 337,
-      "OutputTokens": 43,
-      "TotalTokens": 380
+      "InputTokens": 476,
+      "OutputTokens": 19,
+      "TotalTokens": 495
     }
   },
   {
     "role": "user",
-    "content": "{\"previous\":\"ToyWorkspace#1\",\"selected\":\"ToyWorkspace#2\"}",
-    "tool_call_id": "call_zvlMXZspUIE0kHBoSYqaCAqp",
+    "content": "{\"selected\":\"ToyWorkspace#1\"}",
+    "tool_call_id": "call_9SOC3GrKUWfrzicltYErs8hF",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -73,7 +44,38 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_LM9VkPtoMbKdTWwh7Djgua30",
+        "id": "call_uDgoDTEVZS9gsFi3SWk1sKFs",
+        "function": {
+          "name": "ToyWorkspace_write",
+          "arguments": {
+            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}\n"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "InputTokens": 567,
+      "OutputTokens": 44,
+      "TotalTokens": 611
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"previous\":\"ToyWorkspace#1\",\"selected\":\"ToyWorkspace#2\"}",
+    "tool_call_id": "call_uDgoDTEVZS9gsFi3SWk1sKFs",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_ujNFAcKfEA3Z6nv71s3VFYQ8",
         "function": {
           "name": "ToyWorkspace_build",
           "arguments": {}
@@ -82,15 +84,15 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 403,
+      "InputTokens": 646,
       "OutputTokens": 13,
-      "TotalTokens": 416
+      "TotalTokens": 659
     }
   },
   {
     "role": "user",
     "content": "{\"result\":null}",
-    "tool_call_id": "call_LM9VkPtoMbKdTWwh7Djgua30",
+    "tool_call_id": "call_ujNFAcKfEA3Z6nv71s3VFYQ8",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -102,9 +104,9 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_zy4h14qSaTmczDpQCeSqfuuY",
+        "id": "call_QlYYJobDJ2sz8m9iufSAxJO1",
         "function": {
-          "name": "return",
+          "name": "returnToUser",
           "arguments": {
             "result": "ToyWorkspace#2"
           }
@@ -113,28 +115,19 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 429,
-      "OutputTokens": 17,
-      "TotalTokens": 446
+      "InputTokens": 672,
+      "OutputTokens": 19,
+      "TotalTokens": 691
     }
   },
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_zy4h14qSaTmczDpQCeSqfuuY",
+    "tool_call_id": "call_QlYYJobDJ2sz8m9iufSAxJO1",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
       "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "The \"Hello, World!\" program has been successfully written and built in the workspace. The code is ready.",
-    "token_usage": {
-      "InputTokens": 453,
-      "OutputTokens": 24,
-      "TotalTokens": 477
     }
   }
 ]
