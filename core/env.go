@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -142,7 +143,7 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-func (env *Env) Ingest(obj dagql.Object) string {
+func (env *Env) Ingest(obj dagql.Object, desc string) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
@@ -153,10 +154,35 @@ func (env *Env) Ingest(obj dagql.Object) string {
 	if !ok {
 		env.typeCount[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCount[typeName])
+		if desc == "" {
+			desc = env.describe(obj.ID())
+		}
 		env.idByHash[hash] = llmID
-		env.objsByID[llmID] = &Binding{Key: llmID, Value: obj, env: env}
+		env.objsByID[llmID] = &Binding{
+			Key:         llmID,
+			Value:       obj,
+			Description: desc,
+			env:         env,
+		}
 	}
 	return llmID
+}
+
+func (env *Env) describe(id *call.ID) string {
+	str := new(strings.Builder)
+	if recv := id.Receiver(); recv != nil {
+		if llmID, ok := env.idByHash[recv.Digest()]; ok {
+			str.WriteString(llmID)
+		} else {
+			str.WriteString(recv.Digest().String())
+		}
+		str.WriteString(".")
+	}
+	str.WriteString(id.Field())
+	// TODO: we could include args but I'm not sure we even need to.
+	// punted for now since I'd want to represent ID args as LLM IDs, which will
+	// be a little bit of boilerplate.
+	return str.String()
 }
 
 func (env *Env) Types() []string {
@@ -224,7 +250,7 @@ func (b *Binding) ID() string {
 	if !isObject {
 		return ""
 	}
-	return b.env.Ingest(obj)
+	return b.env.Ingest(obj, b.Description)
 }
 
 // Return a stable digest of the binding's value
