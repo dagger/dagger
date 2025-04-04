@@ -12,9 +12,9 @@
     "role": "assistant",
     "content": "Hello! How can I assist you today?",
     "token_usage": {
-      "InputTokens": 49,
+      "InputTokens": 296,
       "OutputTokens": 11,
-      "TotalTokens": 60
+      "TotalTokens": 307
     }
   }
 ]
