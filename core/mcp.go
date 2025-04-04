@@ -697,10 +697,6 @@ func (m *MCP) systemPromptBuiltin() LLMTool {
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{}
 
-	if len(m.env.outputsByName) > 0 {
-		builtins = append(builtins, m.returnBuiltin())
-	}
-
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
 		if err != nil {
@@ -769,6 +765,10 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	}
 
 	builtins = append(builtins, m.userProvidedValues()...)
+
+	if len(m.env.outputsByName) > 0 {
+		builtins = append(builtins, m.returnBuiltin())
+	}
 
 	// NOTE: This works better when it's the last tool. 40/40 evals when last,
 	// 24/40 when first. (gemini-2.0-flash, WorkspacePattern)
