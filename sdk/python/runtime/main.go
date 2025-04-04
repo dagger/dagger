@@ -15,7 +15,8 @@ const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 	GenDir                = "sdk"
-	GenPath               = "src/dagger/client/gen.py"
+	SDKGenPath            = "src/dagger/client/gen.py"
+	UserGenPath           = "src/dagger_gen.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
 	ProjectCfg            = "pyproject.toml"
@@ -100,6 +101,12 @@ type PythonSdk struct {
 	// The source needed to load and run a module
 	ModSource *dagger.ModuleSource
 
+	// The current engine version
+	//
+	// Used to pin the same client library version. If a dev build the SDK
+	// should be vendored.
+	EngineVersion string
+
 	// ContextDir is a copy of the context directory from the module source
 	//
 	// We add files to this directory, always joining paths with the source's
@@ -119,6 +126,8 @@ type PythonSdk struct {
 
 	// Relative path from the context directory to the source directory
 	SubPath string
+
+	VendorPath string
 
 	// True if the module is new and we need to create files from the template
 	//
@@ -140,13 +149,18 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
+
+	ignorePaths := []string{".venv", "**/__pycache__"}
+	genPaths := []string{UserGenPath}
+
+	if m.VendorPath != "" {
+		ignorePaths = append(ignorePaths, m.VendorPath)
+		genPaths = []string{m.VendorPath + "/**"}
+	}
+
 	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
-		WithVCSGeneratedPaths(
-			[]string{GenDir + "/**"},
-		).
-		WithVCSIgnoredPaths(
-			[]string{GenDir, ".venv", "**/__pycache__"},
-		), nil
+		WithVCSGeneratedPaths(genPaths).
+		WithVCSIgnoredPaths(ignorePaths), nil
 }
 
 // Container for executing the Python module runtime
@@ -166,6 +180,7 @@ func (m *PythonSdk) ModuleRuntime(
 func (m *PythonSdk) Common(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
+	// +optional
 	introspectionJSON *dagger.File,
 ) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
@@ -304,10 +319,13 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		// existence of this file will set d.IsInit = true, thus skipping
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
-			m.AddNewFile(
-				ProjectCfg,
-				strings.ReplaceAll(tplToml, "main", m.ProjectName),
-			)
+			projCfg := strings.ReplaceAll(tplToml, "main", m.ProjectName)
+
+			if m.EngineVersion != "" {
+				projCfg = strings.Replace(projCfg, `"dagger-io"`, `"dagger-io ==`+m.EngineVersion+`"`, 1)
+			}
+
+			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
 			m.AddNewFile(
@@ -329,21 +347,21 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
-	m.AddDirectory(GenDir, m.SdkSourceDir)
+	if m.VendorPath != "" {
+		m.AddDirectory(m.VendorPath, m.SdkSourceDir.WithoutDirectory("dist"))
+	}
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
 		genFile := m.Container.
+			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
 			WithMountedDirectory("", m.SdkSourceDir).
 			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec([]string{
-				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
-			}).
+			WithExec(append(m.Discovery.CodegenCommand, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
-		m.AddFile(path.Join(GenDir, GenPath), genFile)
+		m.AddFile(UserGenPath, genFile)
 	}
 
 	return m
@@ -374,12 +392,17 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 	case d.HasFile(PipCompileLock) && !m.IsInit:
 		// Support requirements.lock (legacy).
-		ctr = ctr.WithExec([]string{
+		args := []string{
 			"uv", "pip", "compile", "-q", "--universal",
 			"-o", PipCompileLock,
-			path.Join(GenDir, ProjectCfg),
 			ProjectCfg,
-		})
+		}
+
+		if m.VendorPath != "" {
+			args = append(args, path.Join(m.VendorPath, ProjectCfg))
+		}
+
+		ctr = ctr.WithExec(args)
 	}
 
 	m.Container = ctr
