@@ -562,6 +562,27 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
 	})
+
+	t.Run("recursive", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithExec([]string{"rm", "dagger.gen.go"}).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--sdk=go")).
+			With(daggerExec("install", "./dep")).
+			WithExec([]string{"rm", "dagger.gen.go"})
+		developed := base.With(daggerExec("develop", "--recursive"))
+
+		// check that the developed files get recreated
+		_, err := developed.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+		_, err = developed.File("/work/dep/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+	})
 }
 
 func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
