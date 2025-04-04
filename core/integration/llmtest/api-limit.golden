@@ -10,11 +10,73 @@
   },
   {
     "role": "assistant",
-    "content": "The `PATH` variable is an environment variable in Unix and Unix-like operating systems (such as Linux and macOS), as well as in Windows, that tells the shell which directories to search for executable files. Its value is a list of directories separated by colons (`:`) on Unix-like systems or semicolons (`;`) on Windows.\n\nThe specific value of `PATH` can vary depending on the system and the user's configuration, but here is a typical example for a Unix-like system:\n\n```\n/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n```\n\nAnd for Windows, it might look like:\n\n```\nC:\\Windows\\System32;C:\\Windows;C:\\Program Files\n```\n\nTo find the actual value of `PATH` on your system, you can open a terminal or command prompt and type `echo $PATH` on Unix-like systems or `echo %PATH%` on Windows.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_Mg6AHMzAG3ayU7FQ3S70WxmJ",
+        "function": {
+          "name": "selectContainer",
+          "arguments": {
+            "id": "Container#1"
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 523,
-      "OutputTokens": 194,
-      "TotalTokens": 717
+      "InputTokens": 722,
+      "OutputTokens": 17,
+      "TotalTokens": 739
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"selected\":\"Container#1\"}",
+    "tool_call_id": "call_Mg6AHMzAG3ayU7FQ3S70WxmJ",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_kiGNZ9O6miZnR9Ckq9OBnoMA",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "PATH"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "InputTokens": 7888,
+      "OutputTokens": 16,
+      "TotalTokens": 7904
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"}",
+    "tool_call_id": "call_kiGNZ9O6miZnR9Ckq9OBnoMA",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The value of the `PATH` environment variable is:\n\n```\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n```",
+    "token_usage": {
+      "InputTokens": 7937,
+      "OutputTokens": 38,
+      "TotalTokens": 7975
     }
   },
   {
@@ -28,11 +90,42 @@
   },
   {
     "role": "assistant",
-    "content": "The `TERM` environment variable specifies the type of terminal to emulate when running the shell. This variable tells applications how to interact with the terminal interface, particularly in terms of capabilities like color support, cursor movement, and screen manipulation.\n\nThe value of `TERM` can vary depending on the terminal emulator or environment you are using. Here are some common values:\n\n- `xterm`: A common default for many terminal emulators.\n- `xterm-256color`: Similar to `xterm` but with support for 256 colors.\n- `screen`: Used when running in a terminal multiplexer like GNU Screen.\n- `tmux`: Used when running inside the tmux terminal multiplexer.\n- `linux`: Used on the Linux console.\n- `vt100`: Emulates a VT100 terminal, often used for basic terminal compatibility.\n\nTo find the actual value of `TERM` on your system, you can open a terminal and type `echo $TERM`.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_otKKkGHRQ6RM53bwL9tOKALi",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "TERM"
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 730,
-      "OutputTokens": 195,
-      "TotalTokens": 925
+      "InputTokens": 7988,
+      "OutputTokens": 16,
+      "TotalTokens": 8004
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":null}",
+    "tool_call_id": "call_otKKkGHRQ6RM53bwL9tOKALi",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The `TERM` environment variable is not set in the current container.",
+    "token_usage": {
+      "InputTokens": 8017,
+      "OutputTokens": 16,
+      "TotalTokens": 8033
     }
   }
 ]
