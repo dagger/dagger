@@ -6556,6 +6556,20 @@ class LLM(Type):
         _ctx = self._select("withEnv", _args)
         return LLM(_ctx)
 
+    def with_mcp(self, container: Container) -> Self:
+        """attach a stdio MCP server to the LLM
+
+        Parameters
+        ----------
+        container:
+            a container running an MCP server on stdin and stdout
+        """
+        _args = [
+            Arg("container", container),
+        ]
+        _ctx = self._select("withMCP", _args)
+        return LLM(_ctx)
+
     def with_model(self, model: str) -> Self:
         """swap out the llm model
 

@@ -6,17 +6,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
+	"github.com/riza-io/mcp-go"
+	mcpc "github.com/riza-io/mcp-go"
+	"github.com/riza-io/mcp-go/stdio"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -48,6 +56,8 @@ type MCP struct {
 	functionMask map[string]bool
 	// Indicates that the model has returned
 	returned bool
+	// attached MCP Servers... TODO: namespace collision really hurts here
+	mcpServers []MCPClient
 }
 
 func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
@@ -119,19 +129,37 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) Tools(ctx context.Context, srv *dagql.Server) ([]LLMTool, error) {
 	builtins, err := m.Builtins(srv)
 	if err != nil {
 		return nil, err
 	}
+	mcpTools, err := m.MCPServerTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tools := append(builtins, mcpTools...)
+
 	if m.Current() == nil {
-		return builtins, nil
+		return tools, nil
 	}
 	objTools, err := m.tools(srv, m.Current().Type().Name())
 	if err != nil {
 		return nil, err
 	}
-	return append(builtins, objTools...), nil
+	return append(tools, objTools...), nil
+}
+
+func (m *MCP) MCPServerTools(ctx context.Context) ([]LLMTool, error) {
+	var tools []LLMTool
+	for _, mcpServer := range m.mcpServers {
+		serverTools, err := mcpServer.Tools(ctx)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, serverTools...)
+	}
+	return tools, nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -554,6 +582,154 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 			m.returned = true
 			return "ok", nil
 		},
+	}
+}
+
+type MCPClient struct {
+	*mcpc.Client
+	mcpSvcID  *call.ID
+	container *Container
+}
+
+func (ms *MCPClient) Tools(ctx context.Context) ([]LLMTool, error) {
+	if ms.Client == nil {
+		client, err := ms.StartClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ms.Client = client
+	}
+
+	resp, err := ms.Client.ListTools(ctx, mcpc.NewRequest(&mcpc.ListToolsRequest{}))
+	if err != nil {
+		return nil, fmt.Errorf("failed listing tools: %w", err)
+	}
+
+	tools := []LLMTool{}
+
+	// TODO: handle cursor pagination
+	for _, respTool := range resp.Result.Tools {
+		var schema map[string]any
+		err := json.Unmarshal(respTool.InputSchema, &schema)
+		if err != nil {
+			return nil, fmt.Errorf("failed unmarshalling MCP server inputSchema: %w", err)
+		}
+		tools = append(tools, LLMTool{
+			Name:        respTool.Name,
+			Returns:     "contents",
+			Description: respTool.Description,
+			Schema:      schema,
+			Call: func(ctx context.Context, args any) (any, error) {
+				vals, ok := args.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("invalid arguments: %T", args)
+				}
+
+				marshalledArgs, err := json.Marshal(vals)
+				if err != nil {
+					return nil, fmt.Errorf("failed marshalling json args: %w", err)
+				}
+
+				slog.Warn("HOLY", "vals", vals, "schema", schema)
+
+				toolResp, err := ms.Client.CallTool(ctx, mcpc.NewRequest(&mcpc.CallToolRequest{
+					Name:      respTool.Name,
+					Arguments: marshalledArgs,
+				}))
+				if err != nil {
+					return nil, fmt.Errorf("failed calling MCP tool: %w", err)
+				}
+				if toolResp.Result.IsError {
+					return nil, fmt.Errorf("mcp tool error: %v", toolResp.Result.Content)
+				}
+
+				return toolResp.Result.Content, nil
+			},
+		})
+
+	}
+
+	return tools, nil
+}
+
+func (ms *MCPClient) StartClient(ctx context.Context) (*mcpc.Client, error) {
+	svc, err := ms.container.AsService(ctx, ContainerAsServiceArgs{UseEntrypoint: true})
+	if err != nil {
+		return nil, err
+	}
+
+	svcStdin, clientStdin := io.Pipe()
+	clientStdout, svcStdout := io.Pipe()
+	clientStdout1 := io.TeeReader(clientStdout, os.Stderr)
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	// irl this probably needs to wire through core/services.go, but for now we yolo
+	_, err = svc.Start(
+		ctx,
+		ms.mcpSvcID,
+		false,
+		func(stdin io.Writer, _ bkgw.ContainerProcess) {
+			go func() error {
+				defer clientStdin.Close()
+				_, err := io.Copy(stdin, svcStdin)
+				if err != nil {
+					// if errors.Is(err, io.ErrClosedPipe) {
+					// 	return nil
+					// }
+					// return fmt.Errorf("error forwarding mcp client request to container stdin: %w", err)
+					slog.Error("error forwarding mcp client request to container stdin: %w", "error", err)
+					return err
+				}
+				return nil
+			}()
+		},
+		func(stdout io.Reader) {
+			go func() error {
+				defer clientStdout.Close()
+				_, err := io.Copy(svcStdout, stdout)
+				if err != nil {
+					// if errors.Is(err, io.ErrClosedPipe) {
+					// 	return nil
+					// }
+					// return fmt.Errorf("error forwarding container stdout to mcp client response: %w", err)
+					slog.Error("error forwarding mcp client request to container stdin", "error", err)
+					return err
+				}
+				slog.Error("mcp io copy exited")
+				return nil
+			}()
+		},
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start MCP service: %w", err)
+	}
+
+	client := mcpc.NewClient(
+		stdio.NewStream(clientStdout1, clientStdin),
+		&mcp.UnimplementedClient{})
+
+	go func() {
+		err := client.Listen(context.Background())
+		slog.Error("MCP client failed listening for messages", "error", err)
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timeout initializing MCP client", ctx.Err())
+		default:
+			_, err = client.Initialize(
+				ctx,
+				mcpc.NewRequest(&mcpc.InitializeRequest{ProtocolVersion: "1.0.0"}),
+			)
+			if err == nil {
+				return client, nil
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
 

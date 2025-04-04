@@ -73,6 +73,9 @@ func (s llmSchema) Install() {
 			Doc("returns the type of the current state"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
+		dagql.Func("withMCP", s.withMCP).
+			Doc("attach a stdio MCP server to the LLM").
+			ArgDoc("container", "a container running an MCP server on stdin and stdout"),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
 }
@@ -192,4 +195,17 @@ func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
 	return llm.TokenUsage(ctx, s.srv)
+}
+
+func (s *llmSchema) withMCP(ctx context.Context, llm *core.LLM, args struct {
+	Container core.ContainerID
+}) (*core.LLM, error) {
+
+	inst, err := args.Container.Load(ctx, s.srv)
+	if err != nil {
+		return llm, err
+	}
+
+	// i suspect inst.ID shouldn't actually wire through here? this is tied up in core.Services prolly
+	return llm.WithMCP(ctx, inst.Self, inst.ID()), nil
 }

@@ -2648,6 +2648,12 @@ type LLM {
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
 
+  """attach a stdio MCP server to the LLM"""
+  withMCP(
+    """a container running an MCP server on stdin and stdout"""
+    container: ContainerID!
+  ): LLM!
+
   """swap out the llm model"""
   withModel(
     """The model to use"""

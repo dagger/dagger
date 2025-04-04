@@ -7184,6 +7184,26 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// attach a stdio MCP server to the LLM
+    ///
+    /// # Arguments
+    ///
+    /// * `container` - a container running an MCP server on stdin and stdout
+    pub fn with_mcp(&self, container: impl IntoID<ContainerId>) -> Llm {
+        let mut query = self.selection.select("withMCP");
+        query = query.arg_lazy(
+            "container",
+            Box::new(move || {
+                let container = container.clone();
+                Box::pin(async move { container.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// swap out the llm model
     ///
     /// # Arguments
