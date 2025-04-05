@@ -9,6 +9,8 @@ use thiserror::Error;
 use crate::core::connect_params::ConnectParams;
 use crate::core::gql_client::{ClientConfig, GQLClient};
 
+use super::config;
+
 #[async_trait]
 pub trait GraphQLClient {
     async fn query(&self, query: &str) -> Result<Option<serde_json::Value>, GraphQLError>;
@@ -22,7 +24,7 @@ pub struct DefaultGraphQLClient {
 }
 
 impl DefaultGraphQLClient {
-    pub fn new(conn: &ConnectParams) -> Self {
+    pub fn new(conn: &ConnectParams, config: &config::Config) -> Self {
         let token = general_purpose::URL_SAFE.encode(format!("{}:", conn.session_token));
 
         let mut headers = HashMap::new();
@@ -31,7 +33,8 @@ impl DefaultGraphQLClient {
         Self {
             client: GQLClient::new_with_config(ClientConfig {
                 endpoint: conn.url(),
-                timeout: Some(1000),
+                connect_timeout_ms: Some(config.timeout_ms),
+                execute_timeout_ms: config.execute_timeout_ms,
                 headers: Some(headers),
                 proxy: None,
             }),
