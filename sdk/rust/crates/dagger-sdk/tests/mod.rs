@@ -1,5 +1,54 @@
-use dagger_sdk::connect;
+use dagger_sdk::{connect, connect_opts, core::config};
 use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn test_execute_timeout() {
+    use std::time::SystemTime;
+
+    let config = config::Config::builder().execute_timeout_ms(600).build();
+    connect_opts(config, |client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_env_variable(
+                "CACHE_BUSTER",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            )
+            .with_exec(vec!["sleep", "1"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect_err("should timeout");
+
+    let config = config::Config::builder().execute_timeout_ms(600000).build();
+    connect_opts(config, |client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_env_variable(
+                "CACHE_BUSTER",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            )
+            .with_exec(vec!["sleep", "1"])
+            .stdout()
+            .await?;
+
+        Ok(())
+    })
+    .await
+    .expect("should not timeout");
+}
 
 #[tokio::test]
 async fn test_example_container() {
