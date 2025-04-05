@@ -1,18 +1,34 @@
+use crate::core::logger::DynLogger;
+use derive_builder::Builder;
 use std::path::PathBuf;
 
-use crate::core::logger::DynLogger;
-
+#[derive(Default, Builder)]
+#[builder(build_fn(private, name = "fallible_build"))]
+#[builder(setter(strip_option))]
 pub struct Config {
+    #[builder(default = "None")]
+    /// The host workdir loaded into dagger.
     pub workdir_path: Option<PathBuf>,
+    #[builder(default = "None")]
+    /// Project configuration file path.
     pub config_path: Option<PathBuf>,
+    #[builder(default = "10000")]
+    /// The maximum time in milliseconds for establishing a connection to the server.
+    /// Defaults to 10 seconds.
     pub timeout_ms: u64,
+    #[builder(default = "None")]
+    /// The maximum time in milliseconds for executing a request.
+    /// Defaults to no timeout.
     pub execute_timeout_ms: Option<u64>,
+    #[builder(default = "None")]
+    /// Logger implementation to handle logs from the engine.
     pub logger: Option<DynLogger>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self::new(None, None, None, None, None)
+impl ConfigBuilder {
+    pub fn build(&mut self) -> Config {
+        self.fallible_build()
+            .expect("all fields have default values")
     }
 }
 
@@ -31,5 +47,10 @@ impl Config {
             execute_timeout_ms,
             logger,
         }
+    }
+
+    /// Returns a new config builder instance
+    pub fn builder() -> ConfigBuilder {
+        ConfigBuilder::default()
     }
 }
