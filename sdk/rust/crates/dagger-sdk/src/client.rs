@@ -36,7 +36,7 @@ where
     let client = Query {
         proc: proc.clone(),
         selection: query(),
-        graphql_client: Arc::new(DefaultGraphQLClient::new(&conn)),
+        graphql_client: Arc::new(DefaultGraphQLClient::new(&conn, &cfg)),
     };
 
     dagger(client).await.map_err(ConnectError::DaggerContext)?;
