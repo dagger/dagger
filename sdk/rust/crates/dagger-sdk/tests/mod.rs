@@ -1,5 +1,57 @@
-use dagger_sdk::{connect, connect_opts, core::config};
+use dagger_sdk::{
+    connect, connect_opts,
+    core::{config, gql_client::GraphQlExtension, graphql_client::GraphQLError},
+    errors::DaggerError,
+};
 use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn test_error_parsing() {
+    connect(|client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        let err = alpine
+            .with_exec(vec!["/bin/sh", "-c", "echo test; exit 1"])
+            .stdout()
+            .await
+            .expect_err("should return an error");
+
+        let DaggerError::Query(GraphQLError::DomainError { fields, .. }) = err else {
+            panic!("should be a query error");
+        };
+
+        let GraphQlExtension::ExecError {
+            cmd,
+            exit_code,
+            stderr,
+            stdout,
+        } = fields
+            .first()
+            .expect("should be an exec error")
+            .extensions
+            .as_ref()
+            .expect("should have an extension")
+        else {
+            panic!("should be an exec error");
+        };
+
+        assert_eq!(
+            cmd,
+            &vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                "echo test; exit 1".to_string()
+            ]
+        );
+        assert_eq!(exit_code, &1);
+        assert_eq!(stdout, &"test");
+        assert_eq!(stderr, &"");
+
+        Ok(())
+    })
+    .await
+    .expect("should succeed");
+}
 
 #[tokio::test]
 async fn test_execute_timeout() {
