@@ -11,14 +11,29 @@ pub struct GraphQLError {
     json: Option<Vec<GraphQLErrorMessage>>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "_type")]
+pub enum GraphQlExtension {
+    #[serde(rename = "EXEC_ERROR")]
+    ExecError {
+        cmd: Vec<String>,
+        #[serde(rename(deserialize = "exitCode"))]
+        exit_code: i32,
+        stderr: String,
+        stdout: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
 // https://spec.graphql.org/June2018/#sec-Errors
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 pub struct GraphQLErrorMessage {
     pub message: String,
-    locations: Option<Vec<GraphQLErrorLocation>>,
-    extensions: Option<HashMap<String, String>>,
-    path: Option<Vec<GraphQLErrorPathParam>>,
+    pub locations: Option<Vec<GraphQLErrorLocation>>,
+    pub extensions: Option<GraphQlExtension>,
+    pub path: Option<Vec<GraphQLErrorPathParam>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

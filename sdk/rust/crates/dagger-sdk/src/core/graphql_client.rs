@@ -10,6 +10,7 @@ use crate::core::connect_params::ConnectParams;
 use crate::core::gql_client::{ClientConfig, GQLClient};
 
 use super::config;
+use super::gql_client::GraphQLErrorMessage;
 
 #[async_trait]
 pub trait GraphQLClient {
@@ -53,41 +54,27 @@ impl GraphQLClient for DefaultGraphQLClient {
 }
 
 fn map_graphql_error(gql_error: crate::core::gql_client::GraphQLError) -> GraphQLError {
-    let message = gql_error.message().to_string();
-    let json = gql_error.json();
+    let Some(json) = gql_error.json() else {
+        return GraphQLError::HttpError(gql_error.message().to_string());
+    };
 
-    if let Some(json) = json {
-        if !json.is_empty() {
-            return GraphQLError::DomainError {
-                message,
-                fields: GraphqlErrorMessages(json.into_iter().map(|e| e.message).collect()),
-            };
-        }
+    let Some(message) = json.first().map(|f| f.message.clone()) else {
+        return GraphQLError::HttpError(gql_error.message().to_string());
+    };
+
+    GraphQLError::DomainError {
+        message,
+        fields: json,
     }
-
-    GraphQLError::HttpError(message)
 }
 
 #[derive(Error, Debug)]
 pub enum GraphQLError {
     #[error("http error: {0}")]
     HttpError(String),
-    #[error("domain error:\n{message}\n{fields}")]
+    #[error("domain error: {message}")]
     DomainError {
         message: String,
-        fields: GraphqlErrorMessages,
+        fields: Vec<GraphQLErrorMessage>,
     },
-}
-
-#[derive(Debug, Clone)]
-pub struct GraphqlErrorMessages(Vec<String>);
-
-impl std::fmt::Display for GraphqlErrorMessages {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for error in self.0.iter() {
-            f.write_fmt(format_args!("{error}\n"))?;
-        }
-
-        Ok(())
-    }
 }
