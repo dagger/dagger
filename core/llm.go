@@ -654,6 +654,9 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if msg == "" {
+		return errors.New("no interjection provided; giving up")
+	}
 	fmt.Fprint(stdio.Stdout, msg)
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
