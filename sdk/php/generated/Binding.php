@@ -110,15 +110,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type PhpSdk
-     */
-    public function asPhpSdk(): PhpSdk
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPhpSdk');
-        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type Secret
      */
     public function asSecret(): Secret
