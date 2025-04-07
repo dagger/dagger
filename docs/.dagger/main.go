@@ -200,16 +200,21 @@ func (d Docs) GeneratePhp() *dagger.Directory {
 
 // Regenerate the API schema
 func (d Docs) GenerateSchema() *dagger.Directory {
-	return dag.
-		Directory().
-		WithFile(generatedSchemaPath, dag.Graphql().FromJSON(d.Introspection()).File())
+	schema := dag.
+		Go(d.Source).
+		Env().
+		WithExec([]string{"go", "run", "./cmd/introspect", "schema"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "schema.graphqls",
+		}).
+		File("schema.graphqls")
+	return dag.Directory().WithFile(generatedSchemaPath, schema)
 }
 
 func (d Docs) Introspection() *dagger.File {
 	return dag.
 		Go(d.Source).
 		Env().
-		WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"go", "run", "./cmd/introspect", "introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "introspection.json",
 		}).
 		File("introspection.json")

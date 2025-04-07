@@ -119,11 +119,8 @@ type Container {
     """
     args: [String!] = []
 
-    """
-    Replace "${VAR}" or "$VAR" in the args according to the current environment
-    variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
+    """If the container has an entrypoint, prepend it to the args."""
+    useEntrypoint: Boolean = false
 
     """
     Provides Dagger access to the executed command.
@@ -143,15 +140,19 @@ type Container {
     insecureRootCapabilities: Boolean = false
 
     """
+    Replace "${VAR}" or "$VAR" in the args according to the current environment
+    variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     If set, skip the automatic init process injected into containers by default.
     
     This should only be used if the user requires that their exec process be the
-    pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    pid 1 process in the container. Otherwise it may result in unexpected
+    behavior.
     """
     noInit: Boolean = false
-
-    """If the container has an entrypoint, prepend it to the args."""
-    useEntrypoint: Boolean = false
   ): Service!
 
   """
@@ -159,12 +160,20 @@ type Container {
   """
   asTarball(
     """
+    Identifiers for other platform specific containers.
+    
+    Used for multi-platform images.
+    """
+    platformVariants: [ContainerID!] = []
+
+    """
     Force each layer of the image to use the specified compression algorithm.
     
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using Gzip.
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
     """
     forcedCompression: ImageLayerCompression
 
@@ -175,33 +184,21 @@ type Container {
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
-    Identifiers for other platform specific containers.
-    
-    Used for multi-platform images.
-    """
-    platformVariants: [ContainerID!] = []
   ): File!
 
   """Initializes this container from a Dockerfile build."""
   build(
-    """Additional build arguments."""
-    buildArgs: [BuildArg!] = []
-
     """Directory context used by the Dockerfile."""
     context: DirectoryID!
 
     """Path to the Dockerfile to use."""
     dockerfile: String = "Dockerfile"
 
-    """
-    If set, skip the automatic init process injected into containers created by RUN statements.
-    
-    This should only be used if the user requires that their exec processes be
-    the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-    """
-    noInit: Boolean = false
+    """Target build stage to build."""
+    target: String = ""
+
+    """Additional build arguments."""
+    buildArgs: [BuildArg!] = []
 
     """
     Secrets to pass to the build.
@@ -216,8 +213,14 @@ type Container {
     """
     secrets: [SecretID!] = []
 
-    """Target build stage to build."""
-    target: String = ""
+    """
+    If set, skip the automatic init process injected into containers created by RUN statements.
+    
+    This should only be used if the user requires that their exec processes be
+    the pid 1 process in the container. Otherwise it may result in unexpected
+    behavior.
+    """
+    noInit: Boolean = false
   ): Container!
 
   """Return the container's default arguments."""
@@ -229,14 +232,14 @@ type Container {
   Mounts are included.
   """
   directory(
+    """The path of the directory to retrieve (e.g., "./src")."""
+    path: String!
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
-
-    """The path of the directory to retrieve (e.g., "./src")."""
-    path: String!
   ): Directory!
 
   """Return the container's OCI entrypoint."""
@@ -286,30 +289,6 @@ type Container {
   """
   export(
     """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-
-    """
-    Force each layer of the exported image to use the specified compression algorithm.
-    
-    If this is unset, then if a layer already has a compressed blob in the
-    engine's cache, that will be used (this can result in a mix of compression
-    algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using Gzip.
-    """
-    forcedCompression: ImageLayerCompression
-
-    """
-    Use the specified media types for the exported image's layers.
-    
-    Defaults to OCI, which is largely compatible with most recent container
-    runtimes, but Docker may be needed for older runtimes without OCI support.
-    """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
     Host's destination path (e.g., "./tarball").
     
     Path can be relative to the engine's workdir or absolute.
@@ -322,6 +301,31 @@ type Container {
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
+
+    """
+    Force each layer of the exported image to use the specified compression algorithm.
+    
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers.
+    
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): String!
 
   """
@@ -337,14 +341,14 @@ type Container {
   Mounts are included.
   """
   file(
+    """The path of the file to retrieve (e.g., "./README.md")."""
+    path: String!
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
-
-    """The path of the file to retrieve (e.g., "./README.md")."""
-    path: String!
   ): File!
 
   """
@@ -405,12 +409,20 @@ type Container {
     address: String!
 
     """
+    Identifiers for other platform specific containers.
+    
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!] = []
+
+    """
     Force each layer of the published image to use the specified compression algorithm.
     
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
-    compressed blob in the engine's cache, then it will be compressed using Gzip.
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
     """
     forcedCompression: ImageLayerCompression
 
@@ -421,18 +433,12 @@ type Container {
     "Docker" may be needed for older registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
-    Identifiers for other platform specific containers.
-    
-    Used for multi-platform image.
-    """
-    platformVariants: [ContainerID!] = []
   ): String!
 
   """
   Return a snapshot of the container's root filesystem. The snapshot can be
-  modified then written back using withRootfs. Use that method for filesystem modifications.
+  modified then written back using withRootfs. Use that method for filesystem
+  modifications.
   """
   rootfs: Directory!
 
@@ -492,17 +498,24 @@ type Container {
   """
   up(
     """
+    List of frontend/backend port mappings to forward.
+    
+    Frontend is the port accepting traffic on the host, backend is the service port.
+    """
+    ports: [PortForward!] = []
+
+    """Bind each tunnel port to a random port on the host."""
+    random: Boolean = false
+
+    """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
     
     If empty, the container's default command is used.
     """
     args: [String!] = []
 
-    """
-    Replace "${VAR}" or "$VAR" in the args according to the current environment
-    variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
+    """If the container has an entrypoint, prepend it to the args."""
+    useEntrypoint: Boolean = false
 
     """
     Provides Dagger access to the executed command.
@@ -522,25 +535,19 @@ type Container {
     insecureRootCapabilities: Boolean = false
 
     """
+    Replace "${VAR}" or "$VAR" in the args according to the current environment
+    variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     If set, skip the automatic init process injected into containers by default.
     
     This should only be used if the user requires that their exec process be the
-    pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    pid 1 process in the container. Otherwise it may result in unexpected
+    behavior.
     """
     noInit: Boolean = false
-
-    """
-    List of frontend/backend port mappings to forward.
-    
-    Frontend is the port accepting traffic on the host, backend is the service port.
-    """
-    ports: [PortForward!] = []
-
-    """Bind each tunnel port to a random port on the host."""
-    random: Boolean = false
-
-    """If the container has an entrypoint, prepend it to the args."""
-    useEntrypoint: Boolean = false
   ): Void
 
   """Retrieves the user to be set for all commands."""
@@ -592,6 +599,9 @@ type Container {
   Return a new container snapshot, with a directory added to its filesystem
   """
   withDirectory(
+    """Location of the written directory (e.g., "/tmp/directory")."""
+    path: String!
+
     """Identifier of the directory to write"""
     directory: DirectoryID!
 
@@ -599,12 +609,6 @@ type Container {
     Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
     """
     exclude: [String!] = []
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
 
     """
     Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
@@ -620,8 +624,11 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the written directory (e.g., "/tmp/directory")."""
-    path: String!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """
@@ -641,17 +648,17 @@ type Container {
 
   """Set a new environment variable in the container."""
   withEnvVariable(
-    """
-    Replace "${VAR}" or "$VAR" in the value according to the current environment
-    variables defined in the container (e.g. "/opt/bin:$PATH").
-    """
-    expand: Boolean = false
-
     """Name of the environment variable (e.g., "HOST")."""
     name: String!
 
     """Value of the environment variable. (e.g., "localhost")."""
     value: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value according to the current environment
+    variables defined in the container (e.g. "/opt/bin:$PATH").
+    """
+    expand: Boolean = false
   ): Container!
 
   """
@@ -669,10 +676,22 @@ type Container {
     args: [String!]!
 
     """
-    Replace "${VAR}" or "$VAR" in the args according to the current environment
-    variables defined in the container (e.g. "/$VAR/foo").
+    Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
     """
-    expand: Boolean = false
+    useEntrypoint: Boolean = false
+
+    """
+    Content to write to the command's standard input. Example: "Hello world")
+    """
+    stdin: String = ""
+
+    """
+    Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    """
+    redirectStdout: String = ""
+
+    """Like redirectStdout, but for standard error"""
+    redirectStderr: String = ""
 
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
@@ -690,6 +709,12 @@ type Container {
     insecureRootCapabilities: Boolean = false
 
     """
+    Replace "${VAR}" or "$VAR" in the args according to the current environment
+    variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     Skip the automatic init process injected into containers by default.
     
     Only use this if you specifically need the command to be pid 1 in the
@@ -697,24 +722,6 @@ type Container {
     sure, you don't need this.
     """
     noInit: Boolean = false
-
-    """Like redirectStdout, but for standard error"""
-    redirectStderr: String = ""
-
-    """
-    Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-    """
-    redirectStdout: String = ""
-
-    """
-    Content to write to the command's standard input. Example: "Hello world")
-    """
-    stdin: String = ""
-
-    """
-    Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
-    """
-    useEntrypoint: Boolean = false
   ): Container!
 
   """
@@ -727,14 +734,6 @@ type Container {
   - For setting the EXPOSE OCI field when publishing the container
   """
   withExposedPort(
-    """
-    Port description. Example: "payment API endpoint"
-    """
-    description: String
-
-    """Skip the health check when run as a service."""
-    experimentalSkipHealthcheck: Boolean = false
-
     """Port number to expose. Example: 8080"""
     port: Int!
 
@@ -742,15 +741,28 @@ type Container {
     Network protocol. Example: "tcp"
     """
     protocol: NetworkProtocol = TCP
+
+    """
+    Port description. Example: "payment API endpoint"
+    """
+    description: String
+
+    """Skip the health check when run as a service."""
+    experimentalSkipHealthcheck: Boolean = false
   ): Container!
 
   """Return a container snapshot with a file added"""
   withFile(
     """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    Path of the new file. Example: "/path/to/new-file.txt"
     """
-    expand: Boolean = false
+    path: String!
+
+    """File to add"""
+    source: FileID!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int
 
     """
     A user:group to set for the file.
@@ -762,26 +774,24 @@ type Container {
     owner: String = ""
 
     """
-    Path of the new file. Example: "/path/to/new-file.txt"
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
-    path: String!
-
-    """Permissions of the new file. Example: 0600"""
-    permissions: Int
-
-    """File to add"""
-    source: FileID!
+    expand: Boolean = false
   ): Container!
 
   """
   Retrieves this container plus the contents of the given files copied to the given path.
   """
   withFiles(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
+    """Location where copied files should be placed (e.g., "/src")."""
+    path: String!
+
+    """Identifiers of the files to copy."""
+    sources: [FileID!]!
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
 
     """
     A user:group to set for the files.
@@ -792,14 +802,11 @@ type Container {
     """
     owner: String = ""
 
-    """Location where copied files should be placed (e.g., "/src")."""
-    path: String!
-
-    """Permission given to the copied files (e.g., 0600)."""
-    permissions: Int
-
-    """Identifiers of the files to copy."""
-    sources: [FileID!]!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Retrieves this container plus the given label."""
@@ -815,14 +822,17 @@ type Container {
   Retrieves this container plus a cache volume mounted at the given path.
   """
   withMountedCache(
+    """Location of the cache directory (e.g., "/root/.npm")."""
+    path: String!
+
     """Identifier of the cache volume to mount."""
     cache: CacheVolumeID!
 
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
+    """Identifier of the directory to use as the cache volume's root."""
+    source: DirectoryID
+
+    """Sharing mode of the cache volume."""
+    sharing: CacheSharingMode = SHARED
 
     """
     A user:group to set for the mounted cache directory.
@@ -837,23 +847,20 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the cache directory (e.g., "/root/.npm")."""
-    path: String!
-
-    """Sharing mode of the cache volume."""
-    sharing: CacheSharingMode = SHARED
-
-    """Identifier of the directory to use as the cache volume's root."""
-    source: DirectoryID
-  ): Container!
-
-  """Retrieves this container plus a directory mounted at the given path."""
-  withMountedDirectory(
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container plus a directory mounted at the given path."""
+  withMountedDirectory(
+    """Location of the mounted directory (e.g., "/mnt/directory")."""
+    path: String!
+
+    """Identifier of the mounted directory."""
+    source: DirectoryID!
 
     """
     A user:group to set for the mounted directory and its contents.
@@ -864,20 +871,20 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the mounted directory (e.g., "/mnt/directory")."""
-    path: String!
-
-    """Identifier of the mounted directory."""
-    source: DirectoryID!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Retrieves this container plus a file mounted at the given path."""
   withMountedFile(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
+    """Location of the mounted file (e.g., "/tmp/file.txt")."""
+    path: String!
+
+    """Identifier of the mounted file."""
+    source: FileID!
 
     """
     A user or user:group to set for the mounted file.
@@ -888,29 +895,22 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the mounted file (e.g., "/tmp/file.txt")."""
-    path: String!
-
-    """Identifier of the mounted file."""
-    source: FileID!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
   ): Container!
 
   """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
+    """Location of the secret file (e.g., "/tmp/secret.txt")."""
+    path: String!
 
-    """
-    Permission given to the mounted secret (e.g., 0600).
-    
-    This option requires an owner to be set to be active.
-    """
-    mode: Int = 256
+    """Identifier of the secret to mount."""
+    source: SecretID!
 
     """
     A user:group to set for the mounted secret.
@@ -921,11 +921,18 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the secret file (e.g., "/tmp/secret.txt")."""
-    path: String!
+    """
+    Permission given to the mounted secret (e.g., 0600).
+    
+    This option requires an owner to be set to be active.
+    """
+    mode: Int = 256
 
-    """Identifier of the secret to mount."""
-    source: SecretID!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """
@@ -934,31 +941,33 @@ type Container {
   persisted to subsequent withExecs.
   """
   withMountedTemp(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-
     """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
     path: String!
 
     """Size of the temporary directory in bytes."""
     size: Int
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Return a new container snapshot, with a file added to its filesystem"""
   withNewFile(
     """
+    Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
+    """
+    path: String!
+
+    """
     Contents of the new file. Example: "Hello world!"
     """
     contents: String!
 
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
 
     """
     A user:group to set for the file.
@@ -970,151 +979,11 @@ type Container {
     owner: String = ""
 
     """
-    Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
-    """
-    path: String!
-
-    """Permissions of the new file. Example: 0600"""
-    permissions: Int = 420
-  ): Container!
-
-  """Retrieves this container minus the given OCI annotation."""
-  withoutAnnotation(
-    """The name of the annotation."""
-    name: String!
-  ): Container!
-
-  """Remove the container's default arguments."""
-  withoutDefaultArgs: Container!
-
-  """
-  Return a new container snapshot, with a directory removed from its filesystem
-  """
-  withoutDirectory(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-
-    """Location of the directory to remove (e.g., ".github/")."""
-    path: String!
-  ): Container!
-
-  """Reset the container's OCI entrypoint."""
-  withoutEntrypoint(
-    """Don't remove the default arguments when unsetting the entrypoint."""
-    keepDefaultArgs: Boolean = false
-  ): Container!
-
-  """Retrieves this container minus the given environment variable."""
-  withoutEnvVariable(
-    """The name of the environment variable (e.g., "HOST")."""
-    name: String!
-  ): Container!
-
-  """Unexpose a previously exposed port."""
-  withoutExposedPort(
-    """Port number to unexpose"""
-    port: Int!
-
-    """Port protocol to unexpose"""
-    protocol: NetworkProtocol = TCP
-  ): Container!
-
-  """Retrieves this container with the file at the given path removed."""
-  withoutFile(
-    """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
-
-    """Location of the file to remove (e.g., "/file.txt")."""
-    path: String!
   ): Container!
-
-  """Return a new container spanshot with specified files removed"""
-  withoutFiles(
-    """
-    Replace "${VAR}" or "$VAR" in the value of paths according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo.txt").
-    """
-    expand: Boolean = false
-
-    """
-    Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
-    """
-    paths: [String!]!
-  ): Container!
-
-  """Retrieves this container minus the given environment label."""
-  withoutLabel(
-    """
-    The name of the label to remove (e.g., "org.opencontainers.artifact.created").
-    """
-    name: String!
-  ): Container!
-
-  """
-  Retrieves this container after unmounting everything at the given path.
-  """
-  withoutMount(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-
-    """Location of the cache directory (e.g., "/root/.npm")."""
-    path: String!
-  ): Container!
-
-  """
-  Retrieves this container without the registry authentication of a given address.
-  """
-  withoutRegistryAuth(
-    """
-    Registry's address to remove the authentication from.
-    
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
-    """
-    address: String!
-  ): Container!
-
-  """
-  Retrieves this container minus the given environment variable containing the secret.
-  """
-  withoutSecretVariable(
-    """The name of the environment variable (e.g., "HOST")."""
-    name: String!
-  ): Container!
-
-  """Retrieves this container with a previously added Unix socket removed."""
-  withoutUnixSocket(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
-
-    """Location of the socket to remove (e.g., "/tmp/socket")."""
-    path: String!
-  ): Container!
-
-  """
-  Retrieves this container with an unset command user.
-  
-  Should default to root.
-  """
-  withoutUser: Container!
-
-  """
-  Unset the container's working directory.
-  
-  Should default to "/".
-  """
-  withoutWorkdir: Container!
 
   """
   Attach credentials for future publishing to a registry. Use in combination with publish
@@ -1125,13 +994,13 @@ type Container {
     """
     address: String!
 
-    """The API key, password or token to authenticate to this registry"""
-    secret: SecretID!
-
     """
     The username to authenticate with. Example: "alice"
     """
     username: String!
+
+    """The API key, password or token to authenticate to this registry"""
+    secret: SecretID!
   ): Container!
 
   """
@@ -1175,11 +1044,11 @@ type Container {
   Retrieves this container plus a socket forwarded to the given Unix socket path.
   """
   withUnixSocket(
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
+    """Location of the forwarded Unix socket (e.g., "/tmp/socket")."""
+    path: String!
+
+    """Identifier of the socket to forward."""
+    source: SocketID!
 
     """
     A user:group to set for the mounted socket.
@@ -1190,11 +1059,11 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the forwarded Unix socket (e.g., "/tmp/socket")."""
-    path: String!
-
-    """Identifier of the socket to forward."""
-    source: SocketID!
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Retrieves this container with a different command user."""
@@ -1205,15 +1074,153 @@ type Container {
 
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
   withWorkdir(
+    """The path to set as the working directory (e.g., "/app")."""
+    path: String!
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
-
-    """The path to set as the working directory (e.g., "/app")."""
-    path: String!
   ): Container!
+
+  """Retrieves this container minus the given OCI annotation."""
+  withoutAnnotation(
+    """The name of the annotation."""
+    name: String!
+  ): Container!
+
+  """Remove the container's default arguments."""
+  withoutDefaultArgs: Container!
+
+  """
+  Return a new container snapshot, with a directory removed from its filesystem
+  """
+  withoutDirectory(
+    """Location of the directory to remove (e.g., ".github/")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Reset the container's OCI entrypoint."""
+  withoutEntrypoint(
+    """Don't remove the default arguments when unsetting the entrypoint."""
+    keepDefaultArgs: Boolean = false
+  ): Container!
+
+  """Retrieves this container minus the given environment variable."""
+  withoutEnvVariable(
+    """The name of the environment variable (e.g., "HOST")."""
+    name: String!
+  ): Container!
+
+  """Unexpose a previously exposed port."""
+  withoutExposedPort(
+    """Port number to unexpose"""
+    port: Int!
+
+    """Port protocol to unexpose"""
+    protocol: NetworkProtocol = TCP
+  ): Container!
+
+  """Retrieves this container with the file at the given path removed."""
+  withoutFile(
+    """Location of the file to remove (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Return a new container spanshot with specified files removed"""
+  withoutFiles(
+    """
+    Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
+    """
+    paths: [String!]!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of paths according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container minus the given environment label."""
+  withoutLabel(
+    """
+    The name of the label to remove (e.g., "org.opencontainers.artifact.created").
+    """
+    name: String!
+  ): Container!
+
+  """
+  Retrieves this container after unmounting everything at the given path.
+  """
+  withoutMount(
+    """Location of the cache directory (e.g., "/root/.npm")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container without the registry authentication of a given address.
+  """
+  withoutRegistryAuth(
+    """
+    Registry's address to remove the authentication from.
+    
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!
+  ): Container!
+
+  """
+  Retrieves this container minus the given environment variable containing the secret.
+  """
+  withoutSecretVariable(
+    """The name of the environment variable (e.g., "HOST")."""
+    name: String!
+  ): Container!
+
+  """Retrieves this container with a previously added Unix socket removed."""
+  withoutUnixSocket(
+    """Location of the socket to remove (e.g., "/tmp/socket")."""
+    path: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container with an unset command user.
+  
+  Should default to root.
+  """
+  withoutUser: Container!
+
+  """
+  Unset the container's working directory.
+  
+  Should default to "/".
+  """
+  withoutWorkdir: Container!
 
   """Retrieves the working directory for all commands."""
   workdir: String!
@@ -1243,6 +1250,9 @@ type CurrentModule {
   changes that may have been made to it during module function execution.
   """
   workdir(
+    """Location of the directory to access (e.g., ".")."""
+    path: String!
+
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     """
@@ -1252,9 +1262,6 @@ type CurrentModule {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
-
-    """Location of the directory to access (e.g., ".")."""
-    path: String!
   ): Directory!
 
   """
@@ -1325,25 +1332,21 @@ type Directory {
   """
   Use Dockerfile compatibility to build a container from this directory. Only
   use this function for Dockerfile compatibility. Otherwise use the native
-  Container type directly, it is feature-complete and supports all Dockerfile features.
+  Container type directly, it is feature-complete and supports all Dockerfile
+  features.
   """
   dockerBuild(
-    """Build arguments to use in the build."""
-    buildArgs: [BuildArg!] = []
+    """The platform to build."""
+    platform: Platform
 
     """Path to the Dockerfile to use (e.g., "frontend.Dockerfile")."""
     dockerfile: String = "Dockerfile"
 
-    """
-    If set, skip the automatic init process injected into containers created by RUN statements.
-    
-    This should only be used if the user requires that their exec processes be
-    the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-    """
-    noInit: Boolean = false
+    """Target build stage to build."""
+    target: String = ""
 
-    """The platform to build."""
-    platform: Platform
+    """Build arguments to use in the build."""
+    buildArgs: [BuildArg!] = []
 
     """
     Secrets to pass to the build.
@@ -1352,8 +1355,14 @@ type Directory {
     """
     secrets: [SecretID!] = []
 
-    """Target build stage to build."""
-    target: String = ""
+    """
+    If set, skip the automatic init process injected into containers created by RUN statements.
+    
+    This should only be used if the user requires that their exec processes be
+    the pid 1 process in the container. Otherwise it may result in unexpected
+    behavior.
+    """
+    noInit: Boolean = false
   ): Container!
 
   """Returns a list of files and directories at the given path."""
@@ -1423,9 +1432,6 @@ type Directory {
     """
     cmd: [String!] = []
 
-    """If set, override the default container used for the terminal."""
-    container: ContainerID
-
     """
     Provides Dagger access to the executed command.
     
@@ -1442,10 +1448,16 @@ type Directory {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+
+    """If set, override the default container used for the terminal."""
+    container: ContainerID
   ): Directory!
 
   """Return a snapshot with a directory added"""
   withDirectory(
+    """Location of the written directory (e.g., "/src/")."""
+    path: String!
+
     """Identifier of the directory to copy."""
     directory: DirectoryID!
 
@@ -1458,9 +1470,6 @@ type Directory {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
-
-    """Location of the written directory (e.g., "/src/")."""
-    path: String!
   ): Directory!
 
   """
@@ -1470,11 +1479,11 @@ type Directory {
     """Location of the copied file (e.g., "/file.txt")."""
     path: String!
 
-    """Permission given to the copied file (e.g., 0600)."""
-    permissions: Int
-
     """Identifier of the file to copy."""
     source: FileID!
+
+    """Permission given to the copied file (e.g., 0600)."""
+    permissions: Int
   ): Directory!
 
   """
@@ -1484,11 +1493,11 @@ type Directory {
     """Location where copied files should be placed (e.g., "/src")."""
     path: String!
 
-    """Permission given to the copied files (e.g., 0600)."""
-    permissions: Int
-
     """Identifiers of the files to copy."""
     sources: [FileID!]!
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
   ): Directory!
 
   """
@@ -1505,17 +1514,29 @@ type Directory {
   """Return a snapshot with a new file added"""
   withNewFile(
     """
-    Contents of the new file. Example: "Hello world!"
-    """
-    contents: String!
-
-    """
     Path of the new file. Example: "foo/bar.txt"
     """
     path: String!
 
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
+    contents: String!
+
     """Permissions of the new file. Example: 0600"""
     permissions: Int = 420
+  ): Directory!
+
+  """
+  Retrieves this directory with all file/dir timestamps set to the given time.
+  """
+  withTimestamps(
+    """
+    Timestamp to set dir/files in.
+    
+    Formatted in seconds following Unix epoch (e.g., 1672531199).
+    """
+    timestamp: Int!
   ): Directory!
 
   """Return a snapshot with a subdirectory removed"""
@@ -1536,18 +1557,6 @@ type Directory {
   withoutFiles(
     """Paths of the files to remove (e.g., ["/file.txt"])."""
     paths: [String!]!
-  ): Directory!
-
-  """
-  Retrieves this directory with all file/dir timestamps set to the given time.
-  """
-  withTimestamps(
-    """
-    Timestamp to set dir/files in.
-    
-    Formatted in seconds following Unix epoch (e.g., 1672531199).
-    """
-    timestamp: Int!
   ): Directory!
 }
 
@@ -1588,6 +1597,7 @@ type EngineCache {
 
   """Prune the cache of releaseable entries"""
   prune: Void
+
   reservedSpace: Int!
 }
 
@@ -1713,315 +1723,315 @@ type Env {
 
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The CacheVolume value to assign to the binding"""
     value: CacheVolumeID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Container in the environment"""
   withContainerInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Container value to assign to the binding"""
     value: ContainerID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Container output to be assigned in the environment"""
   withContainerOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Directory value to assign to the binding"""
     value: DirectoryID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Directory output to be assigned in the environment"""
   withDirectoryOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Env in the environment"""
   withEnvInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Env value to assign to the binding"""
     value: EnvID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Env output to be assigned in the environment"""
   withEnvOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type File in the environment"""
   withFileInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The File value to assign to the binding"""
     value: FileID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired File output to be assigned in the environment"""
   withFileOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type GitRef in the environment"""
   withGitRefInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The GitRef value to assign to the binding"""
     value: GitRefID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired GitRef output to be assigned in the environment"""
   withGitRefOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type GitRepository in the environment"""
   withGitRepositoryInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The GitRepository value to assign to the binding"""
     value: GitRepositoryID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """
   Declare a desired GitRepository output to be assigned in the environment
   """
   withGitRepositoryOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type LLM in the environment"""
   withLLMInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The LLM value to assign to the binding"""
     value: LLMID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired LLM output to be assigned in the environment"""
   withLLMOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
   """
   withModuleConfigClientInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The ModuleConfigClient value to assign to the binding"""
     value: ModuleConfigClientID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """
   Declare a desired ModuleConfigClient output to be assigned in the environment
   """
   withModuleConfigClientOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Module in the environment"""
   withModuleInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Module value to assign to the binding"""
     value: ModuleID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Module output to be assigned in the environment"""
   withModuleOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type ModuleSource in the environment"""
   withModuleSourceInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The ModuleSource value to assign to the binding"""
     value: ModuleSourceID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """
   Declare a desired ModuleSource output to be assigned in the environment
   """
   withModuleSourceOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Secret in the environment"""
   withSecretInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Secret value to assign to the binding"""
     value: SecretID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Secret output to be assigned in the environment"""
   withSecretOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Service in the environment"""
   withServiceInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Service value to assign to the binding"""
     value: ServiceID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Service output to be assigned in the environment"""
   withServiceOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update a binding of type Socket in the environment"""
   withSocketInput(
-    """The purpose of the input"""
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The Socket value to assign to the binding"""
     value: SocketID!
+
+    """The purpose of the input"""
+    description: String!
   ): Env!
 
   """Declare a desired Socket output to be assigned in the environment"""
   withSocketOutput(
-    """A description of the desired value of the binding"""
-    description: String!
-
     """The name of the binding"""
     name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
   ): Env!
 
   """Create or update an input value of type string"""
   withStringInput(
-    description: String!
-
     """The name of the binding"""
     name: String!
 
     """The string value to assign to the binding"""
     value: String!
+
+    description: String!
   ): Env!
 }
 
@@ -2133,14 +2143,14 @@ type File {
 
   """Writes the file to a file path on the host."""
   export(
+    """Location of the written directory (e.g., "output.txt")."""
+    path: String!
+
     """
     If allowParentDirPath is true, the path argument can be a directory path, in
     which case the file will be created in that directory.
     """
     allowParentDirPath: Boolean = false
-
-    """Location of the written directory (e.g., "output.txt")."""
-    path: String!
   ): String!
 
   """A unique identifier for this File."""
@@ -2205,28 +2215,29 @@ type Function {
 
   """Returns the function with the provided argument"""
   withArg(
-    """
-    If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
-    """
-    defaultPath: String = ""
+    """The name of the argument"""
+    name: String!
+
+    """The type of the argument"""
+    typeDef: TypeDefID!
+
+    """A doc string for the argument, if any"""
+    description: String = ""
 
     """
     A default value to use for this argument if not explicitly set by the caller, if any
     """
     defaultValue: JSON
 
-    """A doc string for the argument, if any"""
-    description: String = ""
+    """
+    If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    """
+    defaultPath: String = ""
 
     """Patterns to ignore when loading the contextual argument value."""
     ignore: [String!] = []
 
-    """The name of the argument"""
-    name: String!
     sourceMap: SourceMapID
-
-    """The type of the argument"""
-    typeDef: TypeDefID!
   ): Function!
 
   """Returns the function with the given doc string."""
@@ -2462,6 +2473,9 @@ scalar GitRepositoryID
 type Host {
   """Accesses a directory on the host."""
   directory(
+    """Location of the directory to access (e.g., ".")."""
+    path: String!
+
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     """
@@ -2471,9 +2485,6 @@ type Host {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
-
-    """Location of the directory to access (e.g., ".")."""
-    path: String!
   ): Directory!
 
   """Accesses a file on the host."""
@@ -2517,12 +2528,8 @@ type Host {
 
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
-    """
-    Map each service port to the same port on the host, as if the service were running natively.
-    
-    Note: enabling may result in port conflicts.
-    """
-    native: Boolean = false
+    """Service to send traffic from the tunnel."""
+    service: ServiceID!
 
     """
     Configure explicit port forwarding rules for the tunnel.
@@ -2537,8 +2544,12 @@ type Host {
     """
     ports: [PortForward!] = []
 
-    """Service to send traffic from the tunnel."""
-    service: ServiceID!
+    """
+    Map each service port to the same port on the host, as if the service were running natively.
+    
+    Note: enabling may result in port conflicts.
+    """
+    native: Boolean = false
   ): Service!
 
   """Accesses a Unix socket on the host."""
@@ -2620,37 +2631,6 @@ scalar InterfaceTypeDefID
 """An arbitrary JSON-encoded value."""
 scalar JSON
 
-"""A simple key value object that represents a label."""
-type Label {
-  """A unique identifier for this Label."""
-  id: LabelID!
-
-  """The label name."""
-  name: String!
-
-  """The label value."""
-  value: String!
-}
-
-"""
-The `LabelID` scalar type represents an identifier for an object of type Label.
-"""
-scalar LabelID
-
-"""A definition of a list type in a Module."""
-type ListTypeDef {
-  """The type of the elements in the list."""
-  elementTypeDef: TypeDef!
-
-  """A unique identifier for this ListTypeDef."""
-  id: ListTypeDefID!
-}
-
-"""
-The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
-"""
-scalar ListTypeDefID
-
 type LLM {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
@@ -2727,8 +2707,11 @@ scalar LLMID
 type LLMTokenUsage {
   """A unique identifier for this LLMTokenUsage."""
   id: LLMTokenUsageID!
+
   inputTokens: Int!
+
   outputTokens: Int!
+
   totalTokens: Int!
 }
 
@@ -2736,6 +2719,37 @@ type LLMTokenUsage {
 The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 """
 scalar LLMTokenUsageID
+
+"""A simple key value object that represents a label."""
+type Label {
+  """A unique identifier for this Label."""
+  id: LabelID!
+
+  """The label name."""
+  name: String!
+
+  """The label value."""
+  value: String!
+}
+
+"""
+The `LabelID` scalar type represents an identifier for an object of type Label.
+"""
+scalar LabelID
+
+"""A definition of a list type in a Module."""
+type ListTypeDef {
+  """The type of the elements in the list."""
+  elementTypeDef: TypeDef!
+
+  """A unique identifier for this ListTypeDef."""
+  id: ListTypeDefID!
+}
+
+"""
+The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
+"""
+scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
@@ -2905,7 +2919,8 @@ type ModuleSource {
 
   """
   The full absolute path to the context directory on the caller's host
-  filesystem that this module source is loaded from. Only valid for local module sources.
+  filesystem that this module source is loaded from. Only valid for local module
+  sources.
   """
   localContextDirectoryPath: String!
 
@@ -2953,14 +2968,14 @@ type ModuleSource {
 
   """Update the module source with a new client to generate."""
   withClient(
-    """Generate in developer mode"""
-    dev: Boolean
-
     """The generator to use"""
     generator: String!
 
     """The output directory for the generated client."""
     outputDir: String!
+
+    """Generate in developer mode"""
+    dev: Boolean
   ): ModuleSource!
 
   """
@@ -2992,14 +3007,6 @@ type ModuleSource {
     name: String!
   ): ModuleSource!
 
-  """
-  Remove the provided dependencies from the module source's dependency list.
-  """
-  withoutDependencies(
-    """The dependencies to remove."""
-    dependencies: [String!]!
-  ): ModuleSource!
-
   """Update the module source with a new SDK."""
   withSDK(
     """The SDK source to set."""
@@ -3017,6 +3024,14 @@ type ModuleSource {
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
+    dependencies: [String!]!
+  ): ModuleSource!
+
+  """
+  Remove the provided dependencies from the module source's dependency list.
+  """
+  withoutDependencies(
+    """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
 }
@@ -3109,14 +3124,14 @@ type Port {
 
 """Port forwarding rules for tunneling network traffic."""
 input PortForward {
-  """Destination port for traffic."""
-  backend: Int!
-
   """Port to expose to clients. If unspecified, a default will be chosen."""
   frontend: Int
 
+  """Destination port for traffic."""
+  backend: Int!
+
   """Transport layer protocol to use for traffic."""
-  protocol: NetworkProtocol = TCP
+  protocol: NetworkProtocol
 }
 
 """
@@ -3132,6 +3147,7 @@ type Query {
     A string identifier to target this cache volume (e.g., "modules-cache").
     """
     key: String!
+
     namespace: String = ""
   ): CacheVolume!
 
@@ -3177,7 +3193,7 @@ type Query {
     Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     """
     privileged: Boolean = false
-  ): Env!
+  ): Env! @experimental(reason: "Environments are not yet stabilized")
 
   """Create a new error."""
   error(
@@ -3203,18 +3219,6 @@ type Query {
 
   """Queries a Git repository."""
   git(
-    """A service which must be started before the repo is fetched."""
-    experimentalServiceHost: ServiceID
-
-    """DEPRECATED: Set to true to keep .git directory."""
-    keepGitDir: Boolean = true
-
-    """Set SSH auth socket"""
-    sshAuthSocket: SocketID
-
-    """Set SSH known hosts"""
-    sshKnownHosts: String = ""
-
     """
     URL of the git repository.
     
@@ -3223,6 +3227,18 @@ type Query {
     Suffix ".git" is optional.
     """
     url: String!
+
+    """DEPRECATED: Set to true to keep .git directory."""
+    keepGitDir: Boolean = true
+
+    """A service which must be started before the repo is fetched."""
+    experimentalServiceHost: ServiceID
+
+    """Set SSH known hosts"""
+    sshKnownHosts: String = ""
+
+    """Set SSH auth socket"""
+    sshAuthSocket: SocketID
   ): GitRepository!
 
   """Queries the host environment."""
@@ -3230,21 +3246,21 @@ type Query {
 
   """Returns a file containing an http remote url content."""
   http(
-    """A service which must be started before the URL is fetched."""
-    experimentalServiceHost: ServiceID
-
     """HTTP url to get the content from (e.g., "https://docs.dagger.io")."""
     url: String!
+
+    """A service which must be started before the URL is fetched."""
+    experimentalServiceHost: ServiceID
   ): File!
 
   """Initialize a Large Language Model (LLM)"""
   llm(
-    """Cap the number of API calls for this LLM"""
-    maxAPICalls: Int
-
     """Model to use"""
     model: String
-  ): LLM!
+
+    """Cap the number of API calls for this LLM"""
+    maxAPICalls: Int
+  ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!
@@ -3327,17 +3343,17 @@ type Query {
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
 
-  """Load a Label from its ID."""
-  loadLabelFromID(id: LabelID!): Label!
-
-  """Load a ListTypeDef from its ID."""
-  loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
-
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
 
   """Load a LLMTokenUsage from its ID."""
   loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
+
+  """Load a Label from its ID."""
+  loadLabelFromID(id: LabelID!): Label!
+
+  """Load a ListTypeDef from its ID."""
+  loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
 
   """Load a ModuleConfigClient from its ID."""
   loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
@@ -3354,11 +3370,11 @@ type Query {
   """Load a Port from its ID."""
   loadPortFromID(id: PortID!): Port!
 
-  """Load a ScalarTypeDef from its ID."""
-  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
-
   """Load a SDKConfig from its ID."""
   loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
+
+  """Load a ScalarTypeDef from its ID."""
+  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
@@ -3383,12 +3399,11 @@ type Query {
 
   """Create a new module source instance from a source ref string"""
   moduleSource(
-    """
-    If true, do not error out if the provided ref string is a local path and
-    does not exist yet. Useful when initializing new modules in directories that
-    don't exist yet.
-    """
-    allowNotExists: Boolean = false
+    """The string ref representation of the module source"""
+    refString: String!
+
+    """The pinned version of the module source"""
+    refPin: String = ""
 
     """
     If true, do not attempt to find dagger.json in a parent directory of the
@@ -3396,11 +3411,12 @@ type Query {
     """
     disableFindUp: Boolean = false
 
-    """The pinned version of the module source"""
-    refPin: String = ""
-
-    """The string ref representation of the module source"""
-    refString: String!
+    """
+    If true, do not error out if the provided ref string is a local path and
+    does not exist yet. Useful when initializing new modules in directories that
+    don't exist yet.
+    """
+    allowNotExists: Boolean = false
 
     """
     If set, error out if the ref string is not of the provided requireKind.
@@ -3429,14 +3445,14 @@ type Query {
 
   """Creates source map metadata."""
   sourceMap(
-    """The column number within the line."""
-    column: Int!
-
     """The filename from the module source."""
     filename: String!
 
     """The line number within the filename."""
     line: Int!
+
+    """The column number within the line."""
+    column: Int!
   ): SourceMap!
 
   """Create a new TypeDef."""
@@ -3457,6 +3473,22 @@ enum ReturnType {
   """Any execution (exit codes 0-127)"""
   ANY
 }
+
+"""The SDK config of the module."""
+type SDKConfig {
+  """A unique identifier for this SDKConfig."""
+  id: SDKConfigID!
+
+  """
+  Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+  """
+  source: String!
+}
+
+"""
+The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+"""
+scalar SDKConfigID
 
 """A definition of a custom scalar defined in a Module."""
 type ScalarTypeDef {
@@ -3479,22 +3511,6 @@ type ScalarTypeDef {
 The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 """
 scalar ScalarTypeDefID
-
-"""The SDK config of the module."""
-type SDKConfig {
-  """A unique identifier for this SDKConfig."""
-  id: SDKConfigID!
-
-  """
-  Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-  """
-  source: String!
-}
-
-"""
-The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
-"""
-scalar SDKConfigID
 
 """
 A reference to a secret value, which can be handled more safely than the value itself.
@@ -3694,11 +3710,11 @@ type TypeDef {
   circular reference.
   """
   withEnum(
-    """A doc string for the enum, if any"""
-    description: String = ""
-
     """The name of the enum"""
     name: String!
+
+    """A doc string for the enum, if any"""
+    description: String = ""
 
     """The source map for the enum definition."""
     sourceMap: SourceMapID
@@ -3708,31 +3724,31 @@ type TypeDef {
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.
   """
   withEnumValue(
+    """The name of the value in the enum"""
+    value: String!
+
     """A doc string for the value, if any"""
     description: String = ""
 
     """The source map for the enum value definition."""
     sourceMap: SourceMapID
-
-    """The name of the value in the enum"""
-    value: String!
   ): TypeDef!
 
   """
   Adds a static field for an Object TypeDef, failing if the type is not an object.
   """
   withField(
-    """A doc string for the field, if any"""
-    description: String = ""
-
     """The name of the field in the object"""
     name: String!
 
-    """The source map for the field definition."""
-    sourceMap: SourceMapID
-
     """The type of the field"""
     typeDef: TypeDefID!
+
+    """A doc string for the field, if any"""
+    description: String = ""
+
+    """The source map for the field definition."""
+    sourceMap: SourceMapID
   ): TypeDef!
 
   """
@@ -3741,7 +3757,7 @@ type TypeDef {
   withFunction(function: FunctionID!): TypeDef!
 
   """Returns a TypeDef of kind Interface with the provided name."""
-  withInterface(description: String = "", name: String!, sourceMap: SourceMapID): TypeDef!
+  withInterface(name: String!, description: String = "", sourceMap: SourceMapID): TypeDef!
 
   """Sets the kind of the type."""
   withKind(kind: TypeDefKind!): TypeDef!
@@ -3758,13 +3774,13 @@ type TypeDef {
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(description: String = "", name: String!, sourceMap: SourceMapID): TypeDef!
+  withObject(name: String!, description: String = "", sourceMap: SourceMapID): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
 
   """Returns a TypeDef of kind Scalar with the provided name."""
-  withScalar(description: String = "", name: String!): TypeDef!
+  withScalar(name: String!, description: String = ""): TypeDef!
 }
 
 """
@@ -3819,7 +3835,8 @@ enum TypeDefKind {
   A special kind used to signify that no value is returned.
   
   This is used for functions that have no return value. The outer TypeDef
-  specifying this Kind is always Optional, as the Void is never actually represented.
+  specifying this Kind is always Optional, as the Void is never actually
+  represented.
   """
   VOID_KIND
 
@@ -3837,3 +3854,5 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+
