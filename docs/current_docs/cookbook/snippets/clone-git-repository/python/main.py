@@ -1,11 +1,13 @@
 import dagger
 from dagger import dag, enum_type, function, object_type
 
+
 @enum_type
 class Locator(dagger.Enum):
     BRANCH = "BRANCH"
     TAG = "TAG"
     COMMIT = "COMMIT"
+
 
 @object_type
 class MyModule:
@@ -16,7 +18,12 @@ class MyModule:
     """
 
     @function
-    async def clone(self, repository: str, locator: Locator, ref: str) -> dagger.Container:
+    async def clone(
+        self,
+        repository: str,
+        locator: Locator,
+        ref: str,
+    ) -> dagger.Container:
         r = dag.git(repository)
 
         if locator == Locator.BRANCH:

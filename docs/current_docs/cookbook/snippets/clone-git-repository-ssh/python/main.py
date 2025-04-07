@@ -1,11 +1,10 @@
 import dagger
 from dagger import dag, function, object_type
 
+
 @object_type
 class MyModule:
-    """
-    Demonstrates an SSH-based clone requiring a user-supplied ssh_auth_socket.
-    """
+    """Demonstrates an SSH-based clone requiring a user-supplied ssh_auth_socket."""
 
     @function
     async def clone_with_ssh(
