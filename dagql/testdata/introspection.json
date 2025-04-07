@@ -1829,9 +1829,9 @@
       {
         "args": [
           {
-            "defaultValue": null,
+            "defaultValue": "\"Not stabilized\"",
             "deprecationReason": null,
-            "description": "Explains why this element is impure, i.e. whether it performs side effects or yield a different result with the same arguments.",
+            "description": "Explains why this element was marked experimental.",
             "directives": [],
             "isDeprecated": false,
             "name": "reason",
@@ -1846,19 +1846,14 @@
             }
           }
         ],
-        "description": "Indicates that a field may resolve to different values when called repeatedly with the same inputs, or that the field has side effects. Impure fields are never cached.",
+        "description": "Explains why this element is marked experimental. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).",
         "locations": [
-          "FIELD_DEFINITION"
+          "FIELD_DEFINITION",
+          "ARGUMENT_DEFINITION",
+          "INPUT_FIELD_DEFINITION",
+          "ENUM_VALUE"
         ],
-        "name": "impure"
-      },
-      {
-        "args": [],
-        "description": "Indicates that a field's selection can be removed from any query without changing the result. Meta fields are dropped from cache keys.",
-        "locations": [
-          "FIELD_DEFINITION"
-        ],
-        "name": "meta"
+        "name": "experimental"
       },
       {
         "args": [

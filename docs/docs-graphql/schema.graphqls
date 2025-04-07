@@ -1,20 +1,10 @@
 """
-Indicates that a field may resolve to different values when called repeatedly
-with the same inputs, or that the field has side effects. Impure fields are never cached.
+Explains why this element is marked experimental. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).
 """
-directive @impure(
-  """
-  Explains why this element is impure, i.e. whether it performs side effects or
-  yield a different result with the same arguments.
-  """
-  reason: String!
-) on FIELD_DEFINITION
-
-"""
-Indicates that a field's selection can be removed from any query without
-changing the result. Meta fields are dropped from cache keys.
-"""
-directive @meta on FIELD_DEFINITION
+directive @experimental(
+  """Explains why this element was marked experimental."""
+  reason: String! = "Not stabilized"
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT

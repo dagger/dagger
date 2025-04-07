@@ -28,8 +28,8 @@ type Schema struct {
 		Name string `json:"name,omitempty"`
 	} `json:"subscriptionType,omitempty"`
 
-	Types      Types `json:"types"`
-	Directives any   `json:"directives"`
+	Types      Types           `json:"types"`
+	Directives []*DirectiveDef `json:"directives"`
 }
 
 func (s *Schema) Query() *Type {
@@ -66,6 +66,13 @@ func (s *Schema) ScrubType(typeName string) {
 		filteredTypes = append(filteredTypes, t)
 	}
 	s.Types = filteredTypes
+}
+
+type DirectiveDef struct {
+	Name        string      `json:"name,omitempty"`
+	Description string      `json:"description,omitempty"`
+	Locations   []string    `json:"locations,omitempty"`
+	Args        InputValues `json:"args,omitempty"`
 }
 
 type TypeKind string
