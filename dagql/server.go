@@ -173,34 +173,6 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
-		Name: "impure",
-		Description: FormatDescription(
-			`Indicates that a field may resolve to different values when called
-			repeatedly with the same inputs, or that the field has side effects.
-			Impure fields are never cached.`),
-		Args: []InputSpec{
-			{
-				Name: "reason",
-				Description: FormatDescription(
-					`Explains why this element is impure, i.e. whether it performs side
-					effects or yield a different result with the same arguments.`),
-				Type: String(""),
-			},
-		},
-		Locations: []DirectiveLocation{
-			DirectiveLocationFieldDefinition,
-		},
-	},
-	{
-		Name: "meta",
-		Description: FormatDescription(
-			`Indicates that a field's selection can be removed from any query without
-			changing the result. Meta fields are dropped from cache keys.`),
-		Locations: []DirectiveLocation{
-			DirectiveLocationFieldDefinition,
-		},
-	},
-	{
 		Name:        "sourceMap",
 		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
 		Args: []InputSpec{
