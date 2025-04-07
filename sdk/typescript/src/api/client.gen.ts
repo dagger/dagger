@@ -143,6 +143,13 @@ export type ContainerBuildOpts = {
    * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
    */
   secrets?: Secret[]
+
+  /**
+   * If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   */
+  noInit?: boolean
 }
 
 export type ContainerDirectoryOpts = {
@@ -705,6 +712,13 @@ export type DirectoryDockerBuildOpts = {
    * They will be mounted at /run/secrets/[secret-name].
    */
   secrets?: Secret[]
+
+  /**
+   * If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   */
+  noInit?: boolean
 }
 
 export type DirectoryEntriesOpts = {
@@ -1807,6 +1821,9 @@ export class Container extends BaseClient {
    * They will be mounted at /run/secrets/[secret-name] in the build container
    *
    * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
+   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
@@ -3056,6 +3073,9 @@ export class Directory extends BaseClient {
    * @param opts.secrets Secrets to pass to the build.
    *
    * They will be mounted at /run/secrets/[secret-name].
+   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
     const ctx = this._ctx.select("dockerBuild", { ...opts })

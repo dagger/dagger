@@ -114,7 +114,12 @@ func (s *directorySchema) Install() {
 			ArgDoc("buildArgs", `Build arguments to use in the build.`).
 			ArgDoc("target", `Target build stage to build.`).
 			ArgDoc("secrets", `Secrets to pass to the build.`,
-				`They will be mounted at /run/secrets/[secret-name].`),
+				`They will be mounted at /run/secrets/[secret-name].`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers created by RUN statements.`,
+				`This should only be used if the user requires that their exec processes be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
 		dagql.Func("withTimestamps", s.withTimestamps).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
@@ -371,6 +376,7 @@ type dirDockerBuildArgs struct {
 	Target     string                             `default:""`
 	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
 	Secrets    []core.SecretID                    `default:"[]"`
+	NoInit     bool                               `default:"false"`
 }
 
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core.Directory], filename string) ([]byte, error) {
@@ -469,6 +475,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		args.Target,
 		secrets,
 		secretStore,
+		args.NoInit,
 	)
 }
 

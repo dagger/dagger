@@ -390,6 +390,7 @@ func (container *Container) Build(
 	target string,
 	secrets []*Secret,
 	secretStore *SecretStore,
+	noInit bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -507,6 +508,25 @@ func (container *Container) Build(
 			telemetry.Propagator.Inject(ctx,
 				propagation.MapCarrier(desc))
 		}
+
+		execOp, isExecOp := dag.AsExec()
+		if noInit && isExecOp {
+			execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
+			if err != nil {
+				return fmt.Errorf("failed to get execution metadata: %w", err)
+			}
+			if !ok {
+				execMD = &buildkit.ExecutionMetadata{}
+			}
+			execMD.NoInit = true
+			if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
+				return fmt.Errorf("failed to add execution metadata: %w", err)
+			}
+			execOp.Meta.Env = append(execOp.Meta.Env,
+				buildkit.DaggerNoInitEnv+"=true",
+			)
+		}
+
 		dag.Metadata.Description = desc
 		return nil
 	}); err != nil {
