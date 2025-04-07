@@ -152,7 +152,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 		w = w.
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
-				Runner:        []string{SilverRunner(true)},
+				Runner:        []string{AltSilverRunner()},
 			}))
 	}
 
@@ -361,6 +361,11 @@ func PlatinumRunner(
 	dind bool,
 ) string {
 	return Runner(3, daggerVersion, 32, true, dind)
+}
+
+// Alternative Silver runner: Single-tenant with Docker, 8 cpu
+func AltSilverRunner() string {
+	return AltRunner(8)
 }
 
 // Alternative Gold runner: Single-tenant with Docker, 16 cpu
