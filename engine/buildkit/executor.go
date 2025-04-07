@@ -134,6 +134,15 @@ func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadat
 	return &md, true, nil
 }
 
+func AddExecutionMetadataToDescription(desc map[string]string, md *ExecutionMetadata) error {
+	bs, err := json.Marshal(md)
+	if err != nil {
+		return fmt.Errorf("failed to marshal execution metadata: %w", err)
+	}
+	desc[executionMetadataKey] = string(bs)
+	return nil
+}
+
 func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 	bs, err := json.Marshal(md)
 	if err != nil {

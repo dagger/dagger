@@ -692,6 +692,10 @@ type ContainerBuildOpts struct {
 	//
 	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
 	Secrets []*Secret
+	// If set, skip the automatic init process injected into containers created by RUN statements.
+	//
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	NoInit bool
 }
 
 // Initializes this container from a Dockerfile build.
@@ -714,6 +718,10 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
+		}
+		// `noInit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoInit) {
+			q = q.Arg("noInit", opts[i].NoInit)
 		}
 	}
 	q = q.Arg("context", context)
@@ -2527,6 +2535,10 @@ type DirectoryDockerBuildOpts struct {
 	//
 	// They will be mounted at /run/secrets/[secret-name].
 	Secrets []*Secret
+	// If set, skip the automatic init process injected into containers created by RUN statements.
+	//
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	NoInit bool
 }
 
 // Builds a new Docker container from this directory.
@@ -2552,6 +2564,10 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
+		}
+		// `noInit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoInit) {
+			q = q.Arg("noInit", opts[i].NoInit)
 		}
 	}
 

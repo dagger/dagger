@@ -4860,6 +4860,18 @@ func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "1 .init")
 	})
 
+	t.Run("automatic init in dockerfile build", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		dir := c.Directory().
+			WithNewFile("Dockerfile",
+				`FROM `+alpineImage+`
+RUN sh -c 'ps -o pid,comm > /output.txt'
+`)
+		out, err := c.Container().Build(dir).File("output.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 .init")
+	})
+
 	t.Run("disable automatic init", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := c.Container().From(alpineImage).
@@ -4867,6 +4879,20 @@ func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
 				NoInit: true,
 			}).
 			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 ps")
+	})
+
+	t.Run("disable automatic init in dockerfile build", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		dir := c.Directory().
+			WithNewFile("Dockerfile",
+				`FROM `+alpineImage+`
+RUN sh -c 'ps -o pid,comm > /output.txt'
+`)
+		out, err := c.Container().Build(dir, dagger.ContainerBuildOpts{
+			NoInit: true,
+		}).File("output.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "1 ps")
 	})

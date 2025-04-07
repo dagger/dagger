@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Add support for skipping automatic init process when using `Container.build` and `Directory.dockerBuild`.
+time: 2025-04-07T15:24:20.133064351-07:00
+custom:
+  Author: sipsma
+  PR: "10088"

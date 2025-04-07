@@ -712,6 +712,7 @@ class Container(Type):
         target: str | None = "",
         build_args: list[BuildArg] | None = None,
         secrets: "list[Secret] | None" = None,
+        no_init: bool | None = False,
     ) -> Self:
         """Initializes this container from a Dockerfile build.
 
@@ -734,6 +735,12 @@ class Container(Type):
             --mount=type=secret,id=my-secret curl
             [http://example.com?token=$(cat /run/secrets/my-
             secret)](http://example.com?token=$(cat /run/secrets/my-secret))
+        no_init:
+            If set, skip the automatic init process injected into containers
+            created by RUN statements.
+            This should only be used if the user requires that their exec
+            processes be the pid 1 process in the container. Otherwise it may
+            result in unexpected behavior.
         """
         _args = [
             Arg("context", context),
@@ -741,6 +748,7 @@ class Container(Type):
             Arg("target", target, ""),
             Arg("buildArgs", () if build_args is None else build_args, ()),
             Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("noInit", no_init, False),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -2756,6 +2764,7 @@ class Directory(Type):
         target: str | None = "",
         build_args: list[BuildArg] | None = None,
         secrets: "list[Secret] | None" = None,
+        no_init: bool | None = False,
     ) -> Container:
         """Builds a new Docker container from this directory.
 
@@ -2772,6 +2781,12 @@ class Directory(Type):
         secrets:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name].
+        no_init:
+            If set, skip the automatic init process injected into containers
+            created by RUN statements.
+            This should only be used if the user requires that their exec
+            processes be the pid 1 process in the container. Otherwise it may
+            result in unexpected behavior.
         """
         _args = [
             Arg("platform", platform, None),
@@ -2779,6 +2794,7 @@ class Directory(Type):
             Arg("target", target, ""),
             Arg("buildArgs", () if build_args is None else build_args, ()),
             Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("noInit", no_init, False),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
