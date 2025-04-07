@@ -23,10 +23,6 @@
       "source": "../modules/go"
     },
     {
-      "name": "graphql",
-      "source": "../modules/graphql"
-    },
-    {
       "name": "php-sdk-dev",
       "source": "../sdk/php/dev"
     },
