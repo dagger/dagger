@@ -118,7 +118,7 @@ func (run LintRun) WarningCount(ctx context.Context) (int, error) {
 
 // Return a JSON report file for this run
 func (run LintRun) Report() *dagger.File {
-	home := "/root"
+	configPath := "${HOME}/.golangci.yml"
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
@@ -128,7 +128,7 @@ func (run LintRun) Report() *dagger.File {
 		"--max-same-issues", "0",
 		"--out-format", "json",
 		"--issues-exit-code", "0",
-		"--config", path.Join(home, ".golangci.yml"),
+		"--config", configPath,
 	}
 
 	goModCache := run.GoModCache
@@ -143,8 +143,7 @@ func (run LintRun) Report() *dagger.File {
 	return dag.
 		Container().
 		From(lintImage).
-		// FIXME should be "${HOME}/.golangci.yml"
-		WithFile(path.Join(home, ".golangci.yml"), dag.CurrentModule().Source().File("lint-config.yml"), dagger.ContainerWithFileOpts{}).
+		WithFile(configPath, dag.CurrentModule().Source().File("lint-config.yml"), dagger.ContainerWithFileOpts{Expand: true}).
 		WithMountedDirectory("/src", run.Source).
 		WithMountedCache("/go/pkg/mod", goModCache).
 		WithMountedCache("/root/.cache/go-build", goBuildCache).
@@ -153,6 +152,7 @@ func (run LintRun) Report() *dagger.File {
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
 		// Terminal().
 		WithExec(cmd, dagger.ContainerWithExecOpts{
+			Expand:         true,
 			RedirectStdout: "golangci-lint-report.json",
 		}).
 		File("golangci-lint-report.json")

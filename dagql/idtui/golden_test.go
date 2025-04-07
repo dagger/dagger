@@ -379,11 +379,40 @@ var scrubs = []scrubber{
 		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
 		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
+	// xxh3:... digests
+	{
+		regexp.MustCompile(`xxh3:[a-f0-9]{16}`),
+		// an almost natural deadbeef!
+		"xxh3:0724b85200c28a1d",
+		"xxh3:XXXXXXXXXXXXXXXX",
+	},
 	// byte quantities
 	{
-		regexp.MustCompile(`\d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		regexp.MustCompile(`\d+(\.\d+)?\s?(B|kB|MB|GB|TB)`),
 		"9.3 kB",
 		"X.X B",
+	},
+	{
+		regexp.MustCompile(`\d+?\sbytes`),
+		"1048576000 bytes",
+		"XX bytes",
+	},
+	// duration quantities
+	{
+		regexp.MustCompile(`\d+(\.\d+)?(µs|ms|s)`),
+		"4.063ms",
+		"X.Xs",
+	},
+	{
+		regexp.MustCompile(`\d+(\.\d+)?\s(seconds|minutes)`),
+		"4.063 seconds",
+		"X.X seconds",
+	},
+	// Memory overcommit warning for redis
+	{
+		regexp.MustCompile(`.+WARNING Memory overcommit.+\n`),
+		"# WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.\n",
+		"",
 	},
 }
 

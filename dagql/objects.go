@@ -727,7 +727,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	var zeroArgs A
-	inputs, argsErr := inputSpecsForType(zeroArgs, true)
+	inputs, argsErr := InputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
@@ -753,7 +753,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 				return nil, argsErr
 			}
 			var args A
-			if err := setInputFields(inputs, argVals, &args); err != nil {
+			if err := inputs.Decode(argVals, &args); err != nil {
 				return nil, err
 			}
 			res, err := fn(ctx, self, args)
@@ -772,7 +772,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 				return nil, argsErr
 			}
 			var args A
-			if err := setInputFields(inputs, argVals, &args); err != nil {
+			if err := inputs.Decode(argVals, &args); err != nil {
 				return nil, err
 			}
 			inst, ok := self.(Instance[T])
@@ -920,11 +920,9 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	server.installLock.Lock()
-	defer server.installLock.Unlock()
+	class := server.InstallObject(NewClass[T]()).(Class[T])
+
 	var t T
-	typeName := t.Type().Name()
-	class := fields.findOrInitializeType(server, typeName)
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
 	if err != nil {
 		panic(fmt.Errorf("fields for %T: %w", t, err))
@@ -951,18 +949,6 @@ func (fields Fields[T]) Install(server *Server) {
 		})
 	}
 	class.Install(fields...)
-}
-
-func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
-	var classT Class[T]
-	class, ok := server.objects[typeName]
-	if !ok {
-		classT = NewClass[T]()
-		server.installObject(classT)
-	} else {
-		classT = class.(Class[T])
-	}
-	return classT
 }
 
 type CacheSpec struct {
@@ -1142,7 +1128,7 @@ type reflectField[T any] struct {
 	Field reflect.StructField
 }
 
-func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
+func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
 		return nil, err
@@ -1293,7 +1279,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 	return nil, false, nil
 }
 
-func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
+func (specs InputSpecs) Decode(inputs map[string]Input, dest any) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {
@@ -1308,7 +1294,7 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			if err := setInputFields(specs, inputs, val.Interface()); err != nil {
+			if err := specs.Decode(inputs, val.Interface()); err != nil {
 				return err
 			}
 			fieldV.Set(val.Elem())
@@ -1336,7 +1322,13 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
 		if err := assign(fieldV, val); err != nil {
-			return fmt.Errorf("assign %q: %w", spec.Name, err)
+			return fmt.Errorf("assign input %q (%T) as %+v (%T): %w",
+				spec.Name,
+				fieldV.Interface(),
+				val,
+				val,
+				err,
+			)
 		}
 	}
 	return nil
@@ -1349,17 +1341,25 @@ func assign(field reflect.Value, val any) error {
 	} else if setter, ok := val.(Setter); ok {
 		return setter.SetField(field)
 	} else {
-		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
+		return fmt.Errorf("assign: cannot assign %T to %s", val, field.Type())
 	}
 }
 
 func appendAssign(slice reflect.Value, val any) error {
+	if slice.Kind() != reflect.Slice {
+		return fmt.Errorf("appendAssign: expected slice, got %v", slice.Kind())
+	}
 	if reflect.TypeOf(val).AssignableTo(slice.Type().Elem()) {
 		slice.Set(reflect.Append(slice, reflect.ValueOf(val)))
 		return nil
 	} else if setter, ok := val.(Setter); ok {
-		return setter.SetField(slice)
+		dst := reflect.New(slice.Type().Elem()).Elem()
+		if err := setter.SetField(dst); err != nil {
+			return fmt.Errorf("appendAssign: Setter.SetField: %w", err)
+		}
+		slice.Set(reflect.Append(slice, dst))
+		return nil
 	} else {
-		return fmt.Errorf("cannot assign %T to %s", val, slice.Type())
+		return fmt.Errorf("appendAssign: cannot assign %T to %s", val, slice.Type())
 	}
 }

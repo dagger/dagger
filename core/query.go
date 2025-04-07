@@ -41,15 +41,23 @@ type Server interface {
 	// Return the list of deps being served to the current client
 	CurrentServedDeps(context.Context) (*ModDeps, error)
 
-	// The ClientID of the main client caller (i.e. the one who created the session, typically the CLI
-	// invoked by the user)
-	MainClientCallerID(context.Context) (string, error)
+	// The Client metadata of the main client caller (i.e. the one who created
+	// the session, typically the CLI invoked by the user)
+	MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+	// or a nested exec). Useful for figuring out where local sources should be resolved from through
+	// chains of dependency modules.
+	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
 
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (dagql.Cache, error)
+
+	// The DagQL server for the current client's session
+	Server(context.Context) (*dagql.Server, error)
 
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
@@ -91,11 +99,6 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
-
-	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
-	// or a nested exec). Useful for figuring out where local sources should be resolved from through
-	// chains of dependency modules.
-	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 }
 
 func NewRoot(srv Server) *Query {
@@ -195,11 +198,11 @@ func (q *Query) RequireMainClient(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	mainClientCallerID, err := q.MainClientCallerID(ctx)
+	mainClientCallerMetadata, err := q.MainClientCallerMetadata(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get main client caller ID: %w", err)
 	}
-	if clientMetadata.ClientID != mainClientCallerID {
+	if clientMetadata.ClientID != mainClientCallerMetadata.ClientID {
 		return fmt.Errorf("only the main client can call this function")
 	}
 	return nil

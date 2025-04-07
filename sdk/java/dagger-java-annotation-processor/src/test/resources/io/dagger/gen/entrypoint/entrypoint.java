@@ -20,9 +20,11 @@ import io.dagger.java.module.DaggerJava;
 import java.lang.Class;
 import java.lang.Error;
 import java.lang.Exception;
+import java.lang.Integer;
 import java.lang.InterruptedException;
 import java.lang.String;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,10 +100,10 @@ public class Entrypoint {
                         .withArg("value", dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
                 .withFunction(
                     dag().function("doThings",
-                        dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
-                        .withArg("stringArray", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)))
-                        .withArg("ints", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
-                        .withArg("containers", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withObject("Container"))))
+                        dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
+                        .withArg("stringArray", dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.STRING_KIND)))
+                        .withArg("ints", dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
+                        .withArg("containers", dag().typeDef().withListOf(dag().typeDef().withObject("Container"))))
                 .withFunction(
                     dag().function("nonNullableNoDefault",
                         dag().typeDef().withKind(TypeDefKind.STRING_KIND))
@@ -132,6 +134,15 @@ public class Entrypoint {
                         dag().typeDef().withKind(TypeDefKind.FLOAT_KIND))
                         .withArg("a", dag().typeDef().withKind(TypeDefKind.FLOAT_KIND))
                         .withArg("b", dag().typeDef().withKind(TypeDefKind.FLOAT_KIND)))
+                .withFunction(
+                    dag().function("doSomething",
+                        dag().typeDef().withKind(TypeDefKind.VOID_KIND).withOptional(true))
+                        .withDescription("Function returning nothing")
+                        .withArg("src", dag().typeDef().withObject("Directory")))
+                .withFunction(
+                    dag().function("printSeverity",
+                        dag().typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withArg("severity", dag().typeDef().withEnum("Severity")))
                 .withField("source", dag().typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
                 .withField("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
                 .withConstructor(
@@ -139,7 +150,14 @@ public class Entrypoint {
                         dag().typeDef().withObject("DaggerJava"))
                         .withDescription("Initialize the DaggerJava Module")
                         .withArg("source", dag().typeDef().withObject("Directory").withOptional(true), new Function.WithArgArguments().withDescription("Project source directory"))
-                        .withArg("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("Go version").withDefaultValue(JSON.from("\"1.23.2\"")))));
+                        .withArg("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("Go version").withDefaultValue(JSON.from("\"1.23.2\"")))))
+        .withEnum(
+            dag().typeDef().withEnum("Severity", new TypeDef.WithEnumArguments().withDescription("Severities"))
+                .withEnumValue("DEBUG", new TypeDef.WithEnumValueArguments().withDescription("Debug severity"))
+                .withEnumValue("INFO", new TypeDef.WithEnumValueArguments().withDescription("Info severity"))
+                .withEnumValue("WARN")
+                .withEnumValue("ERROR")
+                .withEnumValue("FATAL"));
     return module.id();
   }
 
@@ -151,7 +169,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String stringArg = null;
         if (inputArgs.get("stringArg") != null) {
-          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+          stringArg = JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
         Objects.requireNonNull(stringArg, "stringArg must not be null");
         Container res = obj.containerEcho(stringArg);
@@ -161,12 +179,12 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         Directory directoryArg = null;
         if (inputArgs.get("directoryArg") != null) {
-          directoryArg = (Directory) JsonConverter.fromJSON(inputArgs.get("directoryArg"), Directory.class);
+          directoryArg = JsonConverter.fromJSON(inputArgs.get("directoryArg"), Directory.class);
         }
         Objects.requireNonNull(directoryArg, "directoryArg must not be null");
         String pattern = null;
         if (inputArgs.get("pattern") != null) {
-          pattern = (String) JsonConverter.fromJSON(inputArgs.get("pattern"), String.class);
+          pattern = JsonConverter.fromJSON(inputArgs.get("pattern"), String.class);
         }
         var pattern_opt = Optional.ofNullable(pattern);
         String res = obj.grepDir(directoryArg, pattern_opt);
@@ -181,7 +199,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         int value = 0;
         if (inputArgs.get("value") != null) {
-          value = (int) JsonConverter.fromJSON(inputArgs.get("value"), int.class);
+          value = JsonConverter.fromJSON(inputArgs.get("value"), int.class);
         }
         boolean res = obj.isZero(value);
         return JsonConverter.toJSON(res);
@@ -190,17 +208,17 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String[] stringArray = null;
         if (inputArgs.get("stringArray") != null) {
-          stringArray = (String[]) JsonConverter.fromJSON(inputArgs.get("stringArray"), String[].class);
+          stringArray = JsonConverter.fromJSON(inputArgs.get("stringArray"), String[].class);
         }
         Objects.requireNonNull(stringArray, "stringArray must not be null");
-        List ints = null;
+        List<Integer> ints = null;
         if (inputArgs.get("ints") != null) {
-          ints = (List) JsonConverter.fromJSON(inputArgs.get("ints"), List.class);
+          ints = Arrays.asList(JsonConverter.fromJSON(inputArgs.get("ints"), Integer[].class));
         }
         Objects.requireNonNull(ints, "ints must not be null");
-        List containers = null;
+        List<Container> containers = null;
         if (inputArgs.get("containers") != null) {
-          containers = (List) JsonConverter.fromJSON(inputArgs.get("containers"), List.class);
+          containers = Arrays.asList(JsonConverter.fromJSON(inputArgs.get("containers"), Container[].class));
         }
         Objects.requireNonNull(containers, "containers must not be null");
         int[] res = obj.doThings(stringArray, ints, containers);
@@ -210,7 +228,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String stringArg = null;
         if (inputArgs.get("stringArg") != null) {
-          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+          stringArg = JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
         Objects.requireNonNull(stringArg, "stringArg must not be null");
         String res = obj.nonNullableNoDefault(stringArg);
@@ -220,7 +238,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String stringArg = null;
         if (inputArgs.get("stringArg") != null) {
-          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+          stringArg = JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
         Objects.requireNonNull(stringArg, "stringArg must not be null");
         String res = obj.nonNullableDefault(stringArg);
@@ -230,7 +248,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String stringArg = null;
         if (inputArgs.get("stringArg") != null) {
-          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+          stringArg = JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
         var stringArg_opt = Optional.ofNullable(stringArg);
         String res = obj.nullable(stringArg_opt);
@@ -240,7 +258,7 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         String stringArg = null;
         if (inputArgs.get("stringArg") != null) {
-          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+          stringArg = JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
         var stringArg_opt = Optional.ofNullable(stringArg);
         String res = obj.nullableDefault(stringArg_opt);
@@ -255,23 +273,43 @@ public class Entrypoint {
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
         float a = 0;
         if (inputArgs.get("a") != null) {
-          a = (float) JsonConverter.fromJSON(inputArgs.get("a"), float.class);
+          a = JsonConverter.fromJSON(inputArgs.get("a"), float.class);
         }
         float b = 0;
         if (inputArgs.get("b") != null) {
-          b = (float) JsonConverter.fromJSON(inputArgs.get("b"), float.class);
+          b = JsonConverter.fromJSON(inputArgs.get("b"), float.class);
         }
         float res = obj.addFloat(a, b);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("doSomething")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        Directory src = null;
+        if (inputArgs.get("src") != null) {
+          src = JsonConverter.fromJSON(inputArgs.get("src"), Directory.class);
+        }
+        Objects.requireNonNull(src, "src must not be null");
+        obj.doSomething(src);
+        return JsonConverter.toJSON(null);
+      } else if (fnName.equals("printSeverity")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        DaggerJava.Severity severity = null;
+        if (inputArgs.get("severity") != null) {
+          severity = JsonConverter.fromJSON(inputArgs.get("severity"), DaggerJava.Severity.class);
+        }
+        Objects.requireNonNull(severity, "severity must not be null");
+        String res = obj.printSeverity(severity);
         return JsonConverter.toJSON(res);
       } if (fnName.equals("")) {
         Directory source = null;
         if (inputArgs.get("source") != null) {
-          source = (Directory) JsonConverter.fromJSON(inputArgs.get("source"), Directory.class);
+          source = JsonConverter.fromJSON(inputArgs.get("source"), Directory.class);
         }
         var source_opt = Optional.ofNullable(source);
         String version = null;
         if (inputArgs.get("version") != null) {
-          version = (String) JsonConverter.fromJSON(inputArgs.get("version"), String.class);
+          version = JsonConverter.fromJSON(inputArgs.get("version"), String.class);
         }
         Objects.requireNonNull(version, "version must not be null");
         DaggerJava res = new DaggerJava(source_opt, version);

@@ -129,13 +129,13 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
 
 		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
-			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.`),
+			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
 
 		dagql.Func("version", s.moduleSourceVersion).
-			Doc(`The specified version of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The specified version of the git repo this source points to.`),
 
 		dagql.Func("commit", s.moduleSourceCommit).
-			Doc(`The resolved commit of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The resolved commit of the git repo this source points to.`),
 
 		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
 			Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
@@ -765,6 +765,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source: modCfg.SDK.Source,
+			Config: modCfg.SDK.Config,
 		}
 	}
 
@@ -1267,7 +1268,7 @@ func (s *moduleSourceSchema) moduleSourceHTMLRepoURL(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.HTMLRepoURL, nil
@@ -1279,7 +1280,7 @@ func (s *moduleSourceSchema) moduleSourceVersion(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Version, nil
@@ -1291,7 +1292,7 @@ func (s *moduleSourceSchema) moduleSourceCommit(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Commit, nil
@@ -1723,6 +1724,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source: src.SDK.Source,
+			Config: src.SDK.Config,
 		}
 	}
 

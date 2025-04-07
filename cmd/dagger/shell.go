@@ -10,34 +10,34 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/vito/bubbline/computil"
+	"github.com/vito/bubbline/editline"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
-)
-
-const (
-	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
-	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
-	// where it denotes a join operation. This makes it especially fitting for a DAG environment,
-	// as it suggests the idea of dependencies, intersections, and points where separate paths
-	// or data sets come together.
-	shellPromptSymbol = "⋈"
 )
 
 // shellCode is the code to be executed in the shell command
 var (
 	shellCode         string
 	shellNoLoadModule bool
+
+	llmModel string
 )
 
 func shellAddFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
-	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
+	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "M", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
@@ -49,73 +49,20 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
-				dag:    dag,
-				stdin:  cmd.InOrStdin(),
-				stdout: cmd.OutOrStdout(),
-				stderr: cmd.ErrOrStderr(),
-				debug:  debug,
+				dag:      dag,
+				debug:    debug,
+				llmModel: llmModel,
+				mode:     modeShell,
 			}
 			return handler.RunAll(ctx, args)
 		})
 	},
 	Hidden: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-}
-
-func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
-	return &terminalWriter{
-		fn: fn,
-	}
-}
-
-// terminalWriter is a custom io.Writer that synchronously calls the handler's
-// withTerminal on each write from the runner
-type terminalWriter struct {
-	mu sync.Mutex
-	fn func([]byte) (int, error)
-
-	// processFn is a function that can be used to process the incoming data
-	// before writing to the terminal
-	//
-	// This can be used to resolve shell state just before printing to screen,
-	// and make necessary API requests.
-	processFn func([]byte) ([]byte, error)
-}
-
-func (o *terminalWriter) Write(p []byte) (n int, err error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if o.processFn != nil {
-		r, err := o.processFn(p)
-		if err != nil {
-			return 0, err
-		}
-		p = r
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.fn(p)
-}
-
-// Shell state is piped between exec handlers and only in the end the runner
-// writes the final output to the stdoutWriter. We need to check if that
-// state needs to be resolved into an API request and handle the response
-// appropriately. Note that this can happen in parallel if commands are
-// separated with a '&'.
-func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
-	o.processFn = fn
 }
 
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
-
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
 
 	// tty is set to true when running the TUI (pretty frontend)
 	tty bool
@@ -155,8 +102,24 @@ type shellCallHandler struct {
 	// oldpwd is used to return to the previous working directory
 	oldwd shellWorkdir
 
-	// mu is used to synchronize access to the workdir
+	// lastResult is the last result from the shell
+	lastResult *Result
+
+	// llm is the LLM session for the shell
+	llmSession *LLMSession
+	llmErr     error // error initializing LLM
+	llmModel   string
+	llmL       sync.Mutex // synchronizing LLM init status
+
+	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
+
+	// interpreter mode (shell or prompt)
+	mode      interpreterMode
+	savedMode interpreterMode // for coming back from history
+
+	// cancel interrupts the entire shell session
+	cancel func()
 }
 
 // RunAll is the entry point for the shell command
@@ -168,12 +131,37 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
-	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
+	if err := h.Initialize(ctx); err != nil {
+		return err
+	}
 
+	// Example: `dagger shell -c 'container | workdir'`
+	if shellCode != "" {
+		return h.run(ctx, strings.NewReader(shellCode), "")
+	}
+
+	// Use stdin only when no file paths are provided
+	if len(args) == 0 {
+		// Example: `dagger shell`
+		if isatty.IsTerminal(os.Stdin.Fd()) {
+			return h.runInteractive(ctx)
+		}
+		// Example: `echo 'container | workdir' | dagger shell`
+		return h.run(ctx, os.Stdin, "-")
+	}
+
+	// Example: `dagger shell job1.dsh job2.dsh`
+	for _, path := range args {
+		if err := h.runPath(ctx, path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	r, err := interp.New(
-		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
 		interp.Params("-e", "-u", "-o", "pipefail"),
 		interp.CallHandler(h.Call),
 		interp.ExecHandlers(h.Exec),
@@ -187,6 +175,9 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	}
 	h.runner = r
 
+	// collect initial env + vars
+	h.runner.Reset()
+
 	h.state = NewStateStore(h.runner)
 
 	// TODO: use `--workdir` and `--no-workdir` flags
@@ -199,7 +190,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	var cfg *configuredModule
 
 	if !shellNoLoadModule {
-		def, cfg, err = h.maybeLoadModule(ctx, ref)
+		def, cfg, err = h.maybeLoadModuleAndDeps(ctx, ref)
 		if err != nil {
 			return err
 		}
@@ -232,34 +223,15 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	}
 
 	h.registerCommands()
-
-	// Example: `dagger shell -c 'container | workdir'`
-	if shellCode != "" {
-		return h.run(ctx, strings.NewReader(shellCode), "")
-	}
-
-	// Use stdin only when no file paths are provided
-	if len(args) == 0 {
-		// Example: `dagger shell`
-		if isatty.IsTerminal(os.Stdin.Fd()) {
-			return h.runInteractive(ctx)
-		}
-		// Example: `echo 'container | workdir' | dagger shell`
-		return h.run(ctx, os.Stdin, "-")
-	}
-
-	// Example: `dagger shell job1.dsh job2.dsh`
-	for _, path := range args {
-		if err := h.runPath(ctx, path); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 func litWord(s string) *syntax.Word {
 	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
+}
+
+func (h *shellCallHandler) Eval(ctx context.Context, code string) error {
+	return h.run(ctx, strings.NewReader(code), "")
 }
 
 // run parses code and executes the interpreter's Runner
@@ -269,6 +241,10 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
+	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
+	interp.StdIO(nil, h.stdoutWriter, h.stderrWriter)(h.runner)
 	h.stdoutWriter.SetProcessFunc(h.stateResolver(ctx))
 
 	err = h.runner.Run(ctx, file)
@@ -324,75 +300,303 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	h.cancel = cancel
 
 	// give ourselves a blank slate by zooming into a passthrough span
-	shellCtx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
+	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	mu := &sync.Mutex{}
-	complete := &shellAutoComplete{h}
-	Frontend.Shell(shellCtx,
-		func(ctx context.Context, line string) (rerr error) {
-			mu.Lock()
-			defer mu.Unlock()
-
-			if line == "exit" {
-				cancel()
-				return nil
-			}
-
-			if strings.TrimSpace(line) == "" {
-				return nil
-			}
-
-			ctx, span := Tracer().Start(ctx, line)
-			defer telemetry.End(span, func() error { return rerr })
-
-			// redirect stdio to the current span
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-			defer stdio.Close()
-
-			stdoutW := newTerminalWriter(stdio.Stdout.Write)
-			// handle shell state
-			stdoutW.SetProcessFunc(h.stateResolver(ctx))
-			stderrW := newTerminalWriter(stdio.Stderr.Write)
-			interp.StdIO(nil, stdoutW, stderrW)(h.runner)
-
-			// Note: This may not be worth it as items will already be pruned
-			// when last used. We should only have orphans at this point if
-			// there's a variable that gets reset with a different value and
-			// that should hardly cause memory issues.
-			defer h.state.Prune()
-			if h.debug {
-				defer h.state.debug(ctx)
-			}
-
-			return h.run(ctx, strings.NewReader(line), "")
-		},
-		complete.Do,
-		h.prompt,
-	)
+	// Start the shell loop (either in LLM mode or normal shell mode)
+	Frontend.Shell(ctx, h)
 
 	return nil
 }
 
-func (h *shellCallHandler) prompt(out idtui.TermOutput, fg termenv.Color) string {
-	sb := new(strings.Builder)
+var _ idtui.ShellHandler = (*shellCallHandler)(nil)
 
-	if def, _ := h.GetModuleDef(nil); def != nil {
-		sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
-		sb.WriteString(out.String(" ").String())
+func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
+	// Quick sanitization
+	line = strings.TrimSpace(line)
+
+	// If in exit command
+	if line == "exit" || line == "/exit" {
+		h.cancel()
+		return nil
 	}
 
-	sb.WriteString(out.String(shellPromptSymbol).Bold().Foreground(fg).String())
-	sb.WriteString(out.String(out.String(" ").String()).String())
+	// Create a new span for this command
+	ctx, span := Tracer().Start(ctx, line,
+		trace.WithAttributes(
+			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+			attribute.Bool(telemetry.CanceledAttr, line == ""),
+		),
+	)
+	defer telemetry.End(span, func() error { return rerr })
 
-	return sb.String()
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
+
+	// Empty input
+	if line == "" {
+		return nil
+	}
+
+	// Handle based on mode
+	if h.mode == modePrompt {
+		llm, err := h.llm(ctx)
+		if err != nil {
+			return err
+		}
+		newLLM, err := llm.WithPrompt(ctx, line)
+		if err != nil {
+			return err
+		}
+		h.llmSession = newLLM
+		return nil
+	}
+
+	stdoutW := newTerminalWriter(stdio.Stdout.Write)
+	// handle shell state
+	stdoutW.SetProcessFunc(h.stateResolver(ctx))
+	stderrW := newTerminalWriter(stdio.Stderr.Write)
+	interp.StdIO(nil, stdoutW, stderrW)(h.runner)
+
+	// Note: This may not be worth it as items will already be pruned
+	// when last used. We should only have orphans at this point if
+	// there's a variable that gets reset with a different value and
+	// that should hardly cause memory issues.
+	defer h.state.Prune(ctx)
+	if h.debug {
+		defer h.state.debug(ctx)
+	}
+
+	// Run shell command
+	return h.run(ctx, strings.NewReader(line), "")
+}
+
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, tea.Cmd) {
+	sb := new(strings.Builder)
+
+	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
+
+	var init tea.Cmd
+
+	// Use LLM prompt if LLM session is active and in prompt mode
+	switch h.mode {
+	case modeShell:
+		if def, _ := h.GetModuleDef(nil); def != nil {
+			sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
+			sb.WriteString(out.String(" ").String())
+		}
+
+		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
+		sb.WriteString(out.String(out.String(" ").String()).String())
+	case modePrompt:
+		// initialize LLM session if not already initialized
+		llm, err := h.llmMaybe()
+		if err != nil {
+			sb.WriteString(out.String(err.Error()).Bold().Foreground(termenv.ANSIRed).String())
+			sb.WriteString(out.String(" ").String())
+		} else if llm != nil {
+			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
+			sb.WriteString(out.String(" ").String())
+		} else {
+			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
+			sb.WriteString(out.String(" ").String())
+			init = func() tea.Msg {
+				h.llm(ctx) // initialize LLM
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
+		sb.WriteString(out.String(out.String(" ").String()).String())
+	}
+
+	return sb.String(), init
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
 	_, err := fmt.Fprintln(hctx.Stdout, args...)
 	return err
+}
+
+func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
+	if h.mode == modePrompt {
+		word, wstart, wend := computil.FindWord(entireInput, line, col)
+		if strings.HasPrefix(word, "$") {
+			prefix := strings.TrimPrefix(word, "$")
+			vars := h.runner.Vars
+			var completions []string
+			for k := range vars {
+				if strings.HasPrefix(k, prefix) {
+					completions = append(completions, "$"+k)
+				}
+			}
+			return "", editline.SimpleWordsCompletion(completions, "variable", col, wstart, wend)
+		}
+		return "", nil
+	}
+
+	return (&shellAutoComplete{h}).Do(entireInput, line, col)
+}
+
+func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+	if h.mode == modePrompt {
+		return true // LLM prompt mode always considers input complete
+	}
+
+	// Regular shell mode
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
+}
+
+func (h *shellCallHandler) llmMaybe() (*LLMSession, error) {
+	h.llmL.Lock()
+	defer h.llmL.Unlock()
+	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
+	if s, e := h.llmMaybe(); s != nil || e != nil {
+		return s, e
+	}
+
+	// initialize without the lock held
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+
+	h.llmL.Lock()
+	defer h.llmL.Unlock()
+
+	if err != nil {
+		h.llmErr = err
+		return nil, err
+	}
+	h.llmSession = s
+	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case ">":
+		h.mode = modePrompt
+		return func() tea.Msg {
+			h.llm(ctx) // initialize LLM
+			return idtui.UpdatePromptMsg{}
+		}
+	case "!":
+		h.mode = modeShell
+		return func() tea.Msg {
+			return idtui.UpdatePromptMsg{}
+		}
+	}
+	return nil
+}
+
+func (h *shellCallHandler) EncodeHistory(entry string) string {
+	switch h.mode {
+	case modePrompt:
+		return ">" + entry
+	case modeShell:
+		return "!" + entry
+	}
+	return entry
+}
+
+func (h *shellCallHandler) DecodeHistory(entry string) string {
+	if len(entry) > 0 {
+		switch entry[0] {
+		case '*':
+			// Legacy format in history
+			h.mode = modePrompt
+			return entry[1:]
+		case '>':
+			h.mode = modePrompt
+			return entry[1:]
+		case '!':
+			h.mode = modeShell
+			return entry[1:]
+		default:
+			h.mode = modeUnset
+		}
+	}
+	return entry
+}
+
+func (h *shellCallHandler) SaveBeforeHistory() {
+	h.savedMode = h.mode
+}
+
+func (h *shellCallHandler) RestoreAfterHistory() {
+	h.mode = h.savedMode
+	h.savedMode = modeUnset
+}
+
+func (h *shellCallHandler) KeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
+			idtui.KeyEnabled(h.mode == modeShell),
+		),
+	}
+}
+
+func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
+	return &terminalWriter{
+		fn: fn,
+	}
+}
+
+// terminalWriter is a custom io.Writer that synchronously calls the handler's
+// withTerminal on each write from the runner
+type terminalWriter struct {
+	mu sync.Mutex
+	fn func([]byte) (int, error)
+
+	// processFn is a function that can be used to process the incoming data
+	// before writing to the terminal
+	//
+	// This can be used to resolve shell state just before printing to screen,
+	// and make necessary API requests.
+	processFn func([]byte) ([]byte, error)
+}
+
+func (o *terminalWriter) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if o.processFn != nil {
+		r, err := o.processFn(p)
+		if err != nil {
+			return 0, err
+		}
+		p = r
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.fn(p)
+}
+
+// Shell state is piped between exec handlers and only in the end the runner
+// writes the final output to the stdoutWriter. We need to check if that
+// state needs to be resolved into an API request and handle the response
+// appropriately. Note that this can happen in parallel if commands are
+// separated with a '&'.
+func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
+	o.processFn = fn
 }

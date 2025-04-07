@@ -51,7 +51,7 @@ import (
 )
 
 func init() {
-	apicaps.ExportedProduct = "buildkit"
+	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
 
 	//nolint:staticcheck // SA1019 deprecated
@@ -114,7 +114,10 @@ func addFlags(app *cli.App) {
 		cli.StringSliceFlag{
 			Name:  "addr",
 			Usage: "listening address (socket or tcp)",
-			Value: &cli.StringSlice{defaultConf.GRPC.Address[0]},
+			Value: func() *cli.StringSlice {
+				slice := cli.StringSlice(defaultConf.GRPC.Address)
+				return &slice
+			}(),
 		},
 		cli.StringFlag{
 			Name:  "group",
@@ -239,8 +242,7 @@ func main() { //nolint:gocyclo
 		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
 	}
 	app := cli.NewApp()
-	app.Name = "buildkitd"
-	app.Usage = "build daemon"
+	app.Name = "dagger-engine"
 	app.Version = version.Version
 
 	addFlags(app)
@@ -367,7 +369,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("creating engine lockfile")
-		lockPath := filepath.Join(root, "buildkitd.lock")
+		lockPath := filepath.Join(root, "dagger-engine.lock")
 		lock := flock.New(lockPath)
 		locked, err := lock.TryLock()
 		if err != nil {
@@ -468,7 +470,7 @@ func main() { //nolint:gocyclo
 	profiler.Attach(app)
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "buildkitd: %+v\n", err)
+		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)
 		os.Exit(1)
 	}
 }
@@ -482,6 +484,8 @@ func serveAPI(
 	if len(addrs) == 0 {
 		return errors.New("--addr cannot be empty")
 	}
+	addrs = removeDuplicates(addrs)
+
 	tlsConfig, err := serverCredentials(cfg.TLS)
 	if err != nil {
 		return err
@@ -523,6 +527,19 @@ func serveAPI(
 	return nil
 }
 
+// removeDuplicates removes duplicate items from the slice, preserving the original order
+func removeDuplicates[T comparable](in []T) (out []T) {
+	exists := map[T]struct{}{}
+	for _, v := range in {
+		if _, ok := exists[v]; ok {
+			continue
+		}
+		out = append(out, v)
+		exists[v] = struct{}{}
+	}
+	return out
+}
+
 //nolint:gocyclo
 func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	if c.IsSet("debug") {
@@ -536,7 +553,7 @@ func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	}
 
 	if c.IsSet("addr") || len(cfg.GRPC.Address) == 0 {
-		cfg.GRPC.Address = c.StringSlice("addr")
+		cfg.GRPC.Address = append(cfg.GRPC.Address, c.StringSlice("addr")...)
 	}
 
 	if c.IsSet("allow-insecure-entitlement") {

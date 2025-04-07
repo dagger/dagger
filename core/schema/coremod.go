@@ -35,6 +35,7 @@ func (m *CoreMod) View() (string, bool) {
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
+		&environmentSchema{dag}, // install environment middleware first
 		&directorySchema{dag},
 		&fileSchema{dag},
 		&gitSchema{dag},
@@ -50,6 +51,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&moduleSchema{dag},
 		&errorSchema{dag},
 		&engineSchema{dag},
+		&llmSchema{dag},
 	} {
 		schema.Install()
 	}
@@ -115,8 +117,10 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	return modType, true, nil
 }
 
-func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := SchemaIntrospectionJSON(ctx, m.Dag)
+func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.TypeDef, error) {
+	initialSchema := m.Dag.Schema()
+
+	introspectionJSON, err := SchemaIntrospectionJSON(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
 	}
@@ -128,6 +132,11 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
+		if _, has := initialSchema.Types[introspectionType.Name]; !has {
+			// we're only interested in types added by core
+			continue
+		}
+
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
 			typeDef := &core.ObjectTypeDef{

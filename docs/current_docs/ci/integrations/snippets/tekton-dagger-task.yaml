@@ -28,7 +28,7 @@ spec:
         exec:
           command: ["dagger", "core", "version"]
       volumeMounts:
-        - mountPath: /var/run/buildkit
+        - mountPath: /run/dagger
           name: dagger-socket
         - mountPath: /var/lib/dagger
           name: dagger-storage
@@ -43,11 +43,11 @@ spec:
       curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
       dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=.
     volumeMounts:
-      - mountPath: /var/run/dagger
+      - mountPath: /run/dagger
         name: dagger-socket
     env:
       - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
-        value: unix:///var/run/dagger/buildkitd.sock
+        value: unix:///run/dagger/engine.sock
       - name: DAGGER_CLOUD_TOKEN
         valueFrom:
           secretKeyRef:

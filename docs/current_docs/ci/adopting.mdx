@@ -4,7 +4,7 @@ slug: /ci/adopting
 
 # Dagger for CI: Day 2
 
-Once you have [completed the quickstart](quickstart), and learned the basic concepts, it's time to take the next step: adopting Dagger in your project. We call this *daggerizing*. But how does one daggerize a project, exactly?
+Once you have [completed the quickstart](../quickstart/ci/index.mdx), and learned the basic concepts, it's time to take the next step: adopting Dagger in your project. We call this *daggerizing*. But how does one daggerize a project, exactly?
 
 Every project is different, and every pipeline is a unique snowflake (usually that's not a good thing). So we can't give you an exact step-by-step guide of how to daggerize your project. But we can share the collective experience of the Dagger community, distilled into a simple framework.
 
@@ -66,13 +66,13 @@ When choosing the language to use for your pipeline, follow these principles:
 
 - *Optimize for participation*. The more people on the team are likely to participate in the development of the pipeline, the better.
 
-- *Check SDK availability*. Dagger offers three official SDKs (Python, Go, Typescript), but there are also several experimental and community SDKs, some of which are actively used in production despite not being officially supported. Take the time to investigate the status of [available SDKs](https://github.com/dagger/dagger/tree/main/sdk), and ask the community for their opinion. Our Discord server is a good place to start - each language has a dedicated channel.
+- *Check SDK availability*. Dagger offers three official SDKs (Python, Go, TypeScript), but there are also several [experimental and community SDKs](https://dagger.io/community-sdks), some of which are actively used in production despite not being officially supported. Take the time to investigate the status of [available SDKs](https://github.com/dagger/dagger/tree/main/sdk), and ask the community for their opinion. Our Discord server is a good place to start - each language has a dedicated channel.
 
 - *Polyglot pipelines for a polyglot stack*. If your team is divided in language siloes, consider writing a different module for each silo, each written in the ideal language. Dagger supports cross-language linking for exactly this reason - take advantage of it!
 
 ### Implementing
 
-If you haven't already, make sure to [complete the Quickstart](https://docs.dagger.io/quickstart), which will teach you how to daggerize an example pipeline.
+If you haven't already, make sure to [complete the Quickstart](../quickstart/ci/index.mdx), which will teach you how to daggerize an example pipeline.
 
 Additionally, you can use the following resources:
 

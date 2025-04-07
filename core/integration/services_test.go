@@ -1433,7 +1433,7 @@ func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
 		Tree().
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{".git", "README.md"}, entries)
+	require.Equal(t, []string{".git/", "README.md"}, entries)
 }
 
 func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
@@ -1462,7 +1462,7 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 
 		entries, err := repo.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{".git", "README.md"}, entries)
+		require.Equal(t, []string{".git/", "README.md"}, entries)
 	})
 }
 
@@ -1501,7 +1501,7 @@ func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testct
 
 	entries, err := useBoth.Directory("/repo").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{".git", "README.md"}, entries)
+	require.Equal(t, []string{".git/", "README.md"}, entries)
 
 	fileContent, err := useBoth.File("/index.html").Contents(ctx)
 	require.NoError(t, err)

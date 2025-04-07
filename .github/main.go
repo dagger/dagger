@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.16.2"
+	daggerVersion      = "v0.18.0"
 	upstreamRepository = "dagger/dagger"
-	defaultRunner      = "ubuntu-latest"
+	ubuntuVersion      = "24.04"
+	defaultRunner      = "ubuntu-" + ubuntuVersion
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 	timeoutMinutes     = 20
 )
@@ -72,7 +73,7 @@ func New() *CI {
 			ci.DaggerRunner,
 			false,
 			"docs",
-			"docs lint",
+			"check --targets=docs",
 		).
 		withWorkflow(
 			ci.GithubRunner,
@@ -149,7 +150,6 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk, command)).
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
 				Runner:        []string{SilverRunner(true)},
@@ -177,25 +177,30 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
-				// HACK: our main runners don't support cgroupsv2
-				Runner: []string{"ubuntu-latest"},
-				// NOTE: needed to silence redis warning logs in tests
-				SetupCommands: []string{"sudo sysctl -w vm.overcommit_memory=1"},
+				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
+				// @gerhard @matipan @jedevc have more details
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltPlatinumRunner()},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
+			}},
+			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
+			}},
+			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltPlatinumRunner()},
 			}},
 		}))
 
@@ -301,6 +306,27 @@ func Runner(
 	)
 }
 
+// Assemble an alternative runner name for a workflow
+func AltRunner(
+	cpus int,
+) string {
+	mem := cpus * 2
+	runner := fmt.Sprintf(
+		"nscloud-ubuntu-%s-amd64-%dx%d",
+		ubuntuVersion,
+		cpus,
+		mem)
+
+	// Fall back to default runner if repository is not upstream
+	// (this is GHA DSL and will be evaluated by the GHA runner)
+	return fmt.Sprintf(
+		"${{ github.repository == '%s' && '%s' || '%s' }}",
+		upstreamRepository,
+		runner,
+		defaultRunner,
+	)
+}
+
 // Bronze runner: Multi-tenant instance, 4 cpu
 func BronzeRunner(
 	// Enable docker-in-docker
@@ -335,4 +361,14 @@ func PlatinumRunner(
 	dind bool,
 ) string {
 	return Runner(3, daggerVersion, 32, true, dind)
+}
+
+// Alternative Gold runner: Single-tenant with Docker, 16 cpu
+func AltGoldRunner() string {
+	return AltRunner(16)
+}
+
+// Alternative Platinum runner: Single-tenant with Docker, 32 cpu
+func AltPlatinumRunner() string {
+	return AltRunner(32)
 }

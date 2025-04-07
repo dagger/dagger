@@ -7,22 +7,24 @@ pagination_prev: null
 # CLI Reference
 ## dagger
 
-A tool to run CI/CD pipelines in containers, anywhere
+A tool to run composable workflows in containers
 
 ```
-dagger [flags]
+dagger [options] [subcommand | file...]
 ```
 
 ### Options
 
 ```
-  -c, --code string                  Command to be executed
+      --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -c, --command string               Execute a dagger shell command
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -m, --mod string                   Path to the module directory. Either local path or a remote git repo
+      --model string                 LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')
   -E, --no-exit                      Leave the TUI running after completion
-  -n, --no-mod                       Don't load module during shell startup (mutually exclusive with --mod)
+  -M, --no-mod                       Don't load module during shell startup (mutually exclusive with --mod)
       --progress string              Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
@@ -58,9 +60,10 @@ dagger call [options]
 ### Options
 
 ```
-  -j, --json            Present result as JSON
-  -m, --mod string      Path to the module directory. Either local path or a remote git repo
-  -o, --output string   Save the result to a local file or directory
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -j, --json                Present result as JSON
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -o, --output string       Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
@@ -79,7 +82,7 @@ dagger call [options]
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger config
 
@@ -103,8 +106,9 @@ dagger config -m github.com/dagger/hello-dagger
 ### Options
 
 ```
-      --json         output in JSON format
-  -m, --mod string   Path to the module directory. Either local path or a remote git repo
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --json                output in JSON format
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -123,7 +127,7 @@ dagger config -m github.com/dagger/hello-dagger
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger core
 
@@ -156,7 +160,7 @@ dagger core [options]
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger develop
 
@@ -189,6 +193,7 @@ dagger develop [options]
 ### Options
 
 ```
+      --allow-llm strings        List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string[="skip"]   Engine API version to target (default "latest")
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Path to the module directory. Either local path or a remote git repo
@@ -212,7 +217,7 @@ dagger develop [options]
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger functions
 
@@ -233,7 +238,8 @@ dagger functions [options] [function]...
 ### Options
 
 ```
-  -m, --mod string   Path to the module directory. Either local path or a remote git repo
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -252,7 +258,7 @@ dagger functions [options] [function]...
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger init
 
@@ -303,7 +309,7 @@ dagger init --sdk=python
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger install
 
@@ -326,9 +332,10 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
-  -m, --mod string      Path to the module directory. Either local path or a remote git repo
-  -n, --name string     Name to use for the dependency in the module. Defaults to the name of the module being installed.
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -n, --name string         Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
 ### Options inherited from parent commands
@@ -347,7 +354,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger login
 
@@ -373,7 +380,7 @@ dagger login [options] [org]
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger logout
 
@@ -399,7 +406,7 @@ dagger logout
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger query
 
@@ -439,10 +446,11 @@ EOF
 ### Options
 
 ```
-      --doc string        Read query from file (defaults to reading from stdin)
-  -m, --mod string        Path to the module directory. Either local path or a remote git repo
-      --var strings       List of query variables, in key=value format
-      --var-json string   Query variables in JSON format (overrides --var)
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --doc string          Read query from file (defaults to reading from stdin)
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+      --var strings         List of query variables, in key=value format
+      --var-json string     Query variables in JSON format (overrides --var)
 ```
 
 ### Options inherited from parent commands
@@ -461,7 +469,7 @@ EOF
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger run
 
@@ -520,7 +528,7 @@ dagger run python main.py
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger uninstall
 
@@ -562,7 +570,7 @@ dagger uninstall hello
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger update
 
@@ -604,7 +612,7 @@ dagger update [options] <module>
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger version
 
@@ -636,5 +644,5 @@ dagger version
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 

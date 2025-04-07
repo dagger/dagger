@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,8 +30,7 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	}
 }
 
-type DaggerCMDSuite struct {
-}
+type DaggerCMDSuite struct{}
 
 func TestDaggerCMD(tt *testing.T) {
 	testctx.New(tt, Middleware()...).RunTests(DaggerCMDSuite{})
@@ -79,20 +77,23 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		`container <--$packages > | directory`,
 		`container | directory <--$expand >`,
 
-		// .deps builtin
-		`.deps | <$alpine >`,
-		`.deps | <a$lpine >`,
+		// TODO: These have been hidden. Uncomment when stable, or put them
+		// bethind a feature flag so they can be tested even if hidden.
 
-		// .stdlib builtin
-		`.stdlib | <$container >`,
-		`.stdlib | <con$tainer >`,
-		`.stdlib | container <--$platform >`,
-		`.stdlib | container | <dir$ectory >`,
-
-		// .core builtin
-		`.core | <con$tainer >`,
-		`.core | container <--$platform >`,
-		`.core | container | <dir$ectory >`,
+		// // .deps builtin
+		// `.deps | <$alpine >`,
+		// `.deps | <a$lpine >`,
+		//
+		// // .stdlib builtin
+		// `.stdlib | <$container >`,
+		// `.stdlib | <con$tainer >`,
+		// `.stdlib | container <--$platform >`,
+		// `.stdlib | container | <dir$ectory >`,
+		//
+		// // .core builtin
+		// `.core | <con$tainer >`,
+		// `.core | container <--$platform >`,
+		// `.core | container | <dir$ectory >`,
 
 		// FIXME: avoid inserting extra spaces
 		// `<contain$er> `,
@@ -118,11 +119,8 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	t.Cleanup(func() { client.Close() })
 
 	handler := &shellCallHandler{
-		dag:    client,
-		stdin:  nil,
-		stdout: io.Discard,
-		stderr: io.Discard,
-		debug:  debug,
+		dag:   client,
+		debug: debug,
 	}
 	require.NoError(t, handler.RunAll(ctx, nil))
 	autoComplete := shellAutoComplete{handler}

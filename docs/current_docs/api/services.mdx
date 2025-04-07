@@ -69,9 +69,23 @@ Here is an example of a Dagger Function that returns an HTTP service. This servi
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c get
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+get
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call get
 ```
+</TabItem>
+</Tabs>
 
 The result will be:
 
@@ -87,9 +101,23 @@ One use case is for testing, where you need to be able to spin up ephemeral data
 
 Here is another example call for the Dagger Function shown previously, this time exposing the HTTP service on the host
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'http-service | up'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+http-service | up
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call http-service up
 ```
+</TabItem>
+</Tabs>
 
 By default, each service port maps to the same port on the host - in this case, port 8080. The service can then be accessed by clients on the host. Here's an example:
 
@@ -103,11 +131,25 @@ The result will be:
 Hello, world!
 ```
 
-To specify a different mapping, use the additional `--ports` argument to `dagger call ... up` with a list of host/service port mappings. Here's an example, which exposes the service on host port 9000:
+To specify a different mapping, use the additional `--ports` argument with a list of host/service port mappings. Here's an example, which exposes the service on host port 9000:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'http-service | up --ports 9000:8080'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+http-service | up --ports 9000:8080
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call http-service up --ports 9000:8080
 ```
+</TabItem>
+</Tabs>
 
 :::note
 To bind ports randomly, use the `--random` argument.
@@ -164,9 +206,23 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'user-list tcp://localhost:3306'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+user-list tcp://localhost:3306
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call user-list --svc=tcp://localhost:3306
 ```
+</TabItem>
+</Tabs>
 
 The result will be:
 
@@ -222,9 +278,24 @@ In this example, service A and service B are set up with custom hostnames `svca`
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'services | up --ports 8080:80'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+services | up --ports 8080:80
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call services up --ports 8080:80
 ```
+</TabItem>
+</Tabs>
+
 
 ## Persist service state
 
@@ -268,10 +339,26 @@ This example uses Redis's `SAVE` command to save the service's data to a cache v
 
 Here is an example of using these Dagger Functions:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'set foo 123'
+dagger -c 'get foo'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+set foo 123
+get foo
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call set --key=foo --value=123
 dagger call get --key=foo
 ```
+</TabItem>
+</Tabs>
 
 The result will be:
 
@@ -286,7 +373,6 @@ Services are designed to be expressed as a Directed Acyclic Graph (DAG) with exp
 For example, this may be needed if the application in the service has certain behavior on shutdown (such as flushing data) that needs careful coordination with the rest of your logic.
 
 The following example explicitly starts the Redis service and stops it at the end, ensuring the 10 second grace period doesn't get in the way, without the need for a persistent cache volume:
-
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -362,9 +448,23 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c test
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+test
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call test
 ```
+</TabItem>
+</Tabs>
 
 The result will be:
 

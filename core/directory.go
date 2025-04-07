@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -21,6 +22,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -234,7 +236,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 			}, nil
 		}
 
-		return nil, fmt.Errorf("%s: no such file or directory", src)
+		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
 	}
 
 	return ref.StatFile(ctx, bkgw.StatRequest{
@@ -286,9 +288,18 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 		return nil, err
 	}
 
+	useSlash, err := SupportsDirSlash(ctx, dir.Query)
+	if err != nil {
+		return nil, err
+	}
+
 	paths := []string{}
 	for _, entry := range entries {
-		paths = append(paths, entry.GetPath())
+		path := entry.Path
+		if useSlash && os.FileMode(entry.Mode).IsDir() {
+			path += "/"
+		}
+		paths = append(paths, path)
 	}
 
 	return paths, nil
@@ -334,11 +345,16 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 		return nil, err
 	}
 
+	useSlash, err := SupportsDirSlash(ctx, dir.Query)
+	if err != nil {
+		return nil, err
+	}
+
 	var paths []string
 	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
 		IncludePattern: pattern,
 		Path:           dir.Dir,
-		Callback: func(path string, info *fstypes.Stat) error {
+		Callback: func(path string, info os.FileInfo) error {
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
 			// oh well, let's just fake it with false
@@ -346,6 +362,10 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
 			if err != nil {
 				return err
+			}
+
+			if useSlash && info.Mode().IsDir() {
+				path += "/"
 			}
 			if match {
 				paths = append(paths, path)
@@ -840,4 +860,12 @@ func validateFileName(file string) error {
 		return errors.Errorf("File name length exceeds the maximum supported 255 characters")
 	}
 	return nil
+}
+
+func SupportsDirSlash(ctx context.Context, query *Query) (bool, error) {
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return false, err
+	}
+	return engine.CheckVersionCompatibility(srv.View, "v0.17.0"), nil
 }

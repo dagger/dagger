@@ -74,6 +74,7 @@ func withEngine(
 		}
 
 		params.DisableHostRW = disableHostRW
+		params.AllowedLLMModules = allowedLLMModules
 
 		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
@@ -87,8 +88,16 @@ func withEngine(
 		params.EngineMetrics = telemetry.MetricExporters
 
 		params.WithTerminal = withTerminal
+
+		params.Stdin = os.Stdin
+		params.Stdout = os.Stdout
+
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
+
+		if hasTTY {
+			params.PromptHandler = Frontend
+		}
 
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)

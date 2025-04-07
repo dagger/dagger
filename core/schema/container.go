@@ -703,8 +703,8 @@ func (s *containerSchema) Install() {
 				`This currently works for Nvidia devices only.`),
 	}.Install(s.srv)
 
-	dagql.Fields[*coreTerminalLegacy]{
-		Syncer[*coreTerminalLegacy]().
+	dagql.Fields[*core.TerminalLegacy]{
+		Syncer[*core.TerminalLegacy]().
 			Doc(`Forces evaluation of the pipeline in the engine.`,
 				`It doesn't run the default command if no exec has been set.`),
 
@@ -809,9 +809,16 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
+
+	buildctxDir, err := applyDockerIgnore(ctx, s.srv, dir, args.Dockerfile)
+	if err != nil {
+		return nil, err
+	}
+
 	return parent.Build(
 		ctx,
 		dir.Self,
+		buildctxDir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -2146,7 +2153,7 @@ func (s *containerSchema) terminalLegacy(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
-) (*coreTerminalLegacy, error) {
+) (*core.TerminalLegacy, error) {
 	// HACK: when attempting to construct a legacy terminal, just spin up a new
 	// terminal attachable. The returned terminal is definitely invalid, but,
 	// the intention was probably to debug it anyways, so we're probably okay.
@@ -2178,26 +2185,9 @@ func (s *containerSchema) terminalLegacy(
 	if err != nil {
 		return nil, err
 	}
-	return &coreTerminalLegacy{}, nil
+	return &core.TerminalLegacy{}, nil
 }
 
-type coreTerminalLegacy struct{}
-
-func (*coreTerminalLegacy) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Terminal",
-		NonNull:   true,
-	}
-}
-
-func (*coreTerminalLegacy) TypeDescription() string {
-	return "An interactive terminal that clients can connect to."
-}
-
-func (*coreTerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
-}
-
-func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *coreTerminalLegacy, args struct{}) (string, error) {
+func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
 	return "", nil
 }

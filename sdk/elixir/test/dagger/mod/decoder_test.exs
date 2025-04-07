@@ -18,7 +18,7 @@ defmodule Dagger.Mod.DecoderTest do
     end
 
     test "decode optional", %{dag: dag} do
-      assert {:ok, nil} = Decoder.decode(json(nil), {:optional, :string}, dag)
+      assert {:ok, nil} = Decoder.decode(nil, {:optional, :string}, dag)
       assert {:ok, "hello"} = Decoder.decode(json("hello"), {:optional, :string}, dag)
     end
 
@@ -28,6 +28,18 @@ defmodule Dagger.Mod.DecoderTest do
 
       # Ensure the client (`dag`) is passing through the Nestru correctly.
       assert {:ok, _} = Dagger.Container.sync(container)
+    end
+
+    test "decode struct", %{dag: dag} do
+      assert {:ok, %ObjectDecoder{value: "v", object_field: %ObjectField{name: "dag"}}} =
+               Decoder.decode(
+                 json(%{"value" => "v", "object_field" => %{"name" => "dag"}}),
+                 ObjectDecoder,
+                 dag
+               )
+
+      assert {:ok, %ObjectDecodeId{}} =
+               Decoder.decode(json(%{container: container_id(dag)}), ObjectDecodeId, dag)
     end
 
     test "decode error", %{dag: dag} do

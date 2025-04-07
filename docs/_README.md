@@ -63,7 +63,7 @@ This will install all dependencies, start the docs web server locally and open [
 
 ```console
 # test PR 7422
-dagger call -m github.com/dagger/dagger@pull/7422/head --source https://github.com/dagger/dagger#pull/7422/head docs server as-service up
+dagger call -m github.com/dagger/dagger/docs@pull/7422/head docs server as-service up
 
 ## get markdown lint report for PR 7422
 dagger call -m github.com/dagger/dagger/linters/markdown \

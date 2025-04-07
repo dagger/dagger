@@ -325,7 +325,7 @@ Dagger compiles for AMD64, ARM64, and ARM architectures only.
     }
 
     # If the user does not provide a version, we will find the latest version
-    if ("" -eq $DaggerVersion) {
+    if ([string]::IsNullOrWhiteSpace($DaggerVersion)) {
         $DaggerVersion = Find-LatestVersion
     } else {
         $DaggerVersion = Find-Version

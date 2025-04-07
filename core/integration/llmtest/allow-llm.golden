@@ -1,0 +1,20 @@
+[
+  {
+    "role": "user",
+    "content": "greet me",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "Hello! How can I assist you today?",
+    "token_usage": {
+      "InputTokens": 49,
+      "OutputTokens": 11,
+      "TotalTokens": 60
+    }
+  }
+]

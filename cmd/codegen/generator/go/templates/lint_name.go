@@ -120,4 +120,5 @@ var commonInitialisms = map[string]bool{
 	// Custom added for dagger
 	"FS":  true,
 	"SDK": true,
+	"LLM": true,
 }

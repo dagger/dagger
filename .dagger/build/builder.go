@@ -298,34 +298,21 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 }
 
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
-	base := dag.Go(build.source).Env().With(build.goPlatformEnv)
-	ldflags := []string{
-		"-s", "-w",
-	}
+	var values []string
 	if version && build.version != "" {
-		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version)
+		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
 	}
 	if version && build.tag != "" {
-		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Tag="+build.tag)
+		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
 	}
-
-	output := filepath.Join("./bin/", filepath.Base(pkg))
-	buildArgs := []string{
-		"go", "build",
-		"-o", output,
-		"-ldflags", strings.Join(ldflags, " "),
-	}
-	if race {
-		// -race requires cgo
-		base = base.WithEnvVariable("CGO_ENABLED", "1")
-		buildArgs = append(buildArgs, "-race")
-	}
-	buildArgs = append(buildArgs, pkg)
-
-	result := base.
-		WithExec(buildArgs).
-		File(output)
-	return result
+	return dag.Go(build.source, dagger.GoOpts{
+		Values: values,
+		Race:   race,
+	}).Binary(pkg, dagger.GoBinaryOpts{
+		Platform:  build.platform,
+		NoSymbols: true,
+		NoDwarf:   true,
+	})
 }
 
 func (build *Builder) runcBin() *dagger.File {

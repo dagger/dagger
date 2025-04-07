@@ -294,3 +294,8 @@ func DagOpFromContext[T buildkit.CustomOp](ctx context.Context) (t T, ok bool) {
 	}
 	return t, ok
 }
+
+func DagOpInContext[T buildkit.CustomOp](ctx context.Context) bool {
+	_, ok := DagOpFromContext[T](ctx)
+	return ok
+}

@@ -60,6 +60,10 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &platformValue{}
 	case Socket:
 		return &socketValue{}
+	case GitRepository:
+		return &gitRepositoryValue{}
+	case GitRef:
+		return &gitRefValue{}
 	}
 	return nil
 }
@@ -322,23 +326,11 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 				}), nil
 	}
 
-	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
+	// Otherwise it's a local dir path
 	path := v.String()
-	path = strings.TrimPrefix(path, "file://")
-
-	homeDir, err := os.UserHomeDir()
+	path, err = getLocalPath(path)
 	if err != nil {
 		return nil, err
-	}
-	path, err = pathutil.ExpandHomeDir(homeDir, path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand home directory: %w", err)
-	}
-	if !filepath.IsAbs(path) {
-		path, err = pathutil.Abs(path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
-		}
 	}
 
 	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
@@ -403,8 +395,7 @@ func (v *fileValue) String() string {
 }
 
 func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	vStr := v.String()
-	if vStr == "" {
+	if v.String() == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
 	}
 
@@ -432,26 +423,14 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		return gitDir.File(path), nil
 	}
 
-	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
-	vStr = strings.TrimPrefix(vStr, "file://")
-	if !filepath.IsAbs(vStr) {
-		var err error
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		vStr, err = pathutil.ExpandHomeDir(homeDir, vStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to expand home directory: %w", err)
-		}
-		vStr, err = pathutil.Abs(vStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
-		}
+	// Otherwise it's a local file path
+	path := v.String()
+	path, err = getLocalPath(path)
+	if err != nil {
+		return nil, err
 	}
 
-	vStr = filepath.ToSlash(vStr) // make windows paths usable in the Linux engine container
-	return dag.Host().File(vStr), nil
+	return dag.Host().File(path), nil
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
@@ -742,6 +721,105 @@ func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.M
 	return v.platform, nil
 }
 
+type gitRepositoryValue struct {
+	address string
+}
+
+func (v *gitRepositoryValue) Type() string {
+	return GitRepository
+}
+
+func (v *gitRepositoryValue) String() string {
+	return v.address
+}
+
+func (v *gitRepositoryValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("git repository address cannot be empty")
+	}
+	v.address = s
+	return nil
+}
+
+func (v *gitRepositoryValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	if v.String() == "" {
+		return nil, fmt.Errorf("git repository address cannot be empty")
+	}
+
+	// Try parsing as a Git URL
+	gitURL, err := parseGitURL(v.String())
+	if err == nil {
+		if gitURL.Fragment.Ref != "" {
+			return nil, fmt.Errorf("git repository cannot contain ref")
+		}
+		if gitURL.Fragment.Subdir != "" {
+			return nil, fmt.Errorf("git repository cannot contain subdir")
+		}
+		return dag.Git(gitURL.Remote), nil
+	}
+
+	// Otherwise it's a local dir path
+	path := v.String()
+	path, err = getLocalPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Host().Directory(path).AsGit(), nil
+}
+
+type gitRefValue struct {
+	address string
+}
+
+func (v *gitRefValue) Type() string {
+	return GitRef
+}
+
+func (v *gitRefValue) String() string {
+	return v.address
+}
+
+func (v *gitRefValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("git ref address cannot be empty")
+	}
+	v.address = s
+	return nil
+}
+
+func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	if v.String() == "" {
+		return nil, fmt.Errorf("git ref address cannot be empty")
+	}
+
+	// Try parsing as a Git URL
+	gitURL, err := parseGitURL(v.String())
+	if err == nil {
+		if gitURL.Fragment.Subdir != "" {
+			return nil, fmt.Errorf("git repository cannot contain subdir")
+		}
+		repo := dag.Git(gitURL.Remote)
+		if ref := gitURL.Fragment.Ref; ref != "" {
+			return repo.Ref(ref), nil
+		}
+		return repo.Head(), nil
+	}
+
+	// Otherwise it's a local dir path
+	path, ref, _ := strings.Cut(v.String(), "#")
+	path, err = getLocalPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	repo := dag.Host().Directory(path).AsGit()
+	if ref != "" {
+		return repo.Ref(ref), nil
+	}
+	return repo.Head(), nil
+}
+
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
 //
@@ -996,4 +1074,29 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
+}
+
+func getLocalPath(path string) (string, error) {
+	// allow `file://` scheme or no scheme
+	path = strings.TrimPrefix(path, "file://")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path, err = pathutil.ExpandHomeDir(homeDir, path)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand home directory: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		path, err = pathutil.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+	}
+
+	// make windows paths usable in the Linux engine container
+	path = filepath.ToSlash(path)
+
+	return path, nil
 }

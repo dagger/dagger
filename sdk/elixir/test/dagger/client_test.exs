@@ -347,6 +347,6 @@ defmodule Dagger.ClientTest do
              |> Directory.with_directory("/", dir)
              |> Directory.entries()
 
-    assert entries == ["abcd"]
+    assert entries == ["abcd/"]
   end
 end

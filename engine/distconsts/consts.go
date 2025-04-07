@@ -7,6 +7,8 @@ package distconsts
 
 const (
 	EngineContainerName = "dagger-engine.dev"
+
+	DefaultEngineSockAddr = "unix:///run/dagger/engine.sock"
 )
 
 const (

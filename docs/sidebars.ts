@@ -15,6 +15,9 @@ module.exports = {
       items: [
         "features/programmable-pipelines",
         "features/modules",
+        "features/shell",
+        "features/llm",
+        "features/mcp",
         "features/caching",
         "features/debugging",
         "features/services",
@@ -28,58 +31,19 @@ module.exports = {
       id: "install",
     },
     {
-      type: "doc",
-      label: "Dagger for AI Agents",
-      id: "agents",
+      type: "category",
+      label: "Quickstart",
+      items: [
+        "quickstart/basics/index",
+        "quickstart/agent/index",
+        "quickstart/ci/index",
+        "ci/adopting",
+      ],
     },
     {
-      type: "category",
-      label: "Dagger for CI",
-      items: [
-        {
-          type: "category",
-          label: "Quickstart",
-          link: {
-            type: "doc",
-            id: "ci/quickstart/index",
-          },
-          items: [
-            "ci/quickstart/cli",
-            "ci/quickstart/daggerize",
-            "ci/quickstart/env",
-            "ci/quickstart/test",
-            "ci/quickstart/build",
-            "ci/quickstart/publish",
-            "ci/quickstart/simplify",
-            "ci/quickstart/conclusion",
-          ],
-        },
-        {
-          type: "doc",
-          label: "Day 2",
-          id: "ci/adopting",
-        },
-        {
-          type: "category",
-          label: "Integrating with CI",
-          link: {
-            type: "doc",
-            id: "ci/integrations/ci",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "ci/integrations/argo-workflows",
-            "ci/integrations/aws-codebuild",
-            "ci/integrations/azure-pipelines",
-            "ci/integrations/circleci",
-            "ci/integrations/github-actions",
-            "ci/integrations/gitlab",
-            "ci/integrations/jenkins",
-            "ci/integrations/tekton",
-          ],
-        },
-      ],
+      type: "doc",
+      label: "Examples",
+      id: "examples",
     },
     {
       type: "category",
@@ -95,7 +59,9 @@ module.exports = {
         "api/chaining",
         "api/cache-volumes",
         "api/secrets",
+        "api/llm",
         "api/terminal",
+        "api/engine",
         {
           type: "category",
           label: "Calling the API",
@@ -125,7 +91,6 @@ module.exports = {
             "api/interfaces",
             "api/custom-types",
             "api/state",
-            "api/engine",
           ],
         },
         {
@@ -136,6 +101,7 @@ module.exports = {
           items: [
             "api/module-structure",
             "api/remote-modules",
+            "api/module-tests",
             "api/daggerverse",
             {
               type: "link",
@@ -195,6 +161,26 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        {
+          type: "category",
+          label: "CI",
+          link: {
+            type: "doc",
+            id: "ci/integrations/ci",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "ci/integrations/argo-workflows",
+            "ci/integrations/aws-codebuild",
+            "ci/integrations/azure-pipelines",
+            "ci/integrations/circleci",
+            "ci/integrations/github-actions",
+            "ci/integrations/gitlab",
+            "ci/integrations/jenkins",
+            "ci/integrations/tekton",
+          ],
+        },
         "ci/integrations/github",
         "ci/integrations/google-cloud-run",
         "ci/integrations/kubernetes",
@@ -214,6 +200,7 @@ module.exports = {
       collapsed: true,
       items: [
         "configuration/engine",
+        "configuration/llm",
         "configuration/custom-runner",
         "configuration/custom-ca",
         "configuration/proxy",

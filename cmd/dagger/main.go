@@ -1,14 +1,18 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
 	"os/signal"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -98,6 +102,7 @@ func init() {
 		newGenCmd(),
 		shellCmd,
 		clientCmd,
+		mcpCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)
@@ -122,9 +127,11 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:           "dagger",
-	Short:         "A tool to run CI/CD pipelines in containers, anywhere",
-	SilenceErrors: true, // handled in func main() instead
+	Use:                   "dagger [options] [subcommand | file...]",
+	Short:                 "A tool to run composable workflows in containers",
+	SilenceErrors:         true, // handled in func main() instead
+	DisableFlagsInUseLine: true,
+	Args:                  cobra.ArbitraryArgs,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -186,9 +193,37 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 && !isFile(args[0]) {
+			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+		}
 		cmd.SetArgs(append([]string{"shell"}, args...))
 		return cmd.Execute()
 	},
+}
+
+func isFile(name string) bool {
+	info, err := os.Stat(name)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func findSuggestions(c *cobra.Command, arg string) string {
+	if c.DisableSuggestions {
+		return ""
+	}
+	if c.SuggestionsMinimumDistance <= 0 {
+		c.SuggestionsMinimumDistance = 2
+	}
+	var sb strings.Builder
+	if suggestions := c.SuggestionsFor(arg); len(suggestions) > 0 {
+		sb.WriteString("\n\nDid you mean this?\n")
+		for _, s := range suggestions {
+			_, _ = fmt.Fprintf(&sb, "\t%v\n", s)
+		}
+	}
+	return sb.String()
 }
 
 func checkForUpdates(ctx context.Context, w io.Writer) {
@@ -481,12 +516,21 @@ func wrapCmdDescription(name, short string, padding int) string {
 }
 
 func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
+	return nameShortWrappedIter(func(yield func(string, string) bool) {
+		for _, v := range s {
+			if !yield(f(v)) {
+				return
+			}
+		}
+	})
+}
+
+func nameShortWrappedIter(s iter.Seq2[string, string]) string {
 	minPadding := 11
 	maxLen := 0
 	lines := []string{}
 
-	for _, e := range s {
-		name, short := f(e)
+	for name, short := range Sorted2(s) {
 		nameLen := len(name)
 		if nameLen > maxLen {
 			maxLen = nameLen
@@ -508,6 +552,18 @@ func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// Sorted2 returns a new Seq2 iterator ordered by the first element.
+func Sorted2[K cmp.Ordered, V any](x iter.Seq2[K, V]) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		m := maps.Collect(x)
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			if !yield(k, m[k]) {
+				return
+			}
+		}
+	}
 }
 
 // toUpperBold returns the given string in uppercase and bold.

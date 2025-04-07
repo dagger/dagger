@@ -39,7 +39,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 	if err != nil {
 		return nil, err
 	}
-	if slices.Contains(entries, ".git") {
+	if slices.Contains(entries, ".git/") {
 		valid = true
 	}
 

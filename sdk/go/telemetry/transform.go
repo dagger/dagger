@@ -442,7 +442,7 @@ func KeyValues(attrs []attribute.KeyValue) []*otlpcommonv1.KeyValue {
 	return out
 }
 
-// linksFromPB transforms span Links to OTLP span linksFromPB.
+// SpanLinksToPB transforms span Links to OTLP span linksFromPB.
 func SpanLinksToPB(links []sdktrace.Link) []*otlptracev1.Span_Link {
 	if len(links) == 0 {
 		return nil
@@ -1027,7 +1027,7 @@ func ResourceMetricsFromPB(pbResourceMetrics *otlpmetricsv1.ResourceMetrics) (*m
 	return resourceMetrics, nil
 }
 
-// ResourceMetrics returns an OTLP ResourceMetrics generated from rm. If rm
+// ResourceMetricsToPB returns an OTLP ResourceMetrics generated from rm. If rm
 // contains invalid ScopeMetrics, an error will be returned along with an OTLP
 // ResourceMetrics that contains partial OTLP ScopeMetrics.
 func ResourceMetricsToPB(rm *metricdata.ResourceMetrics) (*otlpmetricsv1.ResourceMetrics, error) {
@@ -1059,7 +1059,7 @@ func ScopeMetricsFromPB(pbScopeMetrics []*otlpmetricsv1.ScopeMetrics) ([]metricd
 	return scopeMetrics, errs
 }
 
-// ScopeMetrics returns a slice of OTLP ScopeMetrics generated from sms. If
+// ScopeMetricsToPB returns a slice of OTLP ScopeMetrics generated from sms. If
 // sms contains invalid metric values, an error will be returned along with a
 // slice that contains partial OTLP ScopeMetrics.
 func ScopeMetricsToPB(sms []metricdata.ScopeMetrics) ([]*otlpmetricsv1.ScopeMetrics, error) {

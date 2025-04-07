@@ -150,6 +150,21 @@ defmodule Dagger.Directory do
     }
   end
 
+  @doc "Retrieves this directory as per exclude/include filters."
+  @spec filter(t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) :: Dagger.Directory.t()
+  def filter(%__MODULE__{} = directory, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("filter")
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
   @doc "Returns a list of files and directories that matche the given pattern."
   @spec glob(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}
   def glob(%__MODULE__{} = directory, pattern) do

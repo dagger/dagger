@@ -316,12 +316,27 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	}
 }
 
-func unwrapError(rerr error) string {
+func convertError(rerr error) *dagger.Error {
 	var gqlErr *gqlerror.Error
 	if errors.As(rerr, &gqlErr) {
-		return gqlErr.Message
+		dagErr := dag.Error(gqlErr.Message)
+		if gqlErr.Extensions != nil {
+			keys := make([]string, 0, len(gqlErr.Extensions))
+			for k := range gqlErr.Extensions {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				val, err := json.Marshal(gqlErr.Extensions[k])
+				if err != nil {
+					fmt.Println("failed to marshal error value:", err)
+				}
+				dagErr = dagErr.WithValue(k, dagger.JSON(val))
+			}
+		}
+		return dagErr
 	}
-	return rerr.Error()
+	return dag.Error(rerr.Error())
 }
 
 func dispatch(ctx context.Context) (rerr error) {
@@ -340,7 +355,7 @@ func dispatch(ctx context.Context) (rerr error) {
 	fnCall := dag.CurrentFunctionCall()
 	defer func() {
 		if rerr != nil {
-			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(unwrapError(rerr))); err != nil {
+			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
 				fmt.Println("failed to return error:", err)
 			}
 		}

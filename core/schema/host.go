@@ -39,7 +39,7 @@ func (s *hostSchema) Install() {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.Func("builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
+		dagql.Func("_builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
 			Digest string `doc:"Digest of the image manifest"`
 		}) (*core.Container, error) {
 			st := llb.OCILayout(

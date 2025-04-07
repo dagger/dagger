@@ -4,7 +4,7 @@
 # the engine in the host's docker runtime.
 
 # HACK: strip "build" from the script path to get the parent module
-.use ${0%/build}/..
+.cd ${0%/build}/..
 
 CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
 VOLUME=$CONTAINER
@@ -25,8 +25,8 @@ engine |\
         ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     start \
         --name=$CONTAINER \
+        ${DAGGER_EXTRA_HOSTS:+--extra-hosts=${DAGGER_EXTRA_HOSTS-}} \
         ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
         ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
 
 _wait
-

@@ -3,6 +3,17 @@ fullnameOverride: ""
 
 engine:
   ### Customize your Dagger Engine
+  # https://docs.dagger.io/configuration/engine/#configuration
+  #
+  # configJson: |
+  #   {
+  #     "logLevel": "info"
+  #   }
+
+  ### Alternative: Configure Dagger Engine using TOML format.
+  #   Configuration using json should be the default choice, and will take
+  #   precedence over toml if both are provided, however you can use toml for
+  #   any settings that are not supported in the json format.
   #   https://github.com/moby/buildkit/blob/5997099827e676c4b6ce5774c98ade2483e0afe7/cmd/buildkitd/config/config.go
   #
   # config: |
@@ -24,9 +35,43 @@ engine:
   # Set to `StatefulSet` for running multiple Engines per K8s node
   kind: DaemonSet
 
-  ### Customize Dagger Engine start args
+  ### StatefulSet specific configuration
   #
+  statefulSet:
+    # PVC retention policy (applies to all PVCs)
+    # Only available in Kubernetes 1.23+
+    persistentVolumeClaimRetentionPolicy:
+      # Options: Delete, Retain
+      whenDeleted: Retain
+      # Options: Delete, Retain
+      whenScaled: Retain
+
+    # Use PersistentVolumeClaim for data volume
+    persistentVolumeClaim:
+      enabled: false
+      # PVC specifications
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+
+    # Controls how pods are created during initial scale up,
+    # when replacing pods, and when scaling down.
+    # Options: OrderedReady, Parallel (default: OrderedReady)
+    podManagementPolicy: OrderedReady
+
+  ### Configure the port settings for the Dagger Engine
+  #
+  # port: 1234 # The container port that the Dagger Engine will listen on.
+  # hostPort: 1234    # Optional: Expose the engine port directly on the host node
+
+  ### Customize Dagger Engine start args
   args: []
+
+  ### Customize Dagger Engine environment variables
+  env: []
 
   resources:
     limits: {}
@@ -51,6 +96,8 @@ engine:
   # imagePullSecrets:
   #   - name: image-pull-secret
 
+  # nodeSelector:
+  #   app: dagger
 
   ### Set taints & tolerations for this workload
   #
@@ -69,7 +116,7 @@ engine:
   ### Set priorityClassName to avoid eviction
   priorityClassName: ""
 
-  readinessProbeSettings: 
+  readinessProbeSettings:
     initialDelaySeconds: 5
     timeoutSeconds: 14
     periodSeconds: 15
@@ -86,8 +133,50 @@ engine:
     create: false
     annotations: []
 
-  existingServiceAccount: {}
+  existingServiceAccount:
+    {}
     # name: "default"
+
+  ### Configure lifecycle hooks for the Dagger Engine
+  #
+  lifecycle:
+    # PreStop hook executed before container termination
+    preStop:
+      # exec:
+      #   command: ["/bin/sh", "-c", "sleep 10"]  # Example: graceful shutdown delay
+
+  ### HostPath Volume configuration
+  #
+  hostPath:
+    # Use hostPath for data volume
+    dataVolume:
+      # When disabled, PVC will be used if configured above
+      enabled: true
+
+    # Use hostPath for run volume
+    runVolume:
+      # When disabled, no run volume will be mounted
+      enabled: true
+
+  ### Additional volumes to mount in the Dagger Engine container
+  #
+  # Additional volume mounts for the container
+  volumeMounts: []
+  # - name: config-volume
+  #   mountPath: /etc/config
+  # - name: cache-volume
+  #   mountPath: /var/cache
+
+  # Additional volumes for the pod
+  volumes: []
+  # - name: config-volume
+  #   configMap:
+  #     name: my-config
+  # - name: cache-volume
+  #   emptyDir: {}
+  # - name: shared-data
+  #   persistentVolumeClaim:
+  #     claimName: my-pvc
 
 magicache:
   enabled: false

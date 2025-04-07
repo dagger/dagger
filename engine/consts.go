@@ -1,8 +1,12 @@
 package engine
 
+import "github.com/dagger/dagger/engine/distconsts"
+
 const (
 	EngineImageRepo = "registry.dagger.io/engine"
 	Package         = "github.com/dagger/dagger"
+
+	DefaultEngineSockAddr = distconsts.DefaultEngineSockAddr
 
 	DaggerNameEnv = "_EXPERIMENTAL_DAGGER_ENGINE_NAME"
 

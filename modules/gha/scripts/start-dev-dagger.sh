@@ -23,7 +23,12 @@ if ! [[ -x "$(command -v dagger)" ]]; then
 fi
 
 $DAGGER_SOURCE/hack/build
-export PATH=$DAGGER_SOURCE/bin:$PATH
+export PATH=$(realpath ./bin):$PATH
 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
 echo "::endgroup::"

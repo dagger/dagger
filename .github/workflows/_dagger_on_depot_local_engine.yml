@@ -37,12 +37,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
       - name: ${{ inputs.function }}
-        uses: ./.github/actions/call
+        uses: ./.github/actions/call-ci-alt-runner
         with:
           function: ${{ inputs.function }}
           dev-engine: ${{ inputs.dev }}
       - name: ${{ inputs.function }} (CACHE TEST)
-        uses: ./.github/actions/call
+        uses: ./.github/actions/call-ci-alt-runner
         with:
           function: ${{ inputs.function }}
           dev-engine: ${{ inputs.dev }}

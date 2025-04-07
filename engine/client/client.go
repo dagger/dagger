@@ -87,7 +87,13 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
-	ServeModule bool
+	ServeModule       bool
+	AllowedLLMModules []string
+
+	PromptHandler session.PromptHandler
+
+	Stdin  io.Reader
+	Stdout io.Writer
 }
 
 type Client struct {
@@ -350,8 +356,10 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTunnelListenerAttachable(ctx),
 		// terminal
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
-		// Git credentials
-		session.NewGitCredentialAttachable(ctx),
+		// Git attachable
+		session.NewGitAttachable(ctx),
+		// pipe
+		session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout),
 	}
 	// filesync
 	if !c.DisableHostRW {
@@ -360,6 +368,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			return fmt.Errorf("new filesyncer: %w", err)
 		}
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
+	}
+	if c.Params.PromptHandler != nil {
+		attachables = append(attachables, session.NewPromptAttachable(c.Params.PromptHandler))
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")
@@ -1119,6 +1130,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		AllowedLLMModules:         c.AllowedLLMModules,
 	}
 }
 

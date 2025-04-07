@@ -11,7 +11,7 @@ export class Commands {
 
   @func()
   run(args: string[]): Container {
-    return this.ctr.withExec(["run", ...args])
+    return this.ctr.withExec(["run", ...args], { useEntrypoint: true })
   }
 
   @func()

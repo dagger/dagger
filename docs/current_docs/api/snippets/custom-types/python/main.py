@@ -20,7 +20,7 @@ class Organization:
 
 
 @object_type
-class Github:
+class MyModule:
     @function
     def dagger_organization(self) -> Organization:
         url = "https://github.com/dagger"

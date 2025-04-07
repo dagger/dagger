@@ -49,34 +49,93 @@ When working with private Git repositories, ensure that [SSH authentication is p
 
 - Copy the `/myapp` host directory to `/src` in the container and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-directory --source=./myapp/
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-directory --source=github.com/dagger/dagger#main
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-directory --source=ssh://git@github.com/user/foo#main
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-directory --source=https://github.com/dagger/dagger#main  directory --path=/src entries
+    dagger -c 'copy-directory https://github.com/dagger/dagger#main | directory /src | entries'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Modify a copied directory or remote repository in a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::note
-Modifications made to a directory's contents after it is written to a container filesystem do not appear on the source. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory back to the host filesystem.
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
 :::
 
 :::note
@@ -114,27 +173,86 @@ When working with private Git repositories, ensure that [SSH authentication is p
 
 - Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-and-modify-directory --source=./myapp/
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-and-modify-directory --source=github.com/dagger/dagger#main
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the private `user/foo` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-and-modify-directory --source=ssh://git@github.com/user/foo#main
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-and-modify-directory --source=https://github.com/dagger/dagger#main directory --path=/src entries
+    dagger -c 'copy-and-modify-directory https://github.com/dagger/dagger#main | directory /src | entries'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-and-modify-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Clone a remote Git repository into a container by branch, tag or commit
 
@@ -175,21 +293,75 @@ When working with private Git repositories, ensure that [SSH authentication is p
 
 - Clone the `main` branch of the public `dagger/dagger` GitHub repository to `/src` in the container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'clone https://github.com/dagger/dagger BRANCH main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone https://github.com/dagger/dagger BRANCH main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --ref=main
     ```
+    </TabItem>
+    </Tabs>
 
 - Clone the public `dagger/dagger` GitHub repository at tag `v0.12.1` to `/src` in the container and list the contents of the `CHANGELOG.md` file in the repository root directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 file --path=/src/CHANGELOG.md contents
+    dagger <<EOF
+    clone https://github.com/dagger/dagger TAG v0.12.1 |
+      file /src/CHANGELOG.md |
+      contents
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone https://github.com/dagger/dagger TAG v0.12.1 | file /src/CHANGELOG.md | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 \
+      file --path=/src/CHANGELOG.md \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
 
 - Clone the public `dagger/dagger` GitHub repository at commit id  `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 terminal
+    dagger <<EOF
+    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 |
+      terminal
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 | terminal
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 \
+      terminal
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Copy a local or remote file to a container
 
@@ -220,31 +392,97 @@ The following Dagger Function accepts a `File` argument, which could reference e
 
 -  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file /home/admin/archives.zip'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file /home/admin/archives.zip
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-file --f=/home/admin/archives.zip
     ```
+    </TabItem>
+    </Tabs>
 
 -  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-file --f=/home/admin/archives.zip directory --path=/src entries
+    dagger -c 'copy-file /home/admin/archives.zip | directory /src | entries'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file /home/admin/archives.zip | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-file --f=/home/admin/archives.zip \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 -  Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file https://github.com/dagger/dagger.git#main:README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-file --f=https://github.com/dagger/dagger.git#main:README.md
     ```
+    </TabItem>
+    </Tabs>
 
 -  Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-file --f=https://github.com/dagger/dagger.git#main:README.md file --path=/src/README.md contents
+    dagger <<EOF
+    copy-file https://github.com/dagger/dagger.git#main:README.md |
+      file /src/README.md |
+      contents
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-file --f=https://github.com/dagger/dagger.git#main:README.md \
+      file --path=/src/README.md \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Copy a subset of a directory or remote repository to a container using filters specified at run-time
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using filter patterns specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
@@ -277,23 +515,79 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 
 #### Examples
 
-- Copy the current host directory to `/src` in the container, excluding the `dagger` sub-directory and the `dagger.json` file, and return the modified container:
+- Copy the current host directory to `/src` in the container, excluding all sub-directories and files starting with `dagger`, and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-directory-with-exclusions --source=. --exclude-directory=dagger --exclude-file=dagger.json
+    dagger -c 'copy-directory-with-exclusions . --exclude=dagger*'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions . --exclude=dagger*
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-directory-with-exclusions --source=. --exclude=dagger*
+    ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude-file='*.md' directory --path=/src entries
+    dagger <<EOF
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md |
+      directory /src |
+      entries
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude=*.md \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 - Copy the private `user/foo` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude-file='*.md' directory --path=/src entries
+    dagger <<EOF
+    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md |
+      directory /src |
+      entries
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude=*.md \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Request a file over HTTP/HTTPS and save it in a container
 
@@ -320,17 +614,52 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 
 #### Examples
 
--  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS and save it as `/src/myfile` in the container:
+-  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and return the container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
     ```
+    </TabItem>
+    </Tabs>
 
 -  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and display its contents:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md file --path=/src/myfile contents
+    dagger <<EOF
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md |
+      file /src/myfile |
+      contents
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md | file /src/myfile | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md \
+      file --path=/src/myfile \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Copy a file to the Dagger module runtime container for custom processing
 
@@ -361,9 +690,23 @@ The following Dagger Function accepts a `File` argument and copies the specified
 
 Copy the `data.json` host file to the runtime container and process it:
 
-```shell
-dagger call copy-file --source=../data.json
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file ../data.json'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file ../data.json
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-file --source=../data.json
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Copy a subset of a directory or remote repository to a container using pre-defined filters
 
@@ -402,15 +745,46 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
 
 - Copy the specified host directory to `/src` in the container, excluding everything except Markdown files, and return the modified container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory-with-exclusions ../docs'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions ../docs
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call copy-directory-with-exclusions --source=../docs
     ```
+    </TabItem>
+    </Tabs>
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding everything except Markdown files, and list the contents of the `/src` directory in the container:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main directory --path=/src entries
+    dagger -c 'copy-directory-with-exclusions https://github.com/dagger/dagger#main | directory /src | entries'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Set a module-wide default path
 
@@ -447,15 +821,43 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
 
 - Call the Dagger Function without arguments. The default path (the current directory `.`) is used:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call foo
     ```
+    </TabItem>
+    </Tabs>
 
 - Call the Dagger Function with a constructor argument. The specified directory (`/src/myapp`) is used:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'my-module --source $(host | directory /src/myapp) | foo'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    my-module --source $(host | directory /src/myapp) | foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call --source=/src/myapp foo
     ```
+    </TabItem>
+    </Tabs>
 
 ## Builds
 
@@ -494,9 +896,23 @@ The following Dagger Function performs a multi-stage build.
 
 Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
 
-```shell
-dagger call build --src="https://github.com/golang/example#master:hello"
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/golang/example#master:hello'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/golang/example#master:hello
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --src="https://github.com/golang/example#master:hello"
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Perform a matrix build
 
@@ -533,11 +949,25 @@ The following Dagger Function performs a matrix build.
 
 Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
 
-```shell
-dagger call build \
-  --src="https://github.com/golang/example#master:hello" \
-  export --path /tmp/matrix-builds
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/golang/example#master:hello | export /tmp/matrix-builds'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/golang/example#master:hello | export /tmp/matrix-builds
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      build --src="https://github.com/golang/example#master:hello" \
+      export --path=/tmp/matrix-builds
+    ```
+    </TabItem>
+    </Tabs>
 
 Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. The output should look like this:
 
@@ -584,11 +1014,26 @@ The following Dagger Function builds a single image for different CPU architectu
 </Tabs>
 
 #### Example
+
 Build and publish a multi-platform image:
 
-```shell
-dagger call build --src="https://github.com/golang/example#master:hello"
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/golang/example#master:hello'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/golang/example#master:hello
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --src="https://github.com/golang/example#master:hello"
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Build multi-arch image with cross-compliation
 
@@ -621,11 +1066,26 @@ install the module first with `dagger install github.com/levlaz/daggerverse/cont
 </Tabs>
 
 #### Example
+
 Build and publish a multi-platform image with cross compliation:
 
-```shell
-dagger call build --src="https://github.com/golang/example#master:hello"
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/golang/example#master:hello'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/golang/example#master:hello
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --src="https://github.com/golang/example#master:hello"
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Build image from Dockerfile
 
@@ -661,9 +1121,23 @@ The following Dagger Function builds an image from a Dockerfile.
 #### Example
 Build and publish an image from an existing Dockerfile
 
-```shell
-dagger call build --src=https://github.com/dockersamples/python-flask-redis
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/dockersamples/python-flask-redis'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/dockersamples/python-flask-redis
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --src="https://github.com/dockersamples/python-flask-redis"
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Build image from Dockerfile using different build context
 
@@ -694,11 +1168,25 @@ The following function builds an image from a Dockerfile with a build context th
 
 Build an image from the source code in `https://github.com/dockersamples/python-flask-redis` using the Dockerfile from a different build context, at `https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile`:
 
-```shell
-dagger call build \
-  --src "https://github.com/dockersamples/python-flask-redis" \
-  --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build https://github.com/dockersamples/python-flask-redis https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build https://github.com/dockersamples/python-flask-redis https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      build --src="https://github.com/dockersamples/python-flask-redis" \
+        --dockerfile=https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Add OCI annotations to image
 
@@ -729,9 +1217,23 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) annotations](
 
 Build and publish an image with OCI annotations:
 
-```shell
-dagger call build
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c build
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Add OCI labels to image
 
@@ -762,9 +1264,23 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) labels](https
 
 Build and publish an image with OCI labels:
 
-```shell
-dagger call build
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c build
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Invalidate cache
 
@@ -806,9 +1322,23 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 
 Print the date and time, invalidating the cache on each run. However, if the `CACHEBUSTER` environment variable is removed, the same value (the date and time on the first run) is printed on every run.
 
-```shell
-dagger call build
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c build
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Secrets
 
@@ -841,45 +1371,121 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 
 - Use a secret sourced from an environment variable:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-api env://GITHUB_API_TOKEN'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-api env://GITHUB_API_TOKEN
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call github-api --token=env://GITHUB_API_TOKEN
     ```
+    </TabItem>
+    </Tabs>
 
 - Use a secret sourced from a file:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-api file://./github.txt'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-api file://./github.txt
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call github-api --token=file://./github.txt
     ```
+    </TabItem>
+    </Tabs>
 
 - Use a secret sourced from a command:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-api cmd://"gh auth token"'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-api cmd://"gh auth token"
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call github-api --token=cmd://"gh auth token"
     ```
+    </TabItem>
+    </Tabs>
 
 - Use a secret from 1Password:
 
+  :::note
+  If using a [1Password service account](https://developer.1password.com/docs/service-accounts/), ensure that the `OP_SERVICE_ACCOUNT_TOKEN` environment variable is set.
+
+    ```shell
+    export OP_SERVICE_ACCOUNT_TOKEN="mytoken"
+    ```
+  :::
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-api op://infra/github/credential'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-api op://infra/github/credential
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call github-api --token=op://infra/github/credential
     ```
-
-  [1Password service accounts](https://developer.1password.com/docs/service-accounts/) are also supported:
-
-    ```shell
-    OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
-    ```
+    </TabItem>
+    </Tabs>
 
 - Use a secret from Vault:
 
-    ```shell
-    VAULT_ADDR="https://127.0.0.1:8200" VAULT_TOKEN="gue55me7" dagger call github-api --token=vault://credentials.github
-    ```
-
-  [Vault AppRole authentication](https://developer.hashicorp.com/vault/docs/auth/approle) is also supported:
+  :::note
+  Ensure that the `VAULT_ADDR` and either the `VAULT_TOKEN` or `VAULT_APPROLE_ROLE_ID` (for [Vault AppRole authentication](https://developer.hashicorp.com/vault/docs/auth/approle)) environment variables are set.
 
     ```shell
-    VAULT_ADDR="https://127.0.0.1:8200" VAULT_APPROLE_ROLE_ID="ROLE-ID" VAULT_APPROLE_SECRET_ID="SECRET-ID" dagger call github-api --token=vault://credentials.github
+    export VAULT_ADDR="https://127.0.0.1:8200"
+    export VAULT_TOKEN="gue55me7"
+    export VAULT_APPROLE_ROLE_ID="roleid-xxx-yyy-zzz"
     ```
+  :::
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-api vault://credentials.github'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-api vault://credentials.github
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call github-api --token=vault://credentials.github
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Mount files as secrets
 
@@ -910,9 +1516,23 @@ The following Dagger Function accepts a GitHub hosts configuration file as a `Se
 
 Use a mounted secret file:
 
-```shell
-dagger call github-auth --gh-creds=file://$HOME/.config/gh/hosts.yml
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github-auth file://$HOME/.config/gh/hosts.yml'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    github-auth file://$HOME/.config/gh/hosts.yml
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call github-auth --gh-creds=file://$HOME/.config/gh/hosts.yml
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Use secret in Dockerfile build
 
@@ -954,9 +1574,23 @@ RUN --mount=type=secret,id=gh-secret \
 
 Build from a Dockerfile with a mounted secret from the host environment:
 
-```shell
-dagger call build --source=. --secret=env://GITHUB_API_TOKEN
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build . env://GITHUB_API_TOKEN'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build . env://GITHUB_API_TOKEN
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --source=. --secret=env://GITHUB_API_TOKEN
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Services
 
@@ -989,9 +1623,23 @@ The first Dagger Function below creates and returns an HTTP service. This servic
 
 Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
 
-```shell
-dagger call get
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c get
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    get
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call get
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Expose services in Dagger Functions to the host
 
@@ -1022,19 +1670,53 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 
 - Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'http-service | up'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    http-service | up
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call http-service up
+    ```
+    </TabItem>
+    </Tabs>
 
-    # access the service from the host
+    Access the service from the host:
+
+    ```shell
     curl localhost:8080
     ```
 
 - Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call  http-service up --ports 9000:8080
+    dagger -c 'http-service | up --ports 9000:8080'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    http-service | up --ports 9000:8080
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call http-service up --ports 9000:8080
+    ```
+    </TabItem>
+    </Tabs>
 
-    # access the service from the host
+    Access the service from the host:
+
+    ```shell
     curl localhost:9000
     ```
 
@@ -1071,10 +1753,23 @@ This implies that a service is already listening on a port on the host, out-of-b
 
 Send a query to the database service listening on host port 3306 and return the result as a string:
 
-```shell
-# assumes a service is listening on host port 3306
-dagger call user-list --svc=tcp://localhost:3306
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'user-list tcp://localhost:3306'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    user-list tcp://localhost:3306
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call user-list --svc=tcp://localhost:3306
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Create a transient service for unit tests
 
@@ -1105,9 +1800,23 @@ The following Dagger Function creates a service and binds it to an application c
 
 Run Drupal's unit tests, instantiating a database service during the process:
 
-```shell
-dagger call test
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c test
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    test
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call test
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Start and stop services
 
@@ -1138,9 +1847,23 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 
 Start and stop a Redis service:
 
-```shell
-dagger call redis-service
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c redis-service
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    redis-service
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call redis-service
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Create interdependent services
 
@@ -1171,9 +1894,23 @@ The following Dagger Function runs two services, service A and service B, that d
 
 Start two inter-dependent services:
 
-```shell
-dagger call services up --ports 8080:80
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'services | up --ports 8080:80'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    services | up --ports 8080:80
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call services up --ports 8080:80
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Just-in-time artifacts
 
@@ -1206,15 +1943,43 @@ The following Dagger Function publishes a just-in-time container image to a priv
 
 - Publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    dagger -c 'publish docker.io user env://PASSWORD'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    publish docker.io user env://PASSWORD
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env://PASSWORD
+    ```
+    </TabItem>
+    </Tabs>
 
 - Publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    dagger -c 'publish gchr.io user env://PASSWORD'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    publish gchr.io user env://PASSWORD
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call publish --registry=gchr.io --username=user --password=env://PASSWORD
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Publish a container image to a private registry with multiple tags
 
@@ -1245,19 +2010,51 @@ The following Dagger Function tags a just-in-time container image multiple times
 
 - Tag and publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    dagger -c 'publish docker.io user env://PASSWORD'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    publish docker.io user env://PASSWORD
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env://PASSWORD
+    ```
+    </TabItem>
+    </Tabs>
 
 - Tag and publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    dagger -c 'publish gchr.io user env://PASSWORD'
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    publish gchr.io user env://PASSWORD
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call publish --registry=gchr.io --username=user --password=env://PASSWORD
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Export a directory or file to the host
 
 The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+:::note
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
+:::
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -1284,19 +2081,47 @@ The following Dagger Functions return a just-in-time directory and file. These o
 
 - Export the directory returned by the Dagger Function to the `/home/admin/export` path on the host:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'get-dir | export /home/admin/export'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    get-dir | export /home/admin/export
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call get-dir export --path=/home/admin/export
     ```
+    </TabItem>
+    </Tabs>
 
 - Export the file returned by the Dagger Function to the `/home/admin/myfile` path on the host:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'get-file | export /home/admin/myfile'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    get-file | export /home/admin/myfile
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
     dagger call get-file export --path=/home/admin/myfile
     ```
+    </TabItem>
+    </Tabs>
 
 ### Export a container image to the host
 
-The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball with `dagger call ... export ...`.
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -1323,9 +2148,23 @@ The following Dagger Function returns a just-in-time container. This can be expo
 
 Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host. This OCI tarball can then be loaded into Docker with `docker load ...`.
 
-```shell
-dagger call base export --path=/home/admin/mycontainer.tgz
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'base | export /home/admin/mycontainer.tgz'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    base | export /home/admin/mycontainer.tgz
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call base export --path=/home/admin/mycontainer.tgz
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Optimizations
 
@@ -1341,6 +2180,10 @@ The following Dagger Function uses a cache volume for application dependencies. 
 
 </TabItem>
 <TabItem value="Python">
+
+:::note
+The default location for the cache directory depends on the package manager (`~/.cache/pip` for `pip` or `~/.cache/pypoetry` for `poetry`).
+:::
 
 ```python file=./snippets/cache-dependencies/python/main.py
 ```
@@ -1364,9 +2207,23 @@ The following Dagger Function uses a cache volume for application dependencies. 
 
 Build an application using cached dependencies:
 
-```shell
-dagger call build --source=.
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'build .'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    build .
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call build --source=.
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Set environment variables in a container
 
@@ -1424,17 +2281,45 @@ The following Dagger Function demonstrates how to set multiple environment varia
 
 #### Example
 
-Set a single environment variable in a container:
+- Set a single environment variable in a container:
 
-```shell
-dagger call set-env-var
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c set-env-var
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    set-env-var
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call set-env-var
+    ```
+    </TabItem>
+    </Tabs>
 
-Set multiple environment variables in a container:
+- Set multiple environment variables in a container:
 
-```shell
-dagger call set-env-vars
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c set-env-vars
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    set-env-vars
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call set-env-vars
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Persist service state across runs
 
@@ -1463,18 +2348,45 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
 
 #### Example
 
-Save data to a Redis service which uses a cache volume to persist a key named `foo` with value `123:
+- Save data to a Redis service which uses a cache volume to persist a key named `foo` with value `123:
 
-```shell
-dagger call set --key=foo --value=123
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'set foo 123'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    set foo 123
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call set --key=foo --value=123
+    ```
+    </TabItem>
+    </Tabs>
 
-Retrieve the value of the key `foo` after recreating the service state from the cache volume:
+- Retrieve the value of the key `foo` after recreating the service state from the cache volume:
 
-```shell
-# returns "123"
-dagger call get --key=foo
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'get foo'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    get foo
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call get --key=foo
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Execute functions concurrently
 
@@ -1505,9 +2417,23 @@ The following Dagger Function demonstrates how to use native-language concurrenc
 
 Execute a Dagger Function which performs different types of tests by executing other Dagger Functions concurrently.
 
-```shell
-dagger call --source=. run-all-tests
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'my-module $(host | directory .) | run-all-tests'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    my-module $(host | directory .) | run-all-tests
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call --source=. run-all-tests
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Error handling
 
@@ -1541,9 +2467,23 @@ The following Dagger Function demonstrates how to handle errors in a pipeline.
 
 Execute a Dagger Function which creates a container and runs a command in it. If the command fails, the error is captured and the Dagger Function is gracefully terminated with a custom error message.
 
-```shell
-dagger call test
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c test
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    test
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call test
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Continue using a container after command execution fails
 
@@ -1578,13 +2518,45 @@ The caveat with this approach is that forcing a zero exit code on a failure cach
 
 Continue executing a Dagger Function even after a command within it fails. The Dagger Function returns a custom `TestResult` object containing a test report and the exit code of the failed command.
 
-```shell
-# get exit code
-dagger call test exit-code
+- Obtain the exit code:
 
-# get test report
-dagger call test report contents
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'test | exit-code'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    test | exit-code
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call test exit-code
+    ```
+    </TabItem>
+    </Tabs>
+
+- Obtain the report:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'test | report | contents'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    test | report | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call test report contents
+    ```
+    </TabItem>
+    </Tabs>
 
 ## Debugging
 
@@ -1618,10 +2590,23 @@ The following Dagger Function opens an interactive terminal session at different
 
 Execute a Dagger Function to build a container, and open an interactive terminal at two different points in the build process. The interactive terminal enables you to inspect the container filesystem and environment "live", during the build process.
 
-```shell
-# inspect a container build
-dagger call container
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c container
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    container
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call container
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Inspect directories and files
 
@@ -1671,16 +2656,42 @@ The container created to mount the directory can be customized using additional 
 
 #### Example
 
-Execute a Dagger Function to clone Dagger's GitHub repository and open a terminal session in the repository directory:
+- Execute a Dagger Function to clone Dagger's GitHub repository and open a terminal session in the repository directory:
 
-```shell
-# inspect a directory
-dagger call simple-directory
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c simple-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    simple-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call simple-directory
+    ```
+    </TabItem>
+    </Tabs>
 
-Execute another Dagger Function that does the same as the previous one, except using an `ubuntu` container image as base and initializing the terminal with the `bash` shell:
+- Execute another Dagger Function that does the same as the previous one, except using an `ubuntu` container image as base and initializing the terminal with the `bash` shell:
 
-```shell
-# inspect a directory
-dagger call advanced-directory
-```
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c advanced-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    advanced-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call advanced-directory
+    ```
+    </TabItem>
+    </Tabs>

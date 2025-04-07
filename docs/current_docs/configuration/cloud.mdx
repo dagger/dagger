@@ -8,14 +8,18 @@ import TabItem from "@theme/TabItem";
 # Dagger Cloud
 
 :::caution Identity verification
-Dagger Cloud requires a GitHub account for identity verification. If you don't have one, [register for a free GitHub account](https://github.com/signup) before proceeding.
+Dagger Cloud requires a GitHub or Google account for identity verification. If you don't have one, [register for a free GitHub account](https://github.com/signup) or [create a free Google account](https://accounts.google.com/) before proceeding.
+:::
+
+:::info
+Dagger Cloud requires Dagger v0.11 or higher.
 :::
 
 ## Traces
 
 ### Create a Dagger Cloud organization
 
-1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/pricing). Dagger Cloud includes plans for both individuals and teams. Click **Continue with GitHub** to log in with your GitHub account.
+1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/cloud). Dagger Cloud includes plans for both individuals and teams. Click `Continue with GitHub` to log in with your GitHub account.
 
 1. After authorizing Dagger Cloud for your GitHub account, you'll create your organization.
 
@@ -25,13 +29,13 @@ Dagger Cloud requires a GitHub account for identity verification. If you don't h
 
 1. Review and select a Dagger Cloud subscription plan.
 
-1. If you selected the **Team** plan:
+1. If you selected the "Team" plan:
 
     1. You will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in the Individual plan.
 
     1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
 
-1. Click **Go to dashboard**. The next step walks you through how to send telemetry to Dagger Cloud.
+1. Click `Go to dashboard`. The next step walks you through how to send telemetry to Dagger Cloud.
 
 ### Connect to Dagger Cloud
 
@@ -202,15 +206,15 @@ To modify this default setting, navigate to the organization settings page using
 
 ## Organizations
 
-A member account grants a person access to log in to a Dagger Cloud organization to diagnose pipeline failures and collaborate on changes. Member information shown on the *All Runs* and *All Changes* pages is populated by the VCS you have integrated with Dagger Cloud. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose pipeline failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
 
 :::important
-You must hold the *Admin* role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
+You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
 :::
 
 ## Roles and permissions
 
-In Dagger Cloud, users can have one of two roles: *Admin* or *Member*. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
+In Dagger Cloud, users can have one of two roles: `Admin` or `Member`. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
 
 | Actions | Admin | Member |
 | --- | :---: | :---: |
@@ -220,3 +224,9 @@ In Dagger Cloud, users can have one of two roles: *Admin* or *Member*. The Admin
 | Delete an existing member from an org | ✓ |  |
 
 You cannot change a member's role at this time. Please contact Dagger via the support messenger in Dagger Cloud if you need assistance.
+
+## Cache pruning
+
+Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization settings page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
+
+![Get token](/img/current_docs/configuration/prune-cache.png)

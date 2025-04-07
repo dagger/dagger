@@ -1,0 +1,35 @@
+---
+slug: /features/llm
+description: "Build powerful AI agents with Large Language Models"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# LLM Prompting
+
+Dagger can be used as a runtime for AI agents.
+
+## Prompt mode
+
+Dagger Shell lets you interact with the attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
+
+"Prompt mode" can be accessed at any time in the Dagger Shell by typing `>`. Here's an example:
+
+![Prompt mode](/img/current_docs/features/llm-natural.gif)
+
+## Supported models
+
+Dagger supports a [wide range of popular language models](../configuration/llm.mdx), including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Ollama. Dagger uses your system's standard environment variables to route LLM requests.
+
+## Observability
+
+Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+![LLM Observability](/img/current_docs/features/llm-cloud-trace.gif)
+
+## Learn more
+
+- [Build an AI agent with our quickstart](../quickstart/agent/index.mdx)
+- [Browse AI agent examples](../examples.mdx#ai-agent-examples)
+- [Learn about the agent loop and how to work with LLM prompts and responses](../api/llm.mdx)
+- [Configure LLM endpoints](../configuration/llm.mdx)

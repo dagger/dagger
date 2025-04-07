@@ -14,6 +14,10 @@ fi
 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
 fi
+# use runner host baked into the cli for dev jobs
+if [[ -n "$USE_DEV_ENGINE" ]]; then
+  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+fi
 
 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs

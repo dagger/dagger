@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/core/rand"
 	"golang.org/x/sync/errgroup"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -97,8 +98,8 @@ func (s *ShellStateStore) Get(key string) (ShellState, bool) {
 // Delete removes a state instance by key.
 //
 // The state won't be deleted if in use by a variable.
-func (s *ShellStateStore) Delete(key string) {
-	if s.isUsed(key) {
+func (s *ShellStateStore) Delete(ctx context.Context, key string) {
+	if s.isUsed(ctx, key) {
 		return
 	}
 	s.mu.Lock()
@@ -123,44 +124,54 @@ func (s *ShellStateStore) Load(key string) (*ShellState, error) {
 //
 // This is expected to be used when the state is being resolved rather than
 // just passed around.
-func (s *ShellStateStore) Extract(key string) (*ShellState, error) {
-	defer s.Delete(key)
+func (s *ShellStateStore) Extract(ctx context.Context, key string) (*ShellState, error) {
+	defer s.Delete(ctx, key)
 	return s.Load(key)
 }
 
 // isUsed returns true if a state key is being used in a variable.
-func (s *ShellStateStore) isUsed(key string) bool {
-	if s.runner == nil {
-		return false
+func (s *ShellStateStore) isUsed(ctx context.Context, key string) bool {
+	hctx := HandlerCtx(ctx)
+	if hctx == nil {
+		return true
 	}
-	for _, v := range s.runner.Vars {
-		if strings.Contains(v.String(), newStateToken(key)) {
-			return true
+
+	var used bool
+	token := newStateToken(key)
+
+	hctx.Env.Each(func(name string, v expand.Variable) bool {
+		if strings.Contains(v.String(), token) {
+			used = true
+			return false
 		}
-	}
-	return false
+		return true
+	})
+
+	return used
 }
 
 // Prune removes all state instances that are not in use by a variable.
-//
-// This can be used at the end of a run to avoid
-func (s *ShellStateStore) Prune() int {
+func (s *ShellStateStore) Prune(ctx context.Context) int {
+	hctx := HandlerCtx(ctx)
+	if hctx == nil {
+		return 0
+	}
+
 	used := make(map[string]struct{})
 
-	if s.runner != nil {
-		for _, v := range s.runner.Vars {
-			for key := range FindStateKeys(v.String()) {
-				used[key] = struct{}{}
-			}
+	hctx.Env.Each(func(_ string, v expand.Variable) bool {
+		for key := range FindStateKeys(v.String()) {
+			used[key] = struct{}{}
 		}
-	}
+		return true
+	})
 
 	count := 0
 	s.mu.Lock()
 	for key := range s.data {
 		if _, exists := used[key]; !exists {
-			count++
 			delete(s.data, key)
+			count++
 		}
 	}
 	s.mu.Unlock()
@@ -249,7 +260,7 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	if st.Key != "" {
 		// Replace instead of mutate otherwise it's harder to manage
 		// when it's saved in a var.
-		defer h.state.Delete(st.Key)
+		defer h.state.Delete(ctx, st.Key)
 	}
 	nkey := h.state.Store(st)
 	w := interp.HandlerCtx(ctx).Stdout
@@ -365,10 +376,6 @@ func (h *shellCallHandler) resolveResults(ctx context.Context, args []string) ([
 
 	err := eg.Wait()
 
-	if h.debug {
-		shellDebug(ctx, "resolve results", args, results)
-	}
-
 	return results, err
 }
 
@@ -404,7 +411,7 @@ func (h *shellCallHandler) resolveResult(ctx context.Context, in string) (res st
 
 // resolveState returns the resolved value of a state instance given its key
 func (h *shellCallHandler) resolveState(ctx context.Context, key string) (string, error) {
-	st, err := h.state.Extract(key)
+	st, err := h.state.Extract(ctx, key)
 	if err != nil {
 		return "", err
 	}
@@ -412,6 +419,7 @@ func (h *shellCallHandler) resolveState(ctx context.Context, key string) (string
 	if err != nil {
 		return "", err
 	}
+	h.lastResult = r
 	return r.String()
 }
 

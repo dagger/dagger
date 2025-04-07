@@ -3752,6 +3752,109 @@ func schemaVersion(ctx context.Context) (string, error) {
 	})
 }
 
+func (ModuleSuite) TestModulePreFilteringDirectory(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
+	t.Run("pre filtering directory on module call", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (t *Test) Call(
+  //+ignore=["foo.txt", "bar"]
+  dir *dagger.Directory,
+) *dagger.Directory {
+ return dir
+}`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { object, func, Directory, argument } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  call(
+    @argument({ ignore: ["foo.txt", "bar"] }) dir: Directory,
+  ): Directory {
+    return dir
+  }
+}`,
+			},
+			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, Ignore, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    async def call(
+        self,
+        dir: Annotated[dagger.Directory, Ignore(["foo.txt","bar"])],
+    ) -> dagger.Directory:
+        return dir
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					// Add inputs
+					WithDirectory("/work/input", c.
+						Directory().
+						WithNewFile("foo.txt", "foo").
+						WithNewFile("bar.txt", "bar").
+						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
+					// Add dep
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
+					With(sdkSource(tc.sdk, tc.source)).
+					// Setup test modules
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test-mod", "--sdk=go", "--source=.")).
+					With(daggerExec("install", "./dep")).
+					With(sdkSource("go", `package main
+
+import (
+	"dagger/test-mod/internal/dagger"
+)
+
+type TestMod struct {}
+
+func (t *TestMod) Test(
+  dir *dagger.Directory,
+) *dagger.Directory {
+ return dag.Test().Call(dir)
+}`,
+					))
+
+				out, err := modGen.With(daggerCall("test", "--dir", "./input", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "bar.txt\n", out)
+			})
+		}
+	})
+}
+
 func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
@@ -4035,13 +4138,13 @@ export class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCallAt("ci", "dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, ".git\nbackend\nci\nfrontend\nLICENSE\ndagger\ndagger.json\n", out)
+					require.Equal(t, ".git/\nbackend/\nci/\nfrontend/\nLICENSE\ndagger/\ndagger.json\n", out)
 				})
 
 				t.Run("dir ignore", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCallAt("ci", "dirs-ignore")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, "backend\nfrontend\ndagger\n", out)
+					require.Equal(t, "backend/\nfrontend/\ndagger/\n", out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
@@ -4299,7 +4402,7 @@ export class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n.git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
+					require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
@@ -4711,7 +4814,7 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 
 				out, err := modGen.With(daggerCallAt(modRef, "absolute-path", "entries")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, ".git\n")
+				require.Contains(t, out, ".git/\n")
 				require.Contains(t, out, "README.md\n")
 
 				out, err = modGen.With(daggerCallAt(modRef, "absolute-path-subdir", "entries")).Stdout(ctx)
@@ -4721,7 +4824,7 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 				out, err = modGen.With(daggerCallAt(modRef, "relative-path", "entries")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Contains(t, out, "dagger.json\n")
-				require.Contains(t, out, "src\n")
+				require.Contains(t, out, "src/\n")
 
 				out, err = modGen.With(daggerCallAt(modRef, "relative-path-subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -4833,19 +4936,19 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
@@ -4863,18 +4966,18 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
 			// Verify the directories exist but files are correctlyignored
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger\nquerybuilder\ntelemetry\n", out)
+			require.Equal(t, "dagger/\nquerybuilder/\ntelemetry/\n", out)
 
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
 			require.NoError(t, err)
@@ -4900,7 +5003,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all then reverse ignore all with different dir than the one set in context", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
+			require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
 		})
 	})
 }
@@ -5839,5 +5942,64 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		lines = strings.Split(out, "\n")
 		require.Contains(t, lines, "fn     -")
+	})
+}
+
+func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
+	t.Run("golang", func(ctx context.Context, t *testctx.T) {
+		privateDepCode := `package main
+
+import (
+	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
+)
+
+type Foo struct{}
+
+// Returns a container that echoes whatever string argument is provided
+func (m *Foo) HowCoolIsDagger() string {
+	return cooldep.HowCoolIsThat
+}
+`
+
+		daggerjson := `{
+  "name": "foo",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/dagger/dagger-test-modules"
+    }
+  }
+}`
+
+		c := connect(ctx, t)
+		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+		defer cleanup()
+
+		socket := c.Host().UnixSocket(sockPath)
+
+		// This is simulating a user's setup where they have
+		// 1. ssh auth sock setup
+		// 2. gitconfig file with insteadOf directive
+		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithExec([]string{"apk", "add", "git", "openssh"}).
+			WithUnixSocket("/sock/unix-socket", socket).
+			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
+			WithWorkdir("/work").
+			WithNewFile("/root/.gitconfig", `
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+`).
+			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", privateDepCode).
+			WithNewFile("dagger.json", daggerjson)
+
+		howCoolIsDagger, err := modGen.
+			With(daggerExec("call", "how-cool-is-dagger")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ubercool", howCoolIsDagger)
 	})
 }

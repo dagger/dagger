@@ -1,6 +1,6 @@
 {
   "name": "releaser",
-  "engineVersion": "v0.15.3",
+  "engineVersion": "v0.16.3",
   "sdk": {
     "source": "go"
   },
@@ -8,6 +8,10 @@
     {
       "name": "dagger-dev",
       "source": ".."
+    },
+    {
+      "name": "docs",
+      "source": "../docs"
     },
     {
       "name": "gh",

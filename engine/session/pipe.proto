@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service Pipe {
+  rpc IO(stream Data) returns (stream Data);
+}
+
+message Data {
+  bytes data = 1;
+}

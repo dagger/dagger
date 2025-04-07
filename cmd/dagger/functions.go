@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -33,18 +34,19 @@ var (
 )
 
 const (
-	Directory    string = "Directory"
-	Container    string = "Container"
-	File         string = "File"
-	Secret       string = "Secret"
-	Service      string = "Service"
-	PortForward  string = "PortForward"
-	CacheVolume  string = "CacheVolume"
-	ModuleSource string = "ModuleSource"
-	Module       string = "Module"
-	Platform     string = "Platform"
-	Socket       string = "Socket"
-	Terminal     string = "Terminal"
+	Directory     string = "Directory"
+	Container     string = "Container"
+	File          string = "File"
+	Secret        string = "Secret"
+	Service       string = "Service"
+	PortForward   string = "PortForward"
+	CacheVolume   string = "CacheVolume"
+	ModuleSource  string = "ModuleSource"
+	Module        string = "Module"
+	Platform      string = "Platform"
+	Socket        string = "Socket"
+	GitRepository string = "GitRepository"
+	GitRef        string = "GitRef"
 )
 
 var (
@@ -699,6 +701,14 @@ func printEncodedID(w io.Writer, encodedID string) error {
 	}
 	_, err := fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), id.Digest())
 	return err
+}
+
+func idDigest(encodedID string) (digest.Digest, error) {
+	var id call.ID
+	if err := id.Decode(encodedID); err != nil {
+		return "", fmt.Errorf("failed to decode ID: %w", err)
+	}
+	return id.Digest(), nil
 }
 
 func printResponse(w io.Writer, response any, typeDef *modTypeDef) error {

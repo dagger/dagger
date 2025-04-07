@@ -113,7 +113,7 @@ func (e *DaggerEngine) Container(
 	})
 	ctr = ctr.
 		WithFile(cliPath, cli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+engineUnixSocketPath)
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
 
 	return ctr, nil
 }

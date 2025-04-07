@@ -12,9 +12,23 @@ To use this, set one or more explicit breakpoints in your Dagger pipeline with t
 
 Here is a simple example, which opens an interactive terminal in an `alpine` container:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'container | from alpine | terminal'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container | from alpine | terminal
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger core container from --address=alpine terminal
 ```
+</TabItem>
+</Tabs>
 
 Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
 

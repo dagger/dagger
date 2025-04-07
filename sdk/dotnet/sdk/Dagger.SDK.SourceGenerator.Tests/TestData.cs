@@ -7746,7 +7746,7 @@ public static class TestData
                     "deprecationReason": null,
                     "description": "Retrieves a container builtin to the engine.",
                     "isDeprecated": false,
-                    "name": "builtinContainer",
+                    "name": "_builtinContainer",
                     "type": {
                       "kind": "NON_NULL",
                       "name": null,
