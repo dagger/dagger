@@ -5644,7 +5644,7 @@ export class Host extends BaseClient {
    * The file is limited to a size of 512000 bytes.
    * @param name The user defined name for this secret.
    * @param path Location of the file to set as a secret.
-   * @deprecated setSecretFile is superceded by secret(uri: "file://<path>")
+   * @deprecated setSecretFile is superceded by use of the secret API with file:// URIs
    */
   setSecretFile = (name: string, path: string): Secret => {
     const ctx = this._ctx.select("setSecretFile", { name, path })

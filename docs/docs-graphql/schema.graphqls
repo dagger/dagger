@@ -2483,7 +2483,7 @@ type Host {
 
     """Location of the file to set as a secret."""
     path: String!
-  ): Secret! @deprecated(reason: "setSecretFile is superceded by secret(uri: \"file://<path>\")")
+  ): Secret! @deprecated(reason: "setSecretFile is superceded by use of the secret API with file:// URIs")
 
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(

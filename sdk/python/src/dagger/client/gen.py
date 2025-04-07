@@ -6101,7 +6101,8 @@ class Host(Type):
         The file is limited to a size of 512000 bytes.
 
         .. deprecated::
-            setSecretFile is superceded by secret(uri: "file://<path>")
+            setSecretFile is superceded by use of the secret API with file://
+            URIs
 
         Parameters
         ----------
@@ -6111,7 +6112,7 @@ class Host(Type):
             Location of the file to set as a secret.
         """
         warnings.warn(
-            'Method "set_secret_file" is deprecated: setSecretFile is superceded by secret(uri: "file://<path>")',
+            'Method "set_secret_file" is deprecated: setSecretFile is superceded by use of the secret API with file:// URIs',
             DeprecationWarning,
             stacklevel=4,
         )

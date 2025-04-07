@@ -192,7 +192,7 @@ func (s *hostSchema) Install() {
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
 		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
-			Deprecated(`setSecretFile is superceded by secret(uri: "file://<path>")`).
+			Deprecated(`setSecretFile is superceded by use of the secret API with file:// URIs`).
 			Doc(
 				`Sets a secret given a user-defined name and the file path on the host,
 				and returns the secret.`,
