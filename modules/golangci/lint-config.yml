@@ -69,7 +69,7 @@ linters-settings:
 
   errorlint:
     errorf: true
-    errorf-multi: false
+    errorf-multi: true
     asserts: false
     comparison: false
 

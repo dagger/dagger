@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moby/buildkit/identity"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -32,7 +35,7 @@ func (t *Test) All(
 	// +optional
 	testVerbose bool,
 ) error {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return err
 	}
@@ -80,7 +83,7 @@ func (t *Test) Telemetry(
 	// +optional
 	verbose bool,
 ) (*dagger.Directory, error) {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +114,7 @@ func (t *Test) Telemetry(
 
 // List all tests
 func (t *Test) List(ctx context.Context) (string, error) {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -153,7 +156,7 @@ func (t *Test) Specific(
 	// +optional
 	testVerbose bool,
 ) error {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return err
 	}
@@ -207,7 +210,7 @@ func (t *Test) Update(
 	// +optional
 	testVerbose bool,
 ) (*dagger.Directory, error) {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -234,6 +237,88 @@ func (t *Test) Update(
 	return dag.Directory().WithDirectory(path, ran.Directory(path)), nil
 }
 
+// Run specific tests while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
+// but also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
+func (t *Test) Dump(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	// +optional
+	count int,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
+	// +optional
+	// +default="pprof/heap"
+	route string,
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
+	// +optional'
+	// +default=false
+	noFinal bool,
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	// +optional
+	// +default="1s"
+	delay string,
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
+	// +optional
+	// +default="-1s"
+	interval string,
+) (*dagger.Directory, error) {
+	d, err := time.ParseDuration(delay)
+	if err != nil {
+		return nil, err
+	}
+
+	i, err := time.ParseDuration(interval)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.testDump(
+		ctx,
+		&testOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			testVerbose:   testVerbose,
+		},
+		&dumpOpts{
+			route:    route,
+			noFinal:  noFinal,
+			delay:    d,
+			interval: i,
+		},
+	)
+}
+
 type testOpts struct {
 	runTestRegex  string
 	skipTestRegex string
@@ -247,6 +332,137 @@ type testOpts struct {
 	envs          *dagger.Secret
 	testVerbose   bool
 	bench         bool
+}
+
+type dumpOpts struct {
+	route    string
+	noFinal  bool
+	delay    time.Duration
+	interval time.Duration
+}
+
+func (t *Test) dump(
+	ctx context.Context,
+	testContainer *dagger.Container,
+	debugEndpoint string,
+	opts *dumpOpts,
+) (*dagger.Directory, error) {
+	dumps := dag.Directory()
+	baseFileName := strings.ReplaceAll(opts.route, "/", "-")
+	dumpCount := 0 // not strictly necessary, but a nice sanity check and less faff than using dumps.Entries()
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	eg := errgroup.Group{}
+	wait := opts.delay
+	eg.Go(func() error {
+		var dumpErr error
+		for {
+			select {
+			case <-cancelCtx.Done():
+				return dumpErr
+			case <-time.After(wait):
+				heapData, err := fetchDump(ctx, debugEndpoint, opts.route)
+				dumpErr = errors.Join(dumpErr, err)
+				if err == nil {
+					fileName := fmt.Sprintf("%s-%d.pprof", baseFileName, dumpCount)
+					dumps = dumps.WithFile(fileName, heapData)
+					dumpCount++
+				}
+				if opts.interval < 0 {
+					return dumpErr
+				}
+				wait = opts.interval
+			}
+		}
+	})
+
+	_, testErr := testContainer.Sync(ctx)
+	cancel()
+	dumpErr := eg.Wait()
+
+	if !opts.noFinal {
+		heapData, finalDumpErr := fetchDump(ctx, debugEndpoint, opts.route)
+		dumpErr = errors.Join(dumpErr, finalDumpErr)
+		if finalDumpErr == nil {
+			fileName := fmt.Sprintf("%s-final.pprof", baseFileName)
+			dumps = dumps.WithFile(fileName, heapData)
+			dumpCount++
+		}
+	}
+
+	if testErr != nil {
+		if dumpCount == 0 {
+			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, dumpErr)
+		}
+		return dumps, testErr
+	}
+
+	if dumpCount == 0 {
+		return nil, fmt.Errorf("test passed, but no dumps collected: %w", dumpErr)
+	}
+	return dumps, nil
+}
+
+func (t *Test) testDump(
+	ctx context.Context,
+	opts *testOpts,
+	dOpts *dumpOpts,
+) (*dagger.Directory, error) {
+	cmd, debugEndpoint, err := t.testCmd(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	testContainer := t.test(
+		cmd,
+		&testOpts{
+			runTestRegex:  opts.runTestRegex,
+			skipTestRegex: opts.skipTestRegex,
+			pkg:           opts.pkg,
+			failfast:      opts.failfast,
+			parallel:      opts.parallel,
+			timeout:       opts.timeout,
+			race:          opts.race,
+			count:         opts.count,
+			update:        false,
+			testVerbose:   opts.testVerbose,
+			bench:         false,
+		},
+	)
+
+	return t.dump(
+		ctx,
+		testContainer,
+		debugEndpoint,
+		dOpts,
+	)
+}
+
+// fetchDump fetches from a debug HTTP endpoint and returns it as a dagger.File
+func fetchDump(ctx context.Context, debugEndpoint string, route string) (*dagger.File, error) {
+	url := fmt.Sprintf("%s/debug/%s", debugEndpoint, route)
+	curlContainer := dag.Wolfi().Container(dagger.WolfiContainerOpts{Packages: []string{"curl"}}).
+		WithExec([]string{
+			"curl",
+			"--fail",
+			"--silent",
+			"--show-error",
+			"--max-time", "120", // Timeout after 120 seconds (for longer CPU profiles)
+			"--output", "/dump",
+			url,
+		})
+
+	exitCode, err := curlContainer.ExitCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if exitCode != 0 {
+		stderr, _ := curlContainer.Stderr(ctx)
+		return nil, fmt.Errorf("failed to fetch dump, curl exit code: %d, stderr: %s", exitCode, stderr)
+	}
+
+	return curlContainer.File("/dump"), nil
 }
 
 func (t *Test) test(
@@ -327,14 +543,14 @@ func (t *Test) test(
 		WithExec(args)
 }
 
-func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
+func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	engine := t.Dagger.Engine().
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
 	devEngine, err := engine.Container(ctx, "", nil, false)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
@@ -379,12 +595,17 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	// manually starting service to ensure it's not reaped between benchmark prewarm & run
 	devEngineSvc, err = devEngineSvc.Start(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	debugEndpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 6060, Scheme: "http"})
+	if err != nil {
+		return nil, "", err
 	}
 
 	cliBinPath := "/.dagger-cli"
@@ -403,7 +624,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		With(t.Dagger.withDockerCfg) // this avoids rate limiting in our ci tests
-	return tests, nil
+	return tests, debugEndpoint, nil
 }
 
 func registry() *dagger.Service {
