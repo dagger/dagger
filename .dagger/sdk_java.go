@@ -11,12 +11,9 @@ import (
 )
 
 const (
-	javaSDKPath             = "sdk/java"
-	javaSDKVersionPomPath   = javaSDKPath + "/pom.xml"
-	javaSchemasDirPath      = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
-	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
-	mavenImage              = "maven:3.9.9-eclipse-temurin-21-alpine"
-	mavenDigest             = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+	javaSDKPath = "sdk/java"
+	mavenImage  = "maven:3.9.9-eclipse-temurin-21-alpine"
+	mavenDigest = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
 )
 
 type JavaSDK struct {
@@ -47,32 +44,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 
 // Regenerate the Java SDK API
 func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-
-	base := t.Maven(ctx).With(installer)
-
-	generatedSchema, err := base.
-		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
-		WithExec([]string{"mvn", "-N", "dagger-codegen:generateSchema"}).
-		File(javaGeneratedSchemaPath).
-		Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	engineVersion, err := base.
-		WithExec([]string{"dagger", "version"}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	engineVersion = strings.TrimPrefix(strings.Fields(engineVersion)[1], "v")
-
-	dir := dag.Directory().WithNewFile(javaSchemasDirPath+fmt.Sprintf("/schema-%s.json", engineVersion), generatedSchema)
-	return dir, nil
+	return dag.Directory(), nil
 }
 
 // Test the publishing process
