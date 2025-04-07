@@ -594,6 +594,8 @@ func (ms *MCPClient) Tools(ctx context.Context) ([]LLMTool, error) {
 		ms.Client = client
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	resp, err := ms.Client.ListTools(ctx, mcpc.NewRequest(&mcpc.ListToolsRequest{}))
 	if err != nil {
 		return nil, fmt.Errorf("failed listing tools: %w", err)
