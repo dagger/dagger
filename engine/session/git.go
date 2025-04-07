@@ -195,7 +195,7 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 	gitMutex.Lock()
 	defer gitMutex.Unlock()
 
-	cmd := exec.CommandContext(ctx, "git", "config", "-l")
+	cmd := exec.CommandContext(ctx, "git", "config", "-l", "-z")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
@@ -223,6 +223,7 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 	}, nil
 }
 
+// parseGitConfigOutput parses the output of the "git config -l -z" command.
 func parseGitConfigOutput(output []byte) (*GitConfig, error) {
 	entries := []*GitConfigEntry{}
 	if len(output) == 0 {
@@ -232,27 +233,25 @@ func parseGitConfigOutput(output []byte) (*GitConfig, error) {
 	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(output))
+	scanner.Split(splitOnNull)
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line == "" {
+
+		key, value, found := strings.Cut(line, "\n")
+		if !found || len(value) == 0 {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid format: line %q doesn't match key=value pattern", line)
-		}
-
-		if isGitConfigKeyAllowed(strings.ToLower(parts[0])) {
+		if isGitConfigKeyAllowed(strings.ToLower(key)) {
 			entries = append(entries, &GitConfigEntry{
-				Key:   parts[0],
-				Value: parts[1],
+				Key:   key,
+				Value: value,
 			})
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading credential helper output: %w", err)
+		return nil, fmt.Errorf("error reading git config output: %w", err)
 	}
 
 	return &GitConfig{
@@ -269,4 +268,20 @@ func newGitConfigErrorResponse(errorType ErrorInfo_ErrorType, message string) *G
 			},
 		},
 	}
+}
+
+func splitOnNull(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+
+	if i := bytes.IndexByte(data, 0); i >= 0 {
+		return i + 1, data[:i], nil
+	}
+
+	if atEOF {
+		return len(data), data, nil
+	}
+
+	return 0, nil, nil
 }
