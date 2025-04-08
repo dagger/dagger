@@ -862,12 +862,6 @@ func (llm *LLM) Env() *Env {
 	return llm.mcp.env
 }
 
-func (llm *LLM) With(value dagql.Object) *LLM {
-	llm = llm.Clone()
-	llm.mcp.Select(value)
-	return llm
-}
-
 // A variable in the LLM environment
 type LLMVariable struct {
 	// The name of the variable
@@ -888,20 +882,8 @@ func (v *LLMVariable) Type() *ast.Type {
 }
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
-	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx, dag); err != nil {
-		return res, err
-	}
-	if llm.mcp.Current() == nil {
-		return res, nil
-	}
-	res.Value = &Binding{
-		Key:   name,
-		Value: llm.mcp.Current(),
-		env:   llm.mcp.env,
-	}
-	res.Valid = true
-	return res, nil
+	// TODO
+	return dagql.Null[*Binding](), nil
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
