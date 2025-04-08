@@ -38,11 +38,14 @@ func (s *directorySchema) Install() {
 			ArgDoc("description", "Description of the sub-pipeline.").
 			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
 		dagql.Func("name", s.name).
+			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
 		dagql.Func("entries", s.entries).
+			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
 			ArgDoc("path", `Location of the directory to look at (e.g., "/src").`),
 		dagql.Func("glob", s.glob).
+			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			ArgDoc("pattern", `Pattern to match (e.g., "*.md").`),
 		dagql.Func("digest", s.digest).
