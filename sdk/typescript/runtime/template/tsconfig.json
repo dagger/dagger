@@ -4,8 +4,8 @@
     "moduleResolution": "Node",
     "experimentalDecorators": true,
     "paths": {
-      "@dagger.io/dagger": ["./sdk/src"],
-      "@dagger.io/dagger/telemetry": ["./sdk/src/telemetry"]
+      "@dagger.io/dagger": ["./sdk/index.ts"],
+      "@dagger.io/dagger/telemetry": ["./sdk/telemetry.ts"]
     }
   }
 }

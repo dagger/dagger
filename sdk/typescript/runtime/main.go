@@ -317,7 +317,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	// Get a directory with the SDK sources installed and the generated client.
 	sdk := t.
 		addSDK().
-		WithDirectory(".", t.generateClient(base, introspectionJSON))
+		WithFile("client.gen.ts", t.generateClient(base, introspectionJSON))
 
 	base = base.
 		// Add template directory
@@ -489,7 +489,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 		return ctr.
 			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
+			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
 	case Node:
 		if t.moduleConfig.packageJSONConfig == nil {
 			return templateSetup()
@@ -497,8 +497,8 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 		return ctr.
 			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
-			WithExec([]string{"npm", "pkg", "set", "type=module"}).
-			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
+
 	case Deno:
 		return ctr.WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts"})
 	default:
@@ -506,17 +506,29 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 	}
 }
 
+// Update the user's package.json with required dependencies to use the Typescript SDK.
+func (t *TypescriptSdk) configurePackageJSON(file *dagger.File) *dagger.File {
+	return dag.
+		Container().
+		From(tsdistconsts.DefaultNodeImageRef).
+		WithDirectory("/src", dag.Directory().WithFile("package.json", file)).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "pkg", "set", "type=module"}).
+		WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.8.2"}).
+		// Remove the dagger dependency from the package.json for smooth transition to bundle system.
+		WithExec([]string{"npm", "pkg", "delete", "dependencies[@dagger.io/dagger]"}).
+		File("/src/package.json")
+}
+
 // addSDK returns a directory with the SDK sources.
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
-		WithoutDirectory("codegen").
-		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module").
-		WithoutDirectory("src/provisioning")
+		Directory("/bundled_lib").
+		WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export"))
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.Directory {
+func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.File {
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
@@ -530,11 +542,13 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 			"--module-name", t.moduleConfig.name,
 			"--module-source-path", t.moduleConfig.modulePath(),
 			"--introspection-json-path", schemaPath,
+			"--bundle",
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		// Return the generated code directory.
-		Directory(t.moduleConfig.sdkPath())
+		Directory(t.moduleConfig.sdkPath()).
+		File("/src/api/client.gen.ts")
 }
 
 // detectBaseImageRef return the base image ref of the runtime
@@ -725,13 +739,6 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 		return ctr.WithFile("yarn.lock", file), nil
 	case Pnpm:
 		ctr = ctr.WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)})
-
-		if !t.moduleConfig.hasFile("pnpm-workspace.yaml") {
-			ctr = ctr.
-				WithNewFile("pnpm-workspace.yaml", `packages:
-  - './sdk'
-			`)
-		}
 
 		return ctr.WithExec([]string{"pnpm", "install", "--lockfile-only"}), nil
 	case Npm:

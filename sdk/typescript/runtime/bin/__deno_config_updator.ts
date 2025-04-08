@@ -1,7 +1,8 @@
 const denoConfigPath = "./deno.json"
 const daggerImports = {
-  "@dagger.io/dagger": "./sdk/src/index.ts",
-  "@dagger.io/dagger/telemetry": "./sdk/src/telemetry/index.ts",
+  "@dagger.io/dagger": "./sdk/index.ts",
+  "@dagger.io/dagger/telemetry": "./sdk/telemetry.ts",
+  typescript: "npm:typescript@^5.8.2",
 }
 const unstableFlags = [
   "bare-node-builtins",
@@ -34,15 +35,6 @@ for (const [key, value] of Object.entries(daggerImports)) {
   if (!denoConfig.imports[key]) {
     denoConfig.imports[key] = value
   }
-}
-
-// Update workspace statements to include SDK
-if (!denoConfig.workspace) {
-  denoConfig.workspace = []
-}
-
-if (!denoConfig.workspace.includes("./sdk")) {
-  denoConfig.workspace.push("./sdk")
 }
 
 // Update unstable features
