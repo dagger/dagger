@@ -111,7 +111,7 @@ func (s *directorySchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
-			Doc(`Builds a new Docker container from this directory, using a Dockerfile.`).
+			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
 			ArgDoc("platform", `The platform to build.`).
 			ArgDoc("buildArgs", `Build arguments to use in the build.`).
