@@ -194,6 +194,91 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			// never a reason to call "sync" since we call it automatically
 			continue
 		}
+		// Hide functions from the largest and most commonly used core types,
+		// to prevent tool bloat
+		switch typeName {
+		case "Container":
+			switch field.Name {
+			case
+				"build",
+				"defaultArgs",
+				"directory",
+				"entrypoint",
+				"envVariable",
+				"envVariables",
+				"experimentalWithAllGPUs",
+				"experimentalWithGPU",
+				"export",
+				"exposedPorts",
+				"file",
+				"imageRef",
+				"import",
+				"label",
+				"labels",
+				"mounts",
+				"pipeline",
+				"platform",
+				"terminal",
+				"up",
+				"user",
+				"withAnnotation",
+				"withDefaultTerminalCmd",
+				"withDirectory",
+				"withFile",
+				"withFiles",
+				"withFocus",
+				"withMountedCache",
+				"withMountedDirectory",
+				"withMountedFile",
+				"withMountedSecret",
+				"withMountedTemp",
+				"withNewFile",
+				"withoutAnnotation",
+				"withoutDefaultArgs",
+				"withoutDirectory",
+				"withoutEnvVariable",
+				"withoutExposedPort",
+				"withoutFile",
+				"withoutFiles",
+				"withoutFocus",
+				"withoutMount",
+				"withoutRegistryAuth",
+				"withoutSecretVariable",
+				"withoutUnixSocket",
+				"withoutUser",
+				"withoutWorkdir",
+				"workdir":
+				continue
+			}
+		case "Directory":
+			switch field.Name {
+			case
+				// Nice to have, confusing
+				"asModule",
+				"asModuleSource",
+				// Side effect
+				"export",
+				// Nice to have
+				"name",
+				// Side effect
+				"terminal",
+				// Nice to have, confusing
+				"withFiles",
+				"withTimestamps",
+				"withoutDirectory",
+				"withoutFile",
+				"withoutFiles":
+				continue
+			}
+		case "File":
+			switch field.Name {
+			case
+				"export",
+				"withName",
+				"withTimestamps":
+				continue
+			}
+		}
 		if field.Directives.ForName(trivialFieldDirectiveName) != nil {
 			// skip trivial fields on objects, only expose "real" functions
 			// with implementations
