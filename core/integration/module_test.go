@@ -5724,7 +5724,7 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	case "python":
 		return "sdk/src/dagger/client/gen.py"
 	case "typescript":
-		return "sdk/src/api/client.gen.ts"
+		return "sdk/client.gen.ts"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
