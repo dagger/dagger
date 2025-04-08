@@ -45,6 +45,21 @@ OPENAI_API_KEY="op://Private/OpenAI API Key/password"
 - `OPENAI_MODEL`: optional, for example, `"gpt-4o"`. See other [model name strings](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
 - `OPENAI_AZURE_VERSION`: optional, for example, `"2024-12-01-preview"`
 
+## Docker Model Runner
+
+1. Configure [Docker Model Runner](https://docs.docker.com/desktop/features/model-runner/) with Docker Desktop
+2. Pull any model from [Docker Hub](https://hub.docker.com/u/ai) such as `ai/qwen2.5`
+2. Configure the following environment variables, using `ai/qwen2.5` as an example default model:
+
+    ```shell
+    OPENAI_BASE_URL=http://host.docker.internal:12434/engines/v1/
+    OPENAI_MODEL=ai/qwen2.5
+    OPENAI_DISABLE_STREAMING=true
+    ```
+
+    :::note
+    This assumes your Dagger engine is running on the same machine as Docker Desktop. If this is not the case, make sure to replace `host.docker.internal` with the appropriate hostname or IP address of the machine running Docker Desktop.
+
 ## Ollama
 
 1. Install Ollama from [ollama.ai](https://ollama.ai).
