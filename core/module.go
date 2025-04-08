@@ -73,6 +73,10 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+func (mod *Module) GetSource() *ModuleSource {
+	return mod.Source.Self
+}
+
 func (mod *Module) IDModule() *call.Module {
 	var ref, pin string
 	switch mod.Source.Self.Kind {
@@ -623,6 +627,9 @@ type Mod interface {
 	// modules from the unified schema. (e.g. LLM which is extended with each
 	// type via middleware)
 	TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error)
+
+	// Source returns the ModuleSource for this module
+	GetSource() *ModuleSource
 }
 
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.

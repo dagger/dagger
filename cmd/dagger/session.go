@@ -23,8 +23,6 @@ import (
 var (
 	sessionLabels  = enginetel.NewLabelFlag()
 	sessionVersion string
-
-	serveModule bool
 )
 
 func sessionCmd() *cobra.Command {
@@ -36,7 +34,6 @@ func sessionCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
-	cmd.Flags().BoolVar(&serveModule, "serve-module", false, "Automatically serve the module in the context directory if available")
 	// This is not used by kept for backward compatibility.
 	// We don't want SDKs failing because this flag is not defined.
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
@@ -87,7 +84,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken.String(),
 		Version:     sessionVersion,
-		ServeModule: serveModule,
 	}, func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any

@@ -6,7 +6,6 @@ export interface ConnectOpts {
   Project?: string
   LogOutput?: Writable
   Timeout?: number
-  ServeCurrentModule?: boolean
 }
 
 export interface ConnectParams {
