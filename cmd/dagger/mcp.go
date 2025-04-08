@@ -71,7 +71,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	q = q.Root().Select("env").Select("with"+modDef.MainObject.AsObject.Name+"Input").
 		Arg("name", modName).
 		Arg("value", modID).
-		Arg("description", "module to expose as an MCP server").
+		Arg("description", modDef.MainObject.Description()).
 		Select("id")
 
 	var envID string
