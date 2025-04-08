@@ -273,6 +273,15 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+// Key value object that represents a build argument.
+type SecretArg struct {
+	// The build argument name.
+	Name string `json:"name"`
+
+	// The build argument value.
+	Value *Secret `json:"value"`
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
@@ -691,7 +700,7 @@ type ContainerBuildOpts struct {
 	// They will be mounted at /run/secrets/[secret-name] in the build container
 	//
 	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-	Secrets []*Secret
+	SecretArgs []SecretArg
 	// If set, skip the automatic init process injected into containers created by RUN statements.
 	//
 	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
@@ -715,9 +724,9 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
 		}
-		// `secrets` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Secrets) {
-			q = q.Arg("secrets", opts[i].Secrets)
+		// `secretArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SecretArgs) {
+			q = q.Arg("secretArgs", opts[i].SecretArgs)
 		}
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
@@ -2534,7 +2543,7 @@ type DirectoryDockerBuildOpts struct {
 	// Secrets to pass to the build.
 	//
 	// They will be mounted at /run/secrets/[secret-name].
-	Secrets []*Secret
+	SecretArgs []SecretArg
 	// If set, skip the automatic init process injected into containers created by RUN statements.
 	//
 	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
@@ -2561,9 +2570,9 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
 		}
-		// `secrets` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Secrets) {
-			q = q.Arg("secrets", opts[i].Secrets)
+		// `secretArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SecretArgs) {
+			q = q.Arg("secretArgs", opts[i].SecretArgs)
 		}
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {

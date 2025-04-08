@@ -83,7 +83,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $dockerfile = 'Dockerfile',
         ?string $target = '',
         ?array $buildArgs = null,
-        ?array $secrets = null,
+        ?array $secretArgs = null,
         ?bool $noInit = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
@@ -99,8 +99,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $buildArgs) {
         $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
         }
-        if (null !== $secrets) {
-        $innerQueryBuilder->setArgument('secrets', $secrets);
+        if (null !== $secretArgs) {
+        $innerQueryBuilder->setArgument('secretArgs', $secretArgs);
         }
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);

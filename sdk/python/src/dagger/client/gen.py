@@ -402,6 +402,18 @@ class PortForward(Input):
 
 
 @typecheck
+@dataclass(slots=True)
+class SecretArg(Input):
+    """Key value object that represents a build argument."""
+
+    name: str
+    """The build argument name."""
+
+    value: "Secret"
+    """The build argument value."""
+
+
+@typecheck
 class Binding(Type):
     def as_cache_volume(self) -> "CacheVolume":
         """Retrieve the binding value, as type CacheVolume"""
@@ -711,7 +723,7 @@ class Container(Type):
         dockerfile: str | None = "Dockerfile",
         target: str | None = "",
         build_args: list[BuildArg] | None = None,
-        secrets: "list[Secret] | None" = None,
+        secret_args: list[SecretArg] | None = None,
         no_init: bool | None = False,
     ) -> Self:
         """Initializes this container from a Dockerfile build.
@@ -726,7 +738,7 @@ class Container(Type):
             Target build stage to build.
         build_args:
             Additional build arguments.
-        secrets:
+        secret_args:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name] in the build
             container
@@ -747,7 +759,7 @@ class Container(Type):
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
             Arg("buildArgs", () if build_args is None else build_args, ()),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("secretArgs", () if secret_args is None else secret_args, ()),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("build", _args)
@@ -2763,7 +2775,7 @@ class Directory(Type):
         dockerfile: str | None = "Dockerfile",
         target: str | None = "",
         build_args: list[BuildArg] | None = None,
-        secrets: "list[Secret] | None" = None,
+        secret_args: list[SecretArg] | None = None,
         no_init: bool | None = False,
     ) -> Container:
         """Builds a new Docker container from this directory.
@@ -2778,7 +2790,7 @@ class Directory(Type):
             Target build stage to build.
         build_args:
             Build arguments to use in the build.
-        secrets:
+        secret_args:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name].
         no_init:
@@ -2793,7 +2805,7 @@ class Directory(Type):
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
             Arg("buildArgs", () if build_args is None else build_args, ()),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("secretArgs", () if secret_args is None else secret_args, ()),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("dockerBuild", _args)
@@ -9935,6 +9947,7 @@ __all__ = [
     "ScalarTypeDef",
     "ScalarTypeDefID",
     "Secret",
+    "SecretArg",
     "SecretID",
     "Service",
     "ServiceID",

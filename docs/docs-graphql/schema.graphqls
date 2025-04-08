@@ -222,7 +222,7 @@ type Container {
     /run/secrets/my-secret)](http://example.com?token=$(cat
     /run/secrets/my-secret))
     """
-    secrets: [SecretID!] = []
+    secretArgs: [SecretArg!] = []
 
     """Target build stage to build."""
     target: String = ""
@@ -1328,7 +1328,7 @@ type Directory {
     
     They will be mounted at /run/secrets/[secret-name].
     """
-    secrets: [SecretID!] = []
+    secretArgs: [SecretArg!] = []
 
     """Target build stage to build."""
     target: String = ""
@@ -3483,6 +3483,15 @@ type Secret {
 
   """The URI of this secret."""
   uri: String!
+}
+
+"""Key value object that represents a build argument."""
+input SecretArg {
+  """The build argument name."""
+  name: String!
+
+  """The build argument value."""
+  value: SecretID!
 }
 
 """

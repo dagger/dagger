@@ -90,7 +90,7 @@ defmodule Dagger.Directory do
           {:dockerfile, String.t() | nil},
           {:target, String.t() | nil},
           {:build_args, [Dagger.BuildArg.t()]},
-          {:secrets, [Dagger.SecretID.t()]},
+          {:secret_args, [Dagger.SecretArg.t()]},
           {:no_init, boolean() | nil}
         ]) :: Dagger.Container.t()
   def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
@@ -101,13 +101,7 @@ defmodule Dagger.Directory do
       |> QB.maybe_put_arg("dockerfile", optional_args[:dockerfile])
       |> QB.maybe_put_arg("target", optional_args[:target])
       |> QB.maybe_put_arg("buildArgs", optional_args[:build_args])
-      |> QB.maybe_put_arg(
-        "secrets",
-        if(optional_args[:secrets],
-          do: Enum.map(optional_args[:secrets], &Dagger.ID.id!/1),
-          else: nil
-        )
-      )
+      |> QB.maybe_put_arg("secretArgs", optional_args[:secret_args])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
 
     %Dagger.Container{

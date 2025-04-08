@@ -65,13 +65,35 @@ func (s *containerSchema) Install() {
 				`Image's address from its registry.`,
 				`Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").`),
 
-		dagql.Func("build", s.build).
+		dagql.Func("build", s.buildLegacy).
+			View(BeforeVersion("v0.18.2")).
 			Doc(`Initializes this container from a Dockerfile build.`).
 			ArgDoc("context", "Directory context used by the Dockerfile.").
 			ArgDoc("dockerfile", "Path to the Dockerfile to use.").
 			ArgDoc("buildArgs", "Additional build arguments.").
 			ArgDoc("target", "Target build stage to build.").
 			ArgDoc("secrets",
+				`Secrets to pass to the build.`,
+				`They will be mounted at /run/secrets/[secret-name] in the build container`,
+				`They can be accessed in the Dockerfile using the "secret" mount type
+				and mount path /run/secrets/[secret-name], e.g. RUN
+				--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
+				/run/secrets/my-secret)](http://example.com?token=$(cat
+					/run/secrets/my-secret))`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers created by RUN statements.`,
+				`This should only be used if the user requires that their exec processes be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
+
+		dagql.Func("build", s.build).
+			View(AfterVersion("v0.18.3")).
+			Doc(`Initializes this container from a Dockerfile build.`).
+			ArgDoc("context", "Directory context used by the Dockerfile.").
+			ArgDoc("dockerfile", "Path to the Dockerfile to use.").
+			ArgDoc("buildArgs", "Additional build arguments.").
+			ArgDoc("target", "Target build stage to build.").
+			ArgDoc("secretArgs",
 				`Secrets to pass to the build.`,
 				`They will be mounted at /run/secrets/[secret-name] in the build container`,
 				`They can be accessed in the Dockerfile using the "secret" mount type
@@ -793,7 +815,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 	return inst, nil
 }
 
-type containerBuildArgs struct {
+type containerBuildArgsLegacy struct {
 	Context    core.DirectoryID
 	Dockerfile string                             `default:"Dockerfile"`
 	Target     string                             `default:""`
@@ -802,15 +824,41 @@ type containerBuildArgs struct {
 	NoInit     bool                               `default:"false"`
 }
 
+func (s *containerSchema) buildLegacy(ctx context.Context, parent *core.Container, args containerBuildArgsLegacy) (*core.Container, error) {
+	inps := []dagql.InputObject[core.SecretArg]{}
+	for _, secret := range args.Secrets {
+		inps = append(inps, dagql.InputObject[core.SecretArg]{
+			Value: core.SecretArg{
+				Value: secret,
+			},
+		})
+	}
+
+	return s.build(ctx, parent, containerBuildArgs{
+		Context:    args.Context,
+		Dockerfile: args.Dockerfile,
+		Target:     args.Target,
+		BuildArgs:  args.BuildArgs,
+		SecretArgs: inps,
+		NoInit:     args.NoInit,
+	})
+}
+
+type containerBuildArgs struct {
+	Context    core.DirectoryID
+	Dockerfile string                              `default:"Dockerfile"`
+	Target     string                              `default:""`
+	BuildArgs  []dagql.InputObject[core.BuildArg]  `default:"[]"`
+	SecretArgs []dagql.InputObject[core.SecretArg] `default:"[]"`
+	NoInit     bool                                `default:"false"`
+}
+
 func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
 	dir, err := args.Context.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := dagql.LoadIDs(ctx, s.srv, args.Secrets)
-	if err != nil {
-		return nil, err
-	}
+
 	secretStore, err := parent.Query.Secrets(ctx)
 	if err != nil {
 		return nil, err
@@ -821,6 +869,31 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		return nil, err
 	}
 
+	vals := make([]core.SecretArgInternal, len(args.SecretArgs))
+	for i, arg := range args.SecretArgs {
+		secret, ok := secretStore.GetSecret(arg.Value.Value.ID().Digest())
+		if !ok {
+			return nil, fmt.Errorf("secret %q not found", arg.Value.Value.ID().Digest())
+		}
+
+		// if secret name is not explicitly provided, fallback to fetching
+		// from the secret store
+		secretName := arg.Value.Name
+		if arg.Value.Name == "" {
+			secretNameFromStore, ok := secretStore.GetSecretName(arg.Value.Value.ID().Digest())
+			if !ok {
+				return nil, fmt.Errorf("secret %q not found", arg.Value.Value.ID().Digest())
+			}
+			secretName = secretNameFromStore
+		}
+
+		vals[i] = core.SecretArgInternal{
+			Name:     secretName,
+			Secret:   secret,
+			SecretID: args.SecretArgs[i].Value.Value,
+		}
+	}
+
 	return parent.Build(
 		ctx,
 		dir.Self,
@@ -828,7 +901,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
-		secrets,
+		vals,
 		secretStore,
 		args.NoInit,
 	)
