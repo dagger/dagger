@@ -244,7 +244,6 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 				"user",
 				"withAnnotation",
 				"withDefaultTerminalCmd",
-				"withFile",
 				"withFiles",
 				"withFocus",
 				"withMountedCache",

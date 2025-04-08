@@ -294,10 +294,10 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withFile", s.withFile).
-			Doc(`Retrieves this container plus the contents of the given file copied to the given path.`).
-			ArgDoc("path", `Location of the copied file (e.g., "/tmp/file.txt").`).
-			ArgDoc("source", `Identifier of the file to copy.`).
-			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`).
+			Doc(`Return a container snapshot with a file added`).
+			ArgDoc("path", `Path of the new file. Example: "/path/to/new-file.txt"`).
+			ArgDoc("source", `File to add`).
+			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
 			ArgDoc("owner",
 				`A user:group to set for the file.`,
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
