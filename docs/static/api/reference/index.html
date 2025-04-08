@@ -191,6 +191,7 @@
               <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
               <li><a href="#definition-ScalarTypeDefID">ScalarTypeDefID</a></li>
               <li><a href="#definition-Secret">Secret</a></li>
+              <li><a href="#definition-SecretArg">SecretArg</a></li>
               <li><a href="#definition-SecretID">SecretID</a></li>
               <li><a href="#definition-Service">Service</a></li>
               <li><a href="#definition-ServiceID">ServiceID</a></li>
@@ -4193,7 +4194,7 @@
                                 <p>This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>secretArgs</code></span> - <span class="property-type"><a href="#definition-SecretArg"><code>[SecretArg!]</code></a></span></h6>
                                 <p>Secrets to pass to the build.</p>
                                 <p>They will be mounted at /run/secrets/[secret-name] in the build container</p>
                                 <p>They can be accessed in the Dockerfile using the &quot;secret&quot; mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret)](<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret))</p>
@@ -5771,7 +5772,7 @@
                                 <p>The platform to build.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>secretArgs</code></span> - <span class="property-type"><a href="#definition-SecretArg"><code>[SecretArg!]</code></a></span></h6>
                                 <p>Secrets to pass to the build.</p>
                                 <p>They will be mounted at /run/secrets/[secret-name].</p>
                               </div>
@@ -10220,6 +10221,59 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-SecretArg" class="definition definition-input-object" data-traverse-target="definition-SecretArg">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">SecretArg</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Key value object that represents a build argument.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Input Field</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> The build argument name. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
+                        </td>
+                        <td> The build argument value. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <html>
+                    <head></head>
+                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">SecretID</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+                    </body>
+                  </html>
                 </div>
               </div>
             </div>

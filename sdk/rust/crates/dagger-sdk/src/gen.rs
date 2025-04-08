@@ -1582,6 +1582,11 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct SecretArg {
+    pub name: String,
+    pub value: SecretId,
+}
 #[derive(Clone)]
 pub struct Binding {
     pub proc: Option<Arc<DaggerSessionProc>>,
@@ -1810,7 +1815,7 @@ pub struct ContainerBuildOpts<'a> {
     /// They will be mounted at /run/secrets/[secret-name] in the build container
     /// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
     #[builder(setter(into, strip_option), default)]
-    pub secrets: Option<Vec<SecretId>>,
+    pub secret_args: Option<Vec<SecretArg>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -2292,8 +2297,8 @@ impl Container {
         if let Some(build_args) = opts.build_args {
             query = query.arg("buildArgs", build_args);
         }
-        if let Some(secrets) = opts.secrets {
-            query = query.arg("secrets", secrets);
+        if let Some(secret_args) = opts.secret_args {
+            query = query.arg("secretArgs", secret_args);
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
@@ -4300,7 +4305,7 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// Secrets to pass to the build.
     /// They will be mounted at /run/secrets/[secret-name].
     #[builder(setter(into, strip_option), default)]
-    pub secrets: Option<Vec<SecretId>>,
+    pub secret_args: Option<Vec<SecretArg>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -4514,8 +4519,8 @@ impl Directory {
         if let Some(build_args) = opts.build_args {
             query = query.arg("buildArgs", build_args);
         }
-        if let Some(secrets) = opts.secrets {
-            query = query.arg("secrets", secrets);
+        if let Some(secret_args) = opts.secret_args {
+            query = query.arg("secretArgs", secret_args);
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);

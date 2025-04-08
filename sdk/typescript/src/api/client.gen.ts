@@ -142,7 +142,7 @@ export type ContainerBuildOpts = {
    *
    * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
    */
-  secrets?: Secret[]
+  secretArgs?: SecretArg[]
 
   /**
    * If set, skip the automatic init process injected into containers created by RUN statements.
@@ -711,7 +711,7 @@ export type DirectoryDockerBuildOpts = {
    *
    * They will be mounted at /run/secrets/[secret-name].
    */
-  secrets?: Secret[]
+  secretArgs?: SecretArg[]
 
   /**
    * If set, skip the automatic init process injected into containers created by RUN statements.
@@ -1269,6 +1269,18 @@ export type SDKConfigID = string & { __SDKConfigID: never }
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
+export type SecretArg = {
+  /**
+   * The build argument name.
+   */
+  name: string
+
+  /**
+   * The build argument value.
+   */
+  value: Secret
+}
+
 /**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
@@ -1816,7 +1828,7 @@ export class Container extends BaseClient {
    * @param opts.dockerfile Path to the Dockerfile to use.
    * @param opts.target Target build stage to build.
    * @param opts.buildArgs Additional build arguments.
-   * @param opts.secrets Secrets to pass to the build.
+   * @param opts.secretArgs Secrets to pass to the build.
    *
    * They will be mounted at /run/secrets/[secret-name] in the build container
    *
@@ -3070,7 +3082,7 @@ export class Directory extends BaseClient {
    * @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
    * @param opts.target Target build stage to build.
    * @param opts.buildArgs Build arguments to use in the build.
-   * @param opts.secrets Secrets to pass to the build.
+   * @param opts.secretArgs Secrets to pass to the build.
    *
    * They will be mounted at /run/secrets/[secret-name].
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.

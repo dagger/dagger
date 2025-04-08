@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/engine/client/secretprovider"
@@ -154,6 +155,16 @@ func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
 	return ok
 }
 
+func (store *SecretStore) GetSecret(idDgst digest.Digest) (*Secret, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return nil, false
+	}
+	return secret.Secret, true
+}
+
 func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -195,7 +206,15 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	defer store.mu.RUnlock()
 	secret, ok := store.secrets[idDgst]
 	if !ok {
-		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
+		// It seems like when setting secret using SetSecret, it is stored in the secretStore as Secret@xxh3:......,
+		// but with the new secrets api, the key does not have that prefix.
+		// TODO(rajatjindal): check with Justin/Andrea if we need to handle it differently
+		idDgst = digest.Digest(strings.TrimPrefix(idDgst.String(), "Secret@"))
+		// fallback to removing Secret@ prefix
+		secret, ok = store.secrets[idDgst]
+		if !ok {
+			return nil, fmt.Errorf("secret xxxx %s: %w", idDgst, secrets.ErrNotFound)
+		}
 	}
 
 	// If the secret is stored locally (setSecret), return the plaintext.

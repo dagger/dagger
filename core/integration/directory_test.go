@@ -928,24 +928,60 @@ CMD echo "stage2"
 	})
 
 	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
-		sec := c.SetSecret("my-secret", "barbar")
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/foo").
+			With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+			WithNewFile("main.go", `package main
 
-		src := contextDir.
-			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
-WORKDIR /src
-RUN --mount=type=secret,id=my-secret test "$(cat /run/secrets/my-secret)" = "barbar"
-RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret
-CMD cat /secret
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+)
+
+type Foo struct{}
+
+func (m *Foo) DirBuild(ctx context.Context, dir *dagger.Directory, mySecret *dagger.Secret) (string, error) {
+	return dir.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		SecretArgs: []dagger.SecretArg{
+			{
+				Name:  "my-secret",
+				Value: mySecret,
+			},
+		},
+	}).
+		WithExec(nil).Stdout(ctx)
+}
+
 `)
+		dockerfile := `FROM golang:1.18.2-alpine
+WORKDIR /src
+RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
+RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /secret
+CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
+`
 
-		stdout, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Secrets: []*dagger.Secret{sec},
-		}).
-			WithExec(nil).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, stdout, "***")
+		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.
+				WithNewFile("Dockerfile", dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("ctr-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("ctr-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
 	})
 
 	t.Run("with no .dockerignore", func(ctx context.Context, t *testctx.T) {

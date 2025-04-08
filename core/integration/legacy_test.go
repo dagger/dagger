@@ -1019,3 +1019,161 @@ func (m *Bare) dir() *dagger.Directory {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
 }
+
+func (LegacySuite) TestDockerBuild(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#9118
+	//
+	// Ensure that the legacy methods that return paths don't return trailing
+	// slashes for directories.
+
+	c := connect(ctx, t)
+	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/foo").
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+)
+
+type Foo struct{}
+
+// Returns a container that echoes whatever string argument is provided
+func (m *Foo) CtrBuild(ctx context.Context, dir *dagger.Directory, mySecret *dagger.Secret) (string, error) {
+	secretVal, err := mySecret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	buildSecret := dag.SetSecret("my-secret", secretVal)
+	return dag.Container().
+		Build(dir, dagger.ContainerBuildOpts{
+			Secrets: []*dagger.Secret{buildSecret},
+		}).
+		WithExec(nil).Stdout(ctx)
+}
+
+func (m *Foo) DirBuild(ctx context.Context, dir *dagger.Directory, mySecret *dagger.Secret) (string, error) {
+	secretVal, err := mySecret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	buildSecret := dag.SetSecret("my-secret", secretVal)
+	return dir.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Secrets: []*dagger.Secret{buildSecret},
+	}).
+		WithExec(nil).Stdout(ctx)
+}
+`).
+			WithNewFile("dagger.json", `{
+  "name": "foo",
+  "engineVersion": "v0.18.1",
+  "sdk": {
+    "source": "go"
+  }
+}`)
+
+		dockerfile := `FROM golang:1.18.2-alpine
+WORKDIR /src
+RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
+RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /secret
+CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
+`
+
+		t.Run("container.build builtin frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.
+				WithNewFile("Dockerfile", dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("ctr-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("container.build remote frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("ctr-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("directory.dockerBuild builtin frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.
+				WithNewFile("Dockerfile", dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("dir-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("directory.dockerBuild remote frontend", func(ctx context.Context, t *testctx.T) {
+			stdout, err := base.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile).
+				WithNewFile("mysecret.txt", "barbar").
+				With(daggerCall("dir-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+	})
+
+	t.Run("prevent duplicate secret transform", func(ctx context.Context, t *testctx.T) {
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/foo").
+			WithNewFile("main.go", fmt.Sprintf(`package main
+
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+)
+
+type Foo struct{}
+
+func (m *Foo) CtrBuild(ctx context.Context, dir *dagger.Directory, mySecret *dagger.Secret) (*dagger.Container, error) {
+	secretVal, err := mySecret.Plaintext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	buildSecret := dag.SetSecret("gh-secret", secretVal)
+
+	return dag.Container().
+		From("%s").
+		WithWorkdir("/src").
+		WithMountedSecret("/run/secret", buildSecret).
+		WithExec([]string{"cat", "/run/secret"}).
+		WithNewFile("Dockerfile", "FROM alpine\nCOPY / /\n").
+		Directory("/src").
+		DockerBuild().
+		Sync(ctx)
+}
+
+`, alpineImage)).
+			WithNewFile("dagger.json", `{
+  "name": "foo",
+  "engineVersion": "v0.18.1",
+  "sdk": {
+    "source": "go"
+  }
+}`)
+
+		// building src should only transform the secrets from the raw
+		// Dockerfile, not from the src input
+		_, err := base.WithNewFile("mysecret.txt", "barbar").
+			With(daggerCall("ctr-build", "--my-secret=file://./mysecret.txt", "--dir=.")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+	})
+}
