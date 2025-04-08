@@ -95,7 +95,8 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		t.Run("Add dagger dependencies to the existing package.json", func(ctx context.Context, t *testctx.T) {
 			pkgJSON, err := modGen.File("/work/package.json").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, pkgJSON, `"@dagger.io/dagger":`)
+			require.Contains(t, pkgJSON, `"typescript":`)
+			require.NotContains(t, pkgJSON, `"@dagger.io/dagger":`)
 			require.Contains(t, pkgJSON, `"name": "my-module"`)
 		})
 	})
