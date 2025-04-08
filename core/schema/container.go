@@ -314,8 +314,8 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withoutFiles", s.withoutFiles).
-			Doc(`Retrieves this container with the files at the given paths removed.`).
-			ArgDoc("paths", `Location of the files to remove (e.g., ["/file.txt"]).`).
+			Doc(`Return a new container spanshot with specified files removed`).
+			ArgDoc("paths", `Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of paths according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
@@ -335,10 +335,10 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withNewFile", s.withNewFile).
 			View(AllVersion).
-			Doc(`Retrieves this container plus a new file written at the given path.`).
-			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
-			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
-			ArgDoc("permissions", `Permission given to the written file (e.g., 0600).`).
+			Doc(`Return a new container snapshot, with a file added to its filesystem`).
+			ArgDoc("path", `Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"`).
+			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
+			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
 			ArgDoc("owner",
 				`A user:group to set for the file.`,
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
@@ -358,7 +358,7 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withDirectory", s.withDirectory).
-			Doc(`Retrieves this container plus a directory written at the given path.`).
+			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			ArgDoc("path", `Location of the written directory (e.g., "/tmp/directory").`).
 			ArgDoc("directory", `Identifier of the directory to write`).
 			ArgDoc("exclude", `Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).`).
@@ -372,7 +372,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutDirectory", s.withoutDirectory).
-			Doc(`Retrieves this container with the directory at the given path removed.`).
+			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
