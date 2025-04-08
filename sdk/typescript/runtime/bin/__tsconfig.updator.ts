@@ -4,8 +4,8 @@ const tsConfigPath = `./tsconfig.json`
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
-const daggerPath = "./sdk/src"
-const daggerTelemetryPath = "./sdk/src/telemetry"
+const daggerPath = "./sdk/index.ts"
+const daggerTelemetryPath = "./sdk/telemetry.ts"
 
 // If the tsconfig.json file doesn't exist, create it with default config.
 if (!fs.existsSync(tsConfigPath)) {
@@ -15,8 +15,8 @@ if (!fs.existsSync(tsConfigPath)) {
       moduleResolution: "Node",
       experimentalDecorators: true,
       paths: {
-        "@dagger.io/dagger": ["./sdk/src"],
-        "@dagger.io/dagger/telemetry": ["./sdk/src/telemetry"],
+        "@dagger.io/dagger": ["./sdk/index.ts"],
+        "@dagger.io/dagger/telemetry": ["./sdk/telemetry.ts"],
       },
     },
   }

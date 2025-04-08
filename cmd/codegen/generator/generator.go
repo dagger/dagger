@@ -63,6 +63,9 @@ type Config struct {
 	// This is used for client generator to automatically serves the dependencies
 	// on connection.
 	GitDependencies []modules.ModuleConfigDependency
+
+	// Generate the client in bundle mode.
+	Bundle bool
 }
 
 type Generator interface {
