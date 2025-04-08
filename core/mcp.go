@@ -197,6 +197,28 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 		// Hide functions from the largest and most commonly used core types,
 		// to prevent tool bloat
 		switch typeName {
+		case "Query":
+			switch field.Name {
+			case
+				"currentModule",
+				"currentTypeDefs",
+				"defaultPlatform",
+				"engine",
+				"env",
+				"error",
+				"function",
+				"generatedCode",
+				"llm",
+				"loadSecretFromName",
+				"module",
+				"moduleSource",
+				"secret",
+				"setSecret",
+				"sourceMap",
+				"typeDef",
+				"version":
+				continue
+			}
 		case "Container":
 			switch field.Name {
 			case
