@@ -1,13 +1,5 @@
 import dagger
-from dagger import dag, enum_type, function, object_type
-
-
-@enum_type
-class Locator(dagger.Enum):
-    BRANCH = "BRANCH"
-    TAG = "TAG"
-    COMMIT = "COMMIT"
-
+from dagger import dag, function, object_type
 
 @object_type
 class MyModule:
@@ -21,23 +13,13 @@ class MyModule:
     async def clone(
         self,
         repository: str,
-        locator: Locator,
         ref: str,
     ) -> dagger.Container:
-        r = dag.git(repository)
-
-        if locator == Locator.BRANCH:
-            d = r.branch(ref).tree()
-        elif locator == Locator.TAG:
-            d = r.tag(ref).tree()
-        elif locator == Locator.COMMIT:
-            d = r.commit(ref).tree()
-        else:
-            raise ValueError
+        repo_dir = dag.git(repository).ref(ref).tree()
 
         return (
             dag.container()
             .from_("alpine:latest")
-            .with_directory("/src", d)
+            .with_directory("/src", repo_dir)
             .with_workdir("/src")
         )
