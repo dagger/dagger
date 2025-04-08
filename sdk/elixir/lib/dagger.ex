@@ -56,6 +56,14 @@ defmodule Dagger do
   Please note that this API is an internal API, it may break from version to version. So
   please use with cautions.
 
+  ## GraphQL Client adapter
+
+  The SDK ship using Erlang `:httpc` as a backend by default. You can switch to `Req` by 
+  add `:req` as a dependency and configure HTTP client by adding this line below to your 
+  `config/config.exs`:
+
+      config :dagger, client: Dagger.Core.GraphQLClient.Req
+
   ## Module support
 
   The SDK also support Dagger Module, please see `Dagger.Mod.Object` for more

@@ -30,7 +30,8 @@ defmodule Dagger.MixProject do
       {:nimble_options, "~> 1.0"},
       {:nestru, "~> 1.0"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:req, "~> 0.5", optional: true}
     ]
   end
 
