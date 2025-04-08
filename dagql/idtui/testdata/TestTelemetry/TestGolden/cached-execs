@@ -17,10 +17,8 @@ Expected stderr:
 ✔ .cachedExecs: Void X.Xs
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ ✔ .withExec(args: ["echo", "cached-execs cached for good"]): Container! X.Xs
-│ ┃ cached-execs cached for good
-│ ✔ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs
-│ ┃ im also cached for good
+│ $ .withExec(args: ["echo", "cached-execs cached for good"]): Container! X.Xs CACHED
+│ $ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
 │ ✔ .withExec(args: ["echo", "im a buster", "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 │ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs

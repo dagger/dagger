@@ -212,6 +212,33 @@ func (mod *Module) View() (string, bool) {
 	return "", false
 }
 
+func (mod *Module) CacheConfigForCall(
+	ctx context.Context,
+	_ dagql.Object,
+	_ map[string]dagql.Input,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// Function calls on a module should be cached based on the module's content hash, not
+	// the module ID digest (which has a per-client cache key in order to deal with
+	// local dir and git repo loading)
+	id := dagql.CurrentID(ctx)
+	curIDNoMod := id.Receiver().Append(
+		id.Type().ToAST(),
+		id.Field(),
+		id.View(),
+		nil,
+		int(id.Nth()),
+		"",
+		id.Args()...,
+	)
+	cacheCfg.Digest = dagql.HashFrom(
+		curIDNoMod.Digest().String(),
+		mod.Source.Self.Digest,
+		mod.NameField, // the module source content digest only includes the original name
+	)
+	return &cacheCfg, nil
+}
+
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	var modType ModType
 	var ok bool

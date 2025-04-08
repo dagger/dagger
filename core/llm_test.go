@@ -4,10 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 type LLMTestQuery struct{}
@@ -33,7 +35,7 @@ func (mockSecret) Type() *ast.Type {
 func TestLlmConfig(t *testing.T) {
 	q := LLMTestQuery{}
 
-	srv := dagql.NewServer(q)
+	srv := dagql.NewServer(q, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 
 	vars := map[string]string{
 		"file://.env":                    "",
@@ -124,7 +126,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 
-			srv := dagql.NewServer(q)
+			srv := dagql.NewServer(q, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 			dagql.Fields[LLMTestQuery]{
 				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 					URI string
@@ -153,7 +155,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 func TestLlmConfigEnvFile(t *testing.T) {
 	q := LLMTestQuery{}
 
-	srv := dagql.NewServer(q)
+	srv := dagql.NewServer(q, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 	dagql.Fields[LLMTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string

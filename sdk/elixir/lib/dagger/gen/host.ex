@@ -64,6 +64,7 @@ defmodule Dagger.Host do
     }
   end
 
+  @deprecated "setSecretFile is superceded by use of the secret API with file:// URIs"
   @doc """
   Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 

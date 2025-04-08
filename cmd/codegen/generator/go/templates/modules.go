@@ -361,7 +361,7 @@ func dispatch(ctx context.Context) (rerr error) {
 	defer func() {
 		if rerr != nil {
 			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err)
+				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
 			}
 		}
 	}()

@@ -21,6 +21,8 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
@@ -62,6 +64,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -166,6 +169,11 @@ type Server struct {
 	gcmu                         sync.Mutex
 
 	//
+	// dagql cache
+	//
+	baseDagqlCache cache.Cache[digest.Digest, dagql.Typed]
+
+	//
 	// session+client state
 	//
 	daggerSessions   map[string]*daggerSession // session id -> session state
@@ -203,6 +211,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
+		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
 		daggerSessions: make(map[string]*daggerSession),
 	}
 
@@ -606,11 +615,7 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	l = l.WithField("dagger-session-count", len(srv.daggerSessions))
-	/* TODO: FIX
-	for _, s := range srv.daggerSessions {
-		l = s.LogMetrics(l)
-	}
-	*/
+	l = l.WithField("dagql-cache-size", srv.baseDagqlCache.Size())
 	return l
 }
 

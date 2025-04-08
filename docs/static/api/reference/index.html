@@ -83,7 +83,6 @@
               <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
               <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSecretFromID">loadSecretFromID</a></li>
-              <li><a href="#query-loadSecretFromName">loadSecretFromName</a></li>
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
@@ -3101,66 +3100,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadSecretFromName" class="operation operation-query" data-traverse-target="query-loadSecretFromName">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadSecretFromName</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a Secret from its Name.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Secret"><code>Secret!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>accessor</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -8401,10 +8340,11 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Host-setSecretFile" href="#Host-setSecretFile"><code>setSecretFile</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Host-setSecretFile" href="#Host-setSecretFile"><code>setSecretFile</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
                         <td>
                           <p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p>
                           <p>The file is limited to a size of 512000 bytes.</p>
+                          <span class="deprecation-reason">setSecretFile is superceded by use of the secret API with file:// URIs</span>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">

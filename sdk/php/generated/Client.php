@@ -595,19 +595,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a Secret from its Name.
-     */
-    public function loadSecretFromName(string $name, ?string $accessor = null): Secret
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSecretFromName');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $accessor) {
-        $innerQueryBuilder->setArgument('accessor', $accessor);
-        }
-        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a Service from its ID.
      */
     public function loadServiceFromID(ServiceId|Service $id): Service

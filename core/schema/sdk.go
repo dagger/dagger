@@ -198,13 +198,11 @@ func (s *sdkLoader) newModuleSDK(
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
 	rawConfig map[string]interface{},
 ) (*moduleSDK, error) {
-	dag := dagql.NewServer(root)
-
-	var err error
-	dag.Cache, err = root.Cache(ctx)
+	dagqlCache, err := root.Cache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
+	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 
 	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
@@ -1190,11 +1188,6 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 }
 
 func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, error) {
-	socketStore, err := sdk.root.Sockets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get socket store: %w", err)
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
@@ -1204,22 +1197,17 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 		return nil, nil
 	}
 
-	accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client resource name: %w", err)
-	}
-
 	var sockInst dagql.Instance[*core.Socket]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &sockInst,
 		dagql.Selector{
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "__internalSocket",
+			Field: "unixSocket",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "accessor",
-					Value: dagql.NewString(accessor),
+					Name:  "path",
+					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 				},
 			},
 		},
@@ -1229,10 +1217,6 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 
 	if sockInst.Self == nil {
 		return nil, fmt.Errorf("sockInst.Self is NIL")
-	}
-
-	if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-		return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
 	}
 
 	return []dagql.Selector{

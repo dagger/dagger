@@ -5724,6 +5724,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 //
 // The file is limited to a size of 512000 bytes.
+//
+// Deprecated: setSecretFile is superceded by use of the secret API with file:// URIs
 func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q := r.query.Select("setSecretFile")
 	q = q.Arg("name", name)
@@ -8428,27 +8430,6 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// LoadSecretFromNameOpts contains options for Client.LoadSecretFromName
-type LoadSecretFromNameOpts struct {
-	Accessor string
-}
-
-// Load a Secret from its Name.
-func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts) *Secret {
-	q := r.query.Select("loadSecretFromName")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `accessor` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Accessor) {
-			q = q.Arg("accessor", opts[i].Accessor)
-		}
-	}
-	q = q.Arg("name", name)
 
 	return &Secret{
 		query: q,
