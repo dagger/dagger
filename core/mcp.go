@@ -40,24 +40,22 @@ type LLMTool struct {
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
 	env *Env
-	// The currently selected object.
-	current dagql.Object
 	// Whether the LLM needs instructions on how to use the tool scheme
 	needsSystemPrompt bool
 	// Only show these functions, if non-empty
-	functionMask map[string]bool
+	selectedTools map[string]bool
 	// Indicates that the model has returned
 	returned bool
 }
 
 func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 	m := &MCP{
-		env:          env,
-		functionMask: map[string]bool{},
+		env:           env,
+		selectedTools: map[string]bool{},
 	}
-	if env.Root() != nil {
-		m.Select(env.Root())
-	}
+	// if env.Root() != nil {
+	// 	m.Select(env.Root())
+	// }
 	if endpoint != nil {
 		m.needsSystemPrompt = (endpoint.Provider == Google)
 	}
@@ -68,10 +66,29 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
-	// if m.needsSystemPrompt {
-	// 	return defaultSystemPrompt
+	prompt := defaultSystemPrompt
+	// var typeInputs []string
+	// for _, bnd := range m.env.objsByID {
+	// 	if cur := m.Current(); cur != nil && bnd.Digest() == cur.ID().Digest() {
+	// 		typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
+	// 	} else {
+	// 		typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+	// 	}
 	// }
-	return ""
+	if len(m.env.outputsByName) > 0 {
+		prompt += "\n\nWhen you have completed your task, use the returnToUser tool."
+	}
+	// TODO: this works, but is probably too dynamic for MCP.
+	// Maybe it could list only the initial inputs, but gonna try just adding
+	// stronger direction to the prompt first.
+	// sort.Strings(typeInputs)
+	// if len(typeInputs) > 0 {
+	// 	prompt += "\n\n## Available IDs\n"
+	// 	for _, input := range typeInputs {
+	// 		prompt += fmt.Sprintf("\n- %s", input)
+	// 	}
+	// }
+	return prompt
 }
 
 func (m *MCP) WithEnvironment(env *Env) *MCP {
@@ -84,22 +101,8 @@ func (m *MCP) WithEnvironment(env *Env) *MCP {
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
-	cp.functionMask = cloneMap(cp.functionMask)
+	cp.selectedTools = cloneMap(cp.selectedTools)
 	return &cp
-}
-
-// Return the current selection
-func (m *MCP) Current() dagql.Object {
-	return m.current
-}
-
-// Change the current selection
-func (m *MCP) Select(obj dagql.Object, functions ...string) {
-	m.current = obj
-	clear(m.functionMask)
-	for _, fn := range functions {
-		m.functionMask[fn] = true
-	}
 }
 
 // Get an object saved at a given key
@@ -124,10 +127,7 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	if m.Current() == nil {
-		return builtins, nil
-	}
-	objTools, err := m.tools(srv, m.Current().Type().Name())
+	objTools, err := m.tools(srv, false)
 	if err != nil {
 		return nil, err
 	}
@@ -168,20 +168,35 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
+func (m *MCP) tools(srv *dagql.Server, all bool) ([]LLMTool, error) {
 	schema := srv.Schema()
+	tools := []LLMTool{}
+	typeNames := m.env.Types()
+	if m.env.Root() != nil {
+		typeNames = append(typeNames, m.env.Root().Type().Name())
+	}
+	for _, typeName := range typeNames {
+		typeTools, err := m.typeTools(srv, all, schema, typeName)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, typeTools...)
+	}
+	return tools, nil
+}
+
+func (m *MCP) typeTools(srv *dagql.Server, all bool, schema *ast.Schema, typeName string) ([]LLMTool, error) {
 	typeDef, ok := schema.Types[typeName]
 	if !ok {
 		return nil, fmt.Errorf("type %q not found", typeName)
 	}
 	var tools []LLMTool
-	masked := len(m.functionMask) > 0
 	for _, field := range typeDef.Fields {
 		if _, found := m.env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
 			continue
 		}
-		if masked && !m.functionMask[field.Name] {
+		if !all && !m.selectedTools[typeName+"_"+field.Name] {
 			continue
 		}
 		if strings.HasPrefix(field.Name, "_") {
@@ -306,7 +321,7 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			// references a banned type
 			continue
 		}
-		schema, err := fieldArgsToJSONSchema(schema, field)
+		schema, err := fieldArgsToJSONSchema(schema, typeName, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
@@ -322,7 +337,7 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			Description: field.Description,
 			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, field, args)
+				return m.call(ctx, srv, typeName, field, args)
 			},
 		})
 	}
@@ -348,6 +363,7 @@ func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
+	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
@@ -370,16 +386,23 @@ func (m *MCP) call(ctx context.Context,
 
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
-	if m.Current() == nil {
-		return nil, fmt.Errorf("no current context")
-	}
-	target, ok := dagql.UnwrapAs[dagql.Object](m.Current())
-	if !ok {
-		return nil, fmt.Errorf("current context is not an object, got %T", m.Current())
-	}
 	argsMap, ok := args.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
+	}
+	var target dagql.Object
+	if selfType == "Query" && m.env.Root() != nil {
+		target = m.env.Root()
+	} else {
+		recv, ok := argsMap["self"].(string)
+		if !ok {
+			return nil, fmt.Errorf("tool call: %s: expected 'self' argument to be a string - got %#v", fieldDef.Name, recv)
+		}
+		var err error
+		target, err = m.GetObject(recv, selfType)
+		if err != nil {
+			return nil, err
+		}
 	}
 	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
 	if err != nil {
@@ -544,16 +567,17 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	if tool == nil {
 		errRes := map[string]any{
 			"error": fmt.Sprintf("Tool '%s' is not available.", toolCall.Function.Name),
+			// "hint":  fmt.Sprintf("Use listAvailableTools() to get a list of available tools."),
 		}
-		if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
-			if m.Current() == nil {
-				errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select%s` first.", typeName)
-			} else if m.Current().Type().Name() == typeName {
-				errRes["hint"] = "The current object type does not provide this function."
-			} else {
-				errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select%s` first.", m.Current().Type().Name(), typeName)
-			}
-		}
+		// if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
+		// 	if m.Current() == nil {
+		// 		errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select%s` first.", typeName)
+		// 	} else if m.Current().Type().Name() == typeName {
+		// 		errRes["hint"] = "The current object type does not provide this function."
+		// 	} else {
+		// 		errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select%s` first.", m.Current().Type().Name(), typeName)
+		// 	}
+		// }
 		payload, err := json.Marshal(errRes)
 		if err != nil {
 			return fmt.Sprintf("marshal error: %v", err), false
@@ -674,67 +698,42 @@ Do not call this tool until all values are ready.`,
 	}
 }
 
-func (m *MCP) systemPromptBuiltin() LLMTool {
-	desc := defaultSystemPrompt
-	outputs := m.env.Outputs()
-	if len(outputs) > 0 {
-		desc += "\n\nWhen you have completed your task, use the `returnToUser` tool."
+func stripComments(str string) string {
+	var result []string
+	lines := strings.Split(str, "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			result = append(result, line)
+		}
 	}
-	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
-	return LLMTool{
-		Name:        "SYSTEM_PROMPT",
-		Returns:     "string",
-		Description: desc,
-		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
-			"strict":               true,
-			"required":             []string{},
-			"additionalProperties": false,
-		},
-		Call: ToolFunc(func(ctx context.Context, _ struct{}) (any, error) {
-			// shouldn't need to call this, but return it anyway if they ended up here
-			return desc, nil
-		}),
-	}
+	return strings.Join(result, "\n")
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{}
-
-	if len(m.env.outputsByName) > 0 {
-		builtins = append(builtins, m.returnBuiltin())
-	}
-
-	for _, typeName := range m.env.Types() {
-		tools, err := m.tools(srv, typeName)
-		if err != nil {
-			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
-		}
-		builtins = append(builtins, LLMTool{
-			Name:    "select" + typeName,
-			Returns: typeName,
+	builtins := []LLMTool{
+		{
+			Name: "selectTools",
 			Description: (func() string {
-				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
-				desc += "\n\nProvides the following tools:\n"
-				for _, tool := range tools {
-					desc += fmt.Sprintf("\n- %s", tool.Name)
+				desc := `Select tools for interacting with the available objects.`
+				tools, err := m.tools(srv, true)
+				if err == nil {
+					desc += "\n\nAvailable tools:"
+					for _, tool := range tools {
+						if m.selectedTools[tool.Name] {
+							// already have it
+							continue
+						}
+						desc += "\n- " + tool.Name
+					}
 				}
-				var typeInputs []string
+				var objects []string
 				for _, bnd := range m.env.objsByID {
-					if bnd.TypeName() != typeName {
-						continue
-					}
-					if cur := m.Current(); cur != nil && bnd.Digest() == cur.ID().Digest() {
-						typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
-					} else {
-						typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-					}
+					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
 				}
-				sort.Strings(typeInputs)
-				if len(typeInputs) > 0 {
-					desc += "\n\n## Available IDs"
-					for _, input := range typeInputs {
+				sort.Strings(objects)
+				if len(objects) > 0 {
+					desc += "\n\nAvailable objects:"
+					for _, input := range objects {
 						desc += fmt.Sprintf("\n- %s", input)
 					}
 				}
@@ -743,42 +742,114 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id": map[string]any{
-						"type":           "string",
-						"pattern":        idPattern(typeName),
-						"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
-						jsonSchemaIDAttr: typeName,
+					"tools": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "The tools to select.",
 					},
-					// "functions": map[string]any{
-					// 	"type": "array",
-					// 	"items": map[string]any{
-					// 		"type": "string",
-					// 	},
-					// 	"description": "List of functions to use. " + fnsDesc,
-					// },
 				},
-				"strict":               true,
-				"required":             []string{"id"}, // , "functions"},
-				"additionalProperties": false,
+				"required": []string{"tools"},
 			},
 			Call: ToolFunc(func(ctx context.Context, args struct {
-				ID string `name:"id"`
-				// Functions []string
+				Tools []string `json:"tools"`
 			}) (any, error) {
-				obj, err := m.GetObject(args.ID, typeName)
-				if err != nil {
-					return nil, err
+				for _, tool := range args.Tools {
+					m.selectedTools[tool] = true
 				}
-				return m.newState(obj)
+				return "ok", nil
 			}),
-		})
+		},
+		// {
+		// 	Name:        "think",
+		// 	Description: `Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed.`,
+		// 	Schema: map[string]any{
+		// 		"type": "object",
+		// 		"properties": map[string]any{
+		// 			"thought": map[string]any{
+		// 				"type":        "string",
+		// 				"description": "Your thoughts.",
+		// 			},
+		// 		},
+		// 		"required": []string{"thought"},
+		// 	},
+		// 	Call: func(context.Context, any) (any, error) {
+		// 		return "", nil
+		// 	},
+		// },
+	}
+
+	// for _, typeName := range m.env.Types() {
+	// 	tools, err := m.tools(srv, typeName)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("tools for %q: %w", typeName, err)
+	// 	}
+	// 	builtins = append(builtins, LLMTool{
+	// 		Name: "use" + typeName + "Tools",
+	// 		Description: (func() string {
+	// 			desc := fmt.Sprintf("Gain tools for interacting with a %s.", typeName)
+	// 			desc += "\n\nProvides the following tools:\n"
+	// 			for _, tool := range tools {
+	// 				desc += fmt.Sprintf("\n- %s", tool.Name)
+	// 			}
+	// 			var typeInputs []string
+	// 			for _, bnd := range m.env.objsByID {
+	// 				if bnd.TypeName() != typeName {
+	// 					continue
+	// 				}
+	// 				if cur := m.Current(); cur != nil && bnd.Digest() == cur.ID().Digest() {
+	// 					typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
+	// 				} else {
+	// 					typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+	// 				}
+	// 			}
+	// 			sort.Strings(typeInputs)
+	// 			if len(typeInputs) > 0 {
+	// 				desc += "\n\n## Available IDs"
+	// 				for _, input := range typeInputs {
+	// 					desc += fmt.Sprintf("\n- %s", input)
+	// 				}
+	// 			}
+	// 			return desc
+	// 		})(),
+	// 		Schema: map[string]any{
+	// 			"type": "object",
+	// 			"properties": map[string]any{
+	// 				"id": map[string]any{
+	// 					"type":           "string",
+	// 					"pattern":        idPattern(typeName),
+	// 					"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
+	// 					jsonSchemaIDAttr: typeName,
+	// 				},
+	// 				// "functions": map[string]any{
+	// 				// 	"type": "array",
+	// 				// 	"items": map[string]any{
+	// 				// 		"type": "string",
+	// 				// 	},
+	// 				// 	"description": "List of functions to use. " + fnsDesc,
+	// 				// },
+	// 			},
+	// 			"strict":               true,
+	// 			"required":             []string{"id"}, // , "functions"},
+	// 			"additionalProperties": false,
+	// 		},
+	// 		Call: ToolFunc(func(ctx context.Context, args struct {
+	// 			ID string `name:"id"`
+	// 			// Functions []string
+	// 		}) (any, error) {
+	// 			obj, err := m.GetObject(args.ID, typeName)
+	// 			if err != nil {
+	// 				return nil, err
+	// 			}
+	// 			return m.newState(obj)
+	// 		}),
+	// 	})
+	// }
+
+	if len(m.env.outputsByName) > 0 {
+		builtins = append(builtins, m.returnBuiltin())
 	}
 
 	builtins = append(builtins, m.userProvidedValues()...)
-
-	// NOTE: This works better when it's the last tool. 40/40 evals when last,
-	// 24/40 when first. (gemini-2.0-flash, WorkspacePattern)
-	builtins = append(builtins, m.systemPromptBuiltin())
 
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
@@ -954,13 +1025,21 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	), nil
 }
 
-func fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
+func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.FieldDefinition) (map[string]any, error) {
 	jsonSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
 	}
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
+	if typeName != "Query" {
+		properties["self"] = map[string]any{
+			"type":        "string",
+			"description": fmt.Sprintf("%s ID to operate against.", typeName),
+			"pattern":     idPattern(typeName),
+		}
+		required = append(required, "self")
+	}
 	for _, arg := range field.Arguments {
 		argSchema, err := typeToJSONSchema(schema, arg.Type)
 		if err != nil {
@@ -1066,16 +1145,9 @@ func idPattern(typeName string) string {
 }
 
 func (m *MCP) newState(target dagql.Object) (string, error) {
-	prev := m.Current()
-	m.Select(target)
-	res := map[string]any{
-		// "selected" to hint to the model that it doesn't need to select it
-		"selected": m.env.Ingest(target, ""),
-	}
-	if prev != nil {
-		res["previous"] = m.env.Ingest(prev, "")
-	}
-	return toolStructuredResponse(res)
+	return toolStructuredResponse(map[string]any{
+		"result": m.env.Ingest(target, ""),
+	})
 }
 
 func toolStructuredResponse(val any) (string, error) {
