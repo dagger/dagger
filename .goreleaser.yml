@@ -56,7 +56,15 @@ winget:
   - name: dagger
     repository:
       owner: "{{ .Env.GH_ORG_NAME }}"
-      name: winget
+      name: winget-pkgs
+      branch: "{{ .ProjectName }}-{{ .Version }}"
+      pull_request:
+        enabled: true
+        check_boxes: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
@@ -68,7 +76,7 @@ winget:
     publisher_url: "https://dagger.io"
     publisher_support_url: https://github.com/dagger/dagger/issues/new/choose
     package_identifier: Dagger.Cli
-    use: archive    
+    use: archive
     skip_upload: false
     tags:
       - dagger
@@ -79,7 +87,6 @@ winget:
       - containers
       - devops
       - llm
-
 
 blobs:
   - provider: s3
