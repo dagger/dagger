@@ -310,8 +310,14 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
+		var toolName string
+		if typeName == "Query" {
+			toolName = field.Name
+		} else {
+			toolName = typeDef.Name + "_" + field.Name
+		}
 		tools = append(tools, LLMTool{
-			Name:        typeDef.Name + "_" + field.Name,
+			Name:        toolName,
 			Returns:     field.Type.String(),
 			Description: field.Description,
 			Schema:      schema,
