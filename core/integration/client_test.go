@@ -149,15 +149,9 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 // We use this in tests to do quick-and-easy checks against the schemas served
 // (without needing to do fancy module manipulation).
 func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
-	v := struct {
+	v, err := testutil.Query[struct {
 		SchemaVersion string `json:"__schemaVersion"`
-	}{}
-	err := testutil.Query(t,
-		`{
-			__schemaVersion
-		}`, &v, &testutil.QueryOptions{
-			Version: "v123.456.789",
-		})
+	}](t, `{ __schemaVersion }`, nil, dagger.WithVersionOverride("v123.456.789"))
 	require.NoError(t, err)
 	require.Equal(t, "v123.456.789", v.SchemaVersion)
 }

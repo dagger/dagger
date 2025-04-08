@@ -740,16 +740,6 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err := withPorts.ID(ctx)
 	require.NoError(t, err)
 
-	res := struct {
-		Container struct {
-			ExposedPorts []struct {
-				Port        int
-				Protocol    dagger.NetworkProtocol
-				Description *string
-			}
-		} `json:"loadContainerFromID"`
-	}{}
-
 	getPorts := `query Test($id: ContainerID!) {
 		loadContainerFromID(id: $id) {
 			exposedPorts {
@@ -760,7 +750,17 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		}
 	}`
 
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	type GetPortsResponse struct {
+		Container struct {
+			ExposedPorts []struct {
+				Port        int
+				Protocol    dagger.NetworkProtocol
+				Description *string
+			}
+		} `json:"loadContainerFromID"`
+	}
+
+	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -790,7 +790,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -817,7 +817,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},

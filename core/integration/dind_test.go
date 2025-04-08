@@ -10,7 +10,7 @@ import (
 )
 
 func (ContainerSuite) TestDIND(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Container struct {
 			From struct {
 				WithExec struct {
@@ -20,9 +20,7 @@ func (ContainerSuite) TestDIND(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`
 {
   container {
@@ -46,7 +44,7 @@ curl \
 }
 
 
-                `, &res, nil)
+                `, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Container.From.WithExec.WithExec.Stdout)
 	require.Equal(t, "{\"data\":{\"host\":{\"directory\":{\"entries\":[\"1\",\"2\"]}}}}", res.Container.From.WithExec.WithExec.Stdout)

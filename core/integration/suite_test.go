@@ -73,19 +73,17 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 }
 
 func newCache(t *testctx.T) core.CacheVolumeID {
-	var res struct {
+	res, err := testutil.Query[struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
 		}
-	}
-
-	err := testutil.Query(t, `
+	}](t, `
 		query CreateCache($key: String!) {
 			cacheVolume(key: $key) {
 				id
 			}
 		}
-	`, &res, &testutil.QueryOptions{Variables: map[string]any{
+	`, &testutil.QueryOptions{Variables: map[string]any{
 		"key": identity.NewID(),
 	}})
 	require.NoError(t, err)
@@ -94,32 +92,30 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 }
 
 func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
-	dirRes := struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
 			}
 		}
-	}{}
-
-	err := testutil.Query(t,
+	}](t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
 					id
 				}
 			}
-		}`, &dirRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &testutil.QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
 	require.NoError(t, err)
 
-	return dirRes.Directory.WithNewFile.ID
+	return res.Directory.WithNewFile.ID
 }
 
 func newFile(t *testctx.T, path, contents string) core.FileID {
-	var secretRes struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -127,9 +123,7 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
@@ -138,13 +132,13 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 					}
 				}
 			}
-		}`, &secretRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &testutil.QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
 	require.NoError(t, err)
 
-	fileID := secretRes.Directory.WithNewFile.File.ID
+	fileID := res.Directory.WithNewFile.File.ID
 	require.NotEmpty(t, fileID)
 
 	return fileID
