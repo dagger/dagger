@@ -79,7 +79,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
 
       # Retrieves a cleaned potato by washing it in a sink.
       Potato_rinse(
-        # The Potato to operate against.
+        # The Potato to operate against. Defaults to the most recent Potato.
         Potato: string,
         # The sink to use to rinse the potato.
         sink: string
@@ -87,13 +87,13 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
 
       # Retrieves this potato without its skin.
       Potato_skin(
-        # The Potato to operate against.
+        # The Potato to operate against. Defaults to the most recent Potato.
         Potato: string
       )
 
       # Retrieves this potato without its skin.
       Potato_slice(
-        # The Potato to operate against.
+        # The Potato to operate against. Defaults to the most recent Potato.
         Potato: string,
         # The shape to cut the potato into.
         # @enum("STICKS", "SLICES")
@@ -102,7 +102,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
 
       # Bakes a food item.
       Oven_bake(
-        # The Oven to operate against.
+        # The Oven to operate against. Defaults to the most recent Oven.
         Oven: string,
 
         # The item to insert into the oven.
@@ -176,7 +176,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
 
       # Returns the plate with the fries placed upon it.
       Fries_plate(
-        # The fries to put on the plate.
+        # The Fries to operate against. Defaults to the most recent Fries.
         Fries: string,
         # The place upon which to place the fries.
         plate: string,
