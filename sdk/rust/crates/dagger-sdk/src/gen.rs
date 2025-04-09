@@ -7381,6 +7381,12 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleServeOpts {
+    /// expose the dependencies of this module to the client
+    #[builder(setter(into, strip_option), default)]
+    pub include_dependencies: Option<bool>,
+}
 impl Module {
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
@@ -7462,8 +7468,25 @@ impl Module {
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn serve(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("serve");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Serve a module's API in the current session.
+    /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("serve");
+        if let Some(include_dependencies) = opts.include_dependencies {
+            query = query.arg("includeDependencies", include_dependencies);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The source for the module.

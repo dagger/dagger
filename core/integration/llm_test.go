@@ -43,6 +43,13 @@ type LLMTestCaseFlag struct {
 	Optional bool
 }
 
+var (
+	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
+	directCallModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+	// llm-dir-module-depender depends on directCall module via a relative path
+	dependerModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
+)
+
 func (flag LLMTestCaseFlag) ToCall() []string {
 	return []string{"--" + flag.Key, flag.Value}
 }
@@ -161,11 +168,6 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-
-	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
-	directCallModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
-	// llm-dir-module-depender depends on directCall module via a relative path
-	dependerModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
 
 	recording := "llmtest/allow-llm.golden"
 	if golden.FlagUpdate() {
@@ -355,6 +357,42 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				require.Error(t, err)
 			})
 		}
+	})
+}
+
+func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
+	// these subtests should be able to share a client, but atm they'll end up with a single agent var for 2 different module inits
+	// c := connect(ctx, t)
+
+	modelFlag := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString([]byte("[]")))
+
+	t.Run("stdlib and host apis are listed in selectTools description", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "-M", modelFlag}, dagger.ContainerWithExecOpts{
+				Stdin:                         `$agent | tools`,
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "- container")
+		require.Contains(t, out, "- host")
+	})
+
+	t.Run("module and dependency tools are listed in selectTools description", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "-m", dependerModuleRef, modelFlag}, dagger.ContainerWithExecOpts{
+				Stdin:                         `$agent | tools`,
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "- llmDirModuleDepender")
+		require.Contains(t, out, "- llmTestModule")
+		require.Contains(t, out, "- container")
 	})
 }
 
