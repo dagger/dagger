@@ -1,73 +1,207 @@
 ### 📘 How the Tool-Calling System Works
 
-You interact with a tool system that mirrors a GraphQL API. At any moment, you're working from the perspective of a single currently selected **Object**, such as a `Container`, `Directory`, or `Service`.
+You interact with a tool system that mirrors a GraphQL API.
 
-All Objects have IDs, formed by pairing their type with a sequence number, such as `Container#1` for the first `Container` observed.
+Below is an example usage of the tool calling scheme. Note that all potato and
+cooking-related concepts are placeholders. In practice there will be entirely
+different types of objects and APIs.
 
-You have a dynamic set of tools following this scheme:
+NOTE: the following is just a mock-up to give you an idea of the overall tool calling scheme. Don't pay any attention to the particular syntax.
 
-* `select<Type>(id: "<Type>#123")`: select an Object of type `<Type>` by ID
-  * Example: `selectContainer(id: "Container#123")`
-  * Example: `selectDirectory(id: "Directory#456")`
-* `<Type>_<func>(...)`: call the **function** `<func>` on the currently selected Object, which is of type `<Type>`
-  * Example: `Container_withExec(args: ["cowsay", "hello"])`
-  * Example: `Container_directory(path: "/foo")`
+<example>
+  <user>
+    <tools>
+      # Gain new tools for subsequent turns.
+      #
+      # Available objects:
+      # - Oven#1: An oven you can use for cooking.
+      # - Potato#1: The raw potato to turn into french fries.
+      # - Sink#1: A sink for cleaning food.
+      # - Plate#1: A plate for serving food.
+      #
+      # Available tools:
+      # - Oven_bake
+      # - Oven_broil
+      # - Potato_dice
+      # - Potato_peel
+      # - Potato_slice
+      # - Sink_rinse
+      # - Fries_plate
+      selectTools(
+        tools: [string],
+      )
 
-When a tool returns a **new Object**, it is automatically selected as your new context, as indicated by the tool response:
+      # Complete your task and return its outputs to the user.
+      returnToUser(
+        # File ID observed from a tool result, in "File#number" format.
+        #
+        # The baked french fries.
+        fries: string,
+      )
+    </tools>
+    <prompt>
+      Bake me some french fries.
+    </prompt>
+  </user>
+  <assistant>
+    <toolCall id="initialToolsCall">
+      selectTools(tools: ["Potato_rinse", "Potato_peel", "Potato_slice", "Oven_bake"])
+    </toolCalls>
+  </assistant>
+  <user>
+    <tools>
+      # Gain new tools for subsequent turns.
+      #
+      # Available objects:
+      # - Oven#1: An oven you can use for cooking.
+      # - Potato#1: The raw potato to turn into french fries.
+      # - Sink#1: A sink for cleaning food.
+      #
+      # Available tools:
+      # - Oven_bake
+      # - Oven_broil
+      # - Potato_dice
+      # - Potato_peel
+      # - Potato_rinse
+      # - Potato_slice
+      selectTools(
+        # The tools to select.
+        tools: [string],
+      )
 
-```json
-{ "selected": "Container#3" }
-```
+      # Complete your task and return its outputs to the user.
+      returnToUser(
+        # Fries ID observed from a tool result, in "Fries#number" format.
+        #
+        # The baked french fries.
+        fries: string,
+      )
 
-When a tool call returns a **scalar value**, it is included in a structured response:
+      # Retrieves a cleaned potato by washing it in a sink.
+      Potato_rinse(
+        # The Potato to operate against.
+        Potato: string,
+        # The sink to use to rinse the potato.
+        sink: string
+      )
 
-```json
-{ "result": 12 }
-{ "result": "I'm a string!" }
-```
+      # Retrieves this potato without its skin.
+      Potato_skin(
+        # The Potato to operate against.
+        Potato: string
+      )
 
----
+      # Retrieves this potato without its skin.
+      Potato_slice(
+        # The Potato to operate against.
+        Potato: string,
+        # The shape to cut the potato into.
+        # @enum("STICKS", "SLICES")
+        shape: string
+      )
 
-### 🔁 Functional and Immutable
+      # Bakes a food item.
+      Oven_bake(
+        # The Oven to operate against.
+        Oven: string,
 
-The system behaves like a **functional state machine**. Objects are **immutable**: calling a method on an Object doesn't mutate it—it returns a **new Object** representing the result of that operation.
+        # The item to insert into the oven.
+        item: string
+      )
+    </tools>
+    <toolResult id="initialToolsCall">
+      ok
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="rinsePotato">
+      Potato_rinse(Potato: "Potato#1", sink: "Sink#1")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="rinsePotato">
+      {"result":"Potato#2"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="peelPotato">
+      Potato_peel(Potato: "Potato#2")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="slicePotato">
+      {"result":"Potato#3"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="slicePotato">
+      Potato_slice(Potato: "Potato#3", shape: "STICKS")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="slicePotato">
+      {"result":"Potato#4"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="bakePotato">
+      Oven_bake(Oven: "Oven#1", item: "Potato#4")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="bakePotato">
+      {"result":"Fries#1"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="moreToolsCall">
+      selectTools(tools: ["Fries_plate"])
+    </toolCalls>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
 
-For example, if you run a command in a `Container`, you’ll receive a new `Container` Object with updated state. You can then continue working from that new Object.
-
----
-
-### ⚠️ Object IDs
-
-Object IDs are a central concept to the tool calling scheme - they're how you switch toolsets and pass objects as arguments to the tools.
-
-Identify them in your prompt - they are your jumping off point.
-
-- **Never append values or fields directly to Object IDs.**
-- **Never make up an Object ID. If you haven't seen it, it doesn't exist.**
-
-To use an object by ID, call `select<TYPE>`, e.g. `selectContainer(id: "Container#1")`.
-
----
-
-### IMPORTANT: Object Context Management
-
-* The system behaves like a functional state machine. Each tool call that returns an object ID automatically updates your current object context to that new object.
-* Do not use `select<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `select` when you need to explicitly return to a previously saved object using its ID or variable name.
-* Think carefully about the flow of object context. Before calling a tool, ensure you are operating on the correct object.
-
----
-
-### 🧩 Object Function Tools
-
-All other tools are dynamically generated based on the current Object. They follow this naming pattern:
-
-```
-<Type>_<Function>
-```
-
-For example:
-- `Container_withExec(args: [...])`
-- `Directory_file(path: "...")`
-- `File_contents()`
-
-Calling these tools executes a function on the current Object and may change your context, depending on whether a new Object is returned.
+      # Returns the plate with the fries placed upon it.
+      Fries_plate(
+        # The fries to put on the plate.
+        Fries: string,
+        # The place upon which to place the fries.
+        plate: string,
+      )
+    </tools>
+    <toolResult id="bakePotato">
+      ok
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="plateFries">
+      Fries_plate(Fries: "Fries#1", plate: "Plate#1")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before (including Fries_plate) ...
+    </tools>
+    <toolResult id="plateFries">
+      {"result": "Plate#2"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="return">
+      returnToUser(fries: "Plate#2")
+    </toolCall>
+  </assistant>
+</example>
