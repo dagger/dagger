@@ -17,7 +17,7 @@
   },
   "main": "dist/src/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.13.1",
+    "@grpc/grpc-js": "^1.13.2",
     "@lifeomic/axios-fetch": "^3.1.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/core": "^2.0.0",
@@ -35,7 +35,7 @@
     "node-fetch": "^3.3.2",
     "reflect-metadata": "^0.2.2",
     "tar": "^7.4.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.3"
   },
   "scripts": {
     "build": "tsc",
@@ -54,17 +54,17 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~22.13.13",
+    "@types/node": "~22.14.0",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.27.0",
-    "@typescript-eslint/parser": "^8.27.0",
-    "eslint": "^9.23.0",
+    "@typescript-eslint/eslint-plugin": "^8.29.0",
+    "@typescript-eslint/parser": "^8.29.0",
+    "eslint": "^9.24.0",
     "eslint-config-prettier": "^10.1.1",
-    "eslint-plugin-prettier": "^5.2.4",
+    "eslint-plugin-prettier": "^5.2.6",
     "mocha": "^11.1.0",
     "prettier": "^3.5.3",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
-    "typescript-eslint": "^8.27.0"
+    "typescript-eslint": "^8.29.0"
   }
 }
