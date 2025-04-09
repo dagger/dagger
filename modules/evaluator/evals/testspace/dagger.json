@@ -1,0 +1,7 @@
+{
+  "name": "testspace",
+  "engineVersion": "v0.18.2",
+  "sdk": {
+    "source": "go"
+  }
+}
