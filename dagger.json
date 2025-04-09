@@ -4,10 +4,7 @@
   "sdk": {
     "source": "go"
   },
-  "include": [
-    "engine/distconsts/**/*",
-    "sdk/typescript/runtime/**/*"
-  ],
+  "include": ["engine/distconsts/**/*", "sdk/typescript/runtime/**/*"],
   "dependencies": [
     {
       "name": "alpine",
@@ -32,6 +29,10 @@
     {
       "name": "elixir-sdk-dev",
       "source": "sdk/elixir/dev"
+    },
+    {
+      "name": "evaluator",
+      "source": "modules/evaluator"
     },
     {
       "name": "go",
