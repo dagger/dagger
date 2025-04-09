@@ -11,9 +11,18 @@ class Locator(dagger.Enum):
 
 @object_type
 class MyModule:
+    """
+    Demonstrates cloning a Git repository over HTTP(S).
+
+    For SSH usage, see the SSH snippet (clone_with_ssh).
+    """
+
     @function
     async def clone(
-        self, repository: str, locator: Locator, ref: str
+        self,
+        repository: str,
+        locator: Locator,
+        ref: str,
     ) -> dagger.Container:
         r = dag.git(repository)
 

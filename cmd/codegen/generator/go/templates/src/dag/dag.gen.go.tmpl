@@ -24,12 +24,10 @@ func initClient() *dagger.Client {
 		  dagger.WithLogOutput(os.Stdout),
 		}
 
-		{{ if IsStandaloneClient }}
-		opts = append(opts, dagger.WithServeCurrentModule(true))
-		{{ end }}
+		ctx := context.Background()
 
 		var err error
-		client, err = dagger.Connect(context.Background(), opts...)
+		client, err = dagger.Connect(ctx, opts...)
 		if err != nil {
 			panic(err)
 		}

@@ -317,29 +317,6 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update a binding of type PhpSdk in the environment
-     */
-    public function withPhpSdkInput(string $name, PhpSdkId|PhpSdk $value, string $description): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdkInput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Declare a desired PhpSdk output to be assigned in the environment
-     */
-    public function withPhpSdkOutput(string $name, string $description): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdkOutput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Create or update a binding of type Secret in the environment
      */
     public function withSecretInput(string $name, SecretId|Secret $value, string $description): Env

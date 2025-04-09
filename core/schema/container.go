@@ -78,7 +78,12 @@ func (s *containerSchema) Install() {
 				and mount path /run/secrets/[secret-name], e.g. RUN
 				--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
 				/run/secrets/my-secret)](http://example.com?token=$(cat
-					/run/secrets/my-secret))`),
+					/run/secrets/my-secret))`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers created by RUN statements.`,
+				`This should only be used if the user requires that their exec processes be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
 
 		dagql.Func("rootfs", s.rootfs).
 			Doc(`Retrieves this container's root filesystem. Mounts are not included.`),
@@ -794,6 +799,7 @@ type containerBuildArgs struct {
 	Target     string                             `default:""`
 	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
 	Secrets    []core.SecretID                    `default:"[]"`
+	NoInit     bool                               `default:"false"`
 }
 
 func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
@@ -801,7 +807,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := dagql.LoadIDs(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -824,6 +830,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		args.Target,
 		secrets,
 		secretStore,
+		args.NoInit,
 	)
 }
 
@@ -1547,7 +1554,7 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.C
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithSecretVariable(ctx, args.Name, secret.Self)
+	return parent.WithSecretVariable(ctx, args.Name, secret)
 }
 
 type containerWithoutSecretVariableArgs struct {
@@ -1577,7 +1584,7 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Co
 		return nil, err
 	}
 
-	return parent.WithMountedSecret(ctx, path, secret.Self, args.Owner, fs.FileMode(args.Mode))
+	return parent.WithMountedSecret(ctx, path, secret, args.Owner, fs.FileMode(args.Mode))
 }
 
 type containerWithDirectoryArgs struct {
@@ -1981,7 +1988,7 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretBytes, err := secretStore.GetSecretPlaintext(ctx, secret.Self.IDDigest)
+	secretBytes, err := secretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
 	if err != nil {
 		return nil, err
 	}

@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -185,7 +186,7 @@ func (owner Ownership) Opt() llb.ChownOption {
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    *Secret
+	Secret    dagql.Instance[*Secret]
 	EnvName   string
 	MountPath string
 	Owner     *Ownership
@@ -388,8 +389,9 @@ func (container *Container) Build(
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
-	secrets []*Secret,
+	secrets []dagql.Instance[*Secret],
 	secretStore *SecretStore,
+	noInit bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -398,15 +400,15 @@ func (container *Container) Build(
 
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
-		secretName, ok := secretStore.GetSecretName(secret.IDDigest)
+		secretName, ok := secretStore.GetSecretName(secret.ID().Digest())
 		if !ok {
-			return nil, fmt.Errorf("secret not found: %s", secret.IDDigest)
+			return nil, fmt.Errorf("secret not found: %s", secret.ID().Digest())
 		}
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
-		secretNameToLLBID[secretName] = secret.IDDigest.String()
+		secretNameToLLBID[secretName] = secret.ID().Digest().String()
 	}
 
 	// set image ref to empty string
@@ -507,6 +509,25 @@ func (container *Container) Build(
 			telemetry.Propagator.Inject(ctx,
 				propagation.MapCarrier(desc))
 		}
+
+		execOp, isExecOp := dag.AsExec()
+		if noInit && isExecOp {
+			execMD, ok, err := buildkit.ExecutionMetadataFromDescription(desc)
+			if err != nil {
+				return fmt.Errorf("failed to get execution metadata: %w", err)
+			}
+			if !ok {
+				execMD = &buildkit.ExecutionMetadata{}
+			}
+			execMD.NoInit = true
+			if err := buildkit.AddExecutionMetadataToDescription(desc, execMD); err != nil {
+				return fmt.Errorf("failed to add execution metadata: %w", err)
+			}
+			execOp.Meta.Env = append(execOp.Meta.Env,
+				buildkit.DaggerNoInitEnv+"=true",
+			)
+		}
+
 		dag.Metadata.Description = desc
 		return nil
 	}); err != nil {
@@ -710,7 +731,13 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	return container, nil
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret, owner string, mode fs.FileMode) (*Container, error) {
+func (container *Container) WithMountedSecret(
+	ctx context.Context,
+	target string,
+	source dagql.Instance[*Secret],
+	owner string,
+	mode fs.FileMode,
+) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -820,7 +847,11 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 	return container, nil
 }
 
-func (container *Container) WithSecretVariable(ctx context.Context, name string, secret *Secret) (*Container, error) {
+func (container *Container) WithSecretVariable(
+	ctx context.Context,
+	name string,
+	secret dagql.Instance[*Secret],
+) (*Container, error) {
 	container = container.Clone()
 
 	container.Secrets = append(container.Secrets, ContainerSecret{
@@ -1603,7 +1634,11 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 			return nil, err
 		}
 	}
-	return container.Query.NewContainerService(ctx, container), nil
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Query:     container.Query,
+		Container: container,
+	}, nil
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
@@ -1638,7 +1673,11 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		return nil, err
 	}
 
-	return container.Query.NewContainerService(ctx, container), nil
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Query:     container.Query,
+		Container: container,
+	}, nil
 }
 
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {

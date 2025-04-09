@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -57,6 +58,11 @@ type Config struct {
 	// Dev indicates that the codegen should use the local SDK instead of the published one.
 	// This is only relevant when ClientOnly is true.
 	Dev bool
+
+	// The list of all dependencies used by the module.
+	// This is used for client generator to automatically serves the dependencies
+	// on connection.
+	GitDependencies []modules.ModuleConfigDependency
 }
 
 type Generator interface {

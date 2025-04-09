@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core/modules"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -36,6 +37,10 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 
 func (funcs goTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
+}
+
+func (funcs goTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
+	return funcs.cfg.GitDependencies
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
@@ -356,7 +361,7 @@ func dispatch(ctx context.Context) (rerr error) {
 	defer func() {
 		if rerr != nil {
 			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err)
+				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
 			}
 		}
 	}()

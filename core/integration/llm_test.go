@@ -229,7 +229,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
-		args := []string{modelFlag, "save", "--string-arg", "greet me"}
+		args := []string{modelFlag, "save", "--string-arg", t.Name()}
 
 		_, err := daggerCliBase(t, c).
 			With(daggerCallAt(directCallModuleRef, args...)).
@@ -325,14 +325,14 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			},
 		}
 
-		for _, tc := range tcs {
+		for i, tc := range tcs {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				progressFlag := "--progress=auto"
 				if tc.plain {
 					progressFlag = "--progress=plain"
 				}
 				cmd, console := consoleDagger(
-					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me",
+					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", fmt.Sprintf("greet me %d", i),
 				)
 				defer console.Close()
 

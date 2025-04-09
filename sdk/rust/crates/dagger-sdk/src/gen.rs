@@ -1802,6 +1802,10 @@ pub struct ContainerBuildOpts<'a> {
     /// Path to the Dockerfile to use.
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
+    /// If set, skip the automatic init process injected into containers created by RUN statements.
+    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[builder(setter(into, strip_option), default)]
+    pub no_init: Option<bool>,
     /// Secrets to pass to the build.
     /// They will be mounted at /run/secrets/[secret-name] in the build container
     /// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
@@ -2290,6 +2294,9 @@ impl Container {
         }
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
+        }
+        if let Some(no_init) = opts.no_init {
+            query = query.arg("noInit", no_init);
         }
         Container {
             proc: self.proc.clone(),
@@ -4283,6 +4290,10 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
+    /// If set, skip the automatic init process injected into containers created by RUN statements.
+    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[builder(setter(into, strip_option), default)]
+    pub no_init: Option<bool>,
     /// The platform to build.
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
@@ -4505,6 +4516,9 @@ impl Directory {
         }
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
+        }
+        if let Some(no_init) = opts.no_init {
+            query = query.arg("noInit", no_init);
         }
         Container {
             proc: self.proc.clone(),
@@ -8022,11 +8036,6 @@ pub struct QueryLlmOpts<'a> {
     pub model: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryLoadSecretFromNameOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub accessor: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
     /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
@@ -9006,41 +9015,6 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a Secret from its Name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn load_secret_from_name(&self, name: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("loadSecretFromName");
-        query = query.arg("name", name.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a Secret from its Name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn load_secret_from_name_opts<'a>(
-        &self,
-        name: impl Into<String>,
-        opts: QueryLoadSecretFromNameOpts<'a>,
-    ) -> Secret {
-        let mut query = self.selection.select("loadSecretFromName");
-        query = query.arg("name", name.into());
-        if let Some(accessor) = opts.accessor {
-            query = query.arg("accessor", accessor);
-        }
         Secret {
             proc: self.proc.clone(),
             selection: query,

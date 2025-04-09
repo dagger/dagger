@@ -12,7 +12,6 @@ jobs:
         uses: dagger/dagger-for-github@8.0.0
         with:
           version: "latest"
-          verb: call
           module: github.com/shykes/daggerverse/hello@v0.1.2
           args: hello --greeting="bonjour" --name="monde"
           # assumes the Dagger Cloud token is in

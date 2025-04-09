@@ -14,6 +14,9 @@ import (
 	"github.com/dagger/testctx"
 )
 
+//go:embed testdata/secretkey.txt
+var secretKeyBytes []byte
+
 type SecretSuite struct{}
 
 func TestSecret(t *testing.T) {
@@ -21,7 +24,7 @@ func TestSecret(t *testing.T) {
 }
 
 func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
-	err := testutil.Query(t,
+	_, err := testutil.Query[any](t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -32,14 +35,14 @@ func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+		}`, &testutil.QueryOptions{Secrets: map[string]string{
 			"secret": "some-content",
 		}})
 	require.NoError(t, err)
 }
 
 func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
-	err := testutil.Query(t,
+	_, err := testutil.Query[any](t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -50,7 +53,7 @@ func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+		}`, &testutil.QueryOptions{Secrets: map[string]string{
 			"secret": "some-content",
 		}})
 	require.NoError(t, err)
@@ -60,7 +63,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 	plaintext := "some-secret"
 	fileID := newFile(t, "some-file", "some-content")
 
-	var res struct {
+	res, err := testutil.Query[struct {
 		Container struct {
 			From struct {
 				WithMountedSecret struct {
@@ -72,9 +75,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`query Test($secret: SecretID!, $file: FileID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -90,15 +91,14 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 					}
 				}
 			}
-		}`, &res, &testutil.QueryOptions{
+		}`, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"file": fileID,
 			},
 			Secrets: map[string]string{
 				"secret": plaintext,
 			},
-		},
-	)
+		})
 	require.NoError(t, err)
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
@@ -183,6 +183,3 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "***", stdout)
 }
-
-//go:embed testdata/secretkey.txt
-var secretKeyBytes []byte

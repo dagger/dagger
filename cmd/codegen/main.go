@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var (
@@ -26,7 +27,8 @@ var (
 	outputSchema string
 	merge        bool
 
-	clientOnly bool
+	clientOnly               bool
+	dependenciesJSONFilePath string
 
 	dev    bool
 	isInit bool
@@ -58,6 +60,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
+	rootCmd.Flags().StringVar(&dependenciesJSONFilePath, "dependencies-json-file-path", "", "file containing the list of dependencies used by the module")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -103,6 +106,20 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("read introspection json: %w", err)
 		}
 		cfg.IntrospectionJSON = string(introspectionJSON)
+	}
+
+	if dependenciesJSONFilePath != "" {
+		dependenciesJSON, err := os.ReadFile(dependenciesJSONFilePath)
+		if err != nil {
+			return fmt.Errorf("read dependencies json: %w", err)
+		}
+
+		var gitDependencies []modules.ModuleConfigDependency
+		if err := json.Unmarshal(dependenciesJSON, &gitDependencies); err != nil {
+			return fmt.Errorf("failed to unmarshal dependencies json: %w", err)
+		}
+
+		cfg.GitDependencies = gitDependencies
 	}
 
 	return Generate(ctx, cfg)

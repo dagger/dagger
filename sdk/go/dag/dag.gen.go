@@ -22,8 +22,10 @@ func initClient() *dagger.Client {
 			dagger.WithLogOutput(os.Stdout),
 		}
 
+		ctx := context.Background()
+
 		var err error
-		client, err = dagger.Connect(context.Background(), opts...)
+		client, err = dagger.Connect(ctx, opts...)
 		if err != nil {
 			panic(err)
 		}
@@ -376,12 +378,6 @@ func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	client := initClient()
 	return client.LoadSecretFromID(id)
-}
-
-// Load a Secret from its Name.
-func LoadSecretFromName(name string, opts ...dagger.LoadSecretFromNameOpts) *dagger.Secret {
-	client := initClient()
-	return client.LoadSecretFromName(name, opts...)
 }
 
 // Load a Service from its ID.

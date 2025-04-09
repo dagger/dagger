@@ -50,6 +50,8 @@ Expected stderr:
 │ │ │ │
 │ │ │ │ ✔ Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
 │ │ │ │
+│ │ │ │ ✔ Host.unixSocket(path: "/tmp/ssh-X.X BZTYR3EkO/agent.2202"): Socket! X.Xs
+│ │ │ │
 │ │ │ │ $ Container.withMountedFile(
 │ │ │ │ │ │ path: "/schema.json"
 │ │ │ │ │ │ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
@@ -60,6 +62,10 @@ Expected stderr:
 │ │ │ │ │ ): Container! X.Xs
 │ │ │ │ ✔ .withWorkdir(path: "/src"): Container! X.Xs
 │ │ │ │ ✔ .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
+│ │ │ │ ✔ .withUnixSocket(
+│ │ │ │ │ │ path: "/tmp/dagger-ssh-sock"
+│ │ │ │ │ │ source: ✔ Host.unixSocket(path: "/tmp/ssh-X.X BZTYR3EkO/agent.2202"): Socket! X.Xs
+│ │ │ │ │ ): Container! X.Xs
 │ │ │ │ ✔ .withoutDefaultArgs: Container! X.Xs
 │ │ │ │ $ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
 │ │ │ │ ✔ .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
@@ -71,32 +77,37 @@ Expected stderr:
 │ │ │ ✔ asModule getModDef X.Xs
 │ │ │ │ ✔ module: Module! X.Xs
 │ │ ✔ .serve: Void X.Xs
-│ │ ┃ <nil>
 │ ✔ inspecting module metadata X.Xs
 │ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
 │ │
-│ │ ✔ ModuleSource.asString: String! X.Xs
-│ │ ┃ /app/dagql/idtui/viztest
-│ │
 │ │ ✔ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
-│ │ ✔ Module.name: String! X.Xs
-│ │ ┃ viztest
+│ │ ✔ ModuleSource.commit: String! X.Xs
+│ │
+│ │ ✔ ModuleSource.asString: String! X.Xs
+│ │ ┃ /app/dagql/idtui/viztest
 │ │
 │ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
 │ │ ┃ .
 │ │
-│ │ ✔ Module.description: String! X.Xs
+│ │ ✔ Module.name: String! X.Xs
+│ │ ┃ viztest
+│ │
+│ │ ✔ ModuleSource.version: String! X.Xs
+│ │
+│ │ ✔ ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ │ ✔ Module.dependencies: [Module!]! X.Xs
+│ │
+│ │ ✔ Module.description: String! X.Xs
 │ ✔ loading type definitions X.Xs
 
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Tx: X.X B
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs

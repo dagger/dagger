@@ -17,6 +17,22 @@ To add a Go module, add it to your `go.mod` file using `go get`. For example:
 go get github.com/spf13/cobra
 ```
 
+Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `config.goprivate` key in the module's `dagger.json` file, as shown below:
+
+```json
+{
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/user/repository",
+    },
+  },
+}
+```
+
+Multiple URLs can be specified as comma-separated values. The repository name is optional; if left unspecified, all modules under the specified prefix will be included. For example, setting the `goprivate` URL to `github.com/username` will include all private modules with the `github.com/username` prefix.
+
+Note that this feature requires a `.gitconfig` file entry to use SSH instead of HTTPS for the host. Use the command `git config --global url."git@github.com:".insteadOf "https://github.com/"` to create the necessary `.gitconfig` entry.
 </TabItem>
 <TabItem value="Python">
 

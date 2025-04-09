@@ -55,6 +55,16 @@ func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	return NewModDeps(d.root, deps)
 }
 
+func (d *ModDeps) LookupDep(name string) (Mod, bool) {
+	for _, mod := range d.Mods {
+		if mod.Name() == name {
+			return mod, true
+		}
+	}
+
+	return nil, false
+}
+
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 	schema, _, err := d.lazilyLoadSchema(ctx)
@@ -106,7 +116,11 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dag := dagql.NewServer[*Query](d.root)
+	dagqlCache, err := d.root.Cache(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+	}
+	dag := dagql.NewServer(d.root, dagqlCache)
 	for _, mod := range d.Mods {
 		if version, ok := mod.View(); ok {
 			dag.View = version
@@ -115,13 +129,6 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	dag.Around(AroundFunc)
-
-	// share the same cache session-wide
-	var err error
-	dag.Cache, err = d.root.Cache(ctx)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
-	}
 
 	dagintro.Install[*Query](dag)
 
@@ -188,7 +195,9 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 						IfaceType:      ifaceType,
 					}, nil
 				},
-				dagql.CacheSpec{},
+				dagql.CacheSpec{
+					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+				},
 			)
 		}
 	}

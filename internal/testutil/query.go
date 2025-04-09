@@ -12,10 +12,25 @@ type QueryOptions struct {
 	Operation string
 	Variables map[string]any
 	Secrets   map[string]string
-	Version   string
 }
 
-func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts ...dagger.ClientOpt) error {
+func Query[R any](t *testctx.T, query string, opts *QueryOptions, clientOpts ...dagger.ClientOpt) (*R, error) {
+	t.Helper()
+	ctx := t.Context()
+	clientOpts = append([]dagger.ClientOpt{
+		dagger.WithLogOutput(NewTWriter(t)),
+	}, clientOpts...)
+	client, err := dagger.Connect(ctx, clientOpts...)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { client.Close() })
+
+	return QueryWithClient[R](client, t, query, opts)
+}
+
+func QueryWithClient[R any](c *dagger.Client, t *testctx.T, query string, opts *QueryOptions) (*R, error) {
+	t.Helper()
 	ctx := t.Context()
 
 	if opts == nil {
@@ -27,34 +42,27 @@ func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts .
 	if opts.Secrets == nil {
 		opts.Secrets = make(map[string]string)
 	}
-
-	clientOpts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(NewTWriter(t)),
-		dagger.WithVersionOverride(opts.Version),
-	}, clientOpts...)
-
-	c, err := dagger.Connect(ctx, clientOpts...)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
 	for n, v := range opts.Secrets {
 		s, err := newSecret(ctx, c, n, v)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opts.Variables[n] = s
 	}
 
-	return c.Do(ctx,
+	r := new(R)
+	err := c.Do(ctx,
 		&dagger.Request{
 			Query:     query,
 			Variables: opts.Variables,
 			OpName:    opts.Operation,
 		},
-		&dagger.Response{Data: &res},
+		&dagger.Response{Data: r},
 	)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 func newSecret(ctx context.Context, c *dagger.Client, name, value string) (*core.SecretID, error) {

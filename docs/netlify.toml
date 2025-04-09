@@ -97,6 +97,12 @@
   to = "/features/modules"
   status = 301
 
+[[redirects]]
+  # redirect secrets page
+  from = "/features/secrets"
+  to = "/features/security"
+  status = 301
+
 # redirects for developer manual pages
 [[redirects]]
   from = "/developer-guide"

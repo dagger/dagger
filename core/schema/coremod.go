@@ -28,6 +28,11 @@ func (m *CoreMod) Name() string {
 	return core.ModuleName
 }
 
+// GetSource returns an empty module source
+func (m *CoreMod) GetSource() *core.ModuleSource {
+	return &core.ModuleSource{}
+}
+
 func (m *CoreMod) View() (string, bool) {
 	return m.Dag.View, true
 }
@@ -317,6 +322,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err := idp.Decode(id); err != nil {
 		return nil, err
 	}
+
 	val, err := obj.coreMod.Dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)

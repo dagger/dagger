@@ -89,7 +89,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache *dagql.SessionCache
 
 	interactive        bool
 	interactiveCommand []string
@@ -252,7 +252,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewCache()
+	sess.dagqlCache = dagql.NewSessionCache(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -403,6 +403,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
+
 	return errs
 }
 
@@ -581,21 +582,20 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
-	dag.Around(core.AroundFunc)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	client.dag.Around(core.AroundFunc)
+	coreMod := &schema.CoreMod{Dag: client.dag}
+	if err := coreMod.Install(ctx, client.dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.modName = opts.ModuleName
 
-	if opts.EncodedModuleID == "" {
-		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
-	} else {
+	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
+
+	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
@@ -693,7 +693,6 @@ func (srv *Server) initializeDaggerClient(
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
-	client.dag = dag
 	client.state = clientStateInitialized
 	return nil
 }
@@ -1265,8 +1264,43 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	// don't add the same module twice
+	// This can happen with generated clients since all remote dependencies are added
+	// on each connection and this could happen multiple times.
+	depMod, exist := client.deps.LookupDep(mod.Name())
+	if exist {
+		// Error if there's a conflict between dependencies
+		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+			)
+		}
+
+		return nil
+	}
+
 	client.deps = client.deps.Append(mod)
 	return nil
+}
+
+// Returns true if the module source a is the same as b or they come from the
+// core module.
+// Returns false if:
+// - AsString() of a and b are different
+// - Pin() of a and b are different
+func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
+	// If one of them is empty, that means they are from code module so they shouldn't
+	// be compared.
+	if a.AsString() == "" || b.AsString() == "" {
+		return true
+	}
+
+	// If they are do not have the same reference nor same pin, they cannot be the same.
+	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+		return false
+	}
+
+	return true
 }
 
 // If the current client is coming from a function, return the module that function is from
@@ -1358,7 +1392,7 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 }
 
 // The DagQL query cache for the current client's session
-func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
+func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err

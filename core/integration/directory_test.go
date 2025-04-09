@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -26,19 +25,17 @@ func TestDirectory(t *testing.T) {
 }
 
 func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			ID      core.DirectoryID
 			Entries []string
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				entries
 			}
-		}`, &res, nil, dagger.WithLogOutput(os.Stderr))
+		}`, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
 }
@@ -52,16 +49,14 @@ func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID      core.DirectoryID
 				Entries []string
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -69,14 +64,14 @@ func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 					entries
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.ID)
 	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -84,9 +79,7 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -95,13 +88,13 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"some-file", "some-dir/"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -109,9 +102,7 @@ func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -120,13 +111,13 @@ func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -136,9 +127,7 @@ func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -149,13 +138,13 @@ func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Directory.Entries)
 }
 
 func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -167,9 +156,7 @@ func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -182,7 +169,7 @@ func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t,
 		[]string{"sub-file", "another-file"},
@@ -662,14 +649,6 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		aID := newDirWithFile(t, "a-file", "a-content")
 		bID := newDirWithFile(t, "b-file", "b-content")
 
-		var res struct {
-			Directory struct {
-				Diff struct {
-					Entries []string
-				}
-			} `json:"loadDirectoryFromID"`
-		}
-
 		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
 			loadDirectoryFromID(id: $id) {
 				diff(other: $other) {
@@ -677,7 +656,14 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`
-		err := testutil.Query(t, diff, &res, &testutil.QueryOptions{
+		c := connect(ctx, t)
+		res, err := testutil.QueryWithClient[struct {
+			Directory struct {
+				Diff struct {
+					Entries []string
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
 				"other": bID,
@@ -687,7 +673,13 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
 
-		err = testutil.Query(t, diff, &res, &testutil.QueryOptions{
+		res, err = testutil.QueryWithClient[struct {
+			Directory struct {
+				Diff struct {
+					Entries []string
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    bID,
 				"other": aID,
@@ -1078,28 +1070,26 @@ CMD cat /secret
 }
 
 func (DirectorySuite) TestWithNewFileExceedingLength(ctx context.Context, t *testctx.T) {
-	var res struct {
+	_, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
 					id
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.Error(t, err)
 	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }
 
 func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testctx.T) {
-	var res struct {
+	_, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				file struct {
@@ -1107,9 +1097,7 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
@@ -1118,7 +1106,7 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.Error(t, err)
 	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }

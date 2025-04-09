@@ -75,7 +75,8 @@ defmodule Dagger.Container do
           {:dockerfile, String.t() | nil},
           {:target, String.t() | nil},
           {:build_args, [Dagger.BuildArg.t()]},
-          {:secrets, [Dagger.SecretID.t()]}
+          {:secrets, [Dagger.SecretID.t()]},
+          {:no_init, boolean() | nil}
         ]) :: Dagger.Container.t()
   def build(%__MODULE__{} = container, context, optional_args \\ []) do
     query_builder =
@@ -92,6 +93,7 @@ defmodule Dagger.Container do
           else: nil
         )
       )
+      |> QB.maybe_put_arg("noInit", optional_args[:no_init])
 
     %Dagger.Container{
       query_builder: query_builder,
