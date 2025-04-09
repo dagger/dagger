@@ -349,7 +349,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \"withRootfs\". Use that method for filesystem modifications.
+     * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
      */
     public function rootfs(): Directory
     {
@@ -533,7 +533,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default.
+     * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
      */
     public function withEntrypoint(array $args, ?bool $keepDefaultArgs = false): Container
     {
@@ -834,7 +834,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"
+     * Attach credentials for future publishing to a registry. Use in combinationw with publish
      */
     public function withRegistryAuth(string $address, string $username, SecretId|Secret $secret): Container
     {

@@ -442,8 +442,7 @@ type Container {
 
   """
   Return a snapshot of the container's root filesystem. The snapshot can be
-  modified then written back using \"withRootfs\". Use that method for
-  filesystem modifications.
+  modified then written back using withRootfs. Use that method for filesystem modifications.
   """
   rootfs: Directory!
 
@@ -637,7 +636,7 @@ type Container {
 
   """
   Set an OCI-style entrypoint. It will be included in the container's OCI
-  configuration. Note, \"withExec\" ignores the entrypoint by default.
+  configuration. Note, withExec ignores the entrypoint by default.
   """
   withEntrypoint(
     """Arguments of the entrypoint. Example: ["go", "run"]."""
@@ -1128,7 +1127,7 @@ type Container {
   withoutWorkdir: Container!
 
   """
-  Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"
+  Attach credentials for future publishing to a registry. Use in combinationw with publish
   """
   withRegistryAuth(
     """

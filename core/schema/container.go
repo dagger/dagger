@@ -84,7 +84,7 @@ func (s *containerSchema) Install() {
 			),
 
 		dagql.Func("rootfs", s.rootfs).
-			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \"withRootfs\". Use that method for filesystem modifications.`),
+			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
 		dagql.Func("withRootfs", s.withRootfs).
 			Doc(`Change the container's root filesystem. The previous root filesystem will be lost.`).
 			ArgDoc("directory", "The new root filesystem."),
@@ -183,7 +183,7 @@ func (s *containerSchema) Install() {
 			Doc(`Return the container's OCI entrypoint.`),
 
 		dagql.Func("withEntrypoint", s.withEntrypoint).
-			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default.`).
+			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.`).
 			ArgDoc("args", `Arguments of the entrypoint. Example: ["go", "run"].`).
 			ArgDoc("keepDefaultArgs", `Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.`),
 
@@ -581,7 +581,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("tag", `Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
-			Doc(`Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"`).
+			Doc(`Attach credentials for future publishing to a registry. Use in combinationw with publish`).
 			ArgDoc("address", `The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`).
 			ArgDoc("username", `The username to authenticate with. Example: "alice"`).
 			ArgDoc("secret", `The API key, password or token to authenticate to this registry`),

@@ -1177,7 +1177,7 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	return response, q.Execute(ctx)
 }
 
-// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \"withRootfs\". Use that method for filesystem modifications.
+// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
 func (r *Container) Rootfs() *Directory {
 	q := r.query.Select("rootfs")
 
@@ -1456,7 +1456,7 @@ type ContainerWithEntrypointOpts struct {
 	KeepDefaultArgs bool
 }
 
-// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default.
+// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
 func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypointOpts) *Container {
 	q := r.query.Select("withEntrypoint")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1924,7 +1924,7 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 	}
 }
 
-// Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"
+// Attach credentials for future publishing to a registry. Use in combinationw with publish
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
 	q := r.query.Select("withRegistryAuth")

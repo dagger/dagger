@@ -2643,7 +2643,7 @@ impl Container {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \"withRootfs\". Use that method for filesystem modifications.
+    /// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
     pub fn rootfs(&self) -> Directory {
         let query = self.selection.select("rootfs");
         Directory {
@@ -2909,7 +2909,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default.
+    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
     ///
     /// # Arguments
     ///
@@ -2927,7 +2927,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default.
+    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
     ///
     /// # Arguments
     ///
@@ -3590,7 +3590,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"
+    /// Attach credentials for future publishing to a registry. Use in combinationw with publish
     ///
     /// # Arguments
     ///

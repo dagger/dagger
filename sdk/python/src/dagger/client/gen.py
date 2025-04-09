@@ -1287,8 +1287,8 @@ class Container(Type):
 
     def rootfs(self) -> "Directory":
         """Return a snapshot of the container's root filesystem. The snapshot can
-        be modified then written back using \"withRootfs\". Use that method
-        for filesystem modifications.
+        be modified then written back using withRootfs. Use that method for
+        filesystem modifications.
         """
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
@@ -1623,8 +1623,7 @@ class Container(Type):
         keep_default_args: bool | None = False,
     ) -> Self:
         """Set an OCI-style entrypoint. It will be included in the container's
-        OCI configuration. Note, \"withExec\" ignores the entrypoint by
-        default.
+        OCI configuration. Note, withExec ignores the entrypoint by default.
 
         Parameters
         ----------
@@ -2113,7 +2112,7 @@ class Container(Type):
         secret: "Secret",
     ) -> Self:
         """Attach credentials for future publishing to a registry. Use in
-        combinationw with \"publish\"
+        combinationw with publish
 
         Parameters
         ----------

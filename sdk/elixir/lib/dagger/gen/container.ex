@@ -411,7 +411,7 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
-  @doc "Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \"withRootfs\". Use that method for filesystem modifications."
+  @doc "Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications."
   @spec rootfs(t()) :: Dagger.Directory.t()
   def rootfs(%__MODULE__{} = container) do
     query_builder =
@@ -613,7 +613,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \"withExec\" ignores the entrypoint by default."
+  @doc "Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default."
   @spec with_entrypoint(t(), [String.t()], [{:keep_default_args, boolean() | nil}]) ::
           Dagger.Container.t()
   def with_entrypoint(%__MODULE__{} = container, args, optional_args \\ []) do
@@ -898,7 +898,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Attach credentials for future publishing to a registry. Use in combinationw with \"publish\""
+  @doc "Attach credentials for future publishing to a registry. Use in combinationw with publish"
   @spec with_registry_auth(t(), String.t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
   def with_registry_auth(%__MODULE__{} = container, address, username, secret) do
     query_builder =
