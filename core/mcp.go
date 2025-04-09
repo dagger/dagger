@@ -494,6 +494,27 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
+func (m *MCP) selectRootBuiltin() LLMTool {
+	return LLMTool{
+		Name:        "selectRoot",
+		Description: "Return to the root Query or toplevel loaded module. Use this to back out from a selected object.",
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"strict":               true,
+			"additionalProperties": false,
+		},
+		Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
+			if m.env.Root() == nil {
+				return nil, fmt.Errorf("no root object available")
+			}
+			prev := m.Current()
+			m.Select(m.env.Root())
+			return m.currentState(prev)
+		}),
+	}
+}
+
 func (m *MCP) returnBuiltin() LLMTool {
 	props := map[string]any{}
 	required := []string{}
@@ -563,6 +584,9 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	if len(m.env.outputsByName) > 0 {
 		builtins = append(builtins, m.returnBuiltin())
 	}
+
+	// Add the selectRoot tool
+	builtins = append(builtins, m.selectRootBuiltin())
 
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
