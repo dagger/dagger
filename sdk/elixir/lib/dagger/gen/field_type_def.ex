@@ -15,7 +15,9 @@ defmodule Dagger.FieldTypeDef do
 
   @type t() :: %__MODULE__{}
 
-  @doc "A doc string for the field, if any."
+  @doc """
+  A doc string for the field, if any.
+  """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = field_type_def) do
     query_builder =
@@ -24,7 +26,9 @@ defmodule Dagger.FieldTypeDef do
     Client.execute(field_type_def.client, query_builder)
   end
 
-  @doc "A unique identifier for this FieldTypeDef."
+  @doc """
+  A unique identifier for this FieldTypeDef.
+  """
   @spec id(t()) :: {:ok, Dagger.FieldTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = field_type_def) do
     query_builder =
@@ -33,7 +37,9 @@ defmodule Dagger.FieldTypeDef do
     Client.execute(field_type_def.client, query_builder)
   end
 
-  @doc "The name of the field in lowerCamelCase format."
+  @doc """
+  The name of the field in lowerCamelCase format.
+  """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = field_type_def) do
     query_builder =
@@ -42,7 +48,9 @@ defmodule Dagger.FieldTypeDef do
     Client.execute(field_type_def.client, query_builder)
   end
 
-  @doc "The location of this field declaration."
+  @doc """
+  The location of this field declaration.
+  """
   @spec source_map(t()) :: Dagger.SourceMap.t()
   def source_map(%__MODULE__{} = field_type_def) do
     query_builder =
@@ -54,7 +62,9 @@ defmodule Dagger.FieldTypeDef do
     }
   end
 
-  @doc "The type of the field."
+  @doc """
+  The type of the field.
+  """
   @spec type_def(t()) :: Dagger.TypeDef.t()
   def type_def(%__MODULE__{} = field_type_def) do
     query_builder =

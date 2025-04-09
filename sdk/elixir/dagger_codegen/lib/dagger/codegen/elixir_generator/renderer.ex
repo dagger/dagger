@@ -29,21 +29,17 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
 
   @doc """
   Render the string.
-
-  Uses multiline string when newline is detected.
   """
   def render_string(s) do
-    if String.contains?(s, "\n") do
-      [
-        "\"\"\"",
-        ?\n,
-        s,
-        ?\n,
-        "\"\"\""
-      ]
-    else
-      [?", s, ?"]
-    end
+    s = String.replace(s, "\\", "\\\\")
+
+    [
+      "\"\"\"",
+      ?\n,
+      s,
+      ?\n,
+      "\"\"\""
+    ]
   end
 
   @doc "Render atom value."
