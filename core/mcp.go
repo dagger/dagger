@@ -397,7 +397,7 @@ func (m *MCP) call(ctx context.Context,
 	} else {
 		self, ok := argsMap[selfType]
 		if !ok {
-			return nil, fmt.Errorf("missing %q argument", selfType)
+			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCount[selfType])
 		}
 		recv, ok := self.(string)
 		if !ok {
@@ -1047,10 +1047,9 @@ func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.Field
 	if typeName != "Query" {
 		properties[typeName] = map[string]any{
 			"type":        "string",
-			"description": fmt.Sprintf("The %s snapshot to operate against.", typeName),
+			"description": fmt.Sprintf("The %s to operate against. Defaults to the most recent %s.", typeName, typeName),
 			"pattern":     idPattern(typeName),
 		}
-		required = append(required, typeName)
 	}
 	for _, arg := range field.Arguments {
 		argSchema, err := typeToJSONSchema(schema, arg.Type)
