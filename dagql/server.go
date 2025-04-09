@@ -13,7 +13,6 @@ import (
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
-	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -23,7 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 func init() {
@@ -43,13 +41,14 @@ func init() {
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root        Object
-	telemetry   AroundFunc
-	objects     map[string]ObjectType
-	scalars     map[string]ScalarType
-	typeDefs    map[string]TypeDef
-	directives  map[string]DirectiveSpec
-	installLock *sync.Mutex
+	root         Object
+	telemetry    AroundFunc
+	objects      map[string]ObjectType
+	scalars      map[string]ScalarType
+	typeDefs     map[string]TypeDef
+	directives   map[string]DirectiveSpec
+	installLock  *sync.Mutex
+	installHooks []InstallHook
 
 	// View is the view that is applied to all queries on this server
 	View string
@@ -58,7 +57,12 @@ type Server struct {
 	// another *Server to inherit and share caches.
 	//
 	// TODO: copy-on-write
-	Cache Cache
+	Cache *SessionCache
+}
+
+type InstallHook interface {
+	InstallObject(ObjectType)
+	// FIXME: add support for other install functions
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -71,11 +75,6 @@ type AroundFunc func(
 	*call.ID,
 ) (context.Context, func(res Typed, cached bool, err error))
 
-// Cache stores results of pure selections against Server.
-type Cache = *cache.CacheWithResults[digest.Digest, Typed]
-
-type CacheValWithCallbacks = cache.ValueWithCallbacks[Typed]
-
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
 type TypeDef interface {
@@ -84,7 +83,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T) *Server {
+func NewServer[T Typed](root T, c *SessionCache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -92,7 +91,7 @@ func NewServer[T Typed](root T) *Server {
 		NoIDs: true,
 	})
 	srv := &Server{
-		Cache: NewCache(),
+		Cache: c,
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -111,10 +110,6 @@ func NewServer[T Typed](root T) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
-}
-
-func NewCache() Cache {
-	return cache.NewCacheWithResults[digest.Digest, Typed](cache.NewCache[digest.Digest, Typed]())
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
@@ -228,18 +223,20 @@ type Loadable interface {
 	Load(context.Context, *Server) (Typed, error)
 }
 
-// InstallObject installs the given Object type into the schema.
-func (s *Server) InstallObject(class ObjectType) {
+// InstallObject installs the given Object type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallObject(class ObjectType) ObjectType {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	s.installObject(class)
-}
 
-func (s *Server) installObject(class ObjectType) {
+	if class, ok := s.objects[class.TypeName()]; ok {
+		s.installLock.Unlock()
+		return class
+	}
+
 	s.objects[class.TypeName()] = class
-
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
+
 		s.Root().ObjectType().Extend(
 			FieldSpec{
 				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
@@ -272,13 +269,25 @@ func (s *Server) installObject(class ObjectType) {
 			},
 		)
 	}
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallObject(class)
+	}
+
+	return class
 }
 
-// InstallScalar installs the given Scalar type into the schema.
-func (s *Server) InstallScalar(scalar ScalarType) {
+// InstallScalar installs the given Scalar type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
+	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
+		return scalar
+	}
 	s.scalars[scalar.TypeName()] = scalar
+	return scalar
 }
 
 // InstallDirective installs the given Directive type into the schema.
@@ -548,38 +557,56 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 			return fmt.Errorf("select: %w", err)
 		}
 
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			if enum, isEnum := res.(Enumerable); isEnum {
-				// HACK: list of objects must be the last selection right now unless nth used in Selector.
-				if i+1 < len(sels) {
-					return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+		if res == nil {
+			// null result; nothing to do
+			return nil
+		}
+
+		destV := reflect.ValueOf(dest).Elem()
+		if res.Type().Elem != nil {
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+			}
+			if destV.Type().Kind() != reflect.Slice {
+				// assigning to something like dagql.Typed, don't need to enumerate
+				break
+			}
+			isObj := s.isObjectType(res.Type().Elem.Name())
+			enum, isEnum := res.(Enumerable)
+			if !isEnum {
+				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
+			}
+			// HACK: list of objects must be the last selection right now unless nth used in Selector.
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+			}
+			for nth := 1; nth <= enum.Len(); nth++ {
+				val, err := enum.Nth(nth)
+				if err != nil {
+					return fmt.Errorf("nth %d: %w", nth, err)
 				}
-				for nth := 1; nth <= enum.Len(); nth++ {
-					val, err := enum.Nth(nth)
-					if err != nil {
-						return fmt.Errorf("nth %d: %w", nth, err)
-					}
-					if wrapped, ok := val.(Derefable); ok {
-						val, ok = wrapped.Deref()
-						if !ok {
-							if err := appendAssign(reflect.ValueOf(dest).Elem(), nil); err != nil {
-								return err
-							}
-							continue
+				if wrapped, ok := val.(Derefable); ok {
+					val, ok = wrapped.Deref()
+					if !ok {
+						if err := appendAssign(destV, nil); err != nil {
+							return err
 						}
+						continue
 					}
+				}
+				if isObj {
 					nthID := id.SelectNth(nth)
-					obj, err := s.toSelectable(nthID, val)
+					val, err = s.toSelectable(nthID, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
-					if err := appendAssign(reflect.ValueOf(dest).Elem(), obj); err != nil {
-						return err
-					}
 				}
-				return nil
+				if err := appendAssign(destV, val); err != nil {
+					return err
+				}
 			}
-
+			return nil
+		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
 			self, err = s.toSelectable(id, res)
@@ -594,6 +621,18 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 	}
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+func (s *Server) isObjectType(typeName string) bool {
+	_, ok := s.ObjectType(typeName)
+	return ok
+}
+
+// Attach an install hook
+func (s *Server) AddInstallHook(hook InstallHook) {
+	s.installLock.Lock()
+	s.installHooks = append(s.installHooks, hook)
+	s.installLock.Unlock()
 }
 
 func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
@@ -633,6 +672,25 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 				return err
 			}
 			out[i] = val.Self
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func LoadIDInstances[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Instance[T], error) {
+	out := make([]Instance[T], len(ids))
+	eg := new(errgroup.Group)
+	for i, id := range ids {
+		eg.Go(func() error {
+			val, err := id.Load(ctx, srv)
+			if err != nil {
+				return err
+			}
+			out[i] = val
 			return nil
 		})
 	}
@@ -902,17 +960,6 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  string
-
-	// Override the default purity of the field. Typically used so that an impure
-	// resolver call can return a pure result, by calling to itself or another
-	// field with pure arguments.
-	//
-	// If Pure is false, and the field is marked Impure, the selection will not
-	// be cached and the object's ID will be tainted.
-	//
-	// If Pure is true, the selection will be cached regardless of the field's
-	// purity, and the object's ID will be untainted.
-	Pure bool
 }
 
 func (sel Selector) String() string {
@@ -1040,7 +1087,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assign(fieldV, input); err != nil {
-				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
 		}
 	}

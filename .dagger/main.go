@@ -83,6 +83,13 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	return &clone
 }
 
+func (dev *DaggerDev) WithModCodegenTargets(targets []string) *DaggerDev {
+	clone := *dev
+	clone.ModCodegen = true
+	clone.ModCodegenTargets = targets
+	return &clone
+}
+
 // Develop the Dagger CLI
 func (dev *DaggerDev) CLI() *CLI {
 	return &CLI{Dagger: dev}
@@ -152,22 +159,17 @@ func (dev *DaggerDev) Engine() *DaggerEngine {
 	return &DaggerEngine{Dagger: dev}
 }
 
-// Develop the Dagger documentation
-func (dev *DaggerDev) Docs() *Docs {
-	return &Docs{Dagger: dev}
-}
-
 // Run Dagger scripts
 func (dev *DaggerDev) Scripts() *Scripts {
 	return &Scripts{Dagger: dev}
 }
 
-// Run all tests
+// Find test suites to run
 func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
-// Run all benchmarks
+// Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {
 	return &Bench{Test: dev.Test()}
 }
@@ -179,7 +181,7 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	eg.Go(func() error {
 		var err error
-		docs = dev.Docs().Generate()
+		docs = dag.Docs().Generate()
 		docs, err = docs.Sync(ctx)
 		return err
 	})

@@ -4,20 +4,22 @@ import (
 	"context"
 	"testing"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	dag := dagql.NewServer(root)
+	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))
-	typeDefs, err := coreModDeps.TypeDefs(ctx)
+	typeDefs, err := coreModDeps.TypeDefs(ctx, dag)
 	require.NoError(t, err)
 
 	typeByName := make(map[string]*core.TypeDef)

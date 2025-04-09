@@ -19,6 +19,67 @@ directive @meta on FIELD_DEFINITION
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+type Binding {
+  """Retrieve the binding value, as type CacheVolume"""
+  asCacheVolume: CacheVolume!
+
+  """Retrieve the binding value, as type Container"""
+  asContainer: Container!
+
+  """Retrieve the binding value, as type Directory"""
+  asDirectory: Directory!
+
+  """Retrieve the binding value, as type Env"""
+  asEnv: Env!
+
+  """Retrieve the binding value, as type File"""
+  asFile: File!
+
+  """Retrieve the binding value, as type GitRef"""
+  asGitRef: GitRef!
+
+  """Retrieve the binding value, as type GitRepository"""
+  asGitRepository: GitRepository!
+
+  """Retrieve the binding value, as type LLM"""
+  asLLM: LLM!
+
+  """Retrieve the binding value, as type Module"""
+  asModule: Module!
+
+  """Retrieve the binding value, as type ModuleConfigClient"""
+  asModuleConfigClient: ModuleConfigClient!
+
+  """Retrieve the binding value, as type ModuleSource"""
+  asModuleSource: ModuleSource!
+
+  """Retrieve the binding value, as type Secret"""
+  asSecret: Secret!
+
+  """Retrieve the binding value, as type Service"""
+  asService: Service!
+
+  """Retrieve the binding value, as type Socket"""
+  asSocket: Socket!
+
+  """The digest of the binding value"""
+  digest: String!
+
+  """A unique identifier for this Binding."""
+  id: BindingID!
+
+  """The binding name"""
+  name: String!
+
+  """The binding type"""
+  typeName: String!
+}
+
+"""
+The `BindingID` scalar type represents an identifier for an object of type Binding.
+"""
+scalar BindingID
+
 """Key value object that represents a build argument."""
 input BuildArg {
   """The build argument name."""
@@ -141,6 +202,14 @@ type Container {
 
     """Path to the Dockerfile to use."""
     dockerfile: String = "Dockerfile"
+
+    """
+    If set, skip the automatic init process injected into containers created by RUN statements.
+    
+    This should only be used if the user requires that their exec processes be
+    the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    """
+    noInit: Boolean = false
 
     """
     Secrets to pass to the build.
@@ -1243,6 +1312,14 @@ type Directory {
     """Path to the Dockerfile to use (e.g., "frontend.Dockerfile")."""
     dockerfile: String = "Dockerfile"
 
+    """
+    If set, skip the automatic init process injected into containers created by RUN statements.
+    
+    This should only be used if the user requires that their exec processes be
+    the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    """
+    noInit: Boolean = false
+
     """The platform to build."""
     platform: Platform
 
@@ -1284,6 +1361,19 @@ type Directory {
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
   ): File!
+
+  """Retrieves this directory as per exclude/include filters."""
+  filter(
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+  ): Directory!
 
   """Returns a list of files and directories that matche the given pattern."""
   glob(
@@ -1575,6 +1665,341 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 """
 scalar EnumValueTypeDefID
 
+type Env {
+  """A unique identifier for this Env."""
+  id: EnvID!
+
+  """retrieve an input value by name"""
+  input(name: String!): Binding!
+
+  """return all input values for the environment"""
+  inputs: [Binding!]!
+
+  """retrieve an output value by name"""
+  output(name: String!): Binding!
+
+  """return all output values for the environment"""
+  outputs: [Binding!]!
+
+  """Create or update a binding of type CacheVolume in the environment"""
+  withCacheVolumeInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The CacheVolume value to assign to the binding"""
+    value: CacheVolumeID!
+  ): Env!
+
+  """Declare a desired CacheVolume output to be assigned in the environment"""
+  withCacheVolumeOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Container in the environment"""
+  withContainerInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Container value to assign to the binding"""
+    value: ContainerID!
+  ): Env!
+
+  """Declare a desired Container output to be assigned in the environment"""
+  withContainerOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Directory in the environment"""
+  withDirectoryInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Directory value to assign to the binding"""
+    value: DirectoryID!
+  ): Env!
+
+  """Declare a desired Directory output to be assigned in the environment"""
+  withDirectoryOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Env in the environment"""
+  withEnvInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Env value to assign to the binding"""
+    value: EnvID!
+  ): Env!
+
+  """Declare a desired Env output to be assigned in the environment"""
+  withEnvOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type File in the environment"""
+  withFileInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The File value to assign to the binding"""
+    value: FileID!
+  ): Env!
+
+  """Declare a desired File output to be assigned in the environment"""
+  withFileOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type GitRef in the environment"""
+  withGitRefInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The GitRef value to assign to the binding"""
+    value: GitRefID!
+  ): Env!
+
+  """Declare a desired GitRef output to be assigned in the environment"""
+  withGitRefOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type GitRepository in the environment"""
+  withGitRepositoryInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The GitRepository value to assign to the binding"""
+    value: GitRepositoryID!
+  ): Env!
+
+  """
+  Declare a desired GitRepository output to be assigned in the environment
+  """
+  withGitRepositoryOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type LLM in the environment"""
+  withLLMInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The LLM value to assign to the binding"""
+    value: LLMID!
+  ): Env!
+
+  """Declare a desired LLM output to be assigned in the environment"""
+  withLLMOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """
+  Create or update a binding of type ModuleConfigClient in the environment
+  """
+  withModuleConfigClientInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The ModuleConfigClient value to assign to the binding"""
+    value: ModuleConfigClientID!
+  ): Env!
+
+  """
+  Declare a desired ModuleConfigClient output to be assigned in the environment
+  """
+  withModuleConfigClientOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Module in the environment"""
+  withModuleInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Module value to assign to the binding"""
+    value: ModuleID!
+  ): Env!
+
+  """Declare a desired Module output to be assigned in the environment"""
+  withModuleOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type ModuleSource in the environment"""
+  withModuleSourceInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The ModuleSource value to assign to the binding"""
+    value: ModuleSourceID!
+  ): Env!
+
+  """
+  Declare a desired ModuleSource output to be assigned in the environment
+  """
+  withModuleSourceOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Secret in the environment"""
+  withSecretInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Secret value to assign to the binding"""
+    value: SecretID!
+  ): Env!
+
+  """Declare a desired Secret output to be assigned in the environment"""
+  withSecretOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Service in the environment"""
+  withServiceInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Service value to assign to the binding"""
+    value: ServiceID!
+  ): Env!
+
+  """Declare a desired Service output to be assigned in the environment"""
+  withServiceOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update a binding of type Socket in the environment"""
+  withSocketInput(
+    """The purpose of the input"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The Socket value to assign to the binding"""
+    value: SocketID!
+  ): Env!
+
+  """Declare a desired Socket output to be assigned in the environment"""
+  withSocketOutput(
+    """A description of the desired value of the binding"""
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+  ): Env!
+
+  """Create or update an input value of type string"""
+  withStringInput(
+    description: String!
+
+    """The name of the binding"""
+    name: String!
+
+    """The string value to assign to the binding"""
+    value: String!
+  ): Env!
+}
+
+"""
+The `EnvID` scalar type represents an identifier for an object of type Env.
+"""
+scalar EnvID
+
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
@@ -1598,12 +2023,40 @@ type Error {
 
   """A description of the error."""
   message: String!
+
+  """The extensions of the error."""
+  values: [ErrorValue!]!
+
+  """Add a value to the error."""
+  withValue(
+    """The name of the value."""
+    name: String!
+
+    """The value to store on the error."""
+    value: JSON!
+  ): Error!
 }
 
 """
 The `ErrorID` scalar type represents an identifier for an object of type Error.
 """
 scalar ErrorID
+
+type ErrorValue {
+  """A unique identifier for this ErrorValue."""
+  id: ErrorValueID!
+
+  """The name of the value."""
+  name: String!
+
+  """The value."""
+  value: JSON!
+}
+
+"""
+The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+"""
+scalar ErrorValueID
 
 """
 A definition of a field on a custom object defined in a Module.
@@ -2030,7 +2483,7 @@ type Host {
 
     """Location of the file to set as a secret."""
     path: String!
-  ): Secret!
+  ): Secret! @deprecated(reason: "setSecretFile is superceded by use of the secret API with file:// URIs")
 
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
@@ -2168,6 +2621,92 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 """
 scalar ListTypeDefID
 
+type LLM {
+  """create a branch in the LLM's history"""
+  attempt(number: Int!): LLM!
+
+  """returns the type of the current state"""
+  bindResult(name: String!): Binding
+
+  """return the LLM's current environment"""
+  env: Env!
+
+  """return the llm message history"""
+  history: [String!]!
+
+  """return the raw llm message history as json"""
+  historyJSON: String!
+
+  """A unique identifier for this LLM."""
+  id: LLMID!
+
+  """return the last llm reply from the history"""
+  lastReply: String!
+
+  """synchronize LLM state"""
+  loop: LLM!
+
+  """return the model used by the llm"""
+  model: String!
+
+  """return the provider used by the llm"""
+  provider: String!
+
+  """synchronize LLM state"""
+  sync: LLMID!
+
+  """returns the token usage of the current state"""
+  tokenUsage: LLMTokenUsage!
+
+  """print documentation for available tools"""
+  tools: String!
+
+  """allow the LLM to interact with an environment via MCP"""
+  withEnv(env: EnvID!): LLM!
+
+  """swap out the llm model"""
+  withModel(
+    """The model to use"""
+    model: String!
+  ): LLM!
+
+  """append a prompt to the llm context"""
+  withPrompt(
+    """The prompt to send"""
+    prompt: String!
+  ): LLM!
+
+  """append the contents of a file to the llm context"""
+  withPromptFile(
+    """The file to read the prompt from"""
+    file: FileID!
+  ): LLM!
+
+  """Add a system prompt to the LLM's environment"""
+  withSystemPrompt(
+    """The system prompt to send"""
+    prompt: String!
+  ): LLM!
+}
+
+"""
+The `LLMID` scalar type represents an identifier for an object of type LLM.
+"""
+scalar LLMID
+
+type LLMTokenUsage {
+  """A unique identifier for this LLMTokenUsage."""
+  id: LLMTokenUsageID!
+  inputTokens: Int!
+  outputTokens: Int!
+  totalTokens: Int!
+}
+
+"""
+The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+"""
+scalar LLMTokenUsageID
+
 """A Dagger module."""
 type Module {
   """The dependencies of the module."""
@@ -2279,9 +2818,7 @@ type ModuleSource {
   """
   cloneRef: String!
 
-  """
-  The resolved commit of the git repo this source points to. Only valid for git sources.
-  """
+  """The resolved commit of the git repo this source points to."""
   commit: String!
 
   """The clients generated for the module."""
@@ -2321,7 +2858,7 @@ type ModuleSource {
   generatedContextDirectory: Directory!
 
   """
-  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
   """
   htmlRepoURL: String!
 
@@ -2381,9 +2918,7 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
-  """
-  The specified version of the git repo this source points to. Only valid for git sources.
-  """
+  """The specified version of the git repo this source points to."""
   version: String!
 
   """Update the module source with a new client to generate."""
@@ -2561,12 +3096,6 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
-  """Retrieves a container builtin to the engine."""
-  builtinContainer(
-    """Digest of the image manifest"""
-    digest: String!
-  ): Container!
-
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -2610,6 +3139,14 @@ type Query {
 
   """The Dagger engine container configuration and state"""
   engine: Engine!
+
+  """Initialize a new environment"""
+  env(
+    """
+    Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+    """
+    privileged: Boolean = false
+  ): Env!
 
   """Create a new error."""
   error(
@@ -2669,6 +3206,18 @@ type Query {
     url: String!
   ): File!
 
+  """Initialize a Large Language Model (LLM)"""
+  llm(
+    """Cap the number of API calls for this LLM"""
+    maxAPICalls: Int
+
+    """Model to use"""
+    model: String
+  ): LLM!
+
+  """Load a Binding from its ID."""
+  loadBindingFromID(id: BindingID!): Binding!
+
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
@@ -2699,11 +3248,17 @@ type Query {
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
 
+  """Load a Env from its ID."""
+  loadEnvFromID(id: EnvID!): Env!
+
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
 
   """Load a Error from its ID."""
   loadErrorFromID(id: ErrorID!): Error!
+
+  """Load a ErrorValue from its ID."""
+  loadErrorValueFromID(id: ErrorValueID!): ErrorValue!
 
   """Load a FieldTypeDef from its ID."""
   loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
@@ -2747,6 +3302,12 @@ type Query {
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
 
+  """Load a LLM from its ID."""
+  loadLLMFromID(id: LLMID!): LLM!
+
+  """Load a LLMTokenUsage from its ID."""
+  loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
+
   """Load a ModuleConfigClient from its ID."""
   loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
 
@@ -2770,9 +3331,6 @@ type Query {
 
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
-
-  """Load a Secret from its Name."""
-  loadSecretFromName(accessor: String, name: String!): Secret!
 
   """Load a Service from its ID."""
   loadServiceFromID(id: ServiceID!): Service!

@@ -9,18 +9,6 @@ defmodule Dagger.Client do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Retrieves a container builtin to the engine."
-  @spec builtin_container(t(), String.t()) :: Dagger.Container.t()
-  def builtin_container(%__MODULE__{} = client, digest) do
-    query_builder =
-      client.query_builder |> QB.select("builtinContainer") |> QB.put_arg("digest", digest)
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Constructs a cache volume for a given cache key."
   @spec cache_volume(t(), String.t(), [{:namespace, String.t() | nil}]) :: Dagger.CacheVolume.t()
   def cache_volume(%__MODULE__{} = client, key, optional_args \\ []) do
@@ -135,6 +123,20 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Initialize a new environment"
+  @spec env(t(), [{:privileged, boolean() | nil}]) :: Dagger.Env.t()
+  def env(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("env")
+      |> QB.maybe_put_arg("privileged", optional_args[:privileged])
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Create a new error."
   @spec error(t(), String.t()) :: Dagger.Error.t()
   def error(%__MODULE__{} = client, message) do
@@ -222,6 +224,34 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
     %Dagger.File{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Initialize a Large Language Model (LLM)"
+  @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
+          Dagger.LLM.t()
+  def llm(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("llm")
+      |> QB.maybe_put_arg("model", optional_args[:model])
+      |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Binding from its ID."
+  @spec load_binding_from_id(t(), Dagger.BindingID.t()) :: Dagger.Binding.t()
+  def load_binding_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadBindingFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Binding{
       query_builder: query_builder,
       client: client.client
     }
@@ -350,6 +380,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a Env from its ID."
+  @spec load_env_from_id(t(), Dagger.EnvID.t()) :: Dagger.Env.t()
+  def load_env_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a EnvVariable from its ID."
   @spec load_env_variable_from_id(t(), Dagger.EnvVariableID.t()) :: Dagger.EnvVariable.t()
   def load_env_variable_from_id(%__MODULE__{} = client, id) do
@@ -369,6 +411,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadErrorFromID") |> QB.put_arg("id", id)
 
     %Dagger.Error{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a ErrorValue from its ID."
+  @spec load_error_value_from_id(t(), Dagger.ErrorValueID.t()) :: Dagger.ErrorValue.t()
+  def load_error_value_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadErrorValueFromID") |> QB.put_arg("id", id)
+
+    %Dagger.ErrorValue{
       query_builder: query_builder,
       client: client.client
     }
@@ -520,6 +574,30 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a LLM from its ID."
+  @spec load_llm_from_id(t(), Dagger.LLMID.t()) :: Dagger.LLM.t()
+  def load_llm_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadLLMFromID") |> QB.put_arg("id", id)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a LLMTokenUsage from its ID."
+  @spec load_llm_token_usage_from_id(t(), Dagger.LLMTokenUsageID.t()) :: Dagger.LLMTokenUsage.t()
+  def load_llm_token_usage_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadLLMTokenUsageFromID") |> QB.put_arg("id", id)
+
+    %Dagger.LLMTokenUsage{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a Label from its ID."
   @spec load_label_from_id(t(), Dagger.LabelID.t()) :: Dagger.Label.t()
   def load_label_from_id(%__MODULE__{} = client, id) do
@@ -634,22 +712,6 @@ defmodule Dagger.Client do
   def load_secret_from_id(%__MODULE__{} = client, id) do
     query_builder =
       client.query_builder |> QB.select("loadSecretFromID") |> QB.put_arg("id", id)
-
-    %Dagger.Secret{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a Secret from its Name."
-  @spec load_secret_from_name(t(), String.t(), [{:accessor, String.t() | nil}]) ::
-          Dagger.Secret.t()
-  def load_secret_from_name(%__MODULE__{} = client, name, optional_args \\ []) do
-    query_builder =
-      client.query_builder
-      |> QB.select("loadSecretFromName")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("accessor", optional_args[:accessor])
 
     %Dagger.Secret{
       query_builder: query_builder,

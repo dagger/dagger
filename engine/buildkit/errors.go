@@ -17,8 +17,8 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
-func (e *ExecError) Extensions() map[string]interface{} {
-	return map[string]interface{}{
+func (e *ExecError) Extensions() map[string]any {
+	return map[string]any{
 		"_type":    "EXEC_ERROR",
 		"cmd":      e.Cmd,
 		"exitCode": e.ExitCode,

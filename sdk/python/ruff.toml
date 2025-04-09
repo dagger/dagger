@@ -90,7 +90,7 @@ ignore = [
     "UP007",
 ]
 # Allow alias imports in __init__.
-"./**/__init__.py" = ["PLC0414"]
+"**/__init__.py" = ["PLC0414"]
 # Allow some patterns to redefine imports in __init__.
 "./src/**/__init__.py" = ["I001", "F403"]
 

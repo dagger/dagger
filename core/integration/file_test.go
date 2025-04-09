@@ -29,7 +29,7 @@ func TestFile(t *testing.T) {
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -38,9 +38,7 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -50,14 +48,14 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
 	require.Equal(t, "some-content", res.Directory.WithNewFile.File.Contents)
 }
 
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				Directory struct {
@@ -68,9 +66,7 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-dir/some-file", contents: "some-content") {
@@ -82,14 +78,14 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.Directory.File.ID)
 	require.Equal(t, "some-content", res.Directory.WithNewFile.Directory.File.Contents)
 }
 
 func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -98,9 +94,7 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -110,7 +104,7 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
 	require.Equal(t, len("some-content"), res.Directory.WithNewFile.File.Size)

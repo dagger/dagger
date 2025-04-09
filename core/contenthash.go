@@ -30,24 +30,37 @@ func MakeDirectoryContentHashed(
 	bk *buildkit.Client,
 	dirInst dagql.Instance[*Directory],
 ) (retInst dagql.Instance[*Directory], err error) {
-	if dirInst.Self == nil {
-		return retInst, fmt.Errorf("directory instance is nil")
-	}
-
-	st, err := dirInst.Self.State()
-	if err != nil {
-		return retInst, fmt.Errorf("failed to get state: %w", err)
-	}
-	def, err := st.Marshal(ctx, llb.Platform(dirInst.Self.Platform.Spec()))
-	if err != nil {
-		return retInst, fmt.Errorf("failed to marshal state: %w", err)
-	}
-	dgst, err := GetContentHashFromDef(ctx, bk, def.ToPB(), dirInst.Self.Dir)
+	dgst, err := GetContentHashFromDirectory(ctx, bk, dirInst)
 	if err != nil {
 		return retInst, fmt.Errorf("failed to get content hash: %w", err)
 	}
 
 	return dirInst.WithDigest(dgst), nil
+}
+
+func GetContentHashFromDirectory(
+	ctx context.Context,
+	bk *buildkit.Client,
+	dirInst dagql.Instance[*Directory],
+) (digest.Digest, error) {
+	if dirInst.Self == nil {
+		return "", fmt.Errorf("directory instance is nil")
+	}
+
+	st, err := dirInst.Self.State()
+	if err != nil {
+		return "", fmt.Errorf("failed to get state: %w", err)
+	}
+	def, err := st.Marshal(ctx, llb.Platform(dirInst.Self.Platform.Spec()))
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal state: %w", err)
+	}
+	dgst, err := GetContentHashFromDef(ctx, bk, def.ToPB(), dirInst.Self.Dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get content hash: %w", err)
+	}
+
+	return dgst, nil
 }
 
 func GetContentHashFromDef(
@@ -100,7 +113,7 @@ func GetContentHashFromDef(
 		}
 
 		ctx, span := Tracer(ctx).Start(ctx,
-			fmt.Sprintf("checksum def: %s", ref.ID()),
+			fmt.Sprintf("checksum def: %s", key),
 			telemetry.Internal(),
 		)
 		defer telemetry.End(span, func() error { return rerr })

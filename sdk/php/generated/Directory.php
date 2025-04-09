@@ -84,6 +84,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $buildArgs = null,
         ?array $secrets = null,
+        ?bool $noInit = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $platform) {
@@ -100,6 +101,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -137,6 +141,21 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory as per exclude/include filters.
+     */
+    public function filter(?array $exclude = null, ?array $include = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

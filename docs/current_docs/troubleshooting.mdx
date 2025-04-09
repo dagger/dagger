@@ -54,7 +54,9 @@ You should now be able to re-run your Dagger Function successfully.
 
 ## Dagger restarts with a "CNI setup error"
 
-The Dagger Engine requires the `iptable_nat` Linux kernel module in order to function properly. On some Linux distributions (including Red Hat Enterprise Linux 8.x and 9.x), this module is not loaded by default.
+The Dagger Engine requires the `iptable_nat` Linux kernel module in order to function properly. On some Linux distributions this module is not loaded by default.
+
+Known affected platforms include Red Hat Enterprise Linux (8.x and 9.x) and Podman Desktop on Mac.
 
 You can load this module by running `sudo modprobe iptable_nat`.
 
@@ -86,6 +88,12 @@ To resolve this error, you must remove the environment variable, disable Rosetta
     ```shell
     docker rm -fv $(docker ps --filter name="dagger-engine-*" -q) && docker rmi $(docker images -q --filter reference=registry.dagger.io/engine)
     ```
+
+### An agent isn't behaving properly
+
+First, to get more information about the agent's behavior, increase the verbosity of the shell or review the trace in Dagger Cloud. This is the best way to see what steps the LLM took, the details of its thinking between each tool call, and what the tool calls were.
+
+Second, once you understand how the agent is behaving, you can try to adjust the prompt to get the desired behavior. This is often a matter of trial and error, and can be a bit of an art.
 
 ### Other errors
 

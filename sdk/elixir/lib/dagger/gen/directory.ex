@@ -90,7 +90,8 @@ defmodule Dagger.Directory do
           {:dockerfile, String.t() | nil},
           {:target, String.t() | nil},
           {:build_args, [Dagger.BuildArg.t()]},
-          {:secrets, [Dagger.SecretID.t()]}
+          {:secrets, [Dagger.SecretID.t()]},
+          {:no_init, boolean() | nil}
         ]) :: Dagger.Container.t()
   def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
@@ -107,6 +108,7 @@ defmodule Dagger.Directory do
           else: nil
         )
       )
+      |> QB.maybe_put_arg("noInit", optional_args[:no_init])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -145,6 +147,21 @@ defmodule Dagger.Directory do
       directory.query_builder |> QB.select("file") |> QB.put_arg("path", path)
 
     %Dagger.File{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc "Retrieves this directory as per exclude/include filters."
+  @spec filter(t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) :: Dagger.Directory.t()
+  def filter(%__MODULE__{} = directory, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("filter")
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.Directory{
       query_builder: query_builder,
       client: directory.client
     }

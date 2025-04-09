@@ -1,12 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"slices"
-	"sort"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -201,6 +201,104 @@ func (h *shellCallHandler) Stdlib() []*ShellCommand {
 	return l
 }
 
+func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
+	return []*ShellCommand{
+		{
+			Use:         ".shell",
+			Description: "Switch into shell mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				h.mode = modeShell
+				return nil
+			},
+		},
+		{
+			Use:         ".prompt",
+			Description: "Switch into prompt mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				// Initialize LLM if not already done
+				_, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				h.mode = modePrompt
+				return nil
+			},
+		},
+		{
+			Use:         ".clear",
+			Description: "Clear the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				h.llmSession = h.llmSession.Clear()
+				return nil
+			},
+		},
+		{
+			Use:         ".compact",
+			Description: "Compact the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				newLLM, err := h.llmSession.Compact(ctx)
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				return nil
+			},
+		},
+		{
+			Use:         ".history",
+			Description: "Show the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				_, err := h.llmSession.History(ctx)
+				return err
+			},
+		},
+		{
+			Use:         ".model [model]",
+			Description: "Swap out the LLM model",
+			GroupID:     "llm",
+			Args:        ExactArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				newLLM, err := llm.Model(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				h.llmModel = newLLM.model
+				return nil
+			},
+		},
+	}
+}
+
 func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
@@ -219,7 +317,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 		},
 		&ShellCommand{
 			Use:         ".help [command | function | module | type]\n<function> | .help [function]",
-			Description: `Show documentation for a command, function, module, or type.`,
+			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
@@ -280,11 +378,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 							return h.Print(ctx, h.DepsHelp())
 						}
 						// Example: `.deps | .help <dependency>`
-						depSt, depDef, err := h.GetDependency(ctx, args[0])
+						_, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
+						return h.Print(ctx, h.ModuleDoc(depDef))
 
 					case st.IsCore():
 						// Document core
@@ -305,7 +403,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						// Document module
 						// Example: `.help [module]`
-						return h.Print(ctx, h.ModuleDoc(st, def))
+						return h.Print(ctx, h.ModuleDoc(def))
 					}
 				}
 
@@ -345,16 +443,16 @@ Writes any specified operands, separated by single blank (' ') characters and fo
 			Use: ".wait",
 			Description: `Wait for background processes to complete
 
-The return status is 0 if all specified processes exit successfully. 
-If any process exits with a nonzero status, wait returns that status. 
+The return status is 0 if all specified processes exit successfully.
+If any process exits with a nonzero status, wait returns that status.
 `,
 		},
 		&ShellCommand{
 			Use: ".cd [path | url]",
-			Description: `Change the current working directory 
+			Description: `Change the current working directory
 
 Absolute and relative paths are resolved in relation to the same context directory.
-Using a git URL changes the context. Only the initial context can target local 
+Using a git URL changes the context. Only the initial context can target local
 modules in different contexts.
 
 If the target path is in a different module within the same context, it will be
@@ -363,6 +461,7 @@ loaded as the default automatically, making its functions available at the top l
 Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
+			Hidden:  true,
 			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
@@ -377,6 +476,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Use:         ".pwd",
 			Description: "Print the current working directory's absolute path",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -390,6 +490,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Use:         ".ls [path]",
 			Description: "List files in the current working directory",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        MaximumArgs(1),
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
@@ -418,9 +519,43 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		&ShellCommand{
+			Use:         ".refresh",
+			Description: `Refresh the schema and reload all module functions`,
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				// Get current module definition
+				def := h.GetDef(st)
+
+				// Re-initialize the module to get fresh schema
+				var newDef *moduleDef
+				var err error
+				if def.Source == nil {
+					newDef, err = initializeCore(ctx, h.dag)
+				} else {
+					newDef, err = initializeModule(ctx, h.dag, def.Source)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to reinitialize module: %w", err)
+				}
+
+				// Update handler state with new definition
+				h.modDefs.Store(def.SourceDigest, newDef)
+
+				// Reload type definitions
+				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+					return fmt.Errorf("failed to reload type definitions: %w", err)
+				}
+
+				return nil
+			},
+		},
+		&ShellCommand{
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -440,6 +575,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         shellStdlibCmdName,
 			Description: "Standard library functions",
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -455,6 +591,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         ".core [function]",
 			Description: "Load any core Dagger type",
+			Hidden:      true,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				return h.Save(ctx, h.NewCoreState())
@@ -473,17 +610,24 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
+	// Add LLM commands
+	builtins = append(builtins, h.llmBuiltins()...)
+
 	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
+		def.LoadFunctionTypeDefs(fn)
+
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",
 			"engine",
 			"git",
 			"host",
+			"env",
 			"http",
 			"set-secret",
 			"version",
@@ -524,12 +668,12 @@ Without arguments, the current working directory is replaced by the initial cont
 		)
 	}
 
-	sort.Slice(builtins, func(i, j int) bool {
-		return builtins[i].Use < builtins[j].Use
+	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
+		return cmp.Compare(x.Use, y.Use)
 	})
 
-	sort.Slice(stdlib, func(i, j int) bool {
-		return stdlib[i].Use < stdlib[j].Use
+	slices.SortStableFunc(stdlib, func(x, y *ShellCommand) int {
+		return cmp.Compare(x.Use, y.Use)
 	})
 
 	h.builtins = builtins
@@ -541,6 +685,7 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		Use:         "." + c.Use,
 		Description: c.Short,
 		GroupID:     c.GroupID,
+		Hidden:      true,
 		State:       NoState,
 		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 			// Re-execute the dagger command (hack)

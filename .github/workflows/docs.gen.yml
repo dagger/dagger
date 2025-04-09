@@ -19,7 +19,7 @@ concurrency:
 jobs:
     docs:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-4c' || 'ubuntu-24.04' }}
         name: docs
         steps:
             - name: Checkout
@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.3
+                DAGGER_VERSION: v0.18.0
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -210,7 +210,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json docs lint
+                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json check --targets=docs
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 20

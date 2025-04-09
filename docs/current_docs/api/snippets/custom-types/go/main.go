@@ -1,10 +1,10 @@
 package main
 
-import "main/internal/dagger"
+import "dagger/my-module/internal/dagger"
 
-type Github struct{}
+type MyModule struct{}
 
-func (module *Github) DaggerOrganization() *Organization {
+func (module *MyModule) DaggerOrganization() *Organization {
 	url := "https://github.com/dagger"
 	return &Organization{
 		URL:          url,

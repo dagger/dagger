@@ -234,6 +234,7 @@ func (HostSuite) TestSetSecretFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run("non utf8 binary data is properly set as secret", func(ctx context.Context, t *testctx.T) {
+		//nolint:staticcheck // SA1019 deprecated
 		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
 
 		output, err := c.Container().From(alpineImage).
@@ -268,7 +269,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {

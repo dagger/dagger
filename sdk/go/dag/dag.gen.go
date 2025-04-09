@@ -22,8 +22,10 @@ func initClient() *dagger.Client {
 			dagger.WithLogOutput(os.Stdout),
 		}
 
+		ctx := context.Background()
+
 		var err error
-		client, err = dagger.Connect(context.Background(), opts...)
+		client, err = dagger.Connect(ctx, opts...)
 		if err != nil {
 			panic(err)
 		}
@@ -42,12 +44,6 @@ func Close() error {
 		client = nil
 	}
 	return err
-}
-
-// Retrieves a container builtin to the engine.
-func BuiltinContainer(digest string) *dagger.Container {
-	client := initClient()
-	return client.BuiltinContainer(digest)
 }
 
 // Constructs a cache volume for a given cache key.
@@ -102,6 +98,12 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
+// Initialize a new environment
+func Env(opts ...dagger.EnvOpts) *dagger.Env {
+	client := initClient()
+	return client.Env(opts...)
+}
+
 // Create a new error.
 func Error(message string) *dagger.Error {
 	client := initClient()
@@ -136,6 +138,18 @@ func Host() *dagger.Host {
 func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	client := initClient()
 	return client.HTTP(url, opts...)
+}
+
+// Initialize a Large Language Model (LLM)
+func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
+	client := initClient()
+	return client.LLM(opts...)
+}
+
+// Load a Binding from its ID.
+func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
+	client := initClient()
+	return client.LoadBindingFromID(id)
 }
 
 // Load a CacheVolume from its ID.
@@ -198,6 +212,12 @@ func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueT
 	return client.LoadEnumValueTypeDefFromID(id)
 }
 
+// Load a Env from its ID.
+func LoadEnvFromID(id dagger.EnvID) *dagger.Env {
+	client := initClient()
+	return client.LoadEnvFromID(id)
+}
+
 // Load a EnvVariable from its ID.
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
@@ -208,6 +228,12 @@ func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
 	client := initClient()
 	return client.LoadErrorFromID(id)
+}
+
+// Load a ErrorValue from its ID.
+func LoadErrorValueFromID(id dagger.ErrorValueID) *dagger.ErrorValue {
+	client := initClient()
+	return client.LoadErrorValueFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.
@@ -282,6 +308,18 @@ func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceT
 	return client.LoadInterfaceTypeDefFromID(id)
 }
 
+// Load a LLM from its ID.
+func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
+	client := initClient()
+	return client.LoadLLMFromID(id)
+}
+
+// Load a LLMTokenUsage from its ID.
+func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
+	client := initClient()
+	return client.LoadLLMTokenUsageFromID(id)
+}
+
 // Load a Label from its ID.
 func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 	client := initClient()
@@ -340,12 +378,6 @@ func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	client := initClient()
 	return client.LoadSecretFromID(id)
-}
-
-// Load a Secret from its Name.
-func LoadSecretFromName(name string, opts ...dagger.LoadSecretFromNameOpts) *dagger.Secret {
-	client := initClient()
-	return client.LoadSecretFromName(name, opts...)
 }
 
 // Load a Service from its ID.

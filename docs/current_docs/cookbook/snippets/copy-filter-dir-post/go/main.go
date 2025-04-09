@@ -13,17 +13,12 @@ func (m *MyModule) CopyDirectoryWithExclusions(
 	ctx context.Context,
 	// Source directory
 	source *dagger.Directory,
-	// Directory exclusion pattern
+	// Exclusion pattern
 	// +optional
-	excludeDirectoryPattern string,
-	// +optional
-	// File exclusion pattern
-	excludeFilePattern string,
+	exclude []string,
 ) *dagger.Container {
-	filteredSource := source.
-		WithoutDirectory(excludeDirectoryPattern).
-		WithoutFile(excludeFilePattern)
 	return dag.Container().
 		From("alpine:latest").
-		WithDirectory("/src", filteredSource)
+		WithDirectory("/src", source, dagger.ContainerWithDirectoryOpts{Exclude: exclude})
 }
+

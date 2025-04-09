@@ -1,13 +1,18 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/moby/patternmatcher/ignorefile"
 )
 
 type directorySchema struct {
@@ -33,11 +38,14 @@ func (s *directorySchema) Install() {
 			ArgDoc("description", "Description of the sub-pipeline.").
 			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
 		dagql.Func("name", s.name).
+			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
 		dagql.Func("entries", s.entries).
+			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
 			ArgDoc("path", `Location of the directory to look at (e.g., "/src").`),
 		dagql.Func("glob", s.glob).
+			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			ArgDoc("pattern", `Pattern to match (e.g., "*.md").`),
 		dagql.Func("digest", s.digest).
@@ -79,6 +87,10 @@ func (s *directorySchema) Install() {
 			ArgDoc("directory", `Identifier of the directory to copy.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+		dagql.Func("filter", s.filter).
+			Doc(`Retrieves this directory as per exclude/include filters.`).
+			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
+			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			ArgDoc("path", `Location of the directory created (e.g., "/logs").`).
@@ -98,14 +110,19 @@ func (s *directorySchema) Install() {
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.Func("dockerBuild", s.dockerBuild).
+		dagql.NodeFunc("dockerBuild", s.dockerBuild).
 			Doc(`Builds a new Docker container from this directory.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
 			ArgDoc("platform", `The platform to build.`).
 			ArgDoc("buildArgs", `Build arguments to use in the build.`).
 			ArgDoc("target", `Target build stage to build.`).
 			ArgDoc("secrets", `Secrets to pass to the build.`,
-				`They will be mounted at /run/secrets/[secret-name].`),
+				`They will be mounted at /run/secrets/[secret-name].`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers created by RUN statements.`,
+				`This should only be used if the user requires that their exec processes be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
 		dagql.Func("withTimestamps", s.withTimestamps).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
@@ -179,6 +196,19 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 	return parent.WithDirectory(ctx, args.Path, dir.Self, args.CopyFilter, nil)
 }
 
+type FilterArgs struct {
+	core.CopyFilter
+}
+
+func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
+	dir, err := s.directory(ctx, parent.Query, struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, nil)
+}
+
 type dirWithTimestampsArgs struct {
 	Timestamp int
 }
@@ -188,7 +218,15 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Direc
 }
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
-	return dagql.NewString(path.Base(parent.Dir)), nil
+	name := path.Base(parent.Dir)
+	useSlash, err := core.SupportsDirSlash(ctx, parent.Query)
+	if err != nil {
+		return "", err
+	}
+	if useSlash {
+		name = strings.TrimSuffix(name, "/") + "/"
+	}
+	return dagql.NewString(name), nil
 }
 
 type entriesArgs struct {
@@ -341,33 +379,106 @@ type dirDockerBuildArgs struct {
 	Target     string                             `default:""`
 	BuildArgs  []dagql.InputObject[core.BuildArg] `default:"[]"`
 	Secrets    []core.SecretID                    `default:"[]"`
+	NoInit     bool                               `default:"false"`
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Query.Platform()
+func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core.Directory], filename string) ([]byte, error) {
+	file, err := parent.Self.File(ctx, filename)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	content, err := file.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return content, nil
+}
+
+func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Instance[*core.Directory], dockerfile string) (dagql.Instance[*core.Directory], error) {
+	var buildctxDir dagql.Instance[*core.Directory]
+
+	// use dockerfile specific .dockerfile if that exists
+	// https://docs.docker.com/build/concepts/context/#filename-and-location
+	specificDockerIgnoreFile := dockerfile + ".dockerignore"
+	dockerIgnoreContents, err := getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
+	if err != nil {
+		return buildctxDir, err
+	}
+
+	// fallback on default .dockerignore file
+	if len(dockerIgnoreContents) == 0 {
+		dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, ".dockerignore")
+		if err != nil {
+			return buildctxDir, err
+		}
+	}
+
+	excludes, err := ignorefile.ReadAll(bytes.NewBuffer(dockerIgnoreContents))
+	if err != nil {
+		return buildctxDir, err
+	}
+
+	// if no excludes, return the parent directory itself
+	if len(excludes) == 0 {
+		return parent, nil
+	}
+
+	// apply the dockerignore exclusions
+	err = srv.Select(ctx, parent, &buildctxDir,
+		dagql.Selector{
+			Field: "filter",
+			Args: []dagql.NamedInput{
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
+			},
+		},
+	)
+	if err != nil {
+		return buildctxDir, err
+	}
+
+	return buildctxDir, nil
+}
+
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+	platform := parent.Self.Query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
-	ctr, err := core.NewContainer(parent.Query, platform)
+
+	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := dagql.LoadIDs(ctx, s.srv, args.Secrets)
+
+	ctr, err := core.NewContainer(parent.Self.Query, platform)
 	if err != nil {
 		return nil, err
 	}
-	secretStore, err := parent.Query.Secrets(ctx)
+
+	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	secretStore, err := parent.Self.Query.Secrets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 	return ctr.Build(
 		ctx,
-		parent,
+		parent.Self,
+		buildctxDir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
 		secretStore,
+		args.NoInit,
 	)
 }
 

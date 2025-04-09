@@ -73,6 +73,10 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+func (mod *Module) GetSource() *ModuleSource {
+	return mod.Source.Self
+}
+
 func (mod *Module) IDModule() *call.Module {
 	var ref, pin string
 	switch mod.Source.Self.Kind {
@@ -172,7 +176,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	return nil
 }
 
-func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
+func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
+	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
+
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 
 	for _, def := range mod.ObjectDefs {
@@ -204,6 +210,33 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 
 func (mod *Module) View() (string, bool) {
 	return "", false
+}
+
+func (mod *Module) CacheConfigForCall(
+	ctx context.Context,
+	_ dagql.Object,
+	_ map[string]dagql.Input,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// Function calls on a module should be cached based on the module's content hash, not
+	// the module ID digest (which has a per-client cache key in order to deal with
+	// local dir and git repo loading)
+	id := dagql.CurrentID(ctx)
+	curIDNoMod := id.Receiver().Append(
+		id.Type().ToAST(),
+		id.Field(),
+		id.View(),
+		nil,
+		int(id.Nth()),
+		"",
+		id.Args()...,
+	)
+	cacheCfg.Digest = dagql.HashFrom(
+		curIDNoMod.Digest().String(),
+		mod.Source.Self.Digest,
+		mod.NameField, // the module source content digest only includes the original name
+	)
+	return &cacheCfg, nil
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -615,8 +648,15 @@ type Mod interface {
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
 
-	// TypeDefs gets the TypeDefs exposed by this module (not including dependencies)
-	TypeDefs(ctx context.Context) ([]*TypeDef, error)
+	// TypeDefs gets the TypeDefs exposed by this module (not including
+	// dependencies) from the given unified schema. Implicitly, TypeDefs
+	// returned by this module include any extensions installed by other
+	// modules from the unified schema. (e.g. LLM which is extended with each
+	// type via middleware)
+	TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error)
+
+	// Source returns the ModuleSource for this module
+	GetSource() *ModuleSource
 }
 
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
@@ -765,6 +805,7 @@ func (mod *Module) WithDescription(desc string) *Module {
 
 func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
+
 	if !def.AsObject.Valid {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}

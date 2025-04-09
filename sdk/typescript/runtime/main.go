@@ -21,15 +21,17 @@ type SupportedTSRuntime string
 const (
 	Bun  SupportedTSRuntime = "bun"
 	Node SupportedTSRuntime = "node"
+	Deno SupportedTSRuntime = "deno"
 )
 
 type SupportedPackageManager string
 
 const (
-	Yarn       SupportedPackageManager = "yarn"
-	Pnpm       SupportedPackageManager = "pnpm"
-	Npm        SupportedPackageManager = "npm"
-	BunManager SupportedPackageManager = "bun"
+	Yarn        SupportedPackageManager = "yarn"
+	Pnpm        SupportedPackageManager = "pnpm"
+	Npm         SupportedPackageManager = "npm"
+	BunManager  SupportedPackageManager = "bun"
+	DenoManager SupportedPackageManager = "deno"
 )
 
 const (
@@ -56,6 +58,12 @@ type packageJSONConfig struct {
 	} `json:"dagger"`
 }
 
+type denoJSONConfig struct {
+	Dagger *struct {
+		BaseImage string `json:"baseImage"`
+	} `json:"dagger"`
+}
+
 type moduleConfig struct {
 	runtime        SupportedTSRuntime
 	runtimeVersion string
@@ -63,6 +71,7 @@ type moduleConfig struct {
 	// Custom base image
 	image             string
 	packageJSONConfig *packageJSONConfig
+	denoJSONConfig    *denoJSONConfig
 
 	packageManager        SupportedPackageManager
 	packageManagerVersion string
@@ -88,8 +97,9 @@ const (
 	GenDir         = "sdk"
 	NodeModulesDir = "node_modules"
 
-	schemaPath     = "/schema.json"
-	codegenBinPath = "/codegen"
+	schemaPath             = "/schema.json"
+	dependenciesConfigPath = "/dependencies.json"
+	codegenBinPath         = "/codegen"
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
@@ -114,6 +124,11 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *dagger.Mod
 	case Bun:
 		return ctr.
 			WithEntrypoint([]string{"bun", t.moduleConfig.entrypointPath()}), nil
+	case Deno:
+		return ctr.
+			WithEntrypoint([]string{
+				"deno", "run", "-A", t.moduleConfig.entrypointPath(),
+			}), nil
 	case Node:
 		return ctr.
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
@@ -199,16 +214,78 @@ func (t *TypescriptSdk) GenerateClient(
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
 		WithDirectory(workdirPath, modSource.ContextDirectory()).
-		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath))
+
+	codegenArgs := []string{
+		"/codegen",
+		"--lang", "typescript",
+		"--output", outputDir,
+		"--introspection-json-path", schemaPath,
+		fmt.Sprintf("--dev=%t", dev),
+		"--client-only",
+	}
+
+	// Same data structure as ModuleConfigDependency from core/modules/config.go#L183
+	type gitDependencyConfig struct {
+		Name   string
+		Pin    string
+		Source string
+	}
+
+	dependencies, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	dependenciesConfig := []gitDependencyConfig{}
+	// Add remote dependency reference to the codegen arguments.
+	for _, dep := range dependencies {
+		depKind, err := dep.Kind(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+
+		if depKind != dagger.ModuleSourceKindGitSource {
+			continue
+		}
+
+		depSource, err := dep.AsString(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
+		}
+
+		depPin, err := dep.Pin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency pin: %w", err)
+		}
+
+		depName, err := dep.ModuleOriginalName(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency name: %w", err)
+		}
+
+		dependenciesConfig = append(dependenciesConfig, gitDependencyConfig{
+			Name:   depName,
+			Pin:    depPin,
+			Source: depSource,
+		})
+	}
+
+	if len(dependenciesConfig) > 0 {
+		depenciesJSONConfig, err := json.Marshal(dependenciesConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal dependencies config: %w", err)
+		}
+
+		ctr = ctr.WithNewFile(dependenciesConfigPath, string(depenciesJSONConfig))
+		codegenArgs = append(codegenArgs,
+			fmt.Sprintf("--dependencies-json-file-path=%s", dependenciesConfigPath),
+		)
+	}
+
+	ctr = ctr.
 		// Execute the code generator using the given introspection file.
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", outputDir,
-			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--dev=%t", dev),
-			"--client-only",
-		}, dagger.ContainerWithExecOpts{
+		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
@@ -301,6 +378,10 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 		"pnpm-lock.yaml",
 		"bun.lockb",
 		"bun.lock",
+
+		// Deno
+		"deno.json",
+		"deno.lock",
 	}
 
 	for i, file := range modConfigFiles {
@@ -322,8 +403,12 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
+	case Deno:
+		return ctr.
+			WithoutEntrypoint().
+			WithMountedCache("/root/.deno/cache", dag.CacheVolume(fmt.Sprintf("mod-deno-cache-%s", tsdistconsts.DefaultDenoVersion))), nil
 	case Node:
 		return ctr.
 			WithoutEntrypoint().
@@ -390,24 +475,35 @@ func (t *TypescriptSdk) addTemplate(ctx context.Context, ctr *dagger.Container) 
 func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container {
 	runtime := t.moduleConfig.runtime
 
-	// If there's a package.json, run the tsconfig updator script and install the genDir.
-	// else, copy the template config files.
-	if t.moduleConfig.packageJSONConfig != nil {
-		if runtime == Bun {
-			ctr = ctr.
-				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
-				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
-		} else {
-			ctr = ctr.
-				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
-				WithExec([]string{"npm", "pkg", "set", "type=module"}).
-				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
-		}
-	} else {
-		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
+	// If there's a package.json in bun & node, run the tsconfig updator script and install the genDir.
+	templateSetup := func() *dagger.Container {
+		return ctr.WithDirectory(".",
+			ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 	}
 
-	return ctr
+	switch runtime {
+	case Bun:
+		if t.moduleConfig.packageJSONConfig == nil {
+			return templateSetup()
+		}
+
+		return ctr.
+			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
+	case Node:
+		if t.moduleConfig.packageJSONConfig == nil {
+			return templateSetup()
+		}
+
+		return ctr.
+			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
+			WithExec([]string{"npm", "pkg", "set", "type=module"}).
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+	case Deno:
+		return ctr.WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts"})
+	default:
+		return ctr
+	}
 }
 
 // addSDK returns a directory with the SDK sources.
@@ -474,6 +570,15 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 		}
 
 		return tsdistconsts.DefaultNodeImageRef, nil
+	case Deno:
+		if t.moduleConfig.denoJSONConfig != nil && t.moduleConfig.denoJSONConfig.Dagger != nil {
+			value := t.moduleConfig.denoJSONConfig.Dagger.BaseImage
+			if value != "" {
+				return value, nil
+			}
+		}
+
+		return tsdistconsts.DefaultDenoImageRef, nil
 	default:
 		return "", fmt.Errorf("unknown runtime: %q", runtime)
 	}
@@ -522,6 +627,13 @@ func (t *TypescriptSdk) detectRuntime() error {
 		return nil
 	}
 
+	if t.moduleConfig.hasFile("deno.json") ||
+		t.moduleConfig.hasFile("deno.lock") {
+		t.moduleConfig.runtime = Deno
+
+		return nil
+	}
+
 	return nil
 }
 
@@ -538,6 +650,11 @@ func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string,
 	// If the runtime is Bun, we should use BunManager
 	if t.moduleConfig.runtime == Bun {
 		return BunManager, "", nil
+	}
+
+	// If the runtime is deno, we should use the DenoManager
+	if t.moduleConfig.runtime == Deno {
+		return DenoManager, "", nil
 	}
 
 	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
@@ -624,6 +741,8 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 	case BunManager:
 		return ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
+	case DenoManager:
+		return ctr, nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
 	}
@@ -648,6 +767,9 @@ func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Cont
 	case BunManager:
 		return ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
+	case DenoManager:
+		return ctr.
+			WithExec([]string{"deno", "install"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}
@@ -703,6 +825,21 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 		}
 
 		t.moduleConfig.packageJSONConfig = &packageJSONConfig
+	}
+
+	if t.moduleConfig.hasFile("deno.json") {
+		var denoJSONConfig denoJSONConfig
+
+		content, err := t.moduleConfig.source.File("deno.json").Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to read deno.json: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(content), &denoJSONConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal deno.json: %w", err)
+		}
+
+		t.moduleConfig.denoJSONConfig = &denoJSONConfig
 	}
 
 	if err := t.detectRuntime(); err != nil {

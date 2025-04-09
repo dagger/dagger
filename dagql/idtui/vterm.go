@@ -23,8 +23,7 @@ type Vterm struct {
 
 	Prefix string
 
-	Background termenv.Color
-	Profile    termenv.Profile
+	Profile termenv.Profile
 
 	vt *midterm.Terminal
 
@@ -133,16 +132,6 @@ func (term *Vterm) SetPrefix(prefix string) {
 	term.needsRedraw = true
 }
 
-func (term *Vterm) SetBackground(background termenv.Color) {
-	term.mu.Lock()
-	defer term.mu.Unlock()
-	if background == term.Background {
-		return
-	}
-	term.Background = background
-	term.needsRedraw = true
-}
-
 func (term *Vterm) Init() tea.Cmd {
 	return nil
 }
@@ -187,13 +176,18 @@ func (term *Vterm) View() string {
 	return term.viewBuf.String()
 }
 
-var style = styles.LightStyleConfig
+var MarkdownStyle = styles.LightStyleConfig
 
 func init() {
-	if isDark {
-		style = styles.DarkStyleConfig
+	if HasDarkBackground() {
+		MarkdownStyle = styles.DarkStyleConfig
 	}
-	style.Document.Margin = nil
+
+	// We don't need any extra margin.
+	MarkdownStyle.Document.Margin = nil
+
+	// No real point setting a custom foreground, it just looks weird.
+	MarkdownStyle.Document.Color = nil
 }
 
 func (term *Vterm) redraw() {
@@ -201,30 +195,15 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		st := style
-		// HACK: we want "0" or "255", but termenv.Color doesn't have a
-		// String() method, only Sequence(bool) which prints the ANSI
-		// formatting sequence.
-		if term.Background != nil {
-			switch x := term.Background.(type) {
-			case termenv.ANSIColor, termenv.ANSI256Color:
-				// annoyingly, there's no clean conversion from termenv.Color
-				// back to the value that lipgloss wants, because ANSI 0
-				// translates to "#000000" and we want "0"
-				bg := fmt.Sprintf("%d", x)
-				st.Document.BackgroundColor = &bg
-			default:
-				bg := fmt.Sprint(term.Background)
-				st.Document.BackgroundColor = &bg
-			}
-		}
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(st),
+			glamour.WithStyles(MarkdownStyle),
 		)
 
 		rendered, err := renderer.Render(term.markdownBuf.String())
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
+		} else {
 			// Remove leading and trailing newlines
 			rendered = strings.TrimSpace(rendered)
 			// Add prefix to each line of rendered Markdown
@@ -235,12 +214,70 @@ func (term *Vterm) redraw() {
 				}
 				fmt.Fprintln(term.viewBuf, line)
 			}
-			return
 		}
 	}
 
 	// Then render regular terminal content
 	term.Render(term.viewBuf, term.Offset, term.Height)
+}
+
+type Markdown struct {
+	Content    string
+	Background termenv.Color
+	Prefix     string
+	Width      int
+
+	viewBuf     strings.Builder
+	needsRedraw bool
+}
+
+func (m *Markdown) View() string {
+	if !m.needsRedraw && m.viewBuf.Len() > 0 {
+		return m.viewBuf.String()
+	}
+	m.viewBuf.Reset()
+	st := MarkdownStyle
+	// HACK: we want "0" or "255", but termenv.Color doesn't have a
+	// String() method, only Sequence(bool) which prints the ANSI
+	// formatting sequence.
+	if m.Background != nil {
+		switch x := m.Background.(type) {
+		case termenv.ANSIColor, termenv.ANSI256Color:
+			// annoyingly, there's no clean conversion from termenv.Color
+			// back to the value that lipgloss wants, because ANSI 0
+			// translates to "#000000" and we want "0"
+			bg := fmt.Sprintf("%d", x)
+			st.Document.BackgroundColor = &bg
+		default:
+			bg := fmt.Sprint(m.Background)
+			st.Document.BackgroundColor = &bg
+		}
+	}
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)),
+		glamour.WithStyles(st),
+	)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	}
+
+	rendered, err := renderer.Render(m.Content)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	} else {
+		// Remove leading and trailing newlines
+		rendered = strings.TrimSpace(rendered)
+		// Add prefix to each line of rendered Markdown
+		lines := strings.Split(rendered, "\n")
+		for i, line := range lines {
+			if i > 0 {
+				m.viewBuf.WriteString(m.Prefix)
+			}
+			m.viewBuf.WriteString(line)
+			m.viewBuf.WriteString("\n")
+		}
+	}
+	return m.viewBuf.String()
 }
 
 // Bytes returns the output for the given region of the terminal, with
@@ -251,11 +288,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		return
 	}
 
-	var vt TermOutput = NewOutput(w, termenv.WithProfile(term.Profile))
-	if term.Background != nil {
-		vt = NewBackgroundOutput(vt, term.Background)
-	}
-
+	vt := NewOutput(w, termenv.WithProfile(term.Profile))
 	w = vt
 
 	var lines int
@@ -268,7 +301,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		}
 
 		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, term.Background)
+		term.vt.RenderLineFgBg(w, row, nil, nil)
 		fmt.Fprintln(w)
 		lines++
 

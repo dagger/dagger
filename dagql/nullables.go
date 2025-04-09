@@ -23,6 +23,7 @@ type Derefable interface {
 // This is used for optional arguments and return values.
 type Optional[I Input] struct {
 	Value I
+	// true if the value is set
 	Valid bool
 }
 

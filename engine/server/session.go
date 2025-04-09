@@ -89,10 +89,12 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache *dagql.SessionCache
 
 	interactive        bool
 	interactiveCommand []string
+
+	allowedLLMModules []string
 }
 
 type daggerSessionState string
@@ -127,6 +129,7 @@ type daggerClient struct {
 	secretStore *core.SecretStore
 	socketStore *core.SocketStore
 
+	dag       *dagql.Server
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
@@ -249,10 +252,11 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewCache()
+	sess.dagqlCache = dagql.NewSessionCache(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
+	sess.allowedLLMModules = clientMetadata.AllowedLLMModules
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -399,6 +403,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
+
 	return errs
 }
 
@@ -577,21 +582,20 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
-	dag.Around(core.AroundFunc)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	client.dag.Around(core.AroundFunc)
+	coreMod := &schema.CoreMod{Dag: client.dag}
+	if err := coreMod.Install(ctx, client.dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.modName = opts.ModuleName
 
-	if opts.EncodedModuleID == "" {
-		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
-	} else {
+	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
+
+	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
@@ -914,8 +918,10 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
 	clientVersion := engine.Version
+	allowedLLMModules := execMD.AllowedLLMModules
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
+		allowedLLMModules = md.AllowedLLMModules
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -928,6 +934,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
+			AllowedLLMModules: allowedLLMModules,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -1257,8 +1264,43 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	// don't add the same module twice
+	// This can happen with generated clients since all remote dependencies are added
+	// on each connection and this could happen multiple times.
+	depMod, exist := client.deps.LookupDep(mod.Name())
+	if exist {
+		// Error if there's a conflict between dependencies
+		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+			)
+		}
+
+		return nil
+	}
+
 	client.deps = client.deps.Append(mod)
 	return nil
+}
+
+// Returns true if the module source a is the same as b or they come from the
+// core module.
+// Returns false if:
+// - AsString() of a and b are different
+// - Pin() of a and b are different
+func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
+	// If one of them is empty, that means they are from code module so they shouldn't
+	// be compared.
+	if a.AsString() == "" || b.AsString() == "" {
+		return true
+	}
+
+	// If they are do not have the same reference nor same pin, they cannot be the same.
+	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+		return false
+	}
+
+	return true
 }
 
 // If the current client is coming from a function, return the module that function is from
@@ -1302,14 +1344,42 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error)
 	return client.deps, nil
 }
 
-// The ClientID of the main client caller (i.e. the one who created the session, typically the CLI
-// invoked by the user)
-func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
+// The Client metadata of the main client caller (i.e. the one who created the
+// session, typically the CLI invoked by the user)
+func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return client.daggerSession.mainClientCallerID, nil
+	mainClient, ok := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	if !ok {
+		return nil, fmt.Errorf("failed to retrieve session main client")
+	}
+	return mainClient.clientMetadata, nil
+}
+
+// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+// or a nested exec). Useful for figuring out where local sources should be resolved from through
+// chains of dependency modules.
+func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if client.mod == nil {
+		// not a module client, return the metadata
+		return client.clientMetadata, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod == nil {
+			// not a module client, return the metadata
+			return parent.clientMetadata, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no non-module parent found")
 }
 
 // The default deps of every user module (currently just core)
@@ -1322,12 +1392,21 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 }
 
 // The DagQL query cache for the current client's session
-func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
+func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return client.daggerSession.dagqlCache, nil
+}
+
+// The DagQL server for the current client's session
+func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag, nil
 }
 
 // Mix in this http endpoint+handler to the current client's session
@@ -1400,30 +1479,6 @@ func (srv *Server) OCIStore() content.Store {
 // The lease manager for the engine as a whole
 func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
-}
-
-// The nearest ancestor client that is not a module (either a caller from the host like the CLI
-// or a nested exec). Useful for figuring out where local sources should be resolved from through
-// chains of dependency modules.
-func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if client.mod == nil {
-		// not a module client, return the metadata
-		return client.clientMetadata, nil
-	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
-		if parent.mod == nil {
-			// not a module client, return the metadata
-			return parent.clientMetadata, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no non-module parent found")
 }
 
 type httpError struct {

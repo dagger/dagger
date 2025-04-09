@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -25,19 +25,17 @@ func TestDirectory(t *testing.T) {
 }
 
 func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			ID      core.DirectoryID
 			Entries []string
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				entries
 			}
-		}`, &res, nil, dagger.WithLogOutput(os.Stderr))
+		}`, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
 }
@@ -51,16 +49,14 @@ func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID      core.DirectoryID
 				Entries []string
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -68,14 +64,14 @@ func (DirectorySuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 					entries
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.ID)
 	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -83,9 +79,7 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -94,13 +88,13 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"some-file", "some-dir"}, res.Directory.WithNewFile.WithNewFile.Entries)
+	require.ElementsMatch(t, []string{"some-file", "some-dir/"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -108,9 +102,7 @@ func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -119,13 +111,13 @@ func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -135,9 +127,7 @@ func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -148,13 +138,13 @@ func (DirectorySuite) TestDirectory(ctx context.Context, t *testctx.T) {
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Directory.Entries)
 }
 
 func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T) {
-	var res struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
@@ -166,9 +156,7 @@ func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -181,7 +169,7 @@ func (DirectorySuite) TestDirectoryWithNewFile(ctx context.Context, t *testctx.T
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t,
 		[]string{"sub-file", "another-file"},
@@ -243,6 +231,69 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := c.Directory().
+		WithNewFile("a.txt", "").
+		WithNewFile("b.txt", "").
+		WithNewFile("c.txt.rar", "").
+		WithNewFile("subdir/d.txt", "").
+		WithNewFile("subdir/e.txt", "").
+		WithNewFile("subdir/f.txt.rar", "")
+
+	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
+	})
+
+	t.Run("include", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"c.txt.rar"}, entries)
+	})
+
+	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"*.txt"},
+			Exclude: []string{"b.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt"}, entries)
+	})
+
+	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"a.txt"},
+			Exclude: []string{"*.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{}, entries)
+	})
+
+	t.Run("exclude works on directory", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"subdir"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "c.txt.rar"}, entries)
+	})
+
+	t.Run("exclude respects subdir", func(ctx context.Context, t *testctx.T) {
+		subdir := dir.Directory("subdir")
+		entries, err := subdir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
+	})
+}
+
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -259,7 +310,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
@@ -316,13 +367,13 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 
 	entries, err := dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "b"}, entries)
+	require.Equal(t, []string{"a/", "b/"}, entries)
 
 	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "b",
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"c"}, entries)
+	require.Equal(t, []string{"c/"}, entries)
 
 	t.Run("does not permit creating directory outside of root", func(ctx context.Context, t *testctx.T) {
 		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
@@ -511,7 +562,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 		Entries(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir", "some-file"}, entries)
+	require.Equal(t, []string{"some-dir/", "some-file"}, entries)
 
 	dir := c.Directory().
 		WithNewFile("foo.txt", "foo").
@@ -527,13 +578,13 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "b", "c", "foo.txt"}, entries)
+	require.Equal(t, []string{"a/", "b/", "c/", "foo.txt"}, entries)
 
 	entries, err = dir.
 		WithoutDirectory("a").
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"b", "c", "foo.txt"}, entries)
+	require.Equal(t, []string{"b/", "c/", "foo.txt"}, entries)
 
 	entries, err = dir.
 		WithoutFile("b/*.txt").
@@ -557,7 +608,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = dirDir.WithoutDirectory("a*").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"b1", "foo.txt"}, entries)
+	require.Equal(t, []string{"b1/", "foo.txt"}, entries)
 
 	// Test WithoutFile
 	filesDir := c.Directory().
@@ -567,7 +618,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, entries)
+	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// Test WithoutFiles
 	filesDir = c.Directory().
@@ -578,7 +629,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, entries)
+	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// verify WithoutFile works when dir has be selected to a subdir
 	subdirWithout := c.Directory().
@@ -598,14 +649,6 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		aID := newDirWithFile(t, "a-file", "a-content")
 		bID := newDirWithFile(t, "b-file", "b-content")
 
-		var res struct {
-			Directory struct {
-				Diff struct {
-					Entries []string
-				}
-			} `json:"loadDirectoryFromID"`
-		}
-
 		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
 			loadDirectoryFromID(id: $id) {
 				diff(other: $other) {
@@ -613,7 +656,14 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`
-		err := testutil.Query(t, diff, &res, &testutil.QueryOptions{
+		c := connect(ctx, t)
+		res, err := testutil.QueryWithClient[struct {
+			Directory struct {
+				Diff struct {
+					Entries []string
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
 				"other": bID,
@@ -623,7 +673,13 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
 
-		err = testutil.Query(t, diff, &res, &testutil.QueryOptions{
+		res, err = testutil.QueryWithClient[struct {
+			Directory struct {
+				Diff struct {
+					Entries []string
+				}
+			} `json:"loadDirectoryFromID"`
+		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    bID,
 				"other": aID,
@@ -883,31 +939,157 @@ CMD cat /secret
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
 	})
+
+	t.Run("with no .dockerignore", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+		WORKDIR /src
+		COPY . .
+		`)
+
+		output, err := src.DockerBuild().Directory("/src").File("foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, output, "content in foo file")
+	})
+
+	t.Run("use .dockerignore file by default", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+	WORKDIR /src
+	COPY . .
+	`).
+			WithNewFile(".dockerignore", "foo.txt")
+
+		_, err := src.DockerBuild().Directory("/src").File("foo.txt").Contents(ctx)
+		require.ErrorContains(t, err, "/src/foo.txt: no such file or directory")
+	})
+
+	t.Run("ignores .dockerignore for dockerfile with name 'myfoo' if myfoo.dockerignore exists", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("bar.txt", "content in bar file").
+			WithNewFile("myfoo",
+				`FROM golang:1.18.2-alpine
+		WORKDIR /src
+		COPY . .
+		`).
+			WithNewFile(".dockerignore", "foo.txt").
+			WithNewFile("myfoo.dockerignore", "bar.txt")
+
+		_, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "myfoo",
+		}).Directory("/src").File("bar.txt").Contents(ctx)
+		require.ErrorContains(t, err, "/src/bar.txt: no such file or directory")
+
+		content, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "myfoo",
+		}).Directory("/src").File("foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content in foo file", content)
+	})
+
+	t.Run("ignores .dockerignore for dockerfile with name 'Dockerfile' if Dockerfile.dockerignore exists", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("bar.txt", "content in bar file").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+		WORKDIR /src
+		COPY . .
+		`).
+			WithNewFile(".dockerignore", "foo.txt").
+			WithNewFile("Dockerfile.dockerignore", "bar.txt")
+
+		_, err := src.DockerBuild().Directory("/src").File("bar.txt").Contents(ctx)
+		require.ErrorContains(t, err, "/src/bar.txt: no such file or directory")
+
+		content, err := src.DockerBuild().Directory("/src").File("foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content in foo file", content)
+	})
+
+	t.Run("use .dockerignore for dockerfile with name 'myfoo' if myfoo.dockerignore does not exist", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("myfoo",
+				`FROM golang:1.18.2-alpine
+		WORKDIR /src
+		COPY . .
+		`).
+			WithNewFile(".dockerignore", "foo.txt")
+
+		_, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "myfoo",
+		}).Directory("/src").File("foo.txt").Contents(ctx)
+		require.ErrorContains(t, err, "/src/foo.txt: no such file or directory")
+	})
+
+	// https://github.com/moby/buildkit/blob/36b0458ff396aef565849e8ec112e7b12088d83d/frontend/dockerfile/dockerfile_test.go#L3534
+	t.Run("confirm .dockerignore compatibility with docker", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo", "foo-contents").
+			WithNewFile("bar", "bar-contents").
+			WithNewFile("baz", "baz-contents").
+			WithNewFile("bay", "bay-contents").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+	WORKDIR /src
+	COPY . .
+	`).
+			WithNewFile(".dockerignore", `
+	ba*
+	Dockerfile
+	!bay
+	.dockerignore
+	`)
+
+		content, err := src.DockerBuild().Directory("/src").File("foo").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo-contents", content)
+
+		cts, err := src.DockerBuild().Directory("/src").File(".dockerignore").Contents(ctx)
+		require.ErrorContains(t, err, "/src/.dockerignore: no such file or directory", fmt.Sprintf("cts is %s", cts))
+
+		_, err = src.DockerBuild().Directory("/src").File("Dockerfile").Contents(ctx)
+		require.ErrorContains(t, err, "/src/Dockerfile: no such file or directory")
+
+		_, err = src.DockerBuild().Directory("/src").File("bar").Contents(ctx)
+		require.ErrorContains(t, err, "/src/bar: no such file or directory")
+
+		_, err = src.DockerBuild().Directory("/src").File("baz").Contents(ctx)
+		require.ErrorContains(t, err, "/src/baz: no such file or directory")
+
+		content, err = src.DockerBuild().Directory("/src").File("bay").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bay-contents", content)
+	})
 }
 
 func (DirectorySuite) TestWithNewFileExceedingLength(ctx context.Context, t *testctx.T) {
-	var res struct {
+	_, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
 					id
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.Error(t, err)
 	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }
 
 func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testctx.T) {
-	var res struct {
+	_, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				file struct {
@@ -915,9 +1097,7 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`{
 			directory {
 				withNewFile(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
@@ -926,7 +1106,7 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 					}
 				}
 			}
-		}`, &res, nil)
+		}`, nil)
 	require.Error(t, err)
 	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }
@@ -1095,9 +1275,9 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.ElementsMatch(t, entries, []string{
 					"func.go", "main.go", "test.md", "foo.txt", "README.txt",
-					"subdir", "subdir/foo.txt", "subdir/README.md",
-					"subdir2", "subdir2/subsubdir", "subdir2/baz.txt", "subdir2/TESTING.md",
-					"subdir/subsubdir", "subdir/subsubdir/package.json",
+					"subdir/", "subdir/foo.txt", "subdir/README.md",
+					"subdir2/", "subdir2/subsubdir/", "subdir2/baz.txt", "subdir2/TESTING.md",
+					"subdir/subsubdir/", "subdir/subsubdir/package.json",
 					"subdir/subsubdir/index.mts", "subdir/subsubdir/JS.md",
 				})
 			})
@@ -1134,7 +1314,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.ElementsMatch(t, entries, []string{
-			"foo/bar.md",
+			"foo/bar.md/",
 			"foo/bar.md/w.md",
 			"foo/baz.go/y.md",
 		})
@@ -1241,13 +1421,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", nestedName)
+			require.Equal(t, "nested/", nestedName)
 		})
 
 		t.Run("very nested directory", func(ctx context.Context, t *testctx.T) {
 			veryNestedName, err := dir.Directory("very/nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", veryNestedName)
+			require.Equal(t, "nested/", veryNestedName)
 		})
 	})
 
@@ -1263,13 +1443,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested hidden directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory(".dagger").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".dagger", nestedName)
+			require.Equal(t, ".dagger/", nestedName)
 		})
 
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("sdk").Directory("go").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "go", nestedName)
+			require.Equal(t, "go/", nestedName)
 		})
 	})
 }

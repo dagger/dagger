@@ -17,6 +17,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -39,7 +40,7 @@ func (s *hostSchema) Install() {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.Func("builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
+		dagql.Func("_builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
 			Digest string `doc:"Digest of the image manifest"`
 		}) (*core.Container, error) {
 			st := llb.OCILayout(
@@ -153,14 +154,14 @@ func (s *hostSchema) Install() {
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
-		dagql.FuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
 			Doc(`Accesses a Unix socket on the host.`).
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
 		dagql.Func("__internalSocket", s.internalSocket).
 			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
 
-		dagql.Func("tunnel", s.tunnel).
+		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			ArgDoc("service", `Service to send traffic from the tunnel.`).
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
@@ -191,6 +192,7 @@ func (s *hostSchema) Install() {
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
 		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
+			Deprecated(`setSecretFile is superceded by use of the secret API with file:// URIs`).
 			Doc(
 				`Sets a secret given a user-defined name and the file path on the host,
 				and returns the secret.`,
@@ -205,8 +207,17 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
-	return host.SetSecretFile(ctx, s.srv, args.Name, args.Path)
+func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (inst dagql.Instance[*core.Secret], err error) {
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "secret",
+			Args: []dagql.NamedInput{{
+				Name:  "uri",
+				Value: dagql.NewString("file://" + args.Path),
+			}},
+		},
+	)
+	return inst, err
 }
 
 type hostDirectoryArgs struct {
@@ -274,39 +285,42 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
-	socketStore, err := host.Query.Sockets(ctx)
+func (s *hostSchema) socketCacheKey(
+	ctx context.Context,
+	host dagql.Instance[*core.Host],
+	args hostSocketArgs,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	cc, err := dagql.CachePerClient(ctx, host, args, cacheCfg)
+	if err != nil {
+		return nil, err
+	}
+	return cc, nil
+}
+
+func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host], args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
+	socketStore, err := host.Self.Query.Sockets(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get socket store: %w", err)
 	}
-
-	accessor, err := core.GetClientResourceAccessor(ctx, host.Query, args.Path)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client resource name: %w", err)
-	}
-
-	if err := s.srv.Select(ctx, s.srv.Root(), &inst,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "__internalSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "accessor",
-					Value: dagql.NewString(accessor),
-				},
-			},
-		},
-	); err != nil {
-		return inst, fmt.Errorf("failed to select internal socket: %w", err)
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := socketStore.AddUnixSocket(inst.Self, clientMetadata.ClientID, args.Path); err != nil {
+
+	accessor, err := core.GetClientResourceAccessor(ctx, host.Self.Query, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+	dgst := dagql.HashFrom(accessor)
+
+	sock := &core.Socket{IDDigest: dgst}
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, host, sock)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	inst = inst.WithDigest(dgst)
+	if err := socketStore.AddUnixSocket(sock, clientMetadata.ClientID, args.Path); err != nil {
 		return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 	}
 
@@ -396,7 +410,12 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 		return nil, errors.New("no ports to forward")
 	}
 
-	return parent.Query.NewTunnelService(ctx, inst, ports), nil
+	return &core.Service{
+		Creator:        trace.SpanContextFromContext(ctx),
+		Query:          parent.Query,
+		TunnelUpstream: &inst,
+		TunnelPorts:    ports,
+	}, nil
 }
 
 type hostServiceArgs struct {
@@ -488,7 +507,11 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 		socks = append(socks, sockInst.Self)
 	}
 
-	return parent.Query.NewHostService(ctx, socks), nil
+	return &core.Service{
+		Creator:     trace.SpanContextFromContext(ctx),
+		Query:       parent.Query,
+		HostSockets: socks,
+	}, nil
 }
 
 type hostInternalSocketArgs struct {

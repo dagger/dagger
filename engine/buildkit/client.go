@@ -656,6 +656,44 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
+func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
+	// the flag hasn't allowed this LLM call, so prompt the user
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return fmt.Errorf("failed to get main client caller to to prompt for allow llm: %w", err)
+	}
+
+	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
+		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
+		PersistentKey: "allow_llm:" + moduleRepoURL,
+		Default:       false, // TODO: default to true?
+	})
+	if err != nil {
+		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
+	}
+	if response.Response {
+		return nil
+	}
+
+	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
+}
+
+func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return "", fmt.Errorf("failed to get main client caller to to prompt user for human help: %w", err)
+	}
+
+	response, err := session.NewPromptClient(caller.Conn()).PromptString(ctx, &session.StringRequest{
+		Prompt:  question,
+		Default: "The user did not respond.",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to prompt user for human help: %w", err)
+	}
+	return response.Response, nil
+}
+
 func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -773,6 +811,7 @@ func (c *Client) OpenTerminal(
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
 				}
+			default:
 			}
 		}
 	}()
@@ -798,6 +837,29 @@ func (c *Client) OpenTerminal(
 			return nil
 		}),
 	}, nil
+}
+
+func (c *Client) OpenPipe(
+	ctx context.Context,
+) (io.ReadWriteCloser, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+
+	// grpc service client
+	pipeClient := session.NewPipeClient(caller.Conn())
+	if err != nil {
+		return nil, fmt.Errorf("open terminal error: %w", err)
+	}
+
+	// grpc rpc client
+	pipeIOClient, err := pipeClient.IO(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pipe: %w", err)
+	}
+	// io.ReadWriter wrapper
+	return &session.PipeIO{GRPC: pipeIOClient}, nil
 }
 
 // like sync.OnceValue but accepts an arg

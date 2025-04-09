@@ -69,6 +69,8 @@ const (
 
 	cgroupSampleInterval     = 3 * time.Second
 	finalCgroupSampleTimeout = 3 * time.Second
+
+	defaultHostname = "dagger"
 )
 
 var removeEnvs = map[string]struct{}{
@@ -143,6 +145,9 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	// ideally, we'd be less aggressive and find a way to CLONE_NEWNET the parent netns, but for now isolation is preferable to unpredictable rule bleeding.
 	if state.procInfo.Meta.SecurityMode == pb.SecurityMode_INSECURE && state.procInfo.Meta.Hostname == "" {
 		state.procInfo.Meta.Hostname = uuid.NewString()
+	}
+	if state.procInfo.Meta.Hostname == "" {
+		state.procInfo.Meta.Hostname = defaultHostname
 	}
 	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
 	if err != nil {
@@ -659,7 +664,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 
 	var destSession string
 	var destClientID string
-	if w.execMD != nil { // NB: this seems to be _always_ set
+	if w.execMD != nil && w.execMD.SessionID != "" {
 		destSession = w.execMD.SessionID
 
 		// Send telemetry to the caller client, *not* the nested client (ClientID).
@@ -1140,7 +1145,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	lg := bklog.G(ctx).
 		WithField("id", state.id).
 		WithField("args", state.spec.Process.Args)
-	if w.execMD != nil {
+	if w.execMD != nil && w.execMD.CallerClientID != "" {
 		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
 		if w.execMD.CallID != nil {
 			lg = lg.WithField("call_id", w.execMD.CallID.Digest())

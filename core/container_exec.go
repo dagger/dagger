@@ -91,6 +91,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
+	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
@@ -193,7 +194,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.LLBID())}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.ID().Digest().String())}
 
 		var secretDest string
 		switch {

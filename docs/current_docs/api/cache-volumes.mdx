@@ -11,8 +11,29 @@ Volume caching involves caching specific parts of the filesystem and reusing the
 Here's an example:
 
 <Tabs groupId="language">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+```
+</TabItem>
 <TabItem value="Dagger CLI">
-
 ```shell
 dagger core container \
   from --address=node:21 \
@@ -21,23 +42,22 @@ dagger core container \
   with-mounted-cache --path=/root/.npm --cache=node-21 \
   with-exec --args="npm","install"
 ```
-
 </TabItem>
 <TabItem value="Go">
 
-```go file=../cookbook/snippets/cache-dependencies/go/main.go
+```go file=./snippets/cache-volumes/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=../cookbook/snippets/cache-dependencies/python/main.py
+```python file=./snippets/cache-volumes/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=../cookbook/snippets/cache-dependencies/typescript/index.ts
+```typescript file=./snippets/cache-volumes/typescript/index.ts
 ```
 
 </TabItem>

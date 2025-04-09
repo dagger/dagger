@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -134,7 +136,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 // It first load the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
-func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
+func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, execMD *buildkit.ExecutionMetadata) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
 
@@ -150,6 +152,13 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		converted, err := arg.modType.ConvertToSDKInput(ctx, input.Value)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
+		}
+
+		if len(arg.metadata.Ignore) > 0 {
+			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
+			}
 		}
 
 		encoded, err := json.Marshal(converted)
@@ -189,10 +198,11 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		ctxArgs = append(ctxArgs, arg)
 	}
 	ctxArgVals := make([]*FunctionCallArgValue, len(ctxArgs))
+	execMDMu := &sync.Mutex{}
 	eg, ctx := errgroup.WithContext(ctx)
 	for i, arg := range ctxArgs {
 		eg.Go(func() error {
-			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg)
+			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg, execMD, execMDMu)
 			if err != nil {
 				return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
 			}
@@ -226,7 +236,24 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Calls without function name are internal and excluded.
 	fn.recordCall(ctx)
 
-	callInputs, err := fn.setCallInputs(ctx, opts)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	execMD := buildkit.ExecutionMetadata{
+		ClientID:          identity.NewID(),
+		CallID:            dagql.CurrentID(ctx),
+		ExecID:            identity.NewID(),
+		CachePerSession:   !opts.Cache,
+		Internal:          true,
+		ModuleName:        mod.NameField,
+		CacheByCall:       !opts.SkipCallDigestCacheKey,
+		ParentIDs:         map[digest.Digest]*resource.ID{},
+		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+	}
+
+	callInputs, err := fn.setCallInputs(ctx, opts, &execMD)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set call inputs: %w", err)
 	}
@@ -244,16 +271,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
 
-	execMD := buildkit.ExecutionMetadata{
-		ClientID:        identity.NewID(),
-		CallID:          dagql.CurrentID(ctx),
-		ExecID:          identity.NewID(),
-		CachePerSession: !opts.Cache,
-		Internal:        true,
-		ModuleName:      mod.NameField,
-		CacheByCall:     !opts.SkipCallDigestCacheKey,
-	}
-
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
 		// this function client access
@@ -267,7 +284,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
 		}
-		execMD.ParentIDs = map[digest.Digest]*resource.ID{}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
 			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
 		}
@@ -332,7 +348,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			return nil, errors.New(errInst.Self.Message)
+			return nil, errInst.Self
 		}
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)
@@ -400,7 +416,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	for _, id := range returnedIDs {
 		returnedIDsList = append(returnedIDsList, id)
 	}
-	secretTransferPostCall, err := SecretTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	secretTransferPostCall, err := ResourceTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}
@@ -509,7 +525,13 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 // For file, it will loa the directory containing the file and then query the file ID from this directory.
 //
 // This functions returns the ID of the loaded object.
-func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Server, arg *FunctionArg) (JSON, error) {
+func (fn *ModuleFunction) loadContextualArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+	execMD *buildkit.ExecutionMetadata,
+	execMDMu *sync.Mutex,
+) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
 	}
@@ -526,6 +548,9 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
+		execMDMu.Lock()
+		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+		execMDMu.Unlock()
 
 		dirID, err := dir.ID().Encode()
 		if err != nil {
@@ -533,6 +558,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		}
 
 		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
+
 	case "File":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPath)
 
@@ -545,6 +571,9 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
+		execMDMu.Lock()
+		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+		execMDMu.Unlock()
 
 		var fileID FileID
 
@@ -571,7 +600,55 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		}
 
 		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
+
 	default:
 		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	}
+}
+
+func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
+	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern: [%s]", arg.OriginalName, strings.Join(arg.Ignore, ","))
+	}
+
+	if dag == nil {
+		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
+	}
+
+	applyIgnore := func(dir dagql.IDable) (JSON, error) {
+		var ignoredDir dagql.Instance[*Directory]
+
+		err := dag.Select(ctx, dag.Root(), &ignoredDir,
+			dagql.Selector{
+				Field: "directory",
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "directory", Value: dagql.NewID[*Directory](dir.ID())},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
+		}
+
+		dirID, err := ignoredDir.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.Name, err)
+		}
+
+		return JSON(dirID), nil
+	}
+
+	switch value := value.(type) {
+	case DynamicID:
+		return applyIgnore(value)
+	case dagql.ID[*Directory]:
+		return applyIgnore(value)
+	default:
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}
 }

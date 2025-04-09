@@ -109,7 +109,7 @@ To manually publish a module to the Daggerverse, follow the steps below:
 
 ### Publishing on use
 
-Every time that a user executes `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger module (here, a remote module is defined as a module whose location is specified by a URL like `GITSERVER/USERNAME/daggerverse/...`), that Dagger module will automatically be published to the Daggerverse.
+Every time that a user executes `dagger ...`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger module (here, a remote module is defined as a module whose location is specified by a URL like `GITSERVER/USERNAME/daggerverse/...`), that Dagger module will automatically be published to the Daggerverse.
 
 :::note
 Under this process, it is possible for some Dagger modules to appear in the Daggerverse even when they're not fully ready. An example of this is when the module developer is developing the module in a local development environment and pushing work-in-progress to the Git repository. In this case, as soon as the module developer tags the module with a [valid semantic version number](#semantic-versioning), the module will be considered released and the latest version will be published to the Daggerverse.

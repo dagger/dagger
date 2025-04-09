@@ -740,16 +740,6 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err := withPorts.ID(ctx)
 	require.NoError(t, err)
 
-	res := struct {
-		Container struct {
-			ExposedPorts []struct {
-				Port        int
-				Protocol    dagger.NetworkProtocol
-				Description *string
-			}
-		} `json:"loadContainerFromID"`
-	}{}
-
 	getPorts := `query Test($id: ContainerID!) {
 		loadContainerFromID(id: $id) {
 			exposedPorts {
@@ -760,7 +750,17 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 		}
 	}`
 
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	type GetPortsResponse struct {
+		Container struct {
+			ExposedPorts []struct {
+				Port        int
+				Protocol    dagger.NetworkProtocol
+				Description *string
+			}
+		} `json:"loadContainerFromID"`
+	}
+
+	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -790,7 +790,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -817,7 +817,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
+	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -1433,7 +1433,7 @@ func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
 		Tree().
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{".git", "README.md"}, entries)
+	require.Equal(t, []string{".git/", "README.md"}, entries)
 }
 
 func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
@@ -1462,7 +1462,7 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 
 		entries, err := repo.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{".git", "README.md"}, entries)
+		require.Equal(t, []string{".git/", "README.md"}, entries)
 	})
 }
 
@@ -1501,7 +1501,7 @@ func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testct
 
 	entries, err := useBoth.Directory("/repo").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{".git", "README.md"}, entries)
+	require.Equal(t, []string{".git/", "README.md"}, entries)
 
 	fileContent, err := useBoth.File("/index.html").Contents(ctx)
 	require.NoError(t, err)

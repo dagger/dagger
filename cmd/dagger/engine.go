@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -74,6 +73,7 @@ func withEngine(
 		}
 
 		params.DisableHostRW = disableHostRW
+		params.AllowedLLMModules = allowedLLMModules
 
 		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
@@ -87,8 +87,16 @@ func withEngine(
 		params.EngineMetrics = telemetry.MetricExporters
 
 		params.WithTerminal = withTerminal
+
+		params.Stdin = os.Stdin
+		params.Stdout = os.Stdout
+
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
+
+		if hasTTY {
+			params.PromptHandler = Frontend
+		}
 
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
@@ -96,35 +104,6 @@ func withEngine(
 			return err
 		}
 		defer sess.Close()
-
-		// Automatically serve the module in the context directory if available.
-		if params.ServeModule {
-			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".")
-			if err != nil && !errors.Is(err, ErrConfigNotFound) {
-				return fmt.Errorf("failed to initialize current module: %w", err)
-			}
-
-			if exist {
-				for _, dep := range mod.Dependencies {
-					err := dep.AsModule().Serve(ctx)
-					if err != nil {
-						return fmt.Errorf("failed to serve dependency %w", err)
-					}
-				}
-
-				sdkSource, err := mod.Source.SDK().Source(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module SDK source: %w", err)
-				}
-
-				if sdkSource != "" {
-					err := mod.Source.AsModule().Serve(ctx)
-					if err != nil {
-						return fmt.Errorf("failed to serve module source: %w", err)
-					}
-				}
-			}
-		}
 
 		return fn(ctx, sess)
 	})

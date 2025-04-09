@@ -102,6 +102,10 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	// list of remote modules allowed to access LLM APIs
+	// any value of "all" bypasses restrictions, a nil slice imposes them
+	AllowedLLMModules []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -128,6 +132,15 @@ func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadat
 		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
 	}
 	return &md, true, nil
+}
+
+func AddExecutionMetadataToDescription(desc map[string]string, md *ExecutionMetadata) error {
+	bs, err := json.Marshal(md)
+	if err != nil {
+		return fmt.Errorf("failed to marshal execution metadata: %w", err)
+	}
+	desc[executionMetadataKey] = string(bs)
+	return nil
 }
 
 func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {

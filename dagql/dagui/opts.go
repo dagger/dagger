@@ -61,7 +61,6 @@ const (
 	ShowEncapsulatedVerbosity = 3
 	ShowSpammyVerbosity       = 4
 	ShowDigestsVerbosity      = 4
-	ShowMetricsVerbosity      = 3
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
@@ -71,6 +70,9 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	}
 	if opts.Debug {
 		// debug reveals all
+		return true
+	}
+	if span.Reveal {
 		return true
 	}
 	if opts.FocusedSpan == span.ID {
@@ -134,7 +136,7 @@ func ShouldSkipFunction(obj, field string) bool {
 	skip := map[string][]string{
 		"Query": {
 			// for SDKs only
-			"builtinContainer",
+			"_builtinContainer",
 			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",

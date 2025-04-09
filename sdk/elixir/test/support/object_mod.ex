@@ -56,4 +56,15 @@ defmodule ObjectMod do
   defn return_void() :: Dagger.Void.t() do
     :ok
   end
+
+  object do
+  end
+
+  defn only_self_arg(_self) :: Dagger.Void.t() do
+    :ok
+  end
+
+  defn mix_self_and_args(_self, name: String.t()) :: Dagger.Void.t() do
+    name
+  end
 end

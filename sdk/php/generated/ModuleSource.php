@@ -41,7 +41,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The resolved commit of the git repo this source points to. Only valid for git sources.
+     * The resolved commit of the git repo this source points to.
      */
     public function commit(): string
     {
@@ -123,7 +123,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
      */
     public function htmlRepoURL(): string
     {
@@ -249,7 +249,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The specified version of the git repo this source points to. Only valid for git sources.
+     * The specified version of the git repo this source points to.
      */
     public function version(): string
     {

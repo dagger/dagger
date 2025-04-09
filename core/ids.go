@@ -35,3 +35,7 @@ type GitRepositoryID = dagql.ID[*GitRepository]
 type GitRefID = dagql.ID[*GitRef]
 
 type SocketID = dagql.ID[*Socket]
+
+type LLMID = dagql.ID[*LLM]
+
+type EnvID = dagql.ID[*Env]

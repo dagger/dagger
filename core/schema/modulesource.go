@@ -38,7 +38,7 @@ var _ SchemaResolvers = &moduleSourceSchema{}
 
 func (s *moduleSourceSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
+		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
 			ArgDoc("refString", `The string ref representation of the module source`).
 			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("disableFindUp", `If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`).
@@ -129,13 +129,13 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
 
 		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
-			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.`),
+			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
 
 		dagql.Func("version", s.moduleSourceVersion).
-			Doc(`The specified version of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The specified version of the git repo this source points to.`),
 
 		dagql.Func("commit", s.moduleSourceCommit).
-			Doc(`The resolved commit of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The resolved commit of the git repo this source points to.`),
 
 		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
 			Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
@@ -170,14 +170,6 @@ type moduleSourceArgs struct {
 	DisableFindUp  bool   `default:"false"`
 	AllowNotExists bool   `default:"false"`
 	RequireKind    dagql.Optional[core.ModuleSourceKind]
-}
-
-func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
-		return &cacheCfg, nil
-	}
-
-	return dagql.CachePerClient(ctx, query, args, cacheCfg)
 }
 
 func (s *moduleSourceSchema) moduleSource(
@@ -402,7 +394,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, localSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
 				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
@@ -564,7 +556,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, bk, gitSrc); err != nil {
+		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
 			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
@@ -593,12 +585,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
-	// the directory is not necessarily content-hashed, make it so and use that as our digest
-	gitSrc.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, gitSrc.ContextDirectory)
-	if err != nil {
-		return inst, fmt.Errorf("failed to hash git context directory: %w", err)
-	}
-
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
@@ -610,7 +596,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	secretTransferPostCall, err := core.SecretTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
+	secretTransferPostCall, err := core.ResourceTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
 		ID: *gitSrc.ContextDirectory.ID(),
 	})
 	if err != nil {
@@ -692,7 +678,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	if dirSrc.SDK != nil {
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, dirSrc); err != nil {
 				return err
 			}
 
@@ -806,7 +792,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
-	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
 	// we load the includes specified by the user in dagger.json (if any) plus a few
@@ -857,12 +842,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		)
 		if err != nil {
 			return err
-		}
-
-		// the directory is not necessarily content-hashed, make it such so we can use that in our digest
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to hash git context directory: %w", err)
 		}
 	}
 
@@ -1077,11 +1056,7 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	bk, err := src.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1150,11 +1125,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	bk, err := src.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1268,7 +1239,7 @@ func (s *moduleSourceSchema) moduleSourceHTMLRepoURL(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.HTMLRepoURL, nil
@@ -1280,7 +1251,7 @@ func (s *moduleSourceSchema) moduleSourceVersion(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Version, nil
@@ -1292,7 +1263,7 @@ func (s *moduleSourceSchema) moduleSourceCommit(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Commit, nil
@@ -2251,7 +2222,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	mod.InstanceID = dagql.CurrentID(ctx)
 
-	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, src, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}

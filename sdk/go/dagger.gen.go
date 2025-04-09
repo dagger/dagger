@@ -98,6 +98,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// The `BindingID` scalar type represents an identifier for an object of type Binding.
+type BindingID string
+
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
@@ -128,11 +131,17 @@ type EnumTypeDefID string
 // The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
 type EnumValueTypeDefID string
 
+// The `EnvID` scalar type represents an identifier for an object of type Env.
+type EnvID string
+
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
 
 // The `ErrorID` scalar type represents an identifier for an object of type Error.
 type ErrorID string
+
+// The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+type ErrorValueID string
 
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
@@ -172,6 +181,12 @@ type InterfaceTypeDefID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
+
+// The `LLMID` scalar type represents an identifier for an object of type LLM.
+type LLMID string
+
+// The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+type LLMTokenUsageID string
 
 // The `LabelID` scalar type represents an identifier for an object of type Label.
 type LabelID string
@@ -256,6 +271,226 @@ type PortForward struct {
 
 	// Transport layer protocol to use for traffic.
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
+}
+
+type Binding struct {
+	query *querybuilder.Selection
+
+	digest   *string
+	id       *BindingID
+	name     *string
+	typeName *string
+}
+
+func (r *Binding) WithGraphQLQuery(q *querybuilder.Selection) *Binding {
+	return &Binding{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CacheVolume
+func (r *Binding) AsCacheVolume() *CacheVolume {
+	q := r.query.Select("asCacheVolume")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Container
+func (r *Binding) AsContainer() *Container {
+	q := r.query.Select("asContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Directory
+func (r *Binding) AsDirectory() *Directory {
+	q := r.query.Select("asDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Env
+func (r *Binding) AsEnv() *Env {
+	q := r.query.Select("asEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type File
+func (r *Binding) AsFile() *File {
+	q := r.query.Select("asFile")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GitRef
+func (r *Binding) AsGitRef() *GitRef {
+	q := r.query.Select("asGitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GitRepository
+func (r *Binding) AsGitRepository() *GitRepository {
+	q := r.query.Select("asGitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLM
+func (r *Binding) AsLLM() *LLM {
+	q := r.query.Select("asLLM")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Module
+func (r *Binding) AsModule() *Module {
+	q := r.query.Select("asModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ModuleConfigClient
+func (r *Binding) AsModuleConfigClient() *ModuleConfigClient {
+	q := r.query.Select("asModuleConfigClient")
+
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ModuleSource
+func (r *Binding) AsModuleSource() *ModuleSource {
+	q := r.query.Select("asModuleSource")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Secret
+func (r *Binding) AsSecret() *Secret {
+	q := r.query.Select("asSecret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Service
+func (r *Binding) AsService() *Service {
+	q := r.query.Select("asService")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Socket
+func (r *Binding) AsSocket() *Socket {
+	q := r.query.Select("asSocket")
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// The digest of the binding value
+func (r *Binding) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
+	q := r.query.Select("digest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Binding.
+func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response BindingID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Binding) XXX_GraphQLType() string {
+	return "Binding"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Binding) XXX_GraphQLIDType() string {
+	return "BindingID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Binding) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Binding) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The binding name
+func (r *Binding) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The binding type
+func (r *Binding) TypeName(ctx context.Context) (string, error) {
+	if r.typeName != nil {
+		return *r.typeName, nil
+	}
+	q := r.query.Select("typeName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A directory whose contents persist across runs.
@@ -457,6 +692,10 @@ type ContainerBuildOpts struct {
 	//
 	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
 	Secrets []*Secret
+	// If set, skip the automatic init process injected into containers created by RUN statements.
+	//
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	NoInit bool
 }
 
 // Initializes this container from a Dockerfile build.
@@ -479,6 +718,10 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
+		}
+		// `noInit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoInit) {
+			q = q.Arg("noInit", opts[i].NoInit)
 		}
 	}
 	q = q.Arg("context", context)
@@ -2292,6 +2535,10 @@ type DirectoryDockerBuildOpts struct {
 	//
 	// They will be mounted at /run/secrets/[secret-name].
 	Secrets []*Secret
+	// If set, skip the automatic init process injected into containers created by RUN statements.
+	//
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	NoInit bool
 }
 
 // Builds a new Docker container from this directory.
@@ -2317,6 +2564,10 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
+		}
+		// `noInit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoInit) {
+			q = q.Arg("noInit", opts[i].NoInit)
 		}
 	}
 
@@ -2379,6 +2630,33 @@ func (r *Directory) File(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
+		query: q,
+	}
+}
+
+// DirectoryFilterOpts contains options for Directory.Filter
+type DirectoryFilterOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+}
+
+// Retrieves this directory as per exclude/include filters.
+func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
+	q := r.query.Select("filter")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -3330,6 +3608,500 @@ func (r *EnumValueTypeDef) SourceMap() *SourceMap {
 	}
 }
 
+type Env struct {
+	query *querybuilder.Selection
+
+	id *EnvID
+}
+type WithEnvFunc func(r *Env) *Env
+
+// With calls the provided function with current Env.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Env) With(f WithEnvFunc) *Env {
+	return f(r)
+}
+
+func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
+	return &Env{
+		query: q,
+	}
+}
+
+// A unique identifier for this Env.
+func (r *Env) ID(ctx context.Context) (EnvID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnvID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Env) XXX_GraphQLType() string {
+	return "Env"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Env) XXX_GraphQLIDType() string {
+	return "EnvID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Env) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Env) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// retrieve an input value by name
+func (r *Env) Input(name string) *Binding {
+	q := r.query.Select("input")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all input values for the environment
+func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("inputs")
+
+	q = q.Select("id")
+
+	type inputs struct {
+		Id BindingID
+	}
+
+	convert := func(fields []inputs) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []inputs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// retrieve an output value by name
+func (r *Env) Output(name string) *Binding {
+	q := r.query.Select("output")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all output values for the environment
+func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("outputs")
+
+	q = q.Select("id")
+
+	type outputs struct {
+		Id BindingID
+	}
+
+	convert := func(fields []outputs) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []outputs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Create or update a binding of type CacheVolume in the environment
+func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCacheVolumeInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CacheVolume output to be assigned in the environment
+func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
+	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Container in the environment
+func (r *Env) WithContainerInput(name string, value *Container, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withContainerInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Container output to be assigned in the environment
+func (r *Env) WithContainerOutput(name string, description string) *Env {
+	q := r.query.Select("withContainerOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Directory in the environment
+func (r *Env) WithDirectoryInput(name string, value *Directory, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withDirectoryInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Directory output to be assigned in the environment
+func (r *Env) WithDirectoryOutput(name string, description string) *Env {
+	q := r.query.Select("withDirectoryOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Env in the environment
+func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnvInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Env output to be assigned in the environment
+func (r *Env) WithEnvOutput(name string, description string) *Env {
+	q := r.query.Select("withEnvOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type File in the environment
+func (r *Env) WithFileInput(name string, value *File, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withFileInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired File output to be assigned in the environment
+func (r *Env) WithFileOutput(name string, description string) *Env {
+	q := r.query.Select("withFileOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GitRef in the environment
+func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRefInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired GitRef output to be assigned in the environment
+func (r *Env) WithGitRefOutput(name string, description string) *Env {
+	q := r.query.Select("withGitRefOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GitRepository in the environment
+func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRepositoryInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired GitRepository output to be assigned in the environment
+func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
+	q := r.query.Select("withGitRepositoryOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLM in the environment
+func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLM output to be assigned in the environment
+func (r *Env) WithLLMOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ModuleConfigClient in the environment
+func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleConfigClientInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ModuleConfigClient output to be assigned in the environment
+func (r *Env) WithModuleConfigClientOutput(name string, description string) *Env {
+	q := r.query.Select("withModuleConfigClientOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Module in the environment
+func (r *Env) WithModuleInput(name string, value *Module, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Module output to be assigned in the environment
+func (r *Env) WithModuleOutput(name string, description string) *Env {
+	q := r.query.Select("withModuleOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ModuleSource in the environment
+func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleSourceInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ModuleSource output to be assigned in the environment
+func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
+	q := r.query.Select("withModuleSourceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Secret in the environment
+func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSecretInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Secret output to be assigned in the environment
+func (r *Env) WithSecretOutput(name string, description string) *Env {
+	q := r.query.Select("withSecretOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Service in the environment
+func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withServiceInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Service output to be assigned in the environment
+func (r *Env) WithServiceOutput(name string, description string) *Env {
+	q := r.query.Select("withServiceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Socket in the environment
+func (r *Env) WithSocketInput(name string, value *Socket, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSocketInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Socket output to be assigned in the environment
+func (r *Env) WithSocketOutput(name string, description string) *Env {
+	q := r.query.Select("withSocketOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update an input value of type string
+func (r *Env) WithStringInput(name string, value string, description string) *Env {
+	q := r.query.Select("withStringInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
@@ -3417,6 +4189,14 @@ type Error struct {
 	id      *ErrorID
 	message *string
 }
+type WithErrorFunc func(r *Error) *Error
+
+// With calls the provided function with current Error.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Error) With(f WithErrorFunc) *Error {
+	return f(r)
+}
 
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
@@ -3472,6 +4252,130 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 	q := r.query.Select("message")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The extensions of the error.
+func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id ErrorValueID
+	}
+
+	convert := func(fields []values) []ErrorValue {
+		out := []ErrorValue{}
+
+		for i := range fields {
+			val := ErrorValue{id: &fields[i].Id}
+			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Add a value to the error.
+func (r *Error) WithValue(name string, value JSON) *Error {
+	q := r.query.Select("withValue")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Error{
+		query: q,
+	}
+}
+
+type ErrorValue struct {
+	query *querybuilder.Selection
+
+	id    *ErrorValueID
+	name  *string
+	value *JSON
+}
+
+func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// A unique identifier for this ErrorValue.
+func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ErrorValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ErrorValue) XXX_GraphQLType() string {
+	return "ErrorValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ErrorValue) XXX_GraphQLIDType() string {
+	return "ErrorValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ErrorValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ErrorValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the value.
+func (r *ErrorValue) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The value.
+func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4820,6 +5724,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 //
 // The file is limited to a size of 512000 bytes.
+//
+// Deprecated: setSecretFile is superceded by use of the secret API with file:// URIs
 func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q := r.query.Select("setSecretFile")
 	q = q.Arg("name", name)
@@ -5112,6 +6018,350 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 	q := r.query.Select("sourceModuleName")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type LLM struct {
+	query *querybuilder.Selection
+
+	historyJSON *string
+	id          *LLMID
+	lastReply   *string
+	model       *string
+	provider    *string
+	sync        *LLMID
+	tools       *string
+}
+type WithLLMFunc func(r *LLM) *LLM
+
+// With calls the provided function with current LLM.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *LLM) With(f WithLLMFunc) *LLM {
+	return f(r)
+}
+
+func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
+	return &LLM{
+		query: q,
+	}
+}
+
+// create a branch in the LLM's history
+func (r *LLM) Attempt(number int) *LLM {
+	q := r.query.Select("attempt")
+	q = q.Arg("number", number)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// returns the type of the current state
+func (r *LLM) BindResult(name string) *Binding {
+	q := r.query.Select("bindResult")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return the LLM's current environment
+func (r *LLM) Env() *Env {
+	q := r.query.Select("env")
+
+	return &Env{
+		query: q,
+	}
+}
+
+// return the llm message history
+func (r *LLM) History(ctx context.Context) ([]string, error) {
+	q := r.query.Select("history")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// return the raw llm message history as json
+func (r *LLM) HistoryJSON(ctx context.Context) (string, error) {
+	if r.historyJSON != nil {
+		return *r.historyJSON, nil
+	}
+	q := r.query.Select("historyJSON")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLM.
+func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLM) XXX_GraphQLType() string {
+	return "LLM"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLM) XXX_GraphQLIDType() string {
+	return "LLMID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLM) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLM) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// return the last llm reply from the history
+func (r *LLM) LastReply(ctx context.Context) (string, error) {
+	if r.lastReply != nil {
+		return *r.lastReply, nil
+	}
+	q := r.query.Select("lastReply")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// synchronize LLM state
+func (r *LLM) Loop() *LLM {
+	q := r.query.Select("loop")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// return the model used by the llm
+func (r *LLM) Model(ctx context.Context) (string, error) {
+	if r.model != nil {
+		return *r.model, nil
+	}
+	q := r.query.Select("model")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// return the provider used by the llm
+func (r *LLM) Provider(ctx context.Context) (string, error) {
+	if r.provider != nil {
+		return *r.provider, nil
+	}
+	q := r.query.Select("provider")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// synchronize LLM state
+func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("sync")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
+// returns the token usage of the current state
+func (r *LLM) TokenUsage() *LLMTokenUsage {
+	q := r.query.Select("tokenUsage")
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// print documentation for available tools
+func (r *LLM) Tools(ctx context.Context) (string, error) {
+	if r.tools != nil {
+		return *r.tools, nil
+	}
+	q := r.query.Select("tools")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// allow the LLM to interact with an environment via MCP
+func (r *LLM) WithEnv(env *Env) *LLM {
+	assertNotNil("env", env)
+	q := r.query.Select("withEnv")
+	q = q.Arg("env", env)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// swap out the llm model
+func (r *LLM) WithModel(model string) *LLM {
+	q := r.query.Select("withModel")
+	q = q.Arg("model", model)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// append a prompt to the llm context
+func (r *LLM) WithPrompt(prompt string) *LLM {
+	q := r.query.Select("withPrompt")
+	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// append the contents of a file to the llm context
+func (r *LLM) WithPromptFile(file *File) *LLM {
+	assertNotNil("file", file)
+	q := r.query.Select("withPromptFile")
+	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add a system prompt to the LLM's environment
+func (r *LLM) WithSystemPrompt(prompt string) *LLM {
+	q := r.query.Select("withSystemPrompt")
+	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+type LLMTokenUsage struct {
+	query *querybuilder.Selection
+
+	id           *LLMTokenUsageID
+	inputTokens  *int
+	outputTokens *int
+	totalTokens  *int
+}
+
+func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsage {
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// A unique identifier for this LLMTokenUsage.
+func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMTokenUsageID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMTokenUsage) XXX_GraphQLType() string {
+	return "LLMTokenUsage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMTokenUsage) XXX_GraphQLIDType() string {
+	return "LLMTokenUsageID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMTokenUsage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMTokenUsage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
+	if r.inputTokens != nil {
+		return *r.inputTokens, nil
+	}
+	q := r.query.Select("inputTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
+	if r.outputTokens != nil {
+		return *r.outputTokens, nil
+	}
+	q := r.query.Select("outputTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
+	if r.totalTokens != nil {
+		return *r.totalTokens, nil
+	}
+	q := r.query.Select("totalTokens")
+
+	var response int
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5757,7 +7007,7 @@ func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The resolved commit of the git repo this source points to. Only valid for git sources.
+// The resolved commit of the git repo this source points to.
 func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -5903,7 +7153,7 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	}
 }
 
-// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
 func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
 	if r.htmlRepoURL != nil {
 		return *r.htmlRepoURL, nil
@@ -6108,7 +7358,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
-// The specified version of the git repo this source points to. Only valid for git sources.
+// The specified version of the git repo this source points to.
 func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
 		return *r.version, nil
@@ -6519,16 +7769,6 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
-// Retrieves a container builtin to the engine.
-func (r *Client) BuiltinContainer(digest string) *Container {
-	q := r.query.Select("builtinContainer")
-	q = q.Arg("digest", digest)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // CacheVolumeOpts contains options for Client.CacheVolume
 type CacheVolumeOpts struct {
 	Namespace string
@@ -6654,6 +7894,27 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
+// EnvOpts contains options for Client.Env
+type EnvOpts struct {
+	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+	Privileged bool
+}
+
+// Initialize a new environment
+func (r *Client) Env(opts ...EnvOpts) *Env {
+	q := r.query.Select("env")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `privileged` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Privileged) {
+			q = q.Arg("privileged", opts[i].Privileged)
+		}
+	}
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create a new error.
 func (r *Client) Error(message string) *Error {
 	q := r.query.Select("error")
@@ -6758,6 +8019,43 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// LLMOpts contains options for Client.LLM
+type LLMOpts struct {
+	// Model to use
+	Model string
+	// Cap the number of API calls for this LLM
+	MaxAPICalls int
+}
+
+// Initialize a Large Language Model (LLM)
+func (r *Client) LLM(opts ...LLMOpts) *LLM {
+	q := r.query.Select("llm")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `model` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Model) {
+			q = q.Arg("model", opts[i].Model)
+		}
+		// `maxAPICalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+	}
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Load a Binding from its ID.
+func (r *Client) LoadBindingFromID(id BindingID) *Binding {
+	q := r.query.Select("loadBindingFromID")
+	q = q.Arg("id", id)
+
+	return &Binding{
+		query: q,
+	}
+}
+
 // Load a CacheVolume from its ID.
 func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
@@ -6858,6 +8156,16 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 	}
 }
 
+// Load a Env from its ID.
+func (r *Client) LoadEnvFromID(id EnvID) *Env {
+	q := r.query.Select("loadEnvFromID")
+	q = q.Arg("id", id)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Load a EnvVariable from its ID.
 func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q := r.query.Select("loadEnvVariableFromID")
@@ -6874,6 +8182,16 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 	q = q.Arg("id", id)
 
 	return &Error{
+		query: q,
+	}
+}
+
+// Load a ErrorValue from its ID.
+func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+	q := r.query.Select("loadErrorValueFromID")
+	q = q.Arg("id", id)
+
+	return &ErrorValue{
 		query: q,
 	}
 }
@@ -6998,6 +8316,26 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	}
 }
 
+// Load a LLM from its ID.
+func (r *Client) LoadLLMFromID(id LLMID) *LLM {
+	q := r.query.Select("loadLLMFromID")
+	q = q.Arg("id", id)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Load a LLMTokenUsage from its ID.
+func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
+	q := r.query.Select("loadLLMTokenUsageFromID")
+	q = q.Arg("id", id)
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
 // Load a Label from its ID.
 func (r *Client) LoadLabelFromID(id LabelID) *Label {
 	q := r.query.Select("loadLabelFromID")
@@ -7092,27 +8430,6 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// LoadSecretFromNameOpts contains options for Client.LoadSecretFromName
-type LoadSecretFromNameOpts struct {
-	Accessor string
-}
-
-// Load a Secret from its Name.
-func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts) *Secret {
-	q := r.query.Select("loadSecretFromName")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `accessor` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Accessor) {
-			q = q.Arg("accessor", opts[i].Accessor)
-		}
-	}
-	q = q.Arg("name", name)
 
 	return &Secret{
 		query: q,

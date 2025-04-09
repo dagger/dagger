@@ -1,6 +1,8 @@
 ---
 slug: /api/filters
 ---
+
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -10,7 +12,7 @@ When you pass a directory to a Dagger Function as argument, Dagger uploads every
 
 ## Directory arguments
 
-Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
 
 There are two important reasons for this.
 
@@ -86,6 +88,22 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+Here's an example of a Dagger Function that excludes everything in a given directory except PHP source code files:
+
+```php file=./snippets/fs-filters/pre-call/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
+
+```java file=./snippets/fs-filters/pre-call/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 Here are a few examples of useful patterns:
@@ -111,8 +129,8 @@ Here are a few examples of useful patterns:
 </TabItem>
 <TabItem value="Python">
 ```python
-# exclude Go tests and test data
-Ignore(["**_test.go", "**/testdata/**"])
+# exclude Pytest tests and test data
+Ignore(["tests/", ".pytest_cache"])
 
 # exclude binaries
 Ignore(["bin"])
@@ -129,8 +147,8 @@ Ignore([".git", "**/.gitignore"])
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript
-// exclude tests and test data
-@argument({ ignore: ["**_test.go", "**/testdata/**"] })
+// exclude Mocha tests
+@argument({ ignore: ["**.spec.ts"] })
 
 // exclude binaries
 @argument({ ignore: ["bin"] })
@@ -143,6 +161,42 @@ Ignore([".git", "**/.gitignore"])
 
 // exclude Git metadata
 @argument({ ignore: [".git", "**/.gitignore"] })
+```
+</TabItem>
+<TabItem value="PHP">
+```php
+// exclude PHPUnit tests and test data
+#[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
+
+// exclude binaries
+#[Ignore('bin')]
+
+// exclude Composer dependencies
+#[Ignore('vendor/')]
+
+// exclude Node.js dependencies
+#[Ignore('**/node_modules')]
+
+// exclude Git metadata
+#[Ignore('.git/', '**/.gitignore')]
+```
+</TabItem>
+<TabItem value="Java">
+```java
+// exclude Java tests and test data
+@Ignore({"src/test"})
+
+// exclude binaries
+@Ignore({"bin"})
+
+// exclude Python dependencies
+@Ignore({"**/.venv", "**/__pycache__"})
+
+// exclude Node.js dependencies
+@Ignore({"**/node_modules"})
+
+// exclude Git metadata
+@Ignore({".git", "**/.gitignore"})
 ```
 </TabItem>
 </Tabs>
@@ -177,6 +231,22 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
 ```typescript file=./snippets/fs-filters/post-call/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
+
+```php file=./snippets/fs-filters/post-call/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
+
+```java file=./snippets/fs-filters/post-call/java/MyModule.java
 ```
 
 </TabItem>
@@ -238,6 +308,40 @@ const dirOpts = { include: ["*.zip"] }
 const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
+<TabItem value="PHP">
+```php
+// exclude all Markdown files
+$dirOpts = ['exclude' => ['*.md*']];
+
+// include only the build output directory
+$dirOpts = ['include' => ['build']];
+
+// include only ZIP files
+$dirOpts = ['include' => ['*.zip']];
+
+// exclude Git metadata
+$dirOpts = ['exclude' => ['*.git']];
+```
+</TabItem>
+<TabItem value="Java">
+```java
+// exclude all Markdown files
+var dirOpts = new Container.WithDirectoryArguments()
+    .withExclude(List.of("*.md*"));
+
+// include only the build output directory
+var dirOpts = new Container.WithDirectoryArguments()
+    .withInclude(List.of("build"));
+
+// include only ZIP files
+var dirOpts = new Container.WithDirectoryArguments()
+    .withInclude(List.of("*.zip"));
+
+// exclude Git metadata
+var dirOpts = new Container.WithDirectoryArguments()
+    .withExclude(List.of("*.git"));
+```
+</TabItem>
 </Tabs>
 
 ## Debugging
@@ -288,28 +392,103 @@ debug(
 }
 ```
 </TabItem>
+<TabItem value="PHP">
+```php
+    #[DaggerFunction]
+    public function debug(
+        #[Ignore('*'/, '!analytics')]
+        Directory $source,
+    ): Directory {
+        return $source;
+    }
+```
+</TabItem>
+<TabItem value="Java">
+```java
+@Function
+public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {
+    return source;
+}
+```
+</TabItem>
 </Tabs>
 
 Calling the function will show you the directory’s digest and top level entries. The digest is content addressed, so it changes if there are changes in the contents of the directory. Looking at the entries field you may be able to spot an interloper:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'debug .'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+debug .
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call debug --source=.
 ```
+</TabItem>
+</Tabs>
 
 You can also list all files, recursively to check it more deeply:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. glob --pattern="**/*"
+dagger -c 'debug . | glob "**/*"'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+debug . | glob "**/*"
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. glob --pattern="**/*"
+```
+</TabItem>
+</Tabs>
 
 You can open the directory in an interactive terminal to inspect the filesystem:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. terminal
+dagger -c 'debug . | terminal'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+debug . | terminal
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. terminal
+```
+</TabItem>
+</Tabs>
 
 You can export the filtered directory to your host and check it with local tools:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. export --path=audit
+dagger -c 'debug . | export audit'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+debug . | export audit
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. export --path=audit
+```
+</TabItem>
+</Tabs>

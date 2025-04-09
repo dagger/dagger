@@ -17,7 +17,6 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -74,19 +73,17 @@ func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagge
 }
 
 func newCache(t *testctx.T) core.CacheVolumeID {
-	var res struct {
+	res, err := testutil.Query[struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
 		}
-	}
-
-	err := testutil.Query(t, `
+	}](t, `
 		query CreateCache($key: String!) {
 			cacheVolume(key: $key) {
 				id
 			}
 		}
-	`, &res, &testutil.QueryOptions{Variables: map[string]any{
+	`, &testutil.QueryOptions{Variables: map[string]any{
 		"key": identity.NewID(),
 	}})
 	require.NoError(t, err)
@@ -95,32 +92,30 @@ func newCache(t *testctx.T) core.CacheVolumeID {
 }
 
 func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
-	dirRes := struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				ID core.DirectoryID
 			}
 		}
-	}{}
-
-	err := testutil.Query(t,
+	}](t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
 					id
 				}
 			}
-		}`, &dirRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &testutil.QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
 	require.NoError(t, err)
 
-	return dirRes.Directory.WithNewFile.ID
+	return res.Directory.WithNewFile.ID
 }
 
 func newFile(t *testctx.T, path, contents string) core.FileID {
-	var secretRes struct {
+	res, err := testutil.Query[struct {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
@@ -128,9 +123,7 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 				}
 			}
 		}
-	}
-
-	err := testutil.Query(t,
+	}](t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
@@ -139,13 +132,13 @@ func newFile(t *testctx.T, path, contents string) core.FileID {
 					}
 				}
 			}
-		}`, &secretRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, &testutil.QueryOptions{Variables: map[string]any{
 			"path":     path,
 			"contents": contents,
 		}})
 	require.NoError(t, err)
 
-	fileID := secretRes.Directory.WithNewFile.File.ID
+	fileID := res.Directory.WithNewFile.File.ID
 	require.NotEmpty(t, fileID)
 
 	return fileID
@@ -313,31 +306,21 @@ func limitTicker(interval time.Duration, limit int) <-chan time.Time {
 }
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container
-// run throughout with the cache mounted
-func preventCacheMountPrune(ctx context.Context, t *testctx.T, c *dagger.Client, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) func() error {
+// run throughout with the cache mounted as a service dependency
+func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
 	t.Helper()
-	ctx, cancel := context.WithCancelCause(ctx)
-	cancelErr := errors.New("test done")
-	t.Cleanup(func() {
-		cancel(cancelErr)
-	})
-	defer cancel(cancelErr)
-	var eg errgroup.Group
-	eg.Go(func() error {
-		_, err := c.Container().
-			From(alpineImage).
-			WithMountedCache("/cache", cache, opts...).
-			WithExec([]string{"sh", "-c", "sleep 9999"}).
-			Sync(ctx)
-		if errors.Is(err, cancelErr) {
-			return nil
-		}
-		return err
-	})
+	svc, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "socat"}).
+		WithMountedCache("/cache", cache, opts...).
+		WithDefaultArgs([]string{"socat", "-v", "tcp-l:2345,fork", "exec:/bin/cat"}).
+		WithExposedPort(2345).
+		AsService().
+		Start(t.Context())
+	require.NoError(t, err)
 
-	return func() error {
-		cancel(cancelErr)
-		return eg.Wait()
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cachemountsaver", svc)
 	}
 }
 

@@ -797,6 +797,23 @@ func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (st
 	if err != nil {
 		return "", err
 	}
+	go ctr.AsService().Up(ctx, dagger.ServiceUpOpts{
+		Ports: []dagger.PortForward{
+			{
+				Protocol: dagger.NetworkProtocolTcp,
+				Frontend: 8080,
+				Backend:  8080,
+			},
+		},
+	})
+	return fetch()
+}
+
+func (f *Foo) TestContainerUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.StartEntrypointByDefault(ctx, app)
+	if err != nil {
+		return "", err
+	}
 	go ctr.Up(ctx, dagger.ContainerUpOpts{
 		Ports: []dagger.PortForward{
 			{
@@ -806,24 +823,7 @@ func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (st
 			},
 		},
 	})
-
-	for range 10 {
-		time.Sleep(2 * time.Second)
-		client := http.Client{
-			Timeout: 2 * time.Second,
-		}
-		resp, err := client.Get("http://localhost:8080/hello")
-		if err != nil {
-			continue
-		}
-		defer resp.Body.Close()
-		dt, err := io.ReadAll(resp.Body)
-		if err != nil {
-			continue
-		}
-		return string(dt), nil
-	}
-	return "", fmt.Errorf("could not fetch")
+	return fetch()
 }
 
 func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
@@ -854,6 +854,23 @@ func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (stri
 	if err != nil {
 		return "", err
 	}
+	go ctr.AsService().Up(ctx, dagger.ServiceUpOpts{
+		Ports: []dagger.PortForward{
+			{
+				Protocol: dagger.NetworkProtocolTcp,
+				Frontend: 8080,
+				Backend:  8080,
+			},
+		},
+	})
+	return fetch()
+}
+
+func (f *Foo) TestContainerUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
+	if err != nil {
+		return "", err
+	}
 	go ctr.Up(ctx, dagger.ContainerUpOpts{
 		Ports: []dagger.PortForward{
 			{
@@ -863,24 +880,7 @@ func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (stri
 			},
 		},
 	})
-
-	for range 10 {
-		time.Sleep(2 * time.Second)
-		client := http.Client{
-			Timeout: 2 * time.Second,
-		}
-		resp, err := client.Get("http://localhost:8080/hello")
-		if err != nil {
-			continue
-		}
-		defer resp.Body.Close()
-		dt, err := io.ReadAll(resp.Body)
-		if err != nil {
-			continue
-		}
-		return string(dt), nil
-	}
-	return "", fmt.Errorf("could not fetch")
+	return fetch()
 }
 
 func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
@@ -891,6 +891,28 @@ func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExec([]string{"/bin/app", "via-withExec"}).
 		WithExposedPort(8080), nil
+}
+
+func fetch() (string, error) {
+	for range 10 {
+		time.Sleep(2 * time.Second)
+		client := http.Client{
+			Timeout: 2 * time.Second,
+		}
+		resp, err := client.Get("http://localhost:8080/hello")
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		defer resp.Body.Close()
+		dt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		return string(dt), nil
+	}
+	return "", fmt.Errorf("could not fetch")
 }
 `
 
@@ -920,6 +942,12 @@ func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+
+		output, err = ctr.
+			With(daggerExec("call", "test-container-up-entrypoint", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
 	})
 
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
@@ -935,5 +963,59 @@ func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-withExec", output)
+
+		output, err = ctr.
+			With(daggerExec("call", "test-container-up-with-exec", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-withExec", output)
 	})
+}
+
+func (LegacySuite) TestDirectoryTrailingSlash(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#9118
+	//
+	// Ensure that the legacy methods that return paths don't return trailing
+	// slashes for directories.
+
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		With(daggerExec("init", "--name=bare", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.16.0"}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/bare/internal/dagger"
+)
+
+type Bare struct {}
+
+func (m *Bare) TestEntries(ctx context.Context) ([]string, error) {
+	return m.dir().Entries(ctx)
+}
+
+func (m *Bare) TestGlob(ctx context.Context) ([]string, error) {
+	return m.dir().Glob(ctx, "**/*")
+}
+
+func (m *Bare) TestName(ctx context.Context) (string, error) {
+	return m.dir().Directory("foo").Name(ctx)
+}
+
+func (m *Bare) dir() *dagger.Directory {
+	return dag.Directory().
+		WithDirectory("foo", dag.Directory()).
+		WithNewFile("foo/bar", "").
+		WithNewFile("baz", "")
+}
+`)
+
+	out, err := modGen.
+		With(daggerQuery(`{bare{testEntries, testGlob, testName}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
 }

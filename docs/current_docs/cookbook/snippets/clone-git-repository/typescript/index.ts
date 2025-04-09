@@ -8,6 +8,11 @@ export enum Locator {
 
 @object()
 class MyModule {
+  /**
+    Demonstrates cloning a Git repository over HTTP(S).
+   
+    For SSH usage, see the SSH snippet (cloneWithSsh).
+   */
   @func()
   clone(repository: string, locator: Locator, ref: string): Container {
     const r = dag.git(repository)

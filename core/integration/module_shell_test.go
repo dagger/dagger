@@ -29,11 +29,78 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "-n"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "-M"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
+}
+
+func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
+	t.Run("root script argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", ".echo foobar").
+			WithExec([]string{"dagger", "script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("shell script argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", ".echo foobar").
+			WithExec([]string{"dagger", "shell", "script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("shell script shebang", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf("#!%s shell\n\n.echo foobar", testCLIBinPath)
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+				Permissions: 0750,
+			}).
+			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("root script shebang", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf("#!%s\n\n.echo foobar", testCLIBinPath)
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+				Permissions: 0750,
+			}).
+			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("root error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "qery"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Sync(ctx)
+		requireErrOut(t, err, `unknown command or file "qery" for "dagger"`)
+		requireErrOut(t, err, "Did you mean this?\n\tquery")
+	})
 }
 
 func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
@@ -154,7 +221,7 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "Main module")
+		require.Contains(t, out, "Test main object")
 		require.Contains(t, out, "ENTRYPOINT")
 		require.Contains(t, out, "Usage: . [options]")
 	})
@@ -241,7 +308,7 @@ func (Other) Version() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "A git helper")
 		require.Contains(t, out, "ENTRYPOINT")
-		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
 
 	t.Run("other module function", func(ctx context.Context, t *testctx.T) {
@@ -259,7 +326,7 @@ func (Other) Version() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "A local module")
 		require.NotContains(t, out, "ENTRYPOINT")
-		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
 
 	t.Run("current module required constructor arg error", func(ctx context.Context, t *testctx.T) {
@@ -616,6 +683,20 @@ func (ShellSuite) TestStateCommand(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ShellSuite) TestStateInVarUsage(ctx context.Context, t *testctx.T) {
+	script := `
+dir=$(directory | with-new-file foo bar)
+$dir | name
+$dir | entries
+`
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).With(daggerShellNoMod(script)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, out, "/")
+	require.Contains(t, out, "foo")
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
@@ -651,6 +732,26 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 		{
 			command:  `with-exec --redirect-stdout /out -- echo -n git checkout -- file | file /out | contents`,
 			expected: "git checkout -- file",
+		},
+		{
+			command:  `with-exec -- sh -c 'echo hello something,with,commas' | stdout`,
+			expected: "hello something,with,commas\n",
+		},
+		{
+			command:  `with-exec -- sh -c 'echo "with double quotes"' | stdout`,
+			expected: "with double quotes\n",
+		},
+		{
+			command:  `with-exec -- sh -c "echo 'with single quotes'" | stdout`,
+			expected: "with single quotes\n",
+		},
+		{
+			command:  `with-exec -- sh -c "echo $(directory | with-new-file foo "with state" | file foo | contents)" | stdout`,
+			expected: "with state\n",
+		},
+		{
+			command:  `with-exec echo,with,csv,support | stdout`,
+			expected: "with csv support\n",
 		},
 	} {
 		t.Run(strings.TrimSpace(tc.expected), func(ctx context.Context, t *testctx.T) {

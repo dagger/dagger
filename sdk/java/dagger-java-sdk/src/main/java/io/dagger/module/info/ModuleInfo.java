@@ -1,3 +1,6 @@
 package io.dagger.module.info;
 
-public record ModuleInfo(String description, ObjectInfo[] objects) {}
+import java.util.Map;
+
+public record ModuleInfo(
+    String description, ObjectInfo[] objects, Map<String, EnumInfo> enumInfos) {}

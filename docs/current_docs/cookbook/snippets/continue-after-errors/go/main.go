@@ -31,7 +31,7 @@ func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
 		// add script with execution permission to simulate a testing tool
 		WithNewFile("/run-tests", script, dagger.ContainerWithNewFileOpts{Permissions: 0o750}).
 		// run-tests but allow any return code
-		WithExec([]string{"/run-tests"}, dagger.ContainerWithExecOpts{Expect: dagger.Any}).
+		WithExec([]string{"/run-tests"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 		// the result of `sync` is the container, which allows continued chaining
 		Sync(ctx)
 	if err != nil {

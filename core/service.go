@@ -98,7 +98,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		upstream, err := svcs.Get(ctx, id)
+		upstream, err := svcs.Get(ctx, id, true)
 		if err != nil {
 			return "", err
 		}
@@ -119,7 +119,7 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, id)
+		running, err := svcs.Get(ctx, id, svc.TunnelUpstream != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +154,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 		if err != nil {
 			return "", err
 		}
-		tunnel, err := svcs.Get(ctx, id)
+		tunnel, err := svcs.Get(ctx, id, true)
 		if err != nil {
 			return "", err
 		}
@@ -202,7 +202,7 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc)
+	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream != nil)
 	return err
 }
 
@@ -211,7 +211,7 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	if err != nil {
 		return err
 	}
-	return svcs.Stop(ctx, id, kill)
+	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream != nil)
 }
 
 func (svc *Service) Start(
@@ -226,7 +226,7 @@ func (svc *Service) Start(
 	case svc.Container != nil:
 		return svc.startContainer(ctx, id, interactive, forwardStdin, forwardStdout, forwardStderr)
 	case svc.TunnelUpstream != nil:
-		return svc.startTunnel(ctx, id)
+		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
 		return svc.startReverseTunnel(ctx, id)
 	default:
@@ -283,8 +283,9 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
-			ExecID:    identity.NewID(),
-			SessionID: clientMetadata.SessionID,
+			ExecID:            identity.NewID(),
+			SessionID:         clientMetadata.SessionID,
+			AllowedLLMModules: clientMetadata.AllowedLLMModules,
 		}
 	}
 
@@ -537,12 +538,8 @@ func (svc *Service) startContainer(
 			Service: svc,
 			Host:    fullHost,
 			Ports:   ctr.Ports,
-			Key: ServiceKey{
-				Digest:    dig,
-				SessionID: clientMetadata.SessionID,
-			},
-			Stop: stopSvc,
-			Wait: waitSvc,
+			Stop:    stopSvc,
+			Wait:    waitSvc,
 		}, nil
 	case <-exited:
 		if exitErr != nil {
@@ -552,7 +549,7 @@ func (svc *Service) startContainer(
 	}
 }
 
-func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
+func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer func() {
 		if rerr != nil {
@@ -575,7 +572,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self, true)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
@@ -625,16 +622,10 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		closers[i] = closeListener
 	}
 
-	dig := id.Digest()
-
 	return &RunningService{
 		Service: svc,
-		Key: ServiceKey{
-			Digest:    dig,
-			SessionID: clientMetadata.SessionID,
-		},
-		Host:  dialHost,
-		Ports: ports,
+		Host:    dialHost,
+		Ports:   ports,
 		Stop: func(_ context.Context, _ bool) error {
 			stop(errors.New("service stop called"))
 			svcs.Detach(svcCtx, upstream)
@@ -648,8 +639,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 }
 
 func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
-	dig := id.Digest()
-
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {
 		return nil, err
@@ -738,12 +727,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 		return &RunningService{
 			Service: svc,
-			Key: ServiceKey{
-				Digest:    dig,
-				SessionID: clientMetadata.SessionID,
-			},
-			Host:  fullHost,
-			Ports: checkPorts,
+			Host:    fullHost,
+			Ports:   checkPorts,
 			Stop: func(context.Context, bool) (rerr error) {
 				defer telemetry.End(span, func() error { return rerr })
 				stop(errors.New("service stop called"))

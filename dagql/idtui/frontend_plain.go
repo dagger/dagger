@@ -15,7 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"github.com/vito/bubbline/editline"
+	"github.com/vito/go-interact/interact"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -119,12 +119,7 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) Shell(
-	ctx context.Context,
-	fn func(ctx context.Context, input string) error,
-	autocomplete editline.AutoCompleteFn,
-	prompt func(out TermOutput, fg termenv.Color) string,
-) {
+func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(os.Stderr, "Shell not supported in plain mode")
 }
 
@@ -208,6 +203,19 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
 	return runErr
+}
+
+func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+	switch x := dest.(type) {
+	case *bool:
+		return fe.handlePromptBool(ctx, prompt, x)
+	default:
+		return fmt.Errorf("unsupported prompt destination type: %T", dest)
+	}
+}
+
+func (fe *frontendPlain) handlePromptBool(_ context.Context, prompt string, dest *bool) error {
+	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
@@ -521,7 +529,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		}
 		r.renderCall(fe.output, nil, call, prefix, false, depth, false, span.Internal, false)
 	} else {
-		r.renderSpan(fe.output, nil, span.Name, prefix, depth, false)
+		r.renderSpan(fe.output, nil, span.Name, prefix, depth, false, false)
 	}
 	if done {
 		if span.IsFailedOrCausedFailure() {

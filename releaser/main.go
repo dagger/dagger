@@ -39,7 +39,7 @@ func New(
 func (r *Releaser) Bump(version string) *dagger.Directory {
 	return dag.Directory().
 		WithDirectory("", r.Dagger.SDK().All().Bump(version)).
-		WithDirectory("", r.Dagger.Docs().Bump(version)).
+		WithDirectory("", dag.Docs().Bump(version)).
 		WithFile("helm/dagger/Chart.yaml", dag.Helm().SetVersion(version))
 }
 
@@ -229,19 +229,21 @@ func (r *Releaser) Publish(
 		return &report, nil
 	}
 
-	if semver.IsValid(version) {
-		artifact = &ReleaseReportArtifact{
-			Name: "📖 Docs",
-			Link: "https://docs.dagger.io",
-		}
-		if !dryRun {
-			err = r.Dagger.Docs().Publish(ctx, netlifyToken)
-			if err != nil {
-				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-			}
-		}
-		report.Artifacts = append(report.Artifacts, artifact)
-	}
+	// FIXME: skip for v0.17.0 release, we'll do this manually
+	// if semver.IsValid(version) {
+	// 	artifact = &ReleaseReportArtifact{
+	// 		Name: "📖 Docs",
+	// 		Link: "https://docs.dagger.io",
+	// 	}
+	// 	if !dryRun {
+	// 		err = dag.Docs().Publish(ctx, netlifyToken)
+	// 		if err != nil {
+	// 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+	// 		}
+	// 	}
+	// 	report.Artifacts = append(report.Artifacts, artifact)
+	// }
+	_ = netlifyToken
 
 	components := []struct {
 		name    string

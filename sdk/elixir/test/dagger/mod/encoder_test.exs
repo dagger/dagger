@@ -29,6 +29,11 @@ defmodule Dagger.Mod.EncoderTest do
       assert {:ok, "null"} = Encoder.validate_and_encode(:ok, Dagger.Void)
     end
 
+    test "encode object", %{dag: dag} do
+      assert {:ok, "{\"name\":\"john\"}"} =
+               Encoder.validate_and_encode(%ObjectField{name: "john"}, ObjectField)
+    end
+
     test "encode error", %{dag: dag} do
       assert {:error, _} = Encoder.validate_and_encode(1, :string)
     end

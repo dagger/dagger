@@ -1,9 +1,10 @@
 defmodule Dagger.Mod.Module do
   @moduledoc false
 
-  alias Dagger.Mod.Function
-  alias Dagger.Mod.Object
   alias Dagger.Mod.Helper
+  alias Dagger.Mod.Object
+  alias Dagger.Mod.Object.FieldDef
+  alias Dagger.Mod.Object.FunctionDef
 
   @doc """
   Define a Dagger module from the given module.
@@ -21,18 +22,25 @@ defmodule Dagger.Mod.Module do
 
   defp define_object(dag, module) do
     mod_name = module.__object__(:name)
-    functions = module.__object__(:functions)
 
-    type_def =
-      dag
-      |> Dagger.Client.type_def()
-      |> Dagger.TypeDef.with_object(Helper.camelize(mod_name))
+    dag
+    |> Dagger.Client.type_def()
+    |> Dagger.TypeDef.with_object(Helper.camelize(mod_name))
+    |> then(&define_fields(&1, dag, module))
+    |> then(&define_functions(&1, dag, module))
+  end
 
-    functions
-    |> Enum.map(&Function.define(dag, module, &1))
-    |> Enum.reduce(
-      type_def,
-      &Dagger.TypeDef.with_function(&2, &1)
-    )
+  defp define_fields(type_def, dag, module) do
+    module.__object__(:fields)
+    |> Enum.reduce(type_def, fn {name, field_def}, type_def ->
+      FieldDef.define(field_def, name, type_def, dag)
+    end)
+  end
+
+  defp define_functions(type_def, dag, module) do
+    module.__object__(:functions)
+    |> Enum.reduce(type_def, fn {name, fun_def}, type_def ->
+      FunctionDef.define(fun_def, name, module, type_def, dag)
+    end)
   end
 end

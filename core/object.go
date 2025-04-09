@@ -15,6 +15,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// indicates an ast field is a "trivial resolver"
+// ref: https://graphql.org/learn/execution/#trivial-resolvers
+const trivialFieldDirectiveName = "trivialResolveField"
+
 type ModuleObjectType struct {
 	typeDef *ObjectTypeDef
 	mod     *Module
@@ -312,7 +316,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				}, nil
 			},
-			dagql.CacheSpec{}, // no cache key, empty constructor calls will thus be cached in dagql per-session and buildkit cross-session
+			dagql.CacheSpec{
+				GetCacheConfig: mod.CacheConfigForCall,
+			},
 		)
 		return nil
 	}
@@ -367,7 +373,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
-		dagql.CacheSpec{},
+		dagql.CacheSpec{
+			GetCacheConfig: mod.CacheConfigForCall,
+		},
 	)
 
 	return nil
@@ -399,6 +407,9 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 		Type:        field.TypeDef.ToTyped(),
 		Module:      mod.IDModule(),
 	}
+	spec.Directives = append(spec.Directives, &ast.Directive{
+		Name: trivialFieldDirectiveName,
+	})
 	if field.SourceMap != nil {
 		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
 	}
@@ -419,6 +430,9 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 				fieldVal = nil
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
+		},
+		CacheSpec: dagql.CacheSpec{
+			GetCacheConfig: mod.CacheConfigForCall,
 		},
 	}
 }
@@ -459,9 +473,8 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
-				Cache: dagql.IsInternal(ctx),
-				// Pipeline:  _, // TODO
-				SkipSelfSchema: false, // TODO?
+				Cache:          dagql.IsInternal(ctx),
+				SkipSelfSchema: false,
 				Server:         dag,
 			}
 			for name, val := range args {
@@ -475,6 +488,9 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
 			return modFun.Call(ctx, opts)
+		},
+		CacheSpec: dagql.CacheSpec{
+			GetCacheConfig: mod.CacheConfigForCall,
 		},
 	}, nil
 }

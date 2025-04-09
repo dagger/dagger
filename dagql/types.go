@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -211,6 +212,15 @@ func (Int) DecodeInput(val any) (Input, error) {
 			return nil, err
 		}
 		return NewInt(i), nil
+	case float64:
+		if math.IsInf(x, 0) || math.IsNaN(x) {
+			return nil, fmt.Errorf("cannot create Int from %v", x)
+		}
+		i := int64(x)
+		if float64(i) != x {
+			return nil, fmt.Errorf("cannot create Int from %v", x)
+		}
+		return NewInt(i), nil
 	case string: // default struct tags
 		i, err := strconv.ParseInt(x, 0, 64)
 		if err != nil {
@@ -260,7 +270,7 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-var _ Setter = ID[Typed]{}
+var _ Setter = Int(0)
 
 func (i Int) SetField(v reflect.Value) error {
 	switch v.Interface().(type) {
@@ -1069,7 +1079,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 	if desc, ok := val.(Descriptive); ok {
 		spec.Description = desc.TypeDescription()
 	}
-	inputs, err := inputSpecsForType(val, true)
+	inputs, err := InputSpecsForType(val, true)
 	if err != nil {
 		panic(fmt.Errorf("input specs for %T: %w", val, err))
 	}

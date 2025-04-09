@@ -78,6 +78,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $buildArgs = null,
         ?array $secrets = null,
+        ?bool $noInit = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('build');
         $innerQueryBuilder->setArgument('context', $context);
@@ -92,6 +93,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

@@ -143,7 +143,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		}
 		if err != nil {
 			if h.debug {
-				shellDebug(ctx, "Error", err, args)
+				shellDebug(ctx, "Error", args[0], args[1:], err)
 			}
 
 			if st == nil {
@@ -306,16 +306,16 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 			return &st, nil
 		}
 
-		// 2. Dependency short name
-		if dep := md.GetDependency(name); dep != nil {
-			depSt, _, err := h.GetDependency(ctx, name)
-			return depSt, err
-		}
-
-		// 3. Is it the current module's name?
+		// 2. Is it the current module's name?
 		if md.Name == name {
 			st := h.newModState(md.SourceDigest)
 			return &st, nil
+		}
+
+		// 3. Dependency short name
+		if dep := md.GetDependency(name); dep != nil {
+			depSt, _, err := h.GetDependency(ctx, name)
+			return depSt, err
 		}
 	}
 
@@ -385,7 +385,14 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 //
 // Additionally, if there's only one required argument that is a list of strings,
 // all positional arguments are used as elements of that list.
-func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([]string, error) {
+func (h *shellCallHandler) shellPreprocessArgs(
+	ctx context.Context,
+	fn *modFunction,
+	args []string,
+) (map[string]any, []string, error) {
+	// Final map of resolved argument values
+	values := make(map[string]any, len(fn.Args))
+
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
 	flags.SetOutput(io.MultiWriter(
 		interp.HandlerCtx(ctx).Stderr,
@@ -416,7 +423,7 @@ func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([
 	}
 
 	if err := flags.Parse(args); err != nil {
-		return args, checkErrHelp(err, args)
+		return values, args, checkErrHelp(err, args)
 	}
 
 	reqs := fn.RequiredArgs()
@@ -438,17 +445,17 @@ func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([
 	// All positional arguments become elements in the list.
 	if len(reqs) == 1 && len(pos) > 1 && reqs[0].TypeDef.String() == "[]string" {
 		name := reqs[0].FlagName()
-		a = make([]string, 0, len(opts)+len(pos))
 
-		for _, value := range pos {
-			// Instead of creating a CSV value here, repeat the flag for each
-			// one so that pflags is the only one dealing with CSVs.
-			a = append(a, fmt.Sprintf("--%s=%v", name, value))
+		// bypass additional flag parsing, but make sure state values are resolved
+		results, err := h.resolveResults(ctx, pos)
+		if err != nil {
+			return values, pos, err
 		}
+		values[name] = results
 	} else {
 		// Normal use case. Positional arguments should match number of required function arguments
 		if err := ExactArgs(len(reqs))(pos); err != nil {
-			return args, err
+			return values, args, err
 		}
 		a = make([]string, 0, len(fn.Args))
 		// Use the `=` syntax so that each element in the args list corresponds
@@ -474,7 +481,7 @@ func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([
 		}
 	})
 
-	return a, nil
+	return values, a, nil
 }
 
 // checkErrHelp circumvents pflag's special cases for -h and --help
@@ -509,19 +516,21 @@ func (h *shellCallHandler) parseArgumentValues(
 		}
 	}()
 
-	newArgs, err := shellPreprocessArgs(ctx, fn, args)
+	values, newArgs, err := h.shellPreprocessArgs(ctx, fn, args)
+	if h.debug {
+		shellDebug(ctx, "Preprocess arguments", fn.CmdName(), struct {
+			Args    []string
+			NewArgs []string
+			Values  map[string]any
+		}{args, newArgs, values}, err)
+	}
 	if err != nil {
 		return nil, err
 	}
 
+	// no further processing needed
 	if len(newArgs) == 0 {
-		return nil, nil
-	}
-
-	if h.debug {
-		defer func() {
-			shellDebug(ctx, "Arguments", fn.CmdName(), args, newArgs, rargs)
-		}()
+		return values, nil
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
@@ -553,9 +562,6 @@ func (h *shellCallHandler) parseArgumentValues(
 			return nil, fmt.Errorf("error addding flag: %w", err)
 		}
 	}
-
-	// Final map of resolved argument values
-	values := make(map[string]any, len(fn.Args))
 
 	// Parse arguments using flags to get the values matched with the right
 	// argument definition. Bypass the flag if the argument value comes from
@@ -644,7 +650,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 	}
 
 	// Otherwise it may be an object that we want to bypass (for its ID)
-	st, err := h.state.Extract(GetStateKey(value))
+	st, err := h.state.Extract(ctx, GetStateKey(value))
 	if err != nil {
 		return nil, false, err
 	}
@@ -868,4 +874,16 @@ func (h *shellCallHandler) loadedModules(yield func(*moduleDef) bool) {
 		}
 		return true
 	})
+}
+
+// HandlerCtx returns interp.HandlerContext value stored in ctx, or nil if
+// it doesn't have one.
+func HandlerCtx(ctx context.Context) (ret *interp.HandlerContext) {
+	defer func() {
+		if err := recover(); err != nil {
+			ret = nil
+		}
+	}()
+	hc := interp.HandlerCtx(ctx)
+	return &hc
 }
