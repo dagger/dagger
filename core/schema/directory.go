@@ -89,7 +89,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 		dagql.Func("filter", s.filter).
 			Doc(`Return a snapshot with some paths included or excluded`).
-			ArgDoc("exclude", `If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", "**/.env", ".env"]`).
+			ArgDoc("exclude", `If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`).
 			ArgDoc("include", `If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
