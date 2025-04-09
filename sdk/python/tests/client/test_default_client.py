@@ -2,8 +2,7 @@ import pytest
 
 import dagger
 from dagger import dag
-from dagger._connection import SharedConnection
-from dagger._engine.conn import provision_engine
+from dagger.client._connection import SharedConnection
 
 pytestmark = [
     pytest.mark.anyio,
@@ -35,6 +34,8 @@ async def test_context_manager_provision(alpine_image: str):
 class TestConnectionManagement:
     @pytest.fixture(scope="class", autouse=True)
     async def _setup(self):
+        from dagger.provisioning._engine import provision_engine
+
         # This allows running these tests from the host by auto provisioning.
         async with provision_engine(dagger.Config(retry=None)) as engine:
             # Just setup connection, don't connect yet.
