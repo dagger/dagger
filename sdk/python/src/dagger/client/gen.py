@@ -8247,7 +8247,12 @@ class Client(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
-    def env(self, *, privileged: bool | None = False) -> Env:
+    def env(
+        self,
+        *,
+        privileged: bool | None = False,
+        module: Module | None = None,
+    ) -> Env:
         """Initialize a new environment
 
         Parameters
@@ -8255,9 +8260,12 @@ class Client(Root):
         privileged:
             Give the environment the same privileges as the caller: core API
             including host access, current module, and dependencies
+        module:
+            Set this module as the initial selection and fallback root
         """
         _args = [
             Arg("privileged", privileged, False),
+            Arg("module", module, None),
         ]
         _ctx = self._select("env", _args)
         return Env(_ctx)

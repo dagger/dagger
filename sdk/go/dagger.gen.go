@@ -7898,6 +7898,8 @@ func (r *Client) Engine() *Engine {
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
 	Privileged bool
+	// Set this module as the initial selection and fallback root
+	Module *Module
 }
 
 // Initialize a new environment
@@ -7907,6 +7909,10 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 		// `privileged` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Privileged) {
 			q = q.Arg("privileged", opts[i].Privileged)
+		}
+		// `module` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Module) {
+			q = q.Arg("module", opts[i].Module)
 		}
 	}
 

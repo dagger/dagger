@@ -55,9 +55,14 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 		env:          env,
 		functionMask: map[string]bool{},
 	}
-	if env.Root() != nil {
+	
+	// Set initial selection if available, otherwise use root
+	if env.initialSelection != nil {
+		m.Select(env.initialSelection)
+	} else if env.Root() != nil {
 		m.Select(env.Root())
 	}
+	
 	if endpoint != nil {
 		m.needsSystemPrompt = (endpoint.Provider == Google)
 	}

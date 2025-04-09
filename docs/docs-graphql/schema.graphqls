@@ -3142,6 +3142,9 @@ type Query {
 
   """Initialize a new environment"""
   env(
+    """Set this module as the initial selection and fallback root"""
+    module: ModuleID
+
     """
     Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     """

@@ -26,6 +26,8 @@ type Env struct {
 	// Can be used to give the environment ambient access to the
 	// dagger core API, possibly extended by a module
 	root dagql.Object
+	// Initial selection for LLM
+	initialSelection dagql.Object
 }
 
 func (*Env) Type() *ast.Type {
@@ -72,6 +74,18 @@ func (env *Env) WithRoot(root dagql.Object) *Env {
 // Return the root object, or nil if no root object is set
 func (env *Env) Root() dagql.Object {
 	return env.root
+}
+
+// Set an initial selection for LLM
+func (env *Env) WithInitialSelection(selection dagql.Object) *Env {
+	env = env.Clone()
+	env.initialSelection = selection
+	return env
+}
+
+// Return the initial selection object, if any
+func (env *Env) InitialSelection() dagql.Object {
+	return env.initialSelection
 }
 
 // Add an input (read-only) binding to the environment

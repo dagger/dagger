@@ -8001,6 +8001,9 @@ pub struct QueryContainerOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvOpts {
+    /// Set this module as the initial selection and fallback root
+    #[builder(setter(into, strip_option), default)]
+    pub module: Option<ModuleId>,
     /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     #[builder(setter(into, strip_option), default)]
     pub privileged: Option<bool>,
@@ -8192,6 +8195,9 @@ impl Query {
         let mut query = self.selection.select("env");
         if let Some(privileged) = opts.privileged {
             query = query.arg("privileged", privileged);
+        }
+        if let Some(module) = opts.module {
+            query = query.arg("module", module);
         }
         Env {
             proc: self.proc.clone(),

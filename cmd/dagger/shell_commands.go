@@ -240,6 +240,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
+
 				h.llmSession = h.llmSession.Clear()
 				return nil
 			},
