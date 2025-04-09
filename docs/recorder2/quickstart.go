@@ -24,26 +24,26 @@ func (f *Quickstart) All() *dagger.Directory {
 }
 
 func (f *Quickstart) Buildenv() *dagger.Directory {
-	return f.quickstart("quickstart/buildenv.tape")
+	return f.quickstart("quickstart/ci/buildenv.tape")
 }
 
 func (f *Quickstart) Test() *dagger.Directory {
-	return f.quickstart("quickstart/test.tape")
+	return f.quickstart("quickstart/ci/test.tape")
 }
 
 func (f *Quickstart) Build() *dagger.Directory {
-	return f.quickstart("quickstart/build.tape")
+	return f.quickstart("quickstart/ci/build.tape")
 }
 
 func (f *Quickstart) Publish() *dagger.Directory {
-	return f.quickstart("quickstart/publish.tape")
+	return f.quickstart("quickstart/ci/publish.tape")
 }
 
 func (f *Quickstart) quickstart(tape string) *dagger.Directory {
 	source := dag.CurrentModule().Source().
 		Directory("tapes").
 		Filter(includeWithDefaults(tape)).
-		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/ci/quickstart/snippets/daggerize/go"))
+		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go"))
 
 	return f.Recorder.Vhs.WithSource(source).Render(tape)
 }

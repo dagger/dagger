@@ -1,7 +1,7 @@
 # Relative to current directory
 Source config.tape
 
-Output quickstart/build.gif
+Output quickstart/ci/build.gif
 
 Sleep 1s
 

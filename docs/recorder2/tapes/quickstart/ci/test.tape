@@ -1,11 +1,11 @@
 # Relative to current directory
 Source config.tape
 
-Output quickstart/buildenv.gif
+Output quickstart/ci/test.gif
 
 Sleep 1s
 
-Type "dagger -c 'build-env .'"
+Type "dagger -c 'test .'"
 Sleep 1s
 Enter
 

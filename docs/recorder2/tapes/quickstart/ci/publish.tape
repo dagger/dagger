@@ -1,11 +1,11 @@
 # Relative to current directory
 Source config.tape
 
-Output quickstart/test.gif
+Output quickstart/ci/publish.gif
 
 Sleep 1s
 
-Type "dagger -c 'test .'"
+Type "dagger -c 'publish .'"
 Sleep 1s
 Enter
 
