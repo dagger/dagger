@@ -1,8 +1,9 @@
+import typing
 from dataclasses import InitVar
 from typing import Annotated
 
 import pytest
-from typing_extensions import Self
+import typing_extensions
 
 import dagger
 from dagger import Doc, Name, dag
@@ -100,11 +101,17 @@ async def test_method_returns_self():
         message: str = "foo"
 
         @mod.function
-        def bar(self) -> Self:
+        def foo(self) -> typing.Self:
             self.message = "foobar"
             return self
 
-    assert await mod.get_result("Foo", {}, "bar", {}) == {"message": "foobar"}
+        @mod.function
+        def bar(self) -> typing_extensions.Self:
+            self.message = "barfoo"
+            return self
+
+    assert await mod.get_result("Foo", {}, "foo", {}) == {"message": "foobar"}
+    assert await mod.get_result("Foo", {}, "bar", {}) == {"message": "barfoo"}
 
 
 async def test_constructor_post_init():

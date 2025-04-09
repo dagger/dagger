@@ -14,8 +14,7 @@ import anyio
 import anyio.to_thread
 import cattrs
 import cattrs.gen
-from rich.console import Console
-from typing_extensions import Self, dataclass_transform, overload
+from typing_extensions import dataclass_transform, overload
 
 import dagger
 from dagger import dag
@@ -47,7 +46,6 @@ from dagger.mod._utils import (
     to_pascal_case,
 )
 
-errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
 
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
@@ -107,7 +105,7 @@ class Module:
 
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def _register(self) -> dagger.ModuleID:  # noqa: C901
+    async def _register(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
         """Register the module and its types with the Dagger API."""
         mod = dag.module()
 
@@ -122,11 +120,18 @@ class Module:
                 if desc := get_parent_module_doc(obj_type.cls):
                     mod = mod.with_description(desc)
 
-            # Object type
-            type_def = dag.type_def().with_object(
-                obj_name,
-                description=get_doc(obj_type.cls),
-            )
+            # Object/interface type
+            type_def = dag.type_def()
+            if obj_type.interface:
+                type_def = type_def.with_interface(
+                    obj_name,
+                    description=get_doc(obj_type.cls),
+                )
+            else:
+                type_def = type_def.with_object(
+                    obj_name,
+                    description=get_doc(obj_type.cls),
+                )
 
             # Object fields
             if obj_type.fields:
@@ -139,14 +144,9 @@ class Module:
                         description=get_doc(field.return_type),
                     )
 
-            # Object functions
+            # Object/interface functions
             for func_name, func in obj_type.functions.items():
-                func_def = dag.function(
-                    func_name,
-                    to_typedef(
-                        obj_type.cls if func.return_type is Self else func.return_type
-                    ),
-                )
+                func_def = dag.function(func_name, to_typedef(func.return_type))
 
                 if doc := func.doc:
                     func_def = func_def.with_description(doc)
@@ -172,8 +172,11 @@ class Module:
                     else type_def.with_function(func_def)
                 )
 
-            # Add object to module
-            mod = mod.with_object(type_def)
+            # Add object/interface to module
+            if obj_type.interface:
+                mod = mod.with_interface(type_def)
+            else:
+                mod = mod.with_object(type_def)
 
         # Enum types
         for name, cls in self._enums.items():
@@ -245,13 +248,13 @@ class Module:
 
         return result
 
-    async def get_result(
+    async def get_structured_result(
         self,
         parent_name: str,
         parent_state: Mapping[str, Any],
         name: str,
         raw_inputs: Mapping[str, Any],
-    ) -> Any:
+    ) -> tuple[Any, type]:
         """Execute a function and return its result as a primitive value."""
         obj_type = self.get_object(parent_name)
 
@@ -265,12 +268,12 @@ class Module:
             if name in obj_type.fields:
                 f = obj_type.fields[name]
                 result = getattr(parent, f.original_name)
-                return await self.unstructure(result, f.return_type)
+                return result, f.return_type
 
             fn = obj_type.get_bound_function(parent, name)
 
         inputs = await self._convert_inputs(fn.parameters, raw_inputs)
-        bound = fn.bind_arguments(inputs)
+        bound = fn.bind_arguments(**inputs)
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("func => %s", repr(fn.signature))
@@ -286,7 +289,21 @@ class Module:
             msg = "Result is a coroutine. Did you forget to add async/await?"
             raise UserError(msg)
 
-        return_type = obj_type.cls if fn.return_type is Self else fn.return_type
+        return result, fn.return_type
+
+    async def get_result(
+        self,
+        parent_name: str,
+        parent_state: Mapping[str, Any],
+        name: str,
+        raw_inputs: Mapping[str, Any],
+    ) -> Any:
+        result, return_type = await self.get_structured_result(
+            parent_name,
+            parent_state,
+            name,
+            raw_inputs,
+        )
         return await self.unstructure(result, return_type)
 
     async def call(self, func: Func[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
@@ -523,10 +540,12 @@ class Module:
 
         return wrapper(cls) if cls else wrapper
 
-    def _process_type(self, cls: T) -> T:
-        cls.__dagger_module__ = self
+    def _process_type(self, cls: T, interface: bool = False) -> T:
+        obj_def = ObjectType(cls, interface=interface)
 
-        obj_def = self._objects.setdefault(cls.__name__, ObjectType(cls))
+        cls.__dagger_module__ = self
+        cls.__dagger_object_type__ = obj_def
+        self._objects[cls.__name__] = obj_def
 
         # Find all constructors from other objects, decorated with `@mod.function`
         def _is_constructor(fn) -> typing.TypeGuard[Constructor]:
@@ -541,7 +560,11 @@ class Module:
 
         for _, meth in inspect.getmembers(cls, _is_function):
             fn = Function(meth, getattr(meth, FUNCTION_DEF_KEY))
+            fn.origin = cls
             obj_def.functions[fn.name] = fn
+
+        if interface:
+            return cls
 
         # Register hooks for renaming field names in `mod.field()`.
         attr_overrides = {}
@@ -582,6 +605,19 @@ class Module:
         )
 
         return cls
+
+    @overload
+    def interface(self, cls: T) -> T: ...
+
+    @overload
+    def interface(self) -> Callable[[T], T]: ...
+
+    def interface(self, cls: T | None = None) -> T | Callable[[T], T]:
+        def wrapper(cls: T) -> T:
+            new_cls = typing.runtime_checkable(cls)
+            return self._process_type(new_cls, interface=True)
+
+        return wrapper(cls) if cls else wrapper
 
     @overload
     def enum_type(self, cls: T) -> T: ...
