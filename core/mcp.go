@@ -66,6 +66,7 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
+	return ""
 	prompt := defaultSystemPrompt
 	// var typeInputs []string
 	// for _, bnd := range m.env.objsByID {
@@ -388,16 +389,22 @@ func (m *MCP) call(ctx context.Context,
 	//
 	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
+		return nil, fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
 	var target dagql.Object
 	if selfType == "Query" && m.env.Root() != nil {
 		target = m.env.Root()
 	} else {
-		recv, ok := argsMap["self"].(string)
+		self, ok := argsMap[selfType]
 		if !ok {
-			return nil, fmt.Errorf("tool call: %s: expected 'self' argument to be a string - got %#v", fieldDef.Name, recv)
+			return nil, fmt.Errorf("missing %q argument", selfType)
 		}
+		recv, ok := self.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected %q to be a string - got %#v", selfType, recv)
+		}
+		// don't pass 'self' along to future arg validation
+		delete(argsMap, selfType)
 		var err error
 		target, err = m.GetObject(recv, selfType)
 		if err != nil {
@@ -515,6 +522,15 @@ func (m *MCP) toolCallToSelection(
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
 	if !ok {
 		return sel, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+	}
+	var unknownArgs error
+	for name := range argsMap {
+		if _, ok := field.Args.Lookup(name); !ok {
+			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", name))
+		}
+	}
+	if unknownArgs != nil {
+		return sel, unknownArgs
 	}
 	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
@@ -647,12 +663,8 @@ func (m *MCP) returnBuiltin() LLMTool {
 		}
 	}
 	return LLMTool{
-		Name: "returnToUser",
-		Description: `Call this tool when you have FULLY completed your task and gathered ALL required values.
-
-Each parameter corresponds to a named result with a specific purpose.
-
-Do not call this tool until all values are ready.`,
+		Name:        "returnToUser",
+		Description: `Complete your task and return its outputs to the user.`,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
@@ -668,7 +680,7 @@ Do not call this tool until all values are ready.`,
 			for name := range m.env.outputsByName {
 				arg, ok := vals[name]
 				if !ok {
-					return nil, fmt.Errorf("required argument %s not provided", name)
+					return nil, fmt.Errorf("required output %s not provided", name)
 				}
 				argStr, ok := arg.(string)
 				if !ok {
@@ -1033,12 +1045,12 @@ func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.Field
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	if typeName != "Query" {
-		properties["self"] = map[string]any{
+		properties[typeName] = map[string]any{
 			"type":        "string",
-			"description": fmt.Sprintf("%s ID to operate against.", typeName),
+			"description": fmt.Sprintf("The %s snapshot to operate against.", typeName),
 			"pattern":     idPattern(typeName),
 		}
-		required = append(required, "self")
+		required = append(required, typeName)
 	}
 	for _, arg := range field.Arguments {
 		argSchema, err := typeToJSONSchema(schema, arg.Type)
