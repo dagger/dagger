@@ -42,7 +42,13 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
         "\"\"\""
       ]
     else
-      [?", s, ?"]
+      [
+        ?",
+        s
+        |> String.replace("\\", "\\\\")
+        |> String.replace("\"", "\\\""),
+        ?",
+      ]
     end
   end
 
