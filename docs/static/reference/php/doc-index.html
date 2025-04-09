@@ -145,9 +145,9 @@
 <abbr title="Dagger\Container">Container</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Turn the container into a Service.</p></dd><dt><a href="Dagger/Container.html#method_asTarball">
 <abbr title="Dagger\Container">Container</abbr>::asTarball</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Returns a File representing the container serialized to a tarball.</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
+                    <dd><p>Package the container state as an OCI image, and return it as a tar archive</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
 <abbr title="Dagger\Directory">Directory</abbr>::asGit</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Converts this directory into a git repository</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
+                    <dd><p>Converts this directory to a local git repository</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
 <abbr title="Dagger\Directory">Directory</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Load the directory as a Dagger module source</p></dd><dt><a href="Dagger/Directory.html#method_asModuleSource">
 <abbr title="Dagger\Directory">Directory</abbr>::asModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -191,7 +191,7 @@
 <abbr title="Dagger\Client">Client</abbr>::cacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Constructs a cache volume for a given cache key.</p></dd><dt><a href="Dagger/Client.html#method_container">
 <abbr title="Dagger\Client">Client</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Creates a scratch container.</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
+                    <dd><p>Creates a scratch container, with no image or metadata.</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
 <abbr title="Dagger\Client">Client</abbr>::currentFunctionCall</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The FunctionCall context that the SDK caller is currently executing in.</p></dd><dt><a href="Dagger/Client.html#method_currentModule">
 <abbr title="Dagger\Client">Client</abbr>::currentModule</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -251,19 +251,19 @@
 <abbr title="Dagger\Client">Client</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Creates an empty directory.</p></dd><dt><a href="Dagger/Container.html#method_defaultArgs">
 <abbr title="Dagger\Container">Container</abbr>::defaultArgs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves default arguments for future commands.</p></dd><dt><a href="Dagger/Container.html#method_directory">
+                    <dd><p>Return the container's default arguments.</p></dd><dt><a href="Dagger/Container.html#method_directory">
 <abbr title="Dagger\Container">Container</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves a directory at the given path.</p></dd><dt><a href="Dagger/Dagger.html"><abbr title="Dagger\Dagger">Dagger</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Retrieve a directory from the container's root filesystem</p></dd><dt><a href="Dagger/Dagger.html"><abbr title="Dagger\Dagger">Dagger</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A directory.</p></dd><dt><a href="Dagger/Directory.html#method_diff">
 <abbr title="Dagger\Directory">Directory</abbr>::diff</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Gets the difference between this directory and an another directory.</p></dd><dt><a href="Dagger/Directory.html#method_digest">
+                    <dd><p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p></dd><dt><a href="Dagger/Directory.html#method_digest">
 <abbr title="Dagger\Directory">Directory</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></dd><dt><a href="Dagger/Directory.html#method_directory">
 <abbr title="Dagger\Directory">Directory</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Retrieves a directory at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_dockerBuild">
 <abbr title="Dagger\Directory">Directory</abbr>::dockerBuild</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Builds a new Docker container from this directory.</p></dd><dt><a href="Dagger/DirectoryId.html"><abbr title="Dagger\DirectoryId">DirectoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p></dd><dt><a href="Dagger/DirectoryId.html"><abbr title="Dagger\DirectoryId">DirectoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>DirectoryID</code> scalar type represents an identifier for an object of type Directory.</p></dd><dt><a href="Dagger/EngineCacheEntry.html#method_description">
 <abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></em></dt>
                     <dd><p>The description of the cache entry.</p></dd><dt><a href="Dagger/EngineCacheEntry.html#method_diskSpaceBytes">
@@ -319,13 +319,13 @@
 <abbr title="Dagger\Client">Client</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new error.</p></dd><dt><a href="Dagger/Container.html#method_entrypoint">
 <abbr title="Dagger\Container">Container</abbr>::entrypoint</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves entrypoint to be prepended to the arguments of all commands.</p></dd><dt><a href="Dagger/Container.html#method_envVariable">
+                    <dd><p>Return the container's OCI entrypoint.</p></dd><dt><a href="Dagger/Container.html#method_envVariable">
 <abbr title="Dagger\Container">Container</abbr>::envVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves the value of the specified environment variable.</p></dd><dt><a href="Dagger/Container.html#method_envVariables">
 <abbr title="Dagger\Container">Container</abbr>::envVariables</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves the list of environment variables passed to commands.</p></dd><dt><a href="Dagger/Container.html#method_exitCode">
 <abbr title="Dagger\Container">Container</abbr>::exitCode</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>The exit code of the last executed command.</p></dd><dt><a href="Dagger/Container.html#method_experimentalWithAllGPUs">
+                    <dd><p>The exit code of the last executed command</p></dd><dt><a href="Dagger/Container.html#method_experimentalWithAllGPUs">
 <abbr title="Dagger\Container">Container</abbr>::experimentalWithAllGPUs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>EXPERIMENTAL API! Subject to change/removal at any time.</p></dd><dt><a href="Dagger/Container.html#method_experimentalWithGPU">
 <abbr title="Dagger\Container">Container</abbr>::experimentalWithGPU</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -386,11 +386,11 @@
 <abbr title="Dagger\Container">Container</abbr>::file</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves a file at the given path.</p></dd><dt><a href="Dagger/Container.html#method_from">
 <abbr title="Dagger\Container">Container</abbr>::from</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Initializes this container from a pulled base image.</p></dd><dt><a href="Dagger/Directory.html#method_file">
+                    <dd><p>Download a container image, and apply it to the container state. All previous state will be lost.</p></dd><dt><a href="Dagger/Directory.html#method_file">
 <abbr title="Dagger\Directory">Directory</abbr>::file</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves a file at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_filter">
+                    <dd><p>Retrieve a file at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_filter">
 <abbr title="Dagger\Directory">Directory</abbr>::filter</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory as per exclude/include filters.</p></dd><dt><a href="Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Return a snapshot with some paths included or excluded</p></dd><dt><a href="Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a field on a custom object defined in a Module.</p></dd><dt><a href="Dagger/FieldTypeDefId.html"><abbr title="Dagger\FieldTypeDefId">FieldTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>FieldTypeDefID</code> scalar type represents an identifier for an object of type FieldTypeDef.</p></dd><dt><a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A file.</p></dd><dt><a href="Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -794,7 +794,7 @@
 <abbr title="Dagger\Container">Container</abbr>::platform</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>The platform this container executes and publishes as.</p></dd><dt><a href="Dagger/Container.html#method_publish">
 <abbr title="Dagger\Container">Container</abbr>::publish</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Publishes this container as a new image to the specified address.</p></dd><dt><a href="Dagger/EngineCache.html#method_prune">
+                    <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/EngineCache.html#method_prune">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::prune</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>Prune the cache of releaseable entries</p></dd><dt><a href="Dagger/FunctionCall.html#method_parent">
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parent</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
@@ -829,7 +829,7 @@
 <abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr>::runQuery</a>() &mdash; <em>Method in class <a href="Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Container.html#method_rootfs">
 <abbr title="Dagger\Container">Container</abbr>::rootfs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container's root filesystem. Mounts are not included.</p></dd><dt><a href="Dagger/EngineCache.html#method_reservedSpace">
+                    <dd><p>Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using \&quot;withRootfs\&quot;. Use that method for filesystem modifications.</p></dd><dt><a href="Dagger/EngineCache.html#method_reservedSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::reservedSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/FunctionCall.html#method_returnError">
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::returnError</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
@@ -854,9 +854,9 @@
 <abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr>::setArgument</a>() &mdash; <em>Method in class <a href="Dagger/Client/QueryBuilder.html"><abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Container.html#method_stderr">
 <abbr title="Dagger\Container">Container</abbr>::stderr</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>The error stream of the last executed command.</p></dd><dt><a href="Dagger/Container.html#method_stdout">
+                    <dd><p>The buffered standard error stream of the last executed command</p></dd><dt><a href="Dagger/Container.html#method_stdout">
 <abbr title="Dagger\Container">Container</abbr>::stdout</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>The output stream of the last executed command.</p></dd><dt><a href="Dagger/Container.html#method_sync">
+                    <dd><p>The buffered standard output stream of the last executed command</p></dd><dt><a href="Dagger/Container.html#method_sync">
 <abbr title="Dagger\Container">Container</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Forces evaluation of the pipeline in the engine.</p></dd><dt><a href="Dagger/CurrentModule.html#method_source">
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::source</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
@@ -998,21 +998,21 @@
 <abbr title="Dagger\Container">Container</abbr>::withAnnotation</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus the given OCI anotation.</p></dd><dt><a href="Dagger/Container.html#method_withDefaultArgs">
 <abbr title="Dagger\Container">Container</abbr>::withDefaultArgs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Configures default arguments for future commands.</p></dd><dt><a href="Dagger/Container.html#method_withDefaultTerminalCmd">
+                    <dd><p>Configures default arguments for future commands. Like CMD in Dockerfile.</p></dd><dt><a href="Dagger/Container.html#method_withDefaultTerminalCmd">
 <abbr title="Dagger\Container">Container</abbr>::withDefaultTerminalCmd</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Set the default command to invoke for the container's terminal API.</p></dd><dt><a href="Dagger/Container.html#method_withDirectory">
 <abbr title="Dagger\Container">Container</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus a directory written at the given path.</p></dd><dt><a href="Dagger/Container.html#method_withEntrypoint">
+                    <dd><p>Return a new container snapshot, with a directory added to its filesystem</p></dd><dt><a href="Dagger/Container.html#method_withEntrypoint">
 <abbr title="Dagger\Container">Container</abbr>::withEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container but with a different command entrypoint.</p></dd><dt><a href="Dagger/Container.html#method_withEnvVariable">
+                    <dd><p>Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, \&quot;withExec\&quot; ignores the entrypoint by default.</p></dd><dt><a href="Dagger/Container.html#method_withEnvVariable">
 <abbr title="Dagger\Container">Container</abbr>::withEnvVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus the given environment variable.</p></dd><dt><a href="Dagger/Container.html#method_withExec">
+                    <dd><p>Set a new environment variable in the container.</p></dd><dt><a href="Dagger/Container.html#method_withExec">
 <abbr title="Dagger\Container">Container</abbr>::withExec</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container after executing the specified command inside it.</p></dd><dt><a href="Dagger/Container.html#method_withExposedPort">
+                    <dd><p>Execute a command in the container, and return a new snapshot of the container state after execution.</p></dd><dt><a href="Dagger/Container.html#method_withExposedPort">
 <abbr title="Dagger\Container">Container</abbr>::withExposedPort</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Expose a network port.</p></dd><dt><a href="Dagger/Container.html#method_withFile">
+                    <dd><p>Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)</p></dd><dt><a href="Dagger/Container.html#method_withFile">
 <abbr title="Dagger\Container">Container</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus the contents of the given file copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withFiles">
+                    <dd><p>Return a container snapshot with a file added</p></dd><dt><a href="Dagger/Container.html#method_withFiles">
 <abbr title="Dagger\Container">Container</abbr>::withFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus the contents of the given files copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withLabel">
 <abbr title="Dagger\Container">Container</abbr>::withLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1028,29 +1028,29 @@
 <abbr title="Dagger\Container">Container</abbr>::withMountedTemp</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.</p></dd><dt><a href="Dagger/Container.html#method_withNewFile">
 <abbr title="Dagger\Container">Container</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus a new file written at the given path.</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
+                    <dd><p>Return a new container snapshot, with a file added to its filesystem</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
 <abbr title="Dagger\Container">Container</abbr>::withRegistryAuth</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with a registry authentication for a given address.</p></dd><dt><a href="Dagger/Container.html#method_withRootfs">
+                    <dd><p>Attach credentials for future publishing to a registry. Use in combinationw with \&quot;publish\&quot;</p></dd><dt><a href="Dagger/Container.html#method_withRootfs">
 <abbr title="Dagger\Container">Container</abbr>::withRootfs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves the container with the given directory mounted to /.</p></dd><dt><a href="Dagger/Container.html#method_withSecretVariable">
+                    <dd><p>Change the container's root filesystem. The previous root filesystem will be lost.</p></dd><dt><a href="Dagger/Container.html#method_withSecretVariable">
 <abbr title="Dagger\Container">Container</abbr>::withSecretVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus an env variable containing the given secret.</p></dd><dt><a href="Dagger/Container.html#method_withServiceBinding">
+                    <dd><p>Set a new environment variable, using a secret value</p></dd><dt><a href="Dagger/Container.html#method_withServiceBinding">
 <abbr title="Dagger\Container">Container</abbr>::withServiceBinding</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Establish a runtime dependency on a service.</p></dd><dt><a href="Dagger/Container.html#method_withUnixSocket">
+                    <dd><p>Establish a runtime dependency on a from a container to a network service.</p></dd><dt><a href="Dagger/Container.html#method_withUnixSocket">
 <abbr title="Dagger\Container">Container</abbr>::withUnixSocket</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus a socket forwarded to the given Unix socket path.</p></dd><dt><a href="Dagger/Container.html#method_withUser">
 <abbr title="Dagger\Container">Container</abbr>::withUser</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with a different command user.</p></dd><dt><a href="Dagger/Container.html#method_withWorkdir">
 <abbr title="Dagger\Container">Container</abbr>::withWorkdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with a different working directory.</p></dd><dt><a href="Dagger/Container.html#method_withoutAnnotation">
+                    <dd><p>Change the container's working directory. Like WORKDIR in Dockerfile.</p></dd><dt><a href="Dagger/Container.html#method_withoutAnnotation">
 <abbr title="Dagger\Container">Container</abbr>::withoutAnnotation</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container minus the given OCI annotation.</p></dd><dt><a href="Dagger/Container.html#method_withoutDefaultArgs">
 <abbr title="Dagger\Container">Container</abbr>::withoutDefaultArgs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with unset default arguments for future commands.</p></dd><dt><a href="Dagger/Container.html#method_withoutDirectory">
+                    <dd><p>Remove the container's default arguments.</p></dd><dt><a href="Dagger/Container.html#method_withoutDirectory">
 <abbr title="Dagger\Container">Container</abbr>::withoutDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with the directory at the given path removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutEntrypoint">
+                    <dd><p>Return a new container snapshot, with a directory removed from its filesystem</p></dd><dt><a href="Dagger/Container.html#method_withoutEntrypoint">
 <abbr title="Dagger\Container">Container</abbr>::withoutEntrypoint</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with an unset command entrypoint.</p></dd><dt><a href="Dagger/Container.html#method_withoutEnvVariable">
+                    <dd><p>Reset the container's OCI entrypoint.</p></dd><dt><a href="Dagger/Container.html#method_withoutEnvVariable">
 <abbr title="Dagger\Container">Container</abbr>::withoutEnvVariable</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container minus the given environment variable.</p></dd><dt><a href="Dagger/Container.html#method_withoutExposedPort">
 <abbr title="Dagger\Container">Container</abbr>::withoutExposedPort</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1058,7 +1058,7 @@
 <abbr title="Dagger\Container">Container</abbr>::withoutFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with the file at the given path removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutFiles">
 <abbr title="Dagger\Container">Container</abbr>::withoutFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with the files at the given paths removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
+                    <dd><p>Return a new container spanshot with specified files removed</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
 <abbr title="Dagger\Container">Container</abbr>::withoutLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container minus the given environment label.</p></dd><dt><a href="Dagger/Container.html#method_withoutMount">
 <abbr title="Dagger\Container">Container</abbr>::withoutMount</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1072,7 +1072,7 @@
 <abbr title="Dagger\Container">Container</abbr>::withoutUser</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with an unset command user.</p></dd><dt><a href="Dagger/Container.html#method_withoutWorkdir">
 <abbr title="Dagger\Container">Container</abbr>::withoutWorkdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container with an unset working directory.</p></dd><dt><a href="Dagger/Container.html#method_workdir">
+                    <dd><p>Unset the container's working directory.</p></dd><dt><a href="Dagger/Container.html#method_workdir">
 <abbr title="Dagger\Container">Container</abbr>::workdir</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves the working directory for all commands.</p></dd><dt><a href="Dagger/CurrentModule.html#method_workdir">
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::workdir</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
@@ -1080,7 +1080,7 @@
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::workdirFile</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
                     <dd><p>Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></dd><dt><a href="Dagger/Directory.html#method_withDirectory">
 <abbr title="Dagger\Directory">Directory</abbr>::withDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory plus a directory written at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_withFile">
+                    <dd><p>Return a snapshot with a directory added</p></dd><dt><a href="Dagger/Directory.html#method_withFile">
 <abbr title="Dagger\Directory">Directory</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Retrieves this directory plus the contents of the given file copied to the given path.</p></dd><dt><a href="Dagger/Directory.html#method_withFiles">
 <abbr title="Dagger\Directory">Directory</abbr>::withFiles</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -1088,15 +1088,15 @@
 <abbr title="Dagger\Directory">Directory</abbr>::withNewDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Retrieves this directory plus a new directory created at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_withNewFile">
 <abbr title="Dagger\Directory">Directory</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory plus a new file written at the given path.</p></dd><dt><a href="Dagger/Directory.html#method_withTimestamps">
+                    <dd><p>Return a snapshot with a new file added</p></dd><dt><a href="Dagger/Directory.html#method_withTimestamps">
 <abbr title="Dagger\Directory">Directory</abbr>::withTimestamps</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Retrieves this directory with all file/dir timestamps set to the given time.</p></dd><dt><a href="Dagger/Directory.html#method_withoutDirectory">
 <abbr title="Dagger\Directory">Directory</abbr>::withoutDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory with the directory at the given path removed.</p></dd><dt><a href="Dagger/Directory.html#method_withoutFile">
+                    <dd><p>Return a snapshot with a subdirectory removed</p></dd><dt><a href="Dagger/Directory.html#method_withoutFile">
 <abbr title="Dagger\Directory">Directory</abbr>::withoutFile</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory with the file at the given path removed.</p></dd><dt><a href="Dagger/Directory.html#method_withoutFiles">
+                    <dd><p>Return a snapshot with a file removed</p></dd><dt><a href="Dagger/Directory.html#method_withoutFiles">
 <abbr title="Dagger\Directory">Directory</abbr>::withoutFiles</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory with the files at the given paths removed.</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeInput">
+                    <dd><p>Return a snapshot with files removed</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeInput">
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type CacheVolume in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeOutput">
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

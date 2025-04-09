@@ -292,8 +292,8 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Creates a scratch container.</p>
-                  <p>Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder&#39;s host.</p>
+                  <p>Creates a scratch container, with no image or metadata.</p>
+                  <p>To pull an image, follow up with the &quot;from&quot; function.</p>
                 </div>
               </div>
             </div>
@@ -319,7 +319,7 @@
                         <td>
                           <span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span>
                         </td>
-                        <td> Platform to initialize the container with. </td>
+                        <td> Platform to initialize the container with. Defaults to the native platform of the current engine </td>
                       </tr>
                     </tbody>
                   </table>
@@ -4079,7 +4079,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-asTarball" href="#Container-asTarball"><code>asTarball</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
-                        <td> Returns a File representing the container serialized to a tarball. </td>
+                        <td> Package the container state as an OCI image, and return it as a tar archive </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4147,12 +4147,12 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-defaultArgs" href="#Container-defaultArgs"><code>defaultArgs</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> Retrieves default arguments for future commands. </td>
+                        <td> Return the container's default arguments. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-directory" href="#Container-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
-                          <p>Retrieves a directory at the given path.</p>
+                          <p>Retrieve a directory from the container&#39;s root filesystem</p>
                           <p>Mounts are included.</p>
                         </td>
                       </tr>
@@ -4175,7 +4175,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-entrypoint" href="#Container-entrypoint"><code>entrypoint</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> Retrieves entrypoint to be prepended to the arguments of all commands. </td>
+                        <td> Return the container's OCI entrypoint. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-envVariable" href="#Container-envVariable"><code>envVariable</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
@@ -4201,8 +4201,8 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exitCode" href="#Container-exitCode"><code>exitCode</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td>
-                          <p>The exit code of the last executed command.</p>
-                          <p>Returns an error if no command was set.</p>
+                          <p>The exit code of the last executed command</p>
+                          <p>Returns an error if no command was executed</p>
                         </td>
                       </tr>
                       <tr>
@@ -4307,7 +4307,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-from" href="#Container-from"><code>from</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a pulled base image. </td>
+                        <td> Download a container image, and apply it to the container state. All previous state will be lost. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4316,8 +4316,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Image&#39;s address from its registry.</p>
-                                <p>Formatted as [host]/[user]/[repo]:[tag] (e.g., &quot;docker.io/dagger/dagger:main&quot;).</p>
+                                <p>Address of the container image to download, in standard OCI ref format. Example:&quot;registry.dagger.io/engine:latest&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -4384,9 +4383,8 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-publish" href="#Container-publish"><code>publish</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
-                          <p>Publishes this container as a new image to the specified address.</p>
-                          <p>Publish returns a fully qualified ref.</p>
-                          <p>It can also publish platform variants.</p>
+                          <p>Package the container state as an OCI image, and publish it to a registry</p>
+                          <p>Returns the fully qualified address of the published image, with digest</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -4396,8 +4394,8 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Registry&#39;s address to publish the image to.</p>
-                                <p>Formatted as [host]/[user]/[repo]:[tag] (e.g. &quot;docker.io/dagger/dagger:main&quot;).</p>
+                                <p>The OCI address to publish to</p>
+                                <p>Same format as &quot;docker push&quot;. Example: &quot;registry.example.com/user/repo:tag&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
@@ -4407,7 +4405,7 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
                                 <p>Use the specified media types for the published image&#39;s layers.</p>
-                                <p>Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.</p>
+                                <p>Defaults to &quot;OCI&quot;, which is compatible with most recent registries, but &quot;Docker&quot; may be needed for older registries without OCI support.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>platformVariants</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>[ContainerID!]</code></a></span></h6>
@@ -4420,20 +4418,20 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-rootfs" href="#Container-rootfs"><code>rootfs</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this container's root filesystem. Mounts are not included. </td>
+                        <td> Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using "withRootfs". Use that method for filesystem modifications. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-stderr" href="#Container-stderr"><code>stderr</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
-                          <p>The error stream of the last executed command.</p>
-                          <p>Returns an error if no command was set.</p>
+                          <p>The buffered standard error stream of the last executed command</p>
+                          <p>Returns an error if no command was executed</p>
                         </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-stdout" href="#Container-stdout"><code>stdout</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
-                          <p>The output stream of the last executed command.</p>
-                          <p>Returns an error if no command was set.</p>
+                          <p>The buffered standard output stream of the last executed command</p>
+                          <p>Returns an error if no command was executed</p>
                         </td>
                       </tr>
                       <tr>
@@ -4548,7 +4546,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withDefaultArgs" href="#Container-withDefaultArgs"><code>withDefaultArgs</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Configures default arguments for future commands. </td>
+                        <td> Configures default arguments for future commands. Like CMD in Dockerfile. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4591,7 +4589,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withDirectory" href="#Container-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus a directory written at the given path. </td>
+                        <td> Return a new container snapshot, with a directory added to its filesystem </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4630,7 +4628,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withEntrypoint" href="#Container-withEntrypoint"><code>withEntrypoint</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container but with a different command entrypoint. </td>
+                        <td> Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, "withExec" ignores the entrypoint by default. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4639,11 +4637,11 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>Entrypoint to use for future executions (e.g., [&quot;go&quot;, &quot;run&quot;]).</p>
+                                <p>Arguments of the entrypoint. Example: [&quot;go&quot;, &quot;run&quot;].</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>keepDefaultArgs</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Don&#39;t remove the default arguments when setting the entrypoint.</p>
+                                <p>Don&#39;t reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.</p>
                               </div>
                             </div>
                           </div>
@@ -4651,7 +4649,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withEnvVariable" href="#Container-withEnvVariable"><code>withEnvVariable</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus the given environment variable. </td>
+                        <td> Set a new environment variable in the container. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4664,11 +4662,11 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the environment variable (e.g., &quot;HOST&quot;).</p>
+                                <p>Name of the environment variable (e.g., &quot;HOST&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The value of the environment variable. (e.g., &quot;localhost&quot;).</p>
+                                <p>Value of the environment variable. (e.g., &quot;localhost&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -4676,7 +4674,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withExec" href="#Container-withExec"><code>withExec</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container after executing the specified command inside it. </td>
+                        <td> Execute a command in the container, and return a new snapshot of the container state after execution. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4685,8 +4683,9 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>Command to run instead of the container&#39;s default command (e.g., [&quot;go&quot;, &quot;run&quot;, &quot;main.go&quot;]).</p>
-                                <p>If empty, the container&#39;s default command is used.</p>
+                                <p>Command to execute. Must be valid exec() arguments, not a shell command. Example: [&quot;go&quot;, &quot;run&quot;, &quot;main.go&quot;].</p>
+                                <p>To run a shell command, execute the shell and pass the shell command as argument. Example: [&quot;sh&quot;, &quot;-c&quot;, &quot;ls -l | grep foo&quot;]</p>
+                                <p>Defaults to the container&#39;s default arguments (see &quot;defaultArgs&quot; and &quot;withDefaultArgs&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -4699,32 +4698,32 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Provides Dagger access to the executed command.</p>
-                                <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
+                                <p>Execute the command with all root capabilities. Like --privileged in Docker</p>
+                                <p>DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If set, skip the automatic init process injected into containers by default.</p>
-                                <p>This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
+                                <p>Skip the automatic init process injected into containers by default.</p>
+                                <p>Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you&#39;re not sure, you don&#39;t need this.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStderr</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Redirect the command&#39;s standard error to a file in the container (e.g., &quot;/tmp/stderr&quot;).</p>
+                                <p>Like redirectStdout, but for standard error</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Redirect the command&#39;s standard output to a file in the container (e.g., &quot;/tmp/stdout&quot;).</p>
+                                <p>Redirect the command&#39;s standard output to a file in the container. Example: &quot;./stdout.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>stdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Content to write to the command&#39;s standard input before closing (e.g., &quot;Hello world&quot;).</p>
+                                <p>Content to write to the command&#39;s standard input. Example: &quot;Hello world&quot;)</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>useEntrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If the container has an entrypoint, prepend it to the args.</p>
+                                <p>Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.</p>
                               </div>
                             </div>
                           </div>
@@ -4733,7 +4732,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withExposedPort" href="#Container-withExposedPort"><code>withExposedPort</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td>
-                          <p>Expose a network port.</p>
+                          <p>Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)</p>
                           <p>Exposed ports serve two purposes:</p>
                           <ul>
                             <li>
@@ -4752,7 +4751,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Optional port description</p>
+                                <p>Port description. Example: &quot;payment API endpoint&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>experimentalSkipHealthcheck</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -4760,11 +4759,11 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>port</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span></h6>
-                                <p>Port number to expose</p>
+                                <p>Port number to expose. Example: 8080</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>protocol</code></span> - <span class="property-type"><a href="#definition-NetworkProtocol"><code>NetworkProtocol</code></a></span></h6>
-                                <p>Transport layer network protocol</p>
+                                <p>Network protocol. Example: &quot;tcp&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -4772,7 +4771,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withFile" href="#Container-withFile"><code>withFile</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus the contents of the given file copied to the given path. </td>
+                        <td> Return a container snapshot with a file added </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4791,15 +4790,15 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the copied file (e.g., &quot;/tmp/file.txt&quot;).</p>
+                                <p>Path of the new file. Example: &quot;/path/to/new-file.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Permission given to the copied file (e.g., 0600).</p>
+                                <p>Permissions of the new file. Example: 0600</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
-                                <p>Identifier of the file to copy.</p>
+                                <p>File to add</p>
                               </div>
                             </div>
                           </div>
@@ -5026,7 +5025,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withNewFile" href="#Container-withNewFile"><code>withNewFile</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus a new file written at the given path. </td>
+                        <td> Return a new container snapshot, with a file added to its filesystem </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5035,7 +5034,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Content of the file to write (e.g., &quot;Hello world!&quot;).</p>
+                                <p>Contents of the new file. Example: &quot;Hello world!&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -5049,11 +5048,11 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the written file (e.g., &quot;/tmp/file.txt&quot;).</p>
+                                <p>Path of the new file. May be relative or absolute. Example: &quot;README.md&quot; or &quot;/etc/profile&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Permission given to the written file (e.g., 0600).</p>
+                                <p>Permissions of the new file. Example: 0600</p>
                               </div>
                             </div>
                           </div>
@@ -5078,11 +5077,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-withoutDefaultArgs" href="#Container-withoutDefaultArgs"><code>withoutDefaultArgs</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with unset default arguments for future commands. </td>
+                        <td> Remove the container's default arguments. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withoutDirectory" href="#Container-withoutDirectory"><code>withoutDirectory</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with the directory at the given path removed. </td>
+                        <td> Return a new container snapshot, with a directory removed from its filesystem </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5103,7 +5102,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withoutEntrypoint" href="#Container-withoutEntrypoint"><code>withoutEntrypoint</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with an unset command entrypoint. </td>
+                        <td> Reset the container's OCI entrypoint. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5179,7 +5178,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withoutFiles" href="#Container-withoutFiles"><code>withoutFiles</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with the files at the given paths removed. </td>
+                        <td> Return a new container spanshot with specified files removed </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5192,7 +5191,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>paths</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>Location of the files to remove (e.g., [&quot;/file.txt&quot;]).</p>
+                                <p>Paths of the files to remove. Example: [&quot;foo.txt, &quot;/root/.ssh/config&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -5302,13 +5301,13 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-withoutWorkdir" href="#Container-withoutWorkdir"><code>withoutWorkdir</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td>
-                          <p>Retrieves this container with an unset working directory.</p>
+                          <p>Unset the container&#39;s working directory.</p>
                           <p>Should default to &quot;/&quot;.</p>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withRegistryAuth" href="#Container-withRegistryAuth"><code>withRegistryAuth</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with a registry authentication for a given address. </td>
+                        <td> Attach credentials for future publishing to a registry. Use in combinationw with "publish" </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5317,16 +5316,15 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Registry&#39;s address to bind the authentication to.</p>
-                                <p>Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).</p>
+                                <p>The image address that needs authentication. Same format as &quot;docker push&quot;. Example: &quot;registry.dagger.io/dagger:latest&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>secret</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>The API key, password or token to authenticate to this registry.</p>
+                                <p>The API key, password or token to authenticate to this registry</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>username</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The username of the registry&#39;s account (e.g., &quot;Dagger&quot;).</p>
+                                <p>The username to authenticate with. Example: &quot;alice&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -5334,7 +5332,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withRootfs" href="#Container-withRootfs"><code>withRootfs</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves the container with the given directory mounted to /. </td>
+                        <td> Change the container's root filesystem. The previous root filesystem will be lost. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5343,7 +5341,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>directory</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>Directory to mount.</p>
+                                <p>The new root filesystem.</p>
                               </div>
                             </div>
                           </div>
@@ -5351,7 +5349,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withSecretVariable" href="#Container-withSecretVariable"><code>withSecretVariable</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus an env variable containing the given secret. </td>
+                        <td> Set a new environment variable, using a secret value </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5360,11 +5358,11 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the secret variable (e.g., &quot;API_SECRET&quot;).</p>
+                                <p>Name of the secret variable (e.g., &quot;API_SECRET&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>secret</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>The identifier of the secret value.</p>
+                                <p>Identifier of the secret value.</p>
                               </div>
                             </div>
                           </div>
@@ -5373,7 +5371,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withServiceBinding" href="#Container-withServiceBinding"><code>withServiceBinding</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td>
-                          <p>Establish a runtime dependency on a service.</p>
+                          <p>Establish a runtime dependency on a from a container to a network service.</p>
                           <p>The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.</p>
                           <p>The service will be reachable from the container via the provided hostname alias.</p>
                           <p>The service dependency will also convey to any files or directories produced by the container.</p>
@@ -5386,11 +5384,11 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>alias</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A name that can be used to reach the service from the container</p>
+                                <p>Hostname that will resolve to the target service (only accessible from within this container)</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>service</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
-                                <p>Identifier of the service container</p>
+                                <p>The target service</p>
                               </div>
                             </div>
                           </div>
@@ -5446,7 +5444,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withWorkdir" href="#Container-withWorkdir"><code>withWorkdir</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container with a different working directory. </td>
+                        <td> Change the container's working directory. Like WORKDIR in Dockerfile. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5607,7 +5605,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Directory-asGit" href="#Directory-asGit"><code>asGit</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Converts this directory into a git repository </td>
+                        <td> Converts this directory to a local git repository </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-asModule" href="#Directory-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
@@ -5647,7 +5645,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-diff" href="#Directory-diff"><code>diff</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Gets the difference between this directory and an another directory. </td>
+                        <td> Return the difference between this directory and an another directory. The difference is encoded as a directory. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5656,7 +5654,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>other</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>Identifier of the directory to compare.</p>
+                                <p>The directory to compare against</p>
                               </div>
                             </div>
                           </div>
@@ -5677,7 +5675,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve (e.g., &quot;/src&quot;).</p>
+                                <p>Location of the directory to retrieve. Example: &quot;/src&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -5685,7 +5683,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-dockerBuild" href="#Directory-dockerBuild"><code>dockerBuild</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Builds a new Docker container from this directory. </td>
+                        <td> Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5762,7 +5760,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-file" href="#Directory-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
-                        <td> Retrieves a file at the given path. </td>
+                        <td> Retrieve a file at the given path. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5779,7 +5777,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-filter" href="#Directory-filter"><code>filter</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory as per exclude/include filters. </td>
+                        <td> Return a snapshot with some paths included or excluded </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5788,11 +5786,11 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Exclude artifacts that match the given pattern (e.g., [&quot;node_modules/&quot;, &quot;.git*&quot;]).</p>
+                                <p>If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: [&quot;node_modules/&quot;, &quot;.git*&quot;, &quot;.env&quot;]</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
+                                <p>If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
                               </div>
                             </div>
                           </div>
@@ -5859,7 +5857,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withDirectory" href="#Directory-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory plus a directory written at the given path. </td>
+                        <td> Return a snapshot with a directory added </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5959,7 +5957,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withNewFile" href="#Directory-withNewFile"><code>withNewFile</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory plus a new file written at the given path. </td>
+                        <td> Return a snapshot with a new file added </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5968,15 +5966,15 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Content of the written file (e.g., &quot;Hello world!&quot;).</p>
+                                <p>Contents of the new file. Example: &quot;Hello world!&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the written file (e.g., &quot;/file.txt&quot;).</p>
+                                <p>Path of the new file. Example: &quot;foo/bar.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
-                                <p>Permission given to the copied file (e.g., 0600).</p>
+                                <p>Permissions of the new file. Example: 0600</p>
                               </div>
                             </div>
                           </div>
@@ -5984,7 +5982,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withoutDirectory" href="#Directory-withoutDirectory"><code>withoutDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory with the directory at the given path removed. </td>
+                        <td> Return a snapshot with a subdirectory removed </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5993,7 +5991,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to remove (e.g., &quot;.github/&quot;).</p>
+                                <p>Path of the subdirectory to remove. Example: &quot;.github/workflows&quot;</p>
                               </div>
                             </div>
                           </div>
@@ -6001,7 +5999,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withoutFile" href="#Directory-withoutFile"><code>withoutFile</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory with the file at the given path removed. </td>
+                        <td> Return a snapshot with a file removed </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -6010,7 +6008,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to remove (e.g., &quot;/file.txt&quot;).</p>
+                                <p>Path of the file to remove (e.g., &quot;/file.txt&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -6018,7 +6016,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withoutFiles" href="#Directory-withoutFiles"><code>withoutFiles</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieves this directory with the files at the given paths removed. </td>
+                        <td> Return a snapshot with files removed </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -6027,7 +6025,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>paths</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>Location of the file to remove (e.g., [&quot;/file.txt&quot;]).</p>
+                                <p>Paths of the files to remove (e.g., [&quot;/file.txt&quot;]).</p>
                               </div>
                             </div>
                           </div>

@@ -164,7 +164,9 @@ type Container {
     useEntrypoint: Boolean = false
   ): Service!
 
-  """Returns a File representing the container serialized to a tarball."""
+  """
+  Package the container state as an OCI image, and return it as a tar archive
+  """
   asTarball(
     """
     Force each layer of the image to use the specified compression algorithm.
@@ -228,11 +230,11 @@ type Container {
     target: String = ""
   ): Container!
 
-  """Retrieves default arguments for future commands."""
+  """Return the container's default arguments."""
   defaultArgs: [String!]!
 
   """
-  Retrieves a directory at the given path.
+  Retrieve a directory from the container's root filesystem
   
   Mounts are included.
   """
@@ -247,7 +249,7 @@ type Container {
     path: String!
   ): Directory!
 
-  """Retrieves entrypoint to be prepended to the arguments of all commands."""
+  """Return the container's OCI entrypoint."""
   entrypoint: [String!]!
 
   """Retrieves the value of the specified environment variable."""
@@ -260,9 +262,9 @@ type Container {
   envVariables: [EnvVariable!]!
 
   """
-  The exit code of the last executed command.
+  The exit code of the last executed command
   
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   exitCode: Int!
 
@@ -355,12 +357,12 @@ type Container {
     path: String!
   ): File!
 
-  """Initializes this container from a pulled base image."""
+  """
+  Download a container image, and apply it to the container state. All previous state will be lost.
+  """
   from(
     """
-    Image's address from its registry.
-    
-    Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
+    Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
     """
     address: String!
   ): Container!
@@ -400,17 +402,15 @@ type Container {
   platform: Platform!
 
   """
-  Publishes this container as a new image to the specified address.
+  Package the container state as an OCI image, and publish it to a registry
   
-  Publish returns a fully qualified ref.
-  
-  It can also publish platform variants.
+  Returns the fully qualified address of the published image, with digest
   """
   publish(
     """
-    Registry's address to publish the image to.
+    The OCI address to publish to
     
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
+    Same format as "docker push". Example: "registry.example.com/user/repo:tag"
     """
     address: String!
 
@@ -427,8 +427,8 @@ type Container {
     """
     Use the specified media types for the published image's layers.
     
-    Defaults to OCI, which is largely compatible with most recent registries,
-    but Docker may be needed for older registries without OCI support.
+    Defaults to "OCI", which is compatible with most recent registries, but
+    "Docker" may be needed for older registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
 
@@ -440,20 +440,24 @@ type Container {
     platformVariants: [ContainerID!] = []
   ): String!
 
-  """Retrieves this container's root filesystem. Mounts are not included."""
+  """
+  Return a snapshot of the container's root filesystem. The snapshot can be
+  modified then written back using \"withRootfs\". Use that method for
+  filesystem modifications.
+  """
   rootfs: Directory!
 
   """
-  The error stream of the last executed command.
+  The buffered standard error stream of the last executed command
   
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   stderr: String!
 
   """
-  The output stream of the last executed command.
+  The buffered standard output stream of the last executed command
   
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   stdout: String!
 
@@ -562,7 +566,9 @@ type Container {
     value: String!
   ): Container!
 
-  """Configures default arguments for future commands."""
+  """
+  Configures default arguments for future commands. Like CMD in Dockerfile.
+  """
   withDefaultArgs(
     """
     Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
@@ -593,7 +599,9 @@ type Container {
     insecureRootCapabilities: Boolean = false
   ): Container!
 
-  """Retrieves this container plus a directory written at the given path."""
+  """
+  Return a new container snapshot, with a directory added to its filesystem
+  """
   withDirectory(
     """Identifier of the directory to write"""
     directory: DirectoryID!
@@ -627,16 +635,22 @@ type Container {
     path: String!
   ): Container!
 
-  """Retrieves this container but with a different command entrypoint."""
+  """
+  Set an OCI-style entrypoint. It will be included in the container's OCI
+  configuration. Note, \"withExec\" ignores the entrypoint by default.
+  """
   withEntrypoint(
-    """Entrypoint to use for future executions (e.g., ["go", "run"])."""
+    """Arguments of the entrypoint. Example: ["go", "run"]."""
     args: [String!]!
 
-    """Don't remove the default arguments when setting the entrypoint."""
+    """
+    Don't reset the default arguments when setting the entrypoint. By default it
+    is reset, since entrypoint and default args are often tightly coupled.
+    """
     keepDefaultArgs: Boolean = false
   ): Container!
 
-  """Retrieves this container plus the given environment variable."""
+  """Set a new environment variable in the container."""
   withEnvVariable(
     """
     Replace "${VAR}" or "$VAR" in the value according to the current environment
@@ -644,21 +658,24 @@ type Container {
     """
     expand: Boolean = false
 
-    """The name of the environment variable (e.g., "HOST")."""
+    """Name of the environment variable (e.g., "HOST")."""
     name: String!
 
-    """The value of the environment variable. (e.g., "localhost")."""
+    """Value of the environment variable. (e.g., "localhost")."""
     value: String!
   ): Container!
 
   """
-  Retrieves this container after executing the specified command inside it.
+  Execute a command in the container, and return a new snapshot of the container state after execution.
   """
   withExec(
     """
-    Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+    Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
     
-    If empty, the container's default command is used.
+    To run a shell command, execute the shell and pass the shell command as
+    argument. Example: ["sh", "-c", "ls -l | grep foo"]
+    
+    Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
     """
     args: [String!]!
 
@@ -671,52 +688,48 @@ type Container {
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
-    Execute the command with all root capabilities. This is similar to running a
-    command with "sudo" or executing "docker run" with the "--privileged" flag.
-    Containerization does not provide any security guarantees when using this
-    option. It should only be used when absolutely necessary and only with
-    trusted commands.
+    Execute the command with all root capabilities. Like --privileged in Docker
+    
+    DANGER: this grants the command full access to the host system. Only use
+    when 1) you trust the command being executed and 2) you specifically need
+    this level of access.
     """
     insecureRootCapabilities: Boolean = false
 
     """
-    If set, skip the automatic init process injected into containers by default.
+    Skip the automatic init process injected into containers by default.
     
-    This should only be used if the user requires that their exec process be the
-    pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    Only use this if you specifically need the command to be pid 1 in the
+    container. Otherwise it may result in unexpected behavior. If you're not
+    sure, you don't need this.
     """
     noInit: Boolean = false
 
-    """
-    Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    """
+    """Like redirectStdout, but for standard error"""
     redirectStderr: String = ""
 
     """
-    Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
     """
-    Content to write to the command's standard input before closing (e.g., "Hello world").
+    Content to write to the command's standard input. Example: "Hello world")
     """
     stdin: String = ""
 
-    """If the container has an entrypoint, prepend it to the args."""
+    """
+    Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
+    """
     useEntrypoint: Boolean = false
   ): Container!
 
   """
-  Expose a network port.
+  Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
   
   Exposed ports serve two purposes:
   
@@ -725,22 +738,24 @@ type Container {
   - For setting the EXPOSE OCI field when publishing the container
   """
   withExposedPort(
-    """Optional port description"""
+    """
+    Port description. Example: "payment API endpoint"
+    """
     description: String
 
     """Skip the health check when run as a service."""
     experimentalSkipHealthcheck: Boolean = false
 
-    """Port number to expose"""
+    """Port number to expose. Example: 8080"""
     port: Int!
 
-    """Transport layer network protocol"""
+    """
+    Network protocol. Example: "tcp"
+    """
     protocol: NetworkProtocol = TCP
   ): Container!
 
-  """
-  Retrieves this container plus the contents of the given file copied to the given path.
-  """
+  """Return a container snapshot with a file added"""
   withFile(
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -757,13 +772,15 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the copied file (e.g., "/tmp/file.txt")."""
+    """
+    Path of the new file. Example: "/path/to/new-file.txt"
+    """
     path: String!
 
-    """Permission given to the copied file (e.g., 0600)."""
+    """Permissions of the new file. Example: 0600"""
     permissions: Int
 
-    """Identifier of the file to copy."""
+    """File to add"""
     source: FileID!
   ): Container!
 
@@ -941,9 +958,11 @@ type Container {
     size: Int
   ): Container!
 
-  """Retrieves this container plus a new file written at the given path."""
+  """Return a new container snapshot, with a file added to its filesystem"""
   withNewFile(
-    """Content of the file to write (e.g., "Hello world!")."""
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
     contents: String!
 
     """
@@ -961,10 +980,12 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the written file (e.g., "/tmp/file.txt")."""
+    """
+    Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
+    """
     path: String!
 
-    """Permission given to the written file (e.g., 0600)."""
+    """Permissions of the new file. Example: 0600"""
     permissions: Int = 420
   ): Container!
 
@@ -974,12 +995,12 @@ type Container {
     name: String!
   ): Container!
 
-  """
-  Retrieves this container with unset default arguments for future commands.
-  """
+  """Remove the container's default arguments."""
   withoutDefaultArgs: Container!
 
-  """Retrieves this container with the directory at the given path removed."""
+  """
+  Return a new container snapshot, with a directory removed from its filesystem
+  """
   withoutDirectory(
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -991,7 +1012,7 @@ type Container {
     path: String!
   ): Container!
 
-  """Retrieves this container with an unset command entrypoint."""
+  """Reset the container's OCI entrypoint."""
   withoutEntrypoint(
     """Don't remove the default arguments when unsetting the entrypoint."""
     keepDefaultArgs: Boolean = false
@@ -1024,7 +1045,7 @@ type Container {
     path: String!
   ): Container!
 
-  """Retrieves this container with the files at the given paths removed."""
+  """Return a new container spanshot with specified files removed"""
   withoutFiles(
     """
     Replace "${VAR}" or "$VAR" in the value of paths according to the current
@@ -1032,7 +1053,9 @@ type Container {
     """
     expand: Boolean = false
 
-    """Location of the files to remove (e.g., ["/file.txt"])."""
+    """
+    Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
+    """
     paths: [String!]!
   ): Container!
 
@@ -1098,49 +1121,49 @@ type Container {
   withoutUser: Container!
 
   """
-  Retrieves this container with an unset working directory.
+  Unset the container's working directory.
   
   Should default to "/".
   """
   withoutWorkdir: Container!
 
   """
-  Retrieves this container with a registry authentication for a given address.
+  Attach credentials for future publishing to a registry. Use in combinationw with \"publish\"
   """
   withRegistryAuth(
     """
-    Registry's address to bind the authentication to.
-    
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
     """
     address: String!
 
-    """The API key, password or token to authenticate to this registry."""
+    """The API key, password or token to authenticate to this registry"""
     secret: SecretID!
 
-    """The username of the registry's account (e.g., "Dagger")."""
+    """
+    The username to authenticate with. Example: "alice"
+    """
     username: String!
   ): Container!
 
-  """Retrieves the container with the given directory mounted to /."""
+  """
+  Change the container's root filesystem. The previous root filesystem will be lost.
+  """
   withRootfs(
-    """Directory to mount."""
+    """The new root filesystem."""
     directory: DirectoryID!
   ): Container!
 
-  """
-  Retrieves this container plus an env variable containing the given secret.
-  """
+  """Set a new environment variable, using a secret value"""
   withSecretVariable(
-    """The name of the secret variable (e.g., "API_SECRET")."""
+    """Name of the secret variable (e.g., "API_SECRET")."""
     name: String!
 
-    """The identifier of the secret value."""
+    """Identifier of the secret value."""
     secret: SecretID!
   ): Container!
 
   """
-  Establish a runtime dependency on a service.
+  Establish a runtime dependency on a from a container to a network service.
   
   The service will be started automatically when needed and detached when it is
   no longer needed, executing the default command if none is set.
@@ -1150,10 +1173,12 @@ type Container {
   The service dependency will also convey to any files or directories produced by the container.
   """
   withServiceBinding(
-    """A name that can be used to reach the service from the container"""
+    """
+    Hostname that will resolve to the target service (only accessible from within this container)
+    """
     alias: String!
 
-    """Identifier of the service container"""
+    """The target service"""
     service: ServiceID!
   ): Container!
 
@@ -1189,7 +1214,7 @@ type Container {
     name: String!
   ): Container!
 
-  """Retrieves this container with a different working directory."""
+  """Change the container's working directory. Like WORKDIR in Dockerfile."""
   withWorkdir(
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -1262,7 +1287,7 @@ scalar CurrentModuleID
 
 """A directory."""
 type Directory {
-  """Converts this directory into a git repository"""
+  """Converts this directory to a local git repository"""
   asGit: GitRepository!
 
   """Load the directory as a Dagger module source"""
@@ -1285,9 +1310,11 @@ type Directory {
     sourceRootPath: String = "."
   ): ModuleSource!
 
-  """Gets the difference between this directory and an another directory."""
+  """
+  Return the difference between this directory and an another directory. The difference is encoded as a directory.
+  """
   diff(
-    """Identifier of the directory to compare."""
+    """The directory to compare against"""
     other: DirectoryID!
   ): Directory!
 
@@ -1300,11 +1327,17 @@ type Directory {
 
   """Retrieves a directory at the given path."""
   directory(
-    """Location of the directory to retrieve (e.g., "/src")."""
+    """
+    Location of the directory to retrieve. Example: "/src"
+    """
     path: String!
   ): Directory!
 
-  """Builds a new Docker container from this directory."""
+  """
+  Use Dockerfile compatibility to build a container from this directory. Only
+  use this function for Dockerfile compatibility. Otherwise use the native
+  Container type directly, it is feature-complete and supports all Dockerfile features.
+  """
   dockerBuild(
     """Build arguments to use in the build."""
     buildArgs: [BuildArg!] = []
@@ -1356,21 +1389,23 @@ type Directory {
     wipe: Boolean = false
   ): String!
 
-  """Retrieves a file at the given path."""
+  """Retrieve a file at the given path."""
   file(
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
   ): File!
 
-  """Retrieves this directory as per exclude/include filters."""
+  """Return a snapshot with some paths included or excluded"""
   filter(
     """
-    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    If set, paths matching one of these glob patterns is excluded from the new
+    snapshot. Example: ["node_modules/", ".git*", ".env"]
     """
     exclude: [String!] = []
 
     """
-    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    If set, only paths matching one of these glob patterns is included in the
+    new snapshot. Example: (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
   ): Directory!
@@ -1420,7 +1455,7 @@ type Directory {
     insecureRootCapabilities: Boolean = false
   ): Directory!
 
-  """Retrieves this directory plus a directory written at the given path."""
+  """Return a snapshot with a directory added"""
   withDirectory(
     """Identifier of the directory to copy."""
     directory: DirectoryID!
@@ -1478,33 +1513,39 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
-  """Retrieves this directory plus a new file written at the given path."""
+  """Return a snapshot with a new file added"""
   withNewFile(
-    """Content of the written file (e.g., "Hello world!")."""
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
     contents: String!
 
-    """Location of the written file (e.g., "/file.txt")."""
+    """
+    Path of the new file. Example: "foo/bar.txt"
+    """
     path: String!
 
-    """Permission given to the copied file (e.g., 0600)."""
+    """Permissions of the new file. Example: 0600"""
     permissions: Int = 420
   ): Directory!
 
-  """Retrieves this directory with the directory at the given path removed."""
+  """Return a snapshot with a subdirectory removed"""
   withoutDirectory(
-    """Location of the directory to remove (e.g., ".github/")."""
+    """
+    Path of the subdirectory to remove. Example: ".github/workflows"
+    """
     path: String!
   ): Directory!
 
-  """Retrieves this directory with the file at the given path removed."""
+  """Return a snapshot with a file removed"""
   withoutFile(
-    """Location of the file to remove (e.g., "/file.txt")."""
+    """Path of the file to remove (e.g., "/file.txt")."""
     path: String!
   ): Directory!
 
-  """Retrieves this directory with the files at the given paths removed."""
+  """Return a snapshot with files removed"""
   withoutFiles(
-    """Location of the file to remove (e.g., ["/file.txt"])."""
+    """Paths of the files to remove (e.g., ["/file.txt"])."""
     paths: [String!]!
   ): Directory!
 
@@ -3106,13 +3147,14 @@ type Query {
   ): CacheVolume!
 
   """
-  Creates a scratch container.
+  Creates a scratch container, with no image or metadata.
   
-  Optional platform argument initializes new containers to execute and publish
-  as that platform. Platform defaults to that of the builder's host.
+  To pull an image, follow up with the "from" function.
   """
   container(
-    """Platform to initialize the container with."""
+    """
+    Platform to initialize the container with. Defaults to the native platform of the current engine
+    """
     platform: Platform
   ): Container!
 
