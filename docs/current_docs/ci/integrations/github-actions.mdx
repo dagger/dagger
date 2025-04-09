@@ -74,6 +74,11 @@ The following example demonstrates how to call a Dagger Function on a standard G
 ```yaml title=".github/workflows/dagger.yml" file=./snippets/github-hello.yml
 ```
 
+You can also use Dagger shell syntax instead of Dagger call syntax in your Github Actions workflow. This is useful if you want to use the more advanced chaining and subshell capabilities of Dagger shell.
+
+```yaml title=".github/workflows/dagger.yml" file=./snippets/github-hello-shell.yml
+```
+
 The following is a more complex example demonstrating how to create a GitHub Actions workflow that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitHub repository.
 
 ```yaml title=".github/workflows/dagger.yml" file=./snippets/github-test-build.yml
