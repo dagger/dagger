@@ -81,7 +81,11 @@ Each recipe requires only:
 
 ### Screen recordings
 
-Some screen recordings can be auto-generated with the `docs/recorder` module.
+Screen recordings can be auto-generated with the `docs/recorder` module.
+
+```shell
+dagger -m docs/recorder2 call render --github-token=env://GITHUB_TOKEN export --path /tmp/out --wipe
+```
 
 - Generate recordings for some feature pages:
 
