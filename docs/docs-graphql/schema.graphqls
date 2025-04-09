@@ -1726,6 +1726,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The CacheVolume value to assign to the binding"""
     value: CacheVolumeID!
 
@@ -1746,6 +1751,11 @@ type Env {
   withContainerInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The Container value to assign to the binding"""
     value: ContainerID!
@@ -1768,6 +1778,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The Directory value to assign to the binding"""
     value: DirectoryID!
 
@@ -1788,6 +1803,11 @@ type Env {
   withEnvInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The Env value to assign to the binding"""
     value: EnvID!
@@ -1810,6 +1830,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The File value to assign to the binding"""
     value: FileID!
 
@@ -1831,6 +1856,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The GitRef value to assign to the binding"""
     value: GitRefID!
 
@@ -1851,6 +1881,11 @@ type Env {
   withGitRepositoryInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The GitRepository value to assign to the binding"""
     value: GitRepositoryID!
@@ -1875,6 +1910,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The LLM value to assign to the binding"""
     value: LLMID!
 
@@ -1897,6 +1937,11 @@ type Env {
   withModuleConfigClientInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The ModuleConfigClient value to assign to the binding"""
     value: ModuleConfigClientID!
@@ -1921,6 +1966,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The Module value to assign to the binding"""
     value: ModuleID!
 
@@ -1941,6 +1991,11 @@ type Env {
   withModuleSourceInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The ModuleSource value to assign to the binding"""
     value: ModuleSourceID!
@@ -1965,6 +2020,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The Secret value to assign to the binding"""
     value: SecretID!
 
@@ -1986,6 +2046,11 @@ type Env {
     """The name of the binding"""
     name: String!
 
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
+
     """The Service value to assign to the binding"""
     value: ServiceID!
 
@@ -2006,6 +2071,11 @@ type Env {
   withSocketInput(
     """The name of the binding"""
     name: String!
+
+    """
+    Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+    """
+    select: Boolean! = false
 
     """The Socket value to assign to the binding"""
     value: SocketID!

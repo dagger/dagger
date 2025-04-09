@@ -56,9 +56,13 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	Privileged bool `default:"false"`
 }) (*core.Env, error) {
 	env := core.NewEnv()
+
+	// Set the root based on privileged flag and module availability
 	if args.Privileged {
+		// In privileged mode, set the global root
 		env = env.WithRoot(s.srv.Root())
 	}
+
 	return env, nil
 }
 

@@ -110,6 +110,7 @@ type shellCallHandler struct {
 	llmErr     error // error initializing LLM
 	llmModel   string
 	llmL       sync.Mutex // synchronizing LLM init status
+	llmModule  *moduleDef
 
 	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
@@ -194,6 +195,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		h.llmModule = def
 	}
 
 	// Could be `--no-mod` or module not found from current dir

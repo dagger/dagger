@@ -1,23 +1,22 @@
 {
-  "name": "python-sdk-dev",
-  "engineVersion": "v0.18.3",
-  "sdk": {
-    "source": "python"
-  },
-  "include": [
-    "!**/.venv",
-    "!**/__pycache__",
-    "!**/.*cache"
-  ],
-  "dependencies": [
-    {
-      "name": "dockerd",
-      "source": "github.com/kpenfound/dagger-modules/dockerd@57352e06a1cfbcb5307c009d37c0201b2719b935",
-      "pin": "57352e06a1cfbcb5307c009d37c0201b2719b935"
+    "name": "python-sdk-dev",
+    "engineVersion": "v0.18.3",
+    "sdk": {
+        "source": "python"
     },
-    {
-      "name": "wolfi",
-      "source": "../../../modules/wolfi"
-    }
-  ]
+    "include": [
+        "!**/.venv",
+        "!**/__pycache__",
+        "!**/.*cache"
+    ],
+    "dependencies": [
+        {
+            "name": "dockerd",
+            "source": "github.com/cwlbraa/kpenfound-dagger-modules/dockerd"
+        },
+        {
+            "name": "wolfi",
+            "source": "../../../modules/wolfi"
+        }
+    ]
 }

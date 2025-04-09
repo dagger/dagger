@@ -855,6 +855,7 @@ func (llm *LLM) Env() *Env {
 	return llm.mcp.env
 }
 
+// TODO: dead code?
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
 	llm.mcp.Select(value)

@@ -3782,10 +3782,22 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
+// EnvWithCacheVolumeInputOpts contains options for Env.WithCacheVolumeInput
+type EnvWithCacheVolumeInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type CacheVolume in the environment
-func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
+func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string, opts ...EnvWithCacheVolumeInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withCacheVolumeInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3806,10 +3818,22 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithContainerInputOpts contains options for Env.WithContainerInput
+type EnvWithContainerInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Container in the environment
-func (r *Env) WithContainerInput(name string, value *Container, description string) *Env {
+func (r *Env) WithContainerInput(name string, value *Container, description string, opts ...EnvWithContainerInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withContainerInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3830,10 +3854,22 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithDirectoryInputOpts contains options for Env.WithDirectoryInput
+type EnvWithDirectoryInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Directory in the environment
-func (r *Env) WithDirectoryInput(name string, value *Directory, description string) *Env {
+func (r *Env) WithDirectoryInput(name string, value *Directory, description string, opts ...EnvWithDirectoryInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withDirectoryInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3854,10 +3890,22 @@ func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithEnvInputOpts contains options for Env.WithEnvInput
+type EnvWithEnvInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Env in the environment
-func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
+func (r *Env) WithEnvInput(name string, value *Env, description string, opts ...EnvWithEnvInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withEnvInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3878,10 +3926,22 @@ func (r *Env) WithEnvOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithFileInputOpts contains options for Env.WithFileInput
+type EnvWithFileInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type File in the environment
-func (r *Env) WithFileInput(name string, value *File, description string) *Env {
+func (r *Env) WithFileInput(name string, value *File, description string, opts ...EnvWithFileInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withFileInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3902,10 +3962,22 @@ func (r *Env) WithFileOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithGitRefInputOpts contains options for Env.WithGitRefInput
+type EnvWithGitRefInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type GitRef in the environment
-func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
+func (r *Env) WithGitRefInput(name string, value *GitRef, description string, opts ...EnvWithGitRefInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRefInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3926,10 +3998,22 @@ func (r *Env) WithGitRefOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithGitRepositoryInputOpts contains options for Env.WithGitRepositoryInput
+type EnvWithGitRepositoryInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type GitRepository in the environment
-func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string) *Env {
+func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, description string, opts ...EnvWithGitRepositoryInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRepositoryInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3950,10 +4034,22 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithLLMInputOpts contains options for Env.WithLLMInput
+type EnvWithLLMInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
+func (r *Env) WithLLMInput(name string, value *LLM, description string, opts ...EnvWithLLMInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withLLMInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3974,10 +4070,22 @@ func (r *Env) WithLLMOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithModuleConfigClientInputOpts contains options for Env.WithModuleConfigClientInput
+type EnvWithModuleConfigClientInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type ModuleConfigClient in the environment
-func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
+func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string, opts ...EnvWithModuleConfigClientInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleConfigClientInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -3998,10 +4106,22 @@ func (r *Env) WithModuleConfigClientOutput(name string, description string) *Env
 	}
 }
 
+// EnvWithModuleInputOpts contains options for Env.WithModuleInput
+type EnvWithModuleInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Module in the environment
-func (r *Env) WithModuleInput(name string, value *Module, description string) *Env {
+func (r *Env) WithModuleInput(name string, value *Module, description string, opts ...EnvWithModuleInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -4022,10 +4142,22 @@ func (r *Env) WithModuleOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithModuleSourceInputOpts contains options for Env.WithModuleSourceInput
+type EnvWithModuleSourceInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type ModuleSource in the environment
-func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string) *Env {
+func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, description string, opts ...EnvWithModuleSourceInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleSourceInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -4046,10 +4178,22 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithSecretInputOpts contains options for Env.WithSecretInput
+type EnvWithSecretInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Secret in the environment
-func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
+func (r *Env) WithSecretInput(name string, value *Secret, description string, opts ...EnvWithSecretInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withSecretInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -4070,10 +4214,22 @@ func (r *Env) WithSecretOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithServiceInputOpts contains options for Env.WithServiceInput
+type EnvWithServiceInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Service in the environment
-func (r *Env) WithServiceInput(name string, value *Service, description string) *Env {
+func (r *Env) WithServiceInput(name string, value *Service, description string, opts ...EnvWithServiceInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withServiceInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -4094,10 +4250,22 @@ func (r *Env) WithServiceOutput(name string, description string) *Env {
 	}
 }
 
+// EnvWithSocketInputOpts contains options for Env.WithSocketInput
+type EnvWithSocketInputOpts struct {
+	// Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+	Select bool
+}
+
 // Create or update a binding of type Socket in the environment
-func (r *Env) WithSocketInput(name string, value *Socket, description string) *Env {
+func (r *Env) WithSocketInput(name string, value *Socket, description string, opts ...EnvWithSocketInputOpts) *Env {
 	assertNotNil("value", value)
 	q := r.query.Select("withSocketInput")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `select` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Select) {
+			q = q.Arg("select", opts[i].Select)
+		}
+	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)

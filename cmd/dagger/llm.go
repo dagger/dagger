@@ -8,6 +8,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -94,10 +95,39 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 }
 
 func (s *LLMSession) reset() {
+	def, _ := s.shell.GetModuleDef(nil)
+	if def == nil {
+		return
+	}
+
+	envQuery := s.dag.QueryBuilder().
+		Select("env").
+		Arg("privileged", true)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Minute)
+	constr := def.MainObject.AsObject.Constructor
+	if !constr.HasRequiredArgs() {
+		// Dynamically construct query that calls constructor and sets it on env
+		modName := constr.Name
+		constructorQuery := s.dag.QueryBuilder().
+			Root().
+			Select(modName).
+			Select("id")
+
+		var modID string
+		if err := makeRequest(ctx, constructorQuery, &modID); err != nil {
+			panic(fmt.Errorf("error instantiating module: %w", err))
+		}
+
+		envQuery = envQuery.
+			Select("with"+def.MainObject.AsObject.Name+"Input").
+			Arg("name", modName).
+			Arg("description", def.MainObject.Description()).
+			Arg("value", modID).
+			Arg("select", true)
+	}
+
 	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-		WithEnv(s.dag.Env(dagger.EnvOpts{
-			Privileged: true,
-		}))
+		WithEnv(s.dag.Env().WithGraphQLQuery(envQuery))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
