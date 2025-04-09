@@ -55,15 +55,13 @@ func New(
 }
 
 func (r *Recorder) Render(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
-	/*
-		features, err := r.Features().All(ctx, githubToken)
-		if err != nil {
-			return nil, err
-		}
-	*/
+	features, err := r.Features().All(ctx, githubToken)
+	if err != nil {
+		return nil, err
+	}
 
 	return dag.Directory().
-		//WithDirectory("", features).
+		WithDirectory("", features).
 		WithDirectory("", r.Quickstart().All()), nil
 }
 
