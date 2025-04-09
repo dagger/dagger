@@ -1,0 +1,23 @@
+{
+  "name": "recorder",
+  "engineVersion": "v0.18.0",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../../cmd/dagger"
+    },
+    {
+      "name": "docker",
+      "source": "github.com/shykes/x/docker",
+      "pin": "36ad35ca2d917b7fe965fa3aeb2b5f74f6dda106"
+    },
+    {
+      "name": "vhs",
+      "source": "github.com/sagikazarmark/daggerverse/vhs@vhs/v0.4.0",
+      "pin": "0a18e45ba3bb64deb5f57b0d94f10ae45f8a6538"
+    }
+  ]
+}
