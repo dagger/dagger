@@ -17,10 +17,15 @@ type Quickstart struct {
 func (f *Quickstart) All() *dagger.Directory {
 	// TODO: add docker
 	return dag.Directory().
-		WithDirectory("", f.Buildenv()).
+//		WithDirectory("", f.Terminal()).
+//		WithDirectory("", f.Buildenv()).
 		WithDirectory("", f.Test()).
-		WithDirectory("", f.Build()).
-		WithDirectory("", f.Publish())
+//		WithDirectory("", f.Build()).
+//		WithDirectory("", f.Publish())
+}
+
+func (f *Quickstart) Terminal() *dagger.Directory {
+	return f.quickstart("quickstart/basics/terminal.tape")
 }
 
 func (f *Quickstart) Buildenv() *dagger.Directory {
