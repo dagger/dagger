@@ -59,7 +59,7 @@ func (h *shellCallHandler) ChangeDir(ctx context.Context, path string) error {
 
 	var subpath string
 
-	def, cfg, err := h.maybeLoadModuleAndDeps(ctx, path)
+	def, cfg, err := h.maybeLoadModule(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -263,38 +263,49 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 		return nil, nil, nil
 	}
 	def, err := h.getOrInitDef(cfg.Digest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, cfg.Source)
+		modDef, err := initializeModule(ctx, h.dag, cfg.Source)
+		if err != nil {
+			return nil, err
+		}
+
+		if modDef != nil {
+			depsCtx, depsSpan := Tracer().Start(ctx, "serving dependency modules", telemetry.Encapsulate())
+			var eg errgroup.Group
+			for i, dep := range modDef.Dependencies {
+				i := i
+				dep := dep
+
+				eg.Go(func() (rerr error) {
+					serveCtx, serveSpan := Tracer().Start(depsCtx, fmt.Sprintf("serving dependency module %s", dep.Name))
+					defer telemetry.End(serveSpan, func() error { return rerr })
+
+					dep, err = h.getOrInitDef(dep.SourceDigest, func() (*moduleDef, error) {
+						err := dep.Source.AsModule().Serve(serveCtx)
+						if err != nil {
+							return nil, err
+						}
+						err = dep.loadTypeDefs(serveCtx, h.dag)
+						if err != nil {
+							return nil, err
+						}
+						return dep, nil
+					})
+
+					modDef.Dependencies[i] = dep
+					return err
+				})
+			}
+			err := eg.Wait()
+			telemetry.End(depsSpan, func() error { return err })
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return modDef, err
 	})
 
 	return def, cfg, err
-}
-
-// this exposes dependency modules to the LLM while loading the primary module
-func (h *shellCallHandler) maybeLoadModuleAndDeps(ctx context.Context, path string) (*moduleDef, *configuredModule, error) {
-	def, cfg, err := h.maybeLoadModule(ctx, path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if def != nil {
-		depsCtx, depsSpan := Tracer().Start(ctx, "serving dependency modules", telemetry.Encapsulate())
-		var eg errgroup.Group
-		for _, dep := range def.Dependencies {
-			eg.Go(func() error {
-				serveCtx, serveSpan := Tracer().Start(depsCtx, fmt.Sprintf("serving dependency module %s", dep.Name))
-				err := dep.Source.AsModule().Serve(serveCtx)
-				telemetry.End(serveSpan, func() error { return err })
-				return err
-			})
-		}
-		err := eg.Wait()
-		telemetry.End(depsSpan, func() error { return err })
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	return def, cfg, nil
 }
 
 // parseModRef transforms user input into a full module reference that can be used with
