@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go.opentelemetry.io/otel/log"
 )
 
 type Workspace struct {
@@ -148,7 +146,7 @@ func (w *Workspace) Evaluate(
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
 				telemetry.Reveal())
 			defer telemetry.End(span, func() error { return rerr })
-			stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
+			stdio := telemetry.SpanStdio(ctx, "") //, log.String(telemetry.ContentTypeAttr, "text/markdown"))
 			defer stdio.Close()
 
 			defer func() {
