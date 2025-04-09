@@ -17,11 +17,11 @@ type Quickstart struct {
 func (f *Quickstart) All() *dagger.Directory {
 	// TODO: add docker
 	return dag.Directory().
-//		WithDirectory("", f.Terminal()).
-//		WithDirectory("", f.Buildenv()).
-		WithDirectory("", f.Test()).
-//		WithDirectory("", f.Build()).
-//		WithDirectory("", f.Publish())
+		//		WithDirectory("", f.Terminal()).
+		//		WithDirectory("", f.Buildenv()).
+		WithDirectory("", f.Test())
+	// WithDirectory("", f.Build()).
+	// WithDirectory("", f.Publish())
 }
 
 func (f *Quickstart) Terminal() *dagger.Directory {
@@ -47,7 +47,7 @@ func (f *Quickstart) Publish() *dagger.Directory {
 func (f *Quickstart) quickstart(tape string) *dagger.Directory {
 	source := dag.CurrentModule().Source().
 		Directory("tapes").
-		Filter(includeWithDefaults(tape)).
+		Filter(includeWithShell(tape)).
 		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go"))
 
 	return f.Recorder.Vhs.WithSource(source).Render(tape)
