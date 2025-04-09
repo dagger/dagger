@@ -152,6 +152,25 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
+func (dev *DaggerDev) Evals(
+	ctx context.Context,
+	// Evals to run. Defaults to all.
+	// +optional
+	evals []string,
+	// Models to run against. Defaults to all.
+	// +optional
+	models []string,
+	// +defaultPath=./core/llm_docs.md
+	docs *dagger.File,
+	// +defaultPath=./core/llm_dagger_prompt.md
+	systemPrompt *dagger.File,
+) error {
+	return dag.Evaluator(dagger.EvaluatorOpts{
+		Docs:          docs,
+		InitialPrompt: systemPrompt,
+	}).EvalsAcrossModels(ctx)
+}
+
 // Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {
 	return &Bench{Test: dev.Test()}

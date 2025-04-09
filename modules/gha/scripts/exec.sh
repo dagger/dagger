@@ -45,6 +45,12 @@ tmp=$(mktemp -d)
     fi
 )
 
+# Append values to .env
+if [[ -n "$DOTENV" ]]; then
+  echo >> .env
+  echo "$DOTENV" >> .env
+fi
+
 # Run the command, capturing stdout and stderr in the FIFOs
 set +e
 eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo

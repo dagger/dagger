@@ -96,6 +96,12 @@ func (j *Job) callDaggerStep() api.JobStep {
 	for _, secretName := range j.Secrets {
 		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)
 	}
+
+	// Pass along .env lines
+	if len(j.Env) > 0 {
+		env["DOTENV"] = strings.Join(j.Env, "\n")
+	}
+
 	// Inject module name
 	if j.Module != "" {
 		env["DAGGER_MODULE"] = j.Module
