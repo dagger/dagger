@@ -190,7 +190,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var cfg *configuredModule
 
 	if !shellNoLoadModule {
-		def, cfg, err = h.maybeLoadModule(ctx, ref)
+		def, cfg, err = h.maybeLoadModuleAndDeps(ctx, ref)
 		if err != nil {
 			return err
 		}
