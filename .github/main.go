@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.0"
+	daggerVersion      = "v0.18.2"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -175,6 +175,14 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
+		WithJob(runner.Job("run-evals", "evals", dagger.GhaJobOpts{
+			Secrets: []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+			Env: []string{
+				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
+				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
+				"OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY",
+			},
+		})).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
 				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03

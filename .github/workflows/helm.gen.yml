@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -124,6 +124,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e

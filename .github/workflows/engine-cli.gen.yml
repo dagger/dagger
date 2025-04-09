@@ -19,7 +19,7 @@ concurrency:
 jobs:
     cli-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: cli-test-publish
         steps:
             - name: Checkout
@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -124,6 +124,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -216,7 +222,7 @@ jobs:
         timeout-minutes: 20
     engine-lint:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: engine-lint
         steps:
             - name: Checkout
@@ -250,7 +256,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -321,6 +327,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -413,7 +425,7 @@ jobs:
         timeout-minutes: 20
     engine-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: engine-test-publish
         steps:
             - name: Checkout
@@ -447,7 +459,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -518,6 +530,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -608,10 +626,10 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 20
-    scan-engine:
+    run-evals:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-4c' || 'ubuntu-24.04' }}
-        name: scan-engine
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-4c' || 'ubuntu-24.04' }}
+        name: run-evals
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -644,7 +662,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -715,6 +733,220 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
+
+                # Run the command, capturing stdout and stderr in the FIFOs
+                set +e
+                eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
+
+                {
+                cat <<'.'
+                ## Dagger trace
+
+                .
+
+                if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                    cat <<.
+                Cloud token must be rotated. Please follow these steps:
+
+                1. Go to [Dagger Cloud](https://dagger.cloud)
+                2. Click on your profile icon in the bottom left corner
+                3. Click on "Organization Settings"
+                4. Click on "Regenerate token"
+                5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                .
+                elif [ -n "$TRACE_URL" ]; then
+                    echo "[$TRACE_URL]($TRACE_URL)"
+                else
+                    echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                fi
+
+                cat <<'.'
+
+                ## Dagger version
+
+                ```
+                .
+
+                dagger version
+
+                cat <<'.'
+                ```
+
+                ## Pipeline command
+
+                ```bash
+                .
+
+                echo "DAGGER_MODULE=$DAGGER_MODULE \\"
+                echo " $COMMAND"
+
+                cat <<'.'
+                ```
+
+                ## Pipeline output
+
+                ```
+                .
+
+                cat $tmp/stdout.txt
+
+                cat <<'.'
+                ```
+
+                ## Pipeline logs
+
+                ```
+                .
+
+                tail -n 1000 $tmp/stderr.txt
+
+                cat <<'.'
+                ```
+                .
+
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                exit $EXIT_CODE
+              env:
+                _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                COMMAND: dagger call -q evals
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DOTENV: |-
+                    ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY
+                    GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY
+                    OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY
+                OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+              shell: bash
+        timeout-minutes: 20
+    scan-engine:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-4c' || 'ubuntu-24.04' }}
+        name: scan-engine
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/install-dagger.sh
+              id: install-dagger
+              run: |
+                #!/bin/bash
+
+                set -o pipefail
+                # Fallback to /usr/local for backwards compatability
+                prefix_dir="${RUNNER_TEMP:-/usr/local}"
+
+                # Ensure the dir is writable otherwise fallback to tmpdir
+                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
+                  prefix_dir="$(mktemp -d)"
+                fi
+                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
+
+                if [ -f "$DAGGER_VERSION_FILE" ]; then
+                  DAGGER_VERSION=$(cat "$DAGGER_VERSION_FILE" | jq -r .engineVersion)
+                fi
+
+                # If the dagger version is 'latest', set the version back to an empty
+                # string. This allows the install script to detect and install the latest
+                # version itself
+                if [[ "$DAGGER_VERSION" == "latest" ]]; then
+                  DAGGER_VERSION=
+                fi
+
+                # The install.sh script creates path ${prefix_dir}/bin
+                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
+              env:
+                DAGGER_VERSION: v0.18.2
+              shell: bash
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                    ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
+                    export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                # Run a simple query to "warm up" the engine
+                dagger version
+                dagger core version
+              shell: bash
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                    set -x
+                    env
+                    which dagger
+                    pwd
+                    ls -l
+                    ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                    export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                  echo "Error: Please set the COMMAND environment variable."
+                  exit 1
+                fi
+
+                tmp=$(mktemp -d)
+                (
+                    cd $tmp
+
+                    # Create named pipes (FIFOs) for stdout and stderr
+                    mkfifo stdout.fifo stderr.fifo
+
+                    # Set up tee to capture and display stdout and stderr
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
+                )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -807,7 +1039,7 @@ jobs:
         timeout-minutes: 20
     scripts:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-4c' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-4c' || 'ubuntu-24.04' }}
         name: scripts
         steps:
             - name: Checkout
@@ -841,7 +1073,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -912,6 +1144,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -1151,6 +1389,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -1410,6 +1654,12 @@ jobs:
                     fi
                 )
 
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
+
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
                 eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo
@@ -1667,6 +1917,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -1926,6 +2182,12 @@ jobs:
                     fi
                 )
 
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
+
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
                 eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo
@@ -2183,6 +2445,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
@@ -2442,6 +2710,12 @@ jobs:
                     fi
                 )
 
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
+
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
                 eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo
@@ -2700,6 +2974,12 @@ jobs:
                     fi
                 )
 
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
+
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
                 eval "$COMMAND" > $tmp/stdout.fifo 2> $tmp/stderr.fifo
@@ -2957,6 +3237,12 @@ jobs:
                         tee stderr.txt < stderr.fifo >&2 &
                     fi
                 )
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                  echo >> .env
+                  echo "$DOTENV" >> .env
+                fi
 
                 # Run the command, capturing stdout and stderr in the FIFOs
                 set +e
