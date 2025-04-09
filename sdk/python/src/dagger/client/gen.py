@@ -7011,11 +7011,20 @@ class Module(Type):
         _ctx = self._select("sdk", _args)
         return SDKConfig(_ctx)
 
-    async def serve(self) -> Void | None:
+    async def serve(
+        self,
+        *,
+        serve_dependencies: bool | None = None,
+    ) -> Void | None:
         """Serve a module's API in the current session.
 
         Note: this can only be called once per session. In the future, it
         could return a stream or service to remove the side effect.
+
+        Parameters
+        ----------
+        serve_dependencies:
+            expose the dependencies of this module to the client
 
         Returns
         -------
@@ -7030,7 +7039,9 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("serveDependencies", serve_dependencies, None),
+        ]
         _ctx = self._select("serve", _args)
         await _ctx.execute()
 
