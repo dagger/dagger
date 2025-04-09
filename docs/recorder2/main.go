@@ -36,7 +36,7 @@ func New(
 				WithExec([]string{"sh", "-c", "install -m 0755 -d /etc/apt/keyrings"}).
 				WithExec([]string{"sh", "-c", `curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc`}).
 				WithExec([]string{"sh", "-c", "chmod a+r /etc/apt/keyrings/docker.asc"}).
-				WithExec([]string{"sh", "-c", `echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list`}).
+				WithExec([]string{"sh", "-c", `echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \$(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null`}).
 				WithExec([]string{"apt-get", "update"}).
 				WithExec([]string{"apt-get", "-y", "install", "docker-ce-cli"}).
 				WithoutEnvVariable("DEBIAN_FRONTEND").
