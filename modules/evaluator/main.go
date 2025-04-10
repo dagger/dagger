@@ -40,9 +40,7 @@ func (m *Evaluator) llm() *dagger.LLM {
 
 func (m *Evaluator) env() *dagger.Env {
 	env := dag.Env().
-		WithWorkspaceInput("workspace",
-			dag.Workspace(),
-			"A space for you to work in.")
+		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
 	if m.Docs != nil {
 		env = env.WithFileInput("docs", m.Docs,
 			"The documentation the model is meant to adhere to.")
@@ -115,7 +113,7 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 						return err
 					}
 					if successRate < 0.5 {
-						return fmt.Errorf("success rate too low: %0.0f%% (%d attempts)", successRate, totalAttempts)
+						return fmt.Errorf("success rate too low: %v (%d attempts)", successRate, totalAttempts)
 					}
 					return nil
 				})()
@@ -186,17 +184,23 @@ func (m *Evaluator) Explore(ctx context.Context) ([]string, error) {
 		Findings(ctx)
 }
 
-func (m *Evaluator) Understand(ctx context.Context) (string, error) {
+func (m *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) {
 	return m.llm().
-		WithEnv(m.env()).
+		WithEnv(m.env().
+			WithWorkspaceOutput("generated",
+				"The workspace with the system prompt configured."),
+		).
 		WithPrompt("Interpret the documentation and tell me everything rule that you can infer from it.").
 		Loop().
-		WithPrompt("Now generate a system prompt based on your understanding of the documentation.").
-		LastReply(ctx)
+		WithPrompt("Set a system prompt based on your understanding of the documentation. Keep it short and focused, but not so short to the point of being useless word salad. Focus on framing and foundation and let the model do the rest.").
+		Env().
+		Output("generated").
+		AsWorkspace().
+		SystemPrompt(ctx)
 }
 
 func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, error) {
-	report, err := dag.Workspace().Evaluate(name, dagger.WorkspaceEvaluateOpts{
+	report, err := m.work().Evaluate(name, dagger.WorkspaceEvaluateOpts{
 		Model: model,
 	}).Report(ctx)
 	if err != nil {
@@ -210,5 +214,18 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 					File("report.txt"),
 				"The report of all eval attempt results.")).
 		WithPrompt("Generate a report summarizing your current understanding of the failures or successes. If there are any failures, focus on those. Be sure to include examples from the report to back up your analysis. Respond in Markdown format, with a brief summary of issues at the end.").
+		Loop().
+		WithPrompt("Cross reference your summary with the documentation and the system prompt that was used. Suggest improvements without specializing the prompt too much for the specific evaluation.").
+		WithPrompt("Compare the successful results with the failed ones - why did the successful ones work? What element of the documentation or prompt was most relevant, in the general sense? How can the prompt guide the model to achieve the same result? When failures occur for multiple reasons, the more general reason is always more interesting than the specific one.").
+		Loop().
+		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
 		LastReply(ctx)
+}
+
+func (m *Evaluator) work() *dagger.Workspace {
+	work := dag.Workspace()
+	if m.InitialPrompt != nil {
+		work = work.WithSystemPromptFile(m.InitialPrompt)
+	}
+	return work
 }

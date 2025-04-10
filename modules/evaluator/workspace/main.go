@@ -51,6 +51,16 @@ func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
 	return w
 }
 
+// Set the system prompt for future evaluations.
+func (w *Workspace) WithSystemPromptFile(ctx context.Context, file *dagger.File) (*Workspace, error) {
+	content, err := file.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	w.SystemPrompt = content
+	return w, nil
+}
+
 // Backoff sleeps for the given duration in seconds.
 //
 // Use this if you're getting rate limited and have nothing better to do.
