@@ -16,10 +16,9 @@ spec:
   selector:
     matchLabels:
       name: {{ include "dagger.fullname" . }}-engine
-  {{- if and .Values.engine.statefulSet.persistentVolumeClaim.enabled .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy }}
+  {{- if and .Values.engine.persistentVolumeClaim.enabled .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy }}
   persistentVolumeClaimRetentionPolicy:
-    whenDeleted: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenDeleted }}
-    whenScaled: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenScaled }}
+    {{- toYaml .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy | nindent 4 }}
   {{- end }}
   template:
     metadata:
@@ -132,8 +131,10 @@ spec:
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
           volumeMounts:
+            {{- if (or .Values.engine.hostPath.dataVolume.enabled .Values.engine.persistentVolumeClaim.enabled) }}
             - name: data
               mountPath: /var/lib/dagger
+            {{- end }}
             {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: run
               mountPath: /run/dagger
@@ -180,17 +181,11 @@ spec:
         {{- with .Values.engine.volumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-  {{- if .Values.engine.statefulSet.persistentVolumeClaim.enabled }}
+  {{- if .Values.engine.persistentVolumeClaim.enabled }}
   volumeClaimTemplates:
   - metadata:
       name: data
     spec:
-      {{- with .Values.engine.statefulSet.persistentVolumeClaim.storageClassName }}
-      storageClassName: {{ . }}
-      {{- end }}
-      accessModes:
-        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.accessModes | nindent 8 }}
-      resources:
-        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.resources | nindent 8 }}
+      {{- toYaml .Values.engine.persistentVolumeClaim.volumeClaimTemplate | nindent 6 }}
   {{- end }}
 {{- end }}

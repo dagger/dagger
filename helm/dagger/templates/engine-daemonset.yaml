@@ -122,7 +122,7 @@ spec:
             {{- end }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.engine.hostPath.dataVolume.enabled }}
+            {{- if (or .Values.engine.hostPath.dataVolume.enabled .Values.engine.persistentVolumeClaim.enabled) }}
             - name: varlibdagger
               mountPath: /var/lib/dagger
             {{- end }}
@@ -149,6 +149,16 @@ spec:
         - name: varlibdagger
           hostPath:
             path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        {{- end }}
+        {{- if .Values.engine.persistentVolumeClaim.enabled }}
+        - name: varlibdagger
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                labels:
+                  type: varlibdagger
+              spec:
+                {{- toYaml .Values.engine.persistentVolumeClaim.volumeClaimTemplate | nindent 16 }}
         {{- end }}
         {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: varrundagger
