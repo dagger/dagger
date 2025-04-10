@@ -44,6 +44,8 @@ type MCP struct {
 	needsSystemPrompt bool
 	// Only show these functions, if non-empty
 	selectedTools map[string]bool
+	// The last value returned by a function.
+	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
 }
@@ -98,6 +100,10 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 		return nil, fmt.Errorf("type error: %q exists but is not an object", key)
 	}
 	return nil, fmt.Errorf("unknown object %q", key)
+}
+
+func (m *MCP) LastResult() dagql.Typed {
+	return m.lastResult
 }
 
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
@@ -374,6 +380,7 @@ func (m *MCP) call(ctx context.Context,
 	} else {
 		self, ok := argsMap[selfType]
 		if !ok {
+			// default to the most recent object of this type
 			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCount[selfType])
 		}
 		recv, ok := self.(string)
@@ -451,6 +458,8 @@ func (m *MCP) selectionToToolResult(
 		}
 		val = syncedObj
 	}
+
+	m.lastResult = val
 
 	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 		// Handle object returns by switching to them.
