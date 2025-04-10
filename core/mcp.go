@@ -305,7 +305,7 @@ func (m *MCP) typeTools(srv *dagql.Server, all bool, schema *ast.Schema, typeNam
 			// references a banned type
 			continue
 		}
-		schema, err := fieldArgsToJSONSchema(schema, typeName, field)
+		schema, err := m.fieldArgsToJSONSchema(schema, typeName, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
@@ -635,22 +635,65 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
-func (m *MCP) returnBuiltin() LLMTool {
+func (m *MCP) allIDs(typeName string) []string {
+	total := m.env.typeCount[typeName]
+	ids := make([]string, 0, total)
+	for i := total; i > 0; i-- {
+		ids = append(ids, fmt.Sprintf("%s#%d", typeName, i))
+	}
+	return ids
+}
+
+// FIXME: by only showing this when objects are available, the model will be
+// missing half of its prompt
+func (m *MCP) returnBuiltin() (LLMTool, bool) {
+	if len(m.env.outputsByName) == 0 {
+		// no outputs desired
+		return LLMTool{}, false
+	}
 	props := map[string]any{}
 	required := []string{}
+	desc := `Complete your task and return its outputs to the user.`
+	desc += "\n\nYour task is to return the following outputs:\n"
+
+	var outputs []string
+	var anyUnavailable bool
 	for name, b := range m.env.outputsByName {
-		typeName := b.expectedType.TypeName()
 		required = append(required, name)
+
+		typeName := b.expectedType.TypeName()
+
+		outputs = append(outputs,
+			fmt.Sprintf("  %s (%s): %s", name, typeName, b.Description))
+
+		desc := fmt.Sprintf("%s ID to return.", typeName)
+		enum := m.allIDs(typeName)
+		if len(enum) == 0 {
+			desc += " (UNAVAILABLE)"
+			anyUnavailable = true
+		}
+
 		props[name] = map[string]any{
 			"type":           "string",
-			"pattern":        idPattern(typeName),
-			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format.\n\n%s", typeName, typeName, b.Description),
+			"enum":           enum,
+			"description":    desc,
 			jsonSchemaIDAttr: typeName,
 		}
 	}
+
+	// append outputs
+	sort.Strings(outputs)
+	for _, out := range outputs {
+		desc += fmt.Sprintf("\n- %s", out)
+	}
+
+	if anyUnavailable {
+		desc += "\n\nWARNING: Some outputs are unavailable. DO NOT CALL THIS TOOL YET."
+	}
+
 	return LLMTool{
 		Name:        "returnToUser",
-		Description: `Complete your task and return its outputs to the user.`,
+		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
@@ -693,7 +736,7 @@ func (m *MCP) returnBuiltin() LLMTool {
 			m.returned = true
 			return "ok", nil
 		},
-	}
+	}, true
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
@@ -710,7 +753,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 							// already have it
 							continue
 						}
-						desc += "\n- " + tool.Name
+						desc += "\n- " + tool.Name + " -> " + tool.Returns
 					}
 				}
 				var objects []string
@@ -765,75 +808,8 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		},
 	}
 
-	// for _, typeName := range m.env.Types() {
-	// 	tools, err := m.tools(srv, typeName)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("tools for %q: %w", typeName, err)
-	// 	}
-	// 	builtins = append(builtins, LLMTool{
-	// 		Name: "use" + typeName + "Tools",
-	// 		Description: (func() string {
-	// 			desc := fmt.Sprintf("Gain tools for interacting with a %s.", typeName)
-	// 			desc += "\n\nProvides the following tools:\n"
-	// 			for _, tool := range tools {
-	// 				desc += fmt.Sprintf("\n- %s", tool.Name)
-	// 			}
-	// 			var typeInputs []string
-	// 			for _, bnd := range m.env.objsByID {
-	// 				if bnd.TypeName() != typeName {
-	// 					continue
-	// 				}
-	// 				if cur := m.Current(); cur != nil && bnd.Digest() == cur.ID().Digest() {
-	// 					typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
-	// 				} else {
-	// 					typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-	// 				}
-	// 			}
-	// 			sort.Strings(typeInputs)
-	// 			if len(typeInputs) > 0 {
-	// 				desc += "\n\n## Available IDs"
-	// 				for _, input := range typeInputs {
-	// 					desc += fmt.Sprintf("\n- %s", input)
-	// 				}
-	// 			}
-	// 			return desc
-	// 		})(),
-	// 		Schema: map[string]any{
-	// 			"type": "object",
-	// 			"properties": map[string]any{
-	// 				"id": map[string]any{
-	// 					"type":           "string",
-	// 					"pattern":        idPattern(typeName),
-	// 					"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
-	// 					jsonSchemaIDAttr: typeName,
-	// 				},
-	// 				// "functions": map[string]any{
-	// 				// 	"type": "array",
-	// 				// 	"items": map[string]any{
-	// 				// 		"type": "string",
-	// 				// 	},
-	// 				// 	"description": "List of functions to use. " + fnsDesc,
-	// 				// },
-	// 			},
-	// 			"strict":               true,
-	// 			"required":             []string{"id"}, // , "functions"},
-	// 			"additionalProperties": false,
-	// 		},
-	// 		Call: ToolFunc(func(ctx context.Context, args struct {
-	// 			ID string `name:"id"`
-	// 			// Functions []string
-	// 		}) (any, error) {
-	// 			obj, err := m.GetObject(args.ID, typeName)
-	// 			if err != nil {
-	// 				return nil, err
-	// 			}
-	// 			return m.newState(obj)
-	// 		}),
-	// 	})
-	// }
-
-	if len(m.env.outputsByName) > 0 {
-		builtins = append(builtins, m.returnBuiltin())
+	if returnTool, ok := m.returnBuiltin(); ok {
+		builtins = append(builtins, returnTool)
 	}
 
 	builtins = append(builtins, m.userProvidedValues()...)
@@ -1012,7 +988,7 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	), nil
 }
 
-func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.FieldDefinition) (map[string]any, error) {
+func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.FieldDefinition) (map[string]any, error) {
 	jsonSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
@@ -1023,11 +999,11 @@ func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.Field
 		properties[typeName] = map[string]any{
 			"type":        "string",
 			"description": fmt.Sprintf("The %s to operate against. Defaults to the most recent %s.", typeName, typeName),
-			"pattern":     idPattern(typeName),
+			"enum":        m.allIDs(typeName),
 		}
 	}
 	for _, arg := range field.Arguments {
-		argSchema, err := typeToJSONSchema(schema, arg.Type)
+		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -1055,13 +1031,13 @@ func fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.Field
 	return jsonSchema, nil
 }
 
-func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
+func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 	jsonSchema := map[string]any{}
 
 	// Handle lists
 	if t.Elem != nil {
 		jsonSchema["type"] = "array"
-		items, err := typeToJSONSchema(schema, t.Elem)
+		items, err := m.typeToJSONSchema(schema, t.Elem)
 		if err != nil {
 			return nil, fmt.Errorf("elem type: %w", err)
 		}
@@ -1091,7 +1067,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 			jsonSchema["type"] = "object"
 			properties := map[string]any{}
 			for _, f := range typeDef.Fields {
-				fieldSpec, err := typeToJSONSchema(schema, f.Type)
+				fieldSpec, err := m.typeToJSONSchema(schema, f.Type)
 				if err != nil {
 					return nil, fmt.Errorf("field type: %w", err)
 				}
@@ -1109,9 +1085,8 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 			if strings.HasSuffix(t.NamedType, "ID") {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
-				jsonSchema["pattern"] = idPattern(typeName)
+				jsonSchema["enum"] = m.allIDs(typeName)
 				jsonSchema[jsonSchemaIDAttr] = typeName
-				desc = fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, desc)
 			} else {
 				jsonSchema["type"] = "string"
 			}
@@ -1125,10 +1100,6 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 }
 
 const jsonSchemaIDAttr = "x-id-type"
-
-func idPattern(typeName string) string {
-	return `^` + typeName + `#\d+$`
-}
 
 func (m *MCP) newState(target dagql.Object) (string, error) {
 	return toolStructuredResponse(map[string]any{
