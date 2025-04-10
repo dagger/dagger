@@ -88,7 +88,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		q = q.Select("with"+modDef.MainObject.AsObject.Name+"Input").
 			Arg("name", modName).
 			Arg("value", modID).
-			Arg("description", "module to expose as an MCP server").
+			Arg("description", modDef.MainObject.Description()).
 			Select("id")
 
 		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
