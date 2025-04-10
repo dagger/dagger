@@ -1,0 +1,6 @@
+kind: Added
+body: 'experimental: expose Dagger Core API as MCP tools'
+time: 2025-04-10T18:07:05.8265558Z
+custom:
+    Author: grouville, tiborvass
+    PR: "10090"

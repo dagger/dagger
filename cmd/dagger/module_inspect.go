@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+var errModuleNotFound = errors.New("module not found")
+
 // initializeCore loads the core type definitions only
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
@@ -61,7 +63,7 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, fmt.Errorf("module not found")
+		return nil, errModuleNotFound
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())

@@ -13,12 +13,14 @@ import (
 )
 
 var (
-	mcpStdio   bool
-	mcpSseAddr string
+	mcpStdio      bool
+	mcpSseAddr    string
+	envPrivileged bool
 )
 
 func init() {
 	mcpCmd.PersistentFlags().BoolVar(&mcpStdio, "stdio", true, "Use standard input/output for communicating with the MCP server")
+	mcpCmd.PersistentFlags().BoolVar(&envPrivileged, "env-privileged", false, "Expose the core API as tools")
 	mcpCmd.PersistentFlags().StringVar(&mcpSseAddr, "sse-addr", "", "Address of the MCP SSE server (no SSE server if empty)")
 }
 
@@ -55,31 +57,52 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return errors.New("currently MCP only works with stdio")
 	}
 	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
-	if err != nil {
+	if err != nil && err != errModuleNotFound {
 		return err
 	}
-	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
-	// TODO: parse user args and pass them to constructor
-	modName := modDef.MainObject.AsObject.Constructor.Name
-	q = q.Root().Select(modName).Select("id")
 
-	var modID string
-	if err := makeRequest(ctx, q, &modID); err != nil {
-		return fmt.Errorf("error instantiating module: %w", err)
+	if err == errModuleNotFound && !envPrivileged {
+		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
 	}
 
-	q = q.Root().Select("env").Select("with"+modDef.MainObject.AsObject.Name+"Input").
-		Arg("name", modName).
-		Arg("value", modID).
-		Arg("description", modDef.MainObject.Description()).
-		Select("id")
+	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
+	var logMsg string
+	if modDef != nil {
+		// TODO: parse user args and pass them to constructor
+		modName := modDef.MainObject.AsObject.Constructor.Name
+		q = q.Root().Select(modName).Select("id")
+
+		var modID string
+		if err := makeRequest(ctx, q, &modID); err != nil {
+			return fmt.Errorf("error instantiating module: %w", err)
+		}
+
+		q = q.Root().Select("env")
+
+		extraCore := ""
+		if envPrivileged {
+			q = q.Arg("privileged", envPrivileged)
+			extraCore = " and Dagger core"
+		}
+
+		q = q.Select("with"+modDef.MainObject.AsObject.Name+"Input").
+			Arg("name", modName).
+			Arg("value", modID).
+			Arg("description", "module to expose as an MCP server").
+			Select("id")
+
+		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
+	} else {
+		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
+		logMsg = "Exposing Dagger core as an MCP server"
+	}
 
 	var envID string
 	if err := makeRequest(ctx, q, &envID); err != nil {
 		return fmt.Errorf("error making environment: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Exposing module %q as an MCP server on standard input/output\n", modName)
+	fmt.Fprintln(os.Stderr, logMsg)
 	q = q.Root().
 		Select("llm").
 		Select("withEnv").
