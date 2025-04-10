@@ -344,6 +344,21 @@ var dirOpts = new Container.WithDirectoryArguments()
 </TabItem>
 </Tabs>
 
+## Mounts
+
+When working with directories and files, you can choose whether to copy or mount them in the containers created by your Dagger Function. The Dagger API provides the following methods:
+
+- `Container.withDirectory()` returns a container plus a directory written at the given path
+- `Container.withFile()` returns a container plus a file written at the given path
+- `Container.withMountedDirectory()` returns a container plus a directory mounted at the given path
+- `Container.withMountedFile()` returns a container plus a file mounted at the given path
+
+Mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
+:::
+
 ## Debugging
 
 ### Using logs
