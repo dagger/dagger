@@ -66,30 +66,7 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
-	return ""
-	prompt := defaultSystemPrompt
-	// var typeInputs []string
-	// for _, bnd := range m.env.objsByID {
-	// 	if cur := m.Current(); cur != nil && bnd.Digest() == cur.ID().Digest() {
-	// 		typeInputs = append(typeInputs, fmt.Sprintf("%s (CURRENT SELECTION): %s", bnd.ID(), bnd.Description))
-	// 	} else {
-	// 		typeInputs = append(typeInputs, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-	// 	}
-	// }
-	if len(m.env.outputsByName) > 0 {
-		prompt += "\n\nWhen you have completed your task, use the returnToUser tool."
-	}
-	// TODO: this works, but is probably too dynamic for MCP.
-	// Maybe it could list only the initial inputs, but gonna try just adding
-	// stronger direction to the prompt first.
-	// sort.Strings(typeInputs)
-	// if len(typeInputs) > 0 {
-	// 	prompt += "\n\n## Available IDs\n"
-	// 	for _, input := range typeInputs {
-	// 		prompt += fmt.Sprintf("\n- %s", input)
-	// 	}
-	// }
-	return prompt
+	return defaultSystemPrompt
 }
 
 func (m *MCP) WithEnvironment(env *Env) *MCP {
@@ -771,23 +748,23 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return "ok", nil
 			}),
 		},
-		// {
-		// 	Name:        "think",
-		// 	Description: `Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed.`,
-		// 	Schema: map[string]any{
-		// 		"type": "object",
-		// 		"properties": map[string]any{
-		// 			"thought": map[string]any{
-		// 				"type":        "string",
-		// 				"description": "Your thoughts.",
-		// 			},
-		// 		},
-		// 		"required": []string{"thought"},
-		// 	},
-		// 	Call: func(context.Context, any) (any, error) {
-		// 		return "", nil
-		// 	},
-		// },
+		{
+			Name:        "think",
+			Description: `A tool for thinking through problems, brainstorming ideas, or planning without executing any actions. Use this tool when you need to work through complex problems, develop strategies, or outline approaches before taking action.`,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"thought": map[string]any{
+						"type":        "string",
+						"description": "Your thoughts.",
+					},
+				},
+				"required": []string{"thought"},
+			},
+			Call: func(context.Context, any) (any, error) {
+				return "Finished thinking.", nil
+			},
+		},
 	}
 
 	// for _, typeName := range m.env.Types() {

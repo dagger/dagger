@@ -209,7 +209,7 @@ func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
 						"The container to use to build Booklit.").
 					WithFileOutput("bin", "The compiled Booklit binary."),
 			).
-			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with CGO_ENABLED=0."),
+			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0."),
 		func(t testing.TB, llm *dagger.LLM) {
 			BuildMultiAssert(ctx, t, llm)
 		})
@@ -238,7 +238,7 @@ func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
 						"The container to use to build Booklit.").
 					WithFileOutput("bin", "The compiled Booklit binary."),
 			).
-			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with CGO_ENABLED=0.").
+			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0.").
 			WithPrompt("Return the compiled binary."),
 		func(t testing.TB, llm *dagger.LLM) {
 			BuildMultiAssert(ctx, t, llm)
@@ -249,6 +249,12 @@ func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
 func BuildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 	f, err := llm.Env().Output("bin").AsFile().Sync(ctx)
 	require.NoError(t, err)
+
+	history, err := llm.History(ctx)
+	require.NoError(t, err)
+	if !strings.Contains(strings.Join(history, "\n"), "withEnvVariable") {
+		t.Error("should have used the withEnvVariable API - use the right tool for the job!")
+	}
 
 	ctr := dag.Container().
 		From("alpine").
