@@ -666,19 +666,22 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 		outputs = append(outputs,
 			fmt.Sprintf("  %s (%s): %s", name, typeName, b.Description))
 
+		argSchema := map[string]any{
+			"type":           "string",
+			"description":    desc,
+			jsonSchemaIDAttr: typeName,
+		}
+
 		desc := fmt.Sprintf("%s ID to return.", typeName)
 		enum := m.allIDs(typeName)
 		if len(enum) == 0 {
 			desc += " (UNAVAILABLE)"
 			anyUnavailable = true
+		} else {
+			argSchema["enum"] = enum
 		}
 
-		props[name] = map[string]any{
-			"type":           "string",
-			"enum":           enum,
-			"description":    desc,
-			jsonSchemaIDAttr: typeName,
-		}
+		props[name] = argSchema
 	}
 
 	// append outputs
@@ -996,11 +999,14 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	if typeName != "Query" {
-		properties[typeName] = map[string]any{
+		schema := map[string]any{
 			"type":        "string",
 			"description": fmt.Sprintf("The %s to operate against. Defaults to the most recent %s.", typeName, typeName),
-			"enum":        m.allIDs(typeName),
 		}
+		if ids := m.allIDs(typeName); len(ids) > 0 {
+			schema["enum"] = ids
+		}
+		properties[typeName] = schema
 	}
 	for _, arg := range field.Arguments {
 		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
@@ -1085,7 +1091,11 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 			if strings.HasSuffix(t.NamedType, "ID") {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
-				jsonSchema["enum"] = m.allIDs(typeName)
+				if ids := m.allIDs(typeName); len(ids) > 0 {
+					jsonSchema["enum"] = ids
+				} else {
+					desc += " (UNAVAILABLE)"
+				}
 				jsonSchema[jsonSchemaIDAttr] = typeName
 			} else {
 				jsonSchema["type"] = "string"
