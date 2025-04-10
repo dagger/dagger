@@ -96,7 +96,7 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
 						telemetry.Reveal())
 					defer telemetry.End(evalSpan, func() error { return rerr })
-					stdio := telemetry.SpanStdio(ctx, "") //, log.String(telemetry.ContentTypeAttr, "text/markdown"))
+					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()
 					attempts := work.Evaluate(name, dagger.WorkspaceEvaluateOpts{
 						Model: model,
