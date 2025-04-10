@@ -54,8 +54,7 @@ func (f *Quickstart) quickstart(tape string) *dagger.Directory {
 		Filter(includeWithShell(tape)).
 		//WithDirectory("", dag.Git("https://github.com/dagger/hello-dagger").Head().Tree()).
 		//WithDirectory(".dagger", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
-		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
-		Terminal()
+		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go"))
 
 	return f.Recorder.Vhs.WithSource(source).Render(tape)
 }
