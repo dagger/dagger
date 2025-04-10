@@ -696,17 +696,6 @@ func (m *MCP) returnBuiltin() LLMTool {
 	}
 }
 
-func stripComments(str string) string {
-	var result []string
-	lines := strings.Split(str, "\n")
-	for _, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			result = append(result, line)
-		}
-	}
-	return strings.Join(result, "\n")
-}
-
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
