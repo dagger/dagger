@@ -7847,6 +7847,20 @@ class ModuleSource(Type):
         _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
+    def without_client(self, path: str) -> Self:
+        """Remove a client from the module source.
+
+        Parameters
+        ----------
+        path:
+            The path of the client to remove.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutClient", _args)
+        return ModuleSource(_ctx)
+
     def without_dependencies(self, dependencies: list[str]) -> Self:
         """Remove the provided dependencies from the module source's dependency
         list.

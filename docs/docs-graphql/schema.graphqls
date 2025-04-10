@@ -2962,6 +2962,12 @@ type ModuleSource {
     name: String!
   ): ModuleSource!
 
+  """Remove a client from the module source."""
+  withoutClient(
+    """The path of the client to remove."""
+    path: String!
+  ): ModuleSource!
+
   """
   Remove the provided dependencies from the module source's dependency list.
   """
