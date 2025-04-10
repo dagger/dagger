@@ -9,12 +9,47 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Copy a directory or remote repository to a container
+### Mount or copy a directory or remote repository to a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified directory to the `/src` path in a container and returns the modified container.
 
 :::note
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+:::
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/mount-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/mount-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/mount-dir/typescript/index.ts
+```
+
+</TabItem>
+
+<TabItem value="PHP">
+
+```php file=./snippets/mount-dir/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+An alternative option is to copy the target directory in the container. The difference between these two approaches is that mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource efficient. The rule of thumb should be to always try using mounts when possible.
 :::
 
 <Tabs groupId="language">
@@ -46,6 +81,89 @@ When working with private Git repositories, ensure that [SSH authentication is p
 </Tabs>
 
 #### Examples
+
+- Mount the `/myapp` host directory to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=./myapp/
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory https://github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=https://github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-directory --source=ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    </Tabs>
+
+- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-directory https://github.com/dagger/dagger#main | directory /src | entries'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      mount-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
 
 - Copy the `/myapp` host directory to `/src` in the container and return the modified container:
 
@@ -254,131 +372,6 @@ When working with private Git repositories, ensure that [SSH authentication is p
     </TabItem>
     </Tabs>
 
-### Mount a directory or remote repository in a container
-
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified directory to the `/src` path in a container and returns the modified container.
-
-:::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
-:::
-
-:::note
-Mounted directories or files are only available during the execution of the Dagger Function. They are not copied to, or included, in the final image. These mounts only take effect within your pipeline invocation; this means that any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
-:::
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/mount-dir/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/mount-dir/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=./snippets/mount-dir/typescript/index.ts
-```
-
-</TabItem>
-
-<TabItem value="PHP">
-
-```php file=./snippets/mount-dir/php/src/MyModule.php
-```
-
-</TabItem>
-</Tabs>
-
-#### Examples
-
-- Mount the `/myapp` host directory to `/src` in the container and return the modified container:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-directory ./myapp/'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-directory ./myapp/
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call mount-directory --source=./myapp/
-    ```
-    </TabItem>
-    </Tabs>
-
-- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-directory https://github.com/dagger/dagger#main'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-directory https://github.com/dagger/dagger#main
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call mount-directory --source=https://github.com/dagger/dagger#main
-    ```
-    </TabItem>
-    </Tabs>
-
-- Mount the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-directory ssh://git@github.com/user/foo#main'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-directory ssh://git@github.com/user/foo#main
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call mount-directory --source=ssh://git@github.com/user/foo#main
-    ```
-    </TabItem>
-    </Tabs>
-
-- Mount the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-directory https://github.com/dagger/dagger#main | directory /src | entries'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-directory https://github.com/dagger/dagger#main | directory /src | entries
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call \
-      mount-directory --source=https://github.com/dagger/dagger#main \
-      directory --path=/src \
-      entries
-    ```
-    </TabItem>
-    </Tabs>
-
 ### Clone a remote Git repository into a container by branch, tag or commit
 
 The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
@@ -512,9 +505,36 @@ For examples of SSH-based cloning, including private or public Git repositories 
     dagger call clone-with-ssh --repository=git@github.com:dagger/dagger.git --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 --sock $SSH_AUTH_SOCK terminal
     ```
 
-### Copy a local or remote file to a container
+### Mount or copy a local or remote file to a container
 
-The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It writes the specified file to a container in the `/src/` directory and returns the modified container.
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/mount-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/mount-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/mount-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+An alternative option is to copy the target file to the container. The difference between these two approaches is that mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource efficient. The rule of thumb should be to always try using mounts when possible.
+:::
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -537,9 +557,77 @@ The following Dagger Function accepts a `File` argument, which could reference e
 </TabItem>
 </Tabs>
 
+
 #### Example
 
--  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+-  Mount the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-file /home/admin/archives.zip'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file /home/admin/archives.zip
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-file --f=/home/admin/archives.zip
+    ```
+    </TabItem>
+    </Tabs>
+
+-  Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-file https://github.com/dagger/dagger.git#main:README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-file --f=https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    </Tabs>
+
+-  Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    mount-file https://github.com/dagger/dagger.git#main:README.md |
+      file /src/README.md |
+      contents
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      mount-file --f=https://github.com/dagger/dagger.git#main:README.md \
+      file --path=/src/README.md \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
+
+- Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
@@ -559,7 +647,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
     </TabItem>
     </Tabs>
 
--  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
+- Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
@@ -734,108 +822,6 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
       copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude=*.md \
       directory --path=/src \
       entries
-    ```
-    </TabItem>
-    </Tabs>
-
-### Mount a local or remote file in a container
-
-The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
-
-:::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
-:::
-
-:::note
-Mounted directories or files are only available during the execution of the Dagger Function. They are not copied to, or included, in the final image. Dagger uses non-directional bind mounts; this means that changes made to the mounted directory or file, either in the container filesystem or in the source, will not be reflected in the other location.
-:::
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/mount-file/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/mount-file/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=./snippets/mount-file/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>
-
-#### Example
-
--  Mount the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-file /home/admin/archives.zip'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-file /home/admin/archives.zip
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call mount-file --f=/home/admin/archives.zip
-    ```
-    </TabItem>
-    </Tabs>
-
--  Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'mount-file https://github.com/dagger/dagger.git#main:README.md'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-file https://github.com/dagger/dagger.git#main:README.md
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call mount-file --f=https://github.com/dagger/dagger.git#main:README.md
-    ```
-    </TabItem>
-    </Tabs>
-
--  Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger <<EOF
-    mount-file https://github.com/dagger/dagger.git#main:README.md |
-      file /src/README.md |
-      contents
-    EOF
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    mount-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call \
-      mount-file --f=https://github.com/dagger/dagger.git#main:README.md \
-      file --path=/src/README.md \
-      contents
     ```
     </TabItem>
     </Tabs>
