@@ -372,12 +372,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
     </TabItem>
     </Tabs>
 
-### Clone a remote Git repository into a container by branch, tag or commit
+### Clone a remote Git repository into a container
 
-The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
+The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
 
 :::note
-For examples of SSH-based cloning, including private or public Git repositories with an SSH ref format, select the `SSH` tabs below. This approach requires explicitly forwarding the host `SSH_AUTH_SOCK` to the Dagger Function. Learn more about this in Dagger's [security model](../features/security.mdx).
+For examples of SSH-based cloning, including private or public Git repositories with an SSH reference format, select the `SSH` tabs below. This approach requires explicitly forwarding the host `SSH_AUTH_SOCK` to the Dagger Function. Learn more about this in Dagger's [security model](../features/security.mdx).
 :::
 
 <Tabs groupId="language">
@@ -427,73 +427,46 @@ For examples of SSH-based cloning, including private or public Git repositories 
 
 #### Examples
 
-- Clone the `main` branch of the public `dagger/dagger` GitHub repository to `/src` in the container:
+- Clone the public `dagger/dagger` GitHub repository to `/src` in the container:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
     ```shell
-    dagger -c 'clone https://github.com/dagger/dagger BRANCH main'
+    dagger -c 'clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5'
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="First type 'dagger' for interactive mode."
-    clone https://github.com/dagger/dagger BRANCH main
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --ref=main
+    dagger call clone --repository=https://github.com/dagger/dagger --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5
     ```
     </TabItem>
     </Tabs>
 
-- Clone the public `dagger/dagger` GitHub repository at tag `v0.12.1` to `/src` in the container and list the contents of the `CHANGELOG.md` file in the repository root directory:
+- Clone the public `dagger/dagger` GitHub repository at reference `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    clone https://github.com/dagger/dagger TAG v0.12.1 |
-      file /src/CHANGELOG.md |
-      contents
-    EOF
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    clone https://github.com/dagger/dagger TAG v0.12.1 | file /src/CHANGELOG.md | contents
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call \
-      clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 \
-      file --path=/src/CHANGELOG.md \
-      contents
-    ```
-    </TabItem>
-    </Tabs>
-
-- Clone the public `dagger/dagger` GitHub repository at commit id  `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
-
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger <<EOF
-    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 |
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 |
       terminal
     EOF
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="First type 'dagger' for interactive mode."
-    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 | terminal
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 | terminal
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
     ```shell
     dagger call \
-      clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 \
+      clone --repository=https://github.com/dagger/dagger --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 \
       terminal
     ```
     </TabItem>
@@ -501,9 +474,28 @@ For examples of SSH-based cloning, including private or public Git repositories 
 
 - Clone over SSH with socket forwarding:
 
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
-    dagger call clone-with-ssh --repository=git@github.com:dagger/dagger.git --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 --sock $SSH_AUTH_SOCK terminal
+    dagger <<EOF
+    clone-with-ssh git@github.com:dagger/dagger.git 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 $SSH_AUTH_SOCK |
+      terminal
+    EOF
     ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone-with-ssh git@github.com:dagger/dagger.git 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 $SSH_AUTH_SOCK | terminal
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      clone-with-ssh --repository=git@github.com:dagger/dagger.git --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 --sock=$SSH_AUTH_SOCK \
+      terminal
+    ```
+    </TabItem>
+    </Tabs>
 
 ### Mount or copy a local or remote file to a container
 

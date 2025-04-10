@@ -14,26 +14,13 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    public function clone(string $repository, string $locator, string $ref): Container
+    public function clone(string $repository, string $ref): Container
     {
-        $r = dag()->git($repository);
-        $d = dag()->directory();
-
-        switch ($locator) {
-            case 'branch':
-                $d = $r->branch($ref)->tree();
-                break;
-            case 'tag':
-                $d = $r->tag($ref)->tree();
-                break;
-            default:
-                $d = $r->commit($ref)->tree();
-                break;
-        }
+        $repoDir = dag()->git($repository)->ref($ref)->tree();
 
         return dag()
             ->container()
             ->from('alpine:latest')
-            ->withDirectory('/src', $d);
+            ->withDirectory('/src', $repoDir);
     }
 }
