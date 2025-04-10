@@ -118,12 +118,12 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 				if evalErr != nil {
 					failedEvals = errors.Join(
 						failedEvals,
-						fmt.Errorf("eval %q failed: %w", name, evalErr),
+						fmt.Errorf("%s > %s failed: %w", model, name, evalErr),
 					)
 				}
 			}
 			if failedEvals != nil {
-				return fmt.Errorf("model %q: %w", model, failedEvals)
+				return failedEvals
 			}
 			return nil
 		})
