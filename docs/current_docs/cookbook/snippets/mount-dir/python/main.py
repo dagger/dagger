@@ -11,4 +11,8 @@ class MyModule:
         self, source: Annotated[dagger.Directory, Doc("Source directory")]
     ) -> dagger.Container:
         """Return a container with a mounted directory"""
-        return dag.container().from_("alpine:latest").with_mounted_directory("/src", source)
+        return (
+            dag.container()
+            .from_("alpine:latest")
+            .with_mounted_directory("/src", source)
+        )

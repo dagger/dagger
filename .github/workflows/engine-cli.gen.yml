@@ -19,7 +19,7 @@ concurrency:
 jobs:
     cli-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: cli-test-publish
         steps:
             - name: Checkout
@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -216,7 +216,7 @@ jobs:
         timeout-minutes: 20
     engine-lint:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: engine-lint
         steps:
             - name: Checkout
@@ -250,7 +250,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -413,7 +413,7 @@ jobs:
         timeout-minutes: 20
     engine-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-st' || 'ubuntu-24.04' }}
         name: engine-test-publish
         steps:
             - name: Checkout
@@ -447,7 +447,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -610,7 +610,7 @@ jobs:
         timeout-minutes: 20
     scan-engine:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-4c' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-4c' || 'ubuntu-24.04' }}
         name: scan-engine
         steps:
             - name: Checkout
@@ -644,7 +644,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -807,7 +807,7 @@ jobs:
         timeout-minutes: 20
     scripts:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-4c' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-4c' || 'ubuntu-24.04' }}
         name: scripts
         steps:
             - name: Checkout
@@ -841,7 +841,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.0
+                DAGGER_VERSION: v0.18.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1262,7 +1262,7 @@ jobs:
         timeout-minutes: 30
     testdev-cli-engine:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-cli-engine
         steps:
             - name: Checkout
@@ -1520,7 +1520,7 @@ jobs:
         timeout-minutes: 30
     testdev-client-generator:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-client-generator
         steps:
             - name: Checkout
@@ -1778,7 +1778,7 @@ jobs:
         timeout-minutes: 30
     testdev-container:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-container
         steps:
             - name: Checkout
@@ -2036,7 +2036,7 @@ jobs:
         timeout-minutes: 30
     testdev-everything-else:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-32c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-32c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-everything-else
         steps:
             - name: Checkout
@@ -2294,7 +2294,7 @@ jobs:
         timeout-minutes: 30
     testdev-llm:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-LLM
         steps:
             - name: Checkout
@@ -2552,7 +2552,7 @@ jobs:
         timeout-minutes: 30
     testdev-module-runtimes:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-32c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-32c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-module-runtimes
         steps:
             - name: Checkout
@@ -2810,7 +2810,7 @@ jobs:
         timeout-minutes: 30
     testdev-modules:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-2-16c-dind-st' || 'ubuntu-24.04' }}
         name: testdev-modules
         steps:
             - name: Checkout
