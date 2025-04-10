@@ -28,20 +28,20 @@ var knownModels = []string{
 	"gpt-4o",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
-	// "claude-3-5-haiku-latest",
+	"claude-3-5-haiku-latest",
 	"claude-3-5-sonnet-latest",
-	// "claude-3-7-sonnet-latest",
+	"claude-3-7-sonnet-latest",
 }
 
 type EvalFunc = func(*dagger.Evals) *dagger.EvalsReport
 
 var evals = map[string]EvalFunc{
-	"BuildMulti": (*dagger.Evals).BuildMulti,
-	// "BuildMultiNoVar":  (*dagger.Evals).BuildMultiNoVar,
-	// "Basic":            (*dagger.Evals).Basic,
+	"Basic":            (*dagger.Evals).Basic,
+	"BuildMulti":       (*dagger.Evals).BuildMulti,
+	"BuildMultiNoVar":  (*dagger.Evals).BuildMultiNoVar,
 	"WorkspacePattern": (*dagger.Evals).WorkspacePattern,
-	// "ReadImplicitVars": (*dagger.Evals).ReadImplicitVars,
-	// "UndoChanges":      (*dagger.Evals).UndoChanges,
+	"ReadImplicitVars": (*dagger.Evals).ReadImplicitVars,
+	"UndoChanges":      (*dagger.Evals).UndoChanges,
 	// "CoreMulti":        (*dagger.Evals).CoreMulti,
 }
 
@@ -92,7 +92,7 @@ func (m *Workspace) defaultAttempts(provider string) int {
 		return 5
 	case "anthropic":
 		// Claude gets overloaded frequently. :(
-		return 2
+		return 1
 	default:
 		// Probably local so don't overload it.
 		return 1
