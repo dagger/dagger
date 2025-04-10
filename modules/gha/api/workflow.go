@@ -54,6 +54,7 @@ type DispatchInput struct {
 }
 
 type Job struct {
+	Condition      string            `json:"if,omitempty" yaml:"if,omitempty"`
 	RunsOn         []string          `json:"runs-on" yaml:"runs-on"`
 	Name           string            `json:"name" yaml:"name"`
 	Needs          []string          `json:"needs,omitempty" yaml:"needs,omitempty"`

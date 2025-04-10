@@ -12,6 +12,9 @@ type Job struct {
 	Name    string
 	Command string
 
+	// Make the job conditional on an expression
+	Condition string
+
 	// Additional commands to run before the main one
 	SetupCommands []string
 	// Additional commands to run after the main one
@@ -53,6 +56,10 @@ type Job struct {
 func (gha *Gha) Job(
 	name string,
 	command string,
+
+	// Only run the job if this condition expression succeeds.
+	// +optional
+	condition string,
 
 	// Additional commands to run before the main one.
 	// +optional
@@ -106,6 +113,7 @@ func (gha *Gha) Job(
 	uploadLogs bool,
 ) *Job {
 	j := &Job{
+		Condition:        condition,
 		Name:             name,
 		PublicToken:      publicToken,
 		StopEngine:       stopEngine,
