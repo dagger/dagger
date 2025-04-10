@@ -182,25 +182,25 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+				Runner: []string{PlatinumRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+				Runner: []string{PlatinumRunner(true)},
 			}},
 		}))
 
