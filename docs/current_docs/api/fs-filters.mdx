@@ -353,7 +353,11 @@ When working with directories and files, you can choose whether to copy or mount
 - `Container.withMountedDirectory()` returns a container plus a directory mounted at the given path
 - `Container.withMountedFile()` returns a container plus a file mounted at the given path
 
-Mounted directories or files are only available during the execution of the Dagger Function. They are not copied to, or included, in the final image. These mounts only take effect within your pipeline invocation; this means that  any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+Mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource efficient. The rule of thumb should be to always try using mounts when possible.
+:::
 
 ## Debugging
 
