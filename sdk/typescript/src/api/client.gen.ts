@@ -7128,6 +7128,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Remove a client from the module source.
+   * @param path The path of the client to remove.
+   */
+  withoutClient = (path: string): ModuleSource => {
+    const ctx = this._ctx.select("withoutClient", { path })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Remove the provided dependencies from the module source's dependency list.
    * @param dependencies The dependencies to remove.
    */

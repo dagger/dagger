@@ -92,7 +92,7 @@ func initializeClientGeneratorModule(
 	dag *dagger.Client,
 	srcRef string,
 	srcOpts ...dagger.ModuleSourceOpts,
-) (gdef *clientGeneratorModuleDef, exist bool, rerr error) {
+) (gdef *clientGeneratorModuleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error {
 		// To not confuse the user, we don't want to show the error if the config
@@ -110,22 +110,22 @@ func initializeClientGeneratorModule(
 	telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get configured module: %w", err)
+		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 
 	if !configExists {
-		return nil, false, ErrConfigNotFound
+		return nil, ErrConfigNotFound
 	}
 
 	dependencies, err := modSrc.Dependencies(ctx)
 	if err != nil {
-		return nil, true, fmt.Errorf("failed to get module dependencies: %w", err)
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
 	}
 
 	return &clientGeneratorModuleDef{
 		Source:       modSrc,
 		Dependencies: dependencies,
-	}, true, nil
+	}, nil
 }
 
 // moduleDef is a representation of a dagger module.
