@@ -182,25 +182,40 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+			{"go-module-runtime", []string{"TestGo"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
+			}},
+			{"python-module-runtime", []string{"TestPython"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
+			}},
+			{"typescript-module-runtime", []string{"TestTypescript"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
+			}},
+			{"elixir-module-runtime", []string{"TestElixir"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
+			}},
+			{"php-module-runtime", []string{"TestPHP"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
+			}},
+			{"java-module-runtime", []string{"TestJava"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{GoldRunner(true)},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+				Runner: []string{PlatinumRunner(true)},
 			}},
 		}))
 
