@@ -73,6 +73,15 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		`container | with-directory $(container | <dir$ectory >`,
 
 		// args
+		// FIXME: should not have any completions
+		// `container <$>`,
+		`container <$container>`,
+		`container | with-directory $(container <$>`,
+		// FIXME: should not have any completions
+		// `dir=$(container <$>`,
+		`dir=$(container <$container>`,
+
+		// flags
 		`container <--$packages >`,
 		`container <--$packages > | directory`,
 		`container | directory <--$expand >`,
@@ -142,15 +151,19 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 			cursor := start + len(inprogress)
 
 			_, comp := autoComplete.Do([][]rune{[]rune(cmdline)}, 0, cursor)
-			require.NotNil(t, comp)
-			require.Equal(t, 1, comp.NumCategories())
-			candidates := make([]string, 0, comp.NumEntries(0))
-			for i := 0; i < comp.NumEntries(0); i++ {
-				entry := comp.Entry(0, i)
-				t.Logf("entry %d: %s (%q)", i, entry.Title(), entry.Description())
-				candidates = append(candidates, entry.Title())
+			if expected == "" {
+				require.Nil(t, comp)
+			} else {
+				require.NotNil(t, comp)
+				require.Equal(t, 1, comp.NumCategories())
+				candidates := make([]string, 0, comp.NumEntries(0))
+				for i := range comp.NumEntries(0) {
+					entry := comp.Entry(0, i)
+					t.Logf("entry %d: %s (%q)", i, entry.Title(), entry.Description())
+					candidates = append(candidates, entry.Title())
+				}
+				require.Contains(t, candidates, expected)
 			}
-			require.Contains(t, candidates, expected)
 		})
 	}
 }
