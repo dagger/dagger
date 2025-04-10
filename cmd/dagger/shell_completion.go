@@ -156,6 +156,9 @@ func (h *shellAutoComplete) dispatchCall(previous *CompletionContext, call *synt
 	for _, arg := range call.Args {
 		args = append(args, arg.Lit())
 	}
+	if len(args) == 0 {
+		return previous
+	}
 	return previous.lookupField(args[0], args[1:])
 }
 
