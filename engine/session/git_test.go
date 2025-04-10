@@ -277,32 +277,48 @@ func main() {
 }
 
 func TestIsGitConfigKeyAllowed(t *testing.T) {
+	nullChar := "\x00"
 	testcases := []struct {
 		gitconfig string
 		expected  *GitConfig
 	}{
 		{
-			gitconfig: `credential.helper=osxkeychain
-init.defaultbranch=main
-user.name=User Name
-user.email=user-name@gmail.com
-commit.gpgsign=true
-url.ssh://git@github.com/.insteadof=https://github.com/
-core.excludesfile=~/.config/git/.gitignore
-protocol.file.allow=always
-core.repositoryformatversion=0
-core.filemode=true
-core.bare=false
-core.logallrefupdates=true
-core.ignorecase=true
-core.precomposeunicode=true
-remote.origin.url=git@github.com:some-user/some-repo.git
-remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*`,
+			gitconfig: `credential.helper
+osxkeychain` + nullChar + `init.defaultbranch
+main` + nullChar + `user.name
+User Name` + nullChar + `user.email
+user-name@gmail.com` + nullChar + `commit.gpgsign
+true` + nullChar + `url.ssh://git@github.com/.insteadof
+https://github.com/` + nullChar + `core.excludesfile
+~/.config/git/.gitignore` + nullChar + `protocol.file.allow
+always` + nullChar + `core.repositoryformatversion
+0` + nullChar + `core.filemode
+true` + nullChar + `core.bare
+false` + nullChar + `core.logallrefupdates
+true` + nullChar + `core.ignorecase
+true` + nullChar + `core.precomposeunicode
+true` + nullChar + `remote.origin.url
+git@github.com:some-user/some-repo.git` + nullChar + `remote.origin.fetch
++refs/heads/*:refs/remotes/origin/*` + nullChar,
 			expected: &GitConfig{
 				Entries: []*GitConfigEntry{
 					{
 						Key:   "url.ssh://git@github.com/.insteadof",
 						Value: "https://github.com/",
+					},
+				},
+			},
+		},
+		{
+			gitconfig: `url.insteadof
+bar
+baz` + nullChar + `credential.helper
+osxkeychain` + nullChar + ``,
+			expected: &GitConfig{
+				Entries: []*GitConfigEntry{
+					{
+						Key:   "url.insteadof",
+						Value: "bar\nbaz",
 					},
 				},
 			},

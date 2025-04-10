@@ -1,0 +1,6 @@
+kind: Fixed
+body: fix error when parsing multi-line git config files
+time: 2025-04-07T17:02:56.138981652-03:00
+custom:
+    Author: marcosnils
+    PR: "10087"
