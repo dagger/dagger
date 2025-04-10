@@ -1,0 +1,48 @@
+name: Dagger on Northflank - Remote Engine
+
+on:
+  workflow_call:
+    inputs:
+      function:
+        description: "Dagger function"
+        type: string
+        required: true
+      size:
+        description: "Runner size"
+        type: number
+        default: 16
+        required: false
+      timeout:
+        description: "Timeout if not finished after this many minutes"
+        type: number
+        default: 10
+        required: false
+      ubuntu:
+        description: "Ubuntu version"
+        type: string
+        default: "24.04"
+        required: false
+
+jobs:
+  remote-dagger-engine:
+    # TODO: 👇 Change this to match your fork name
+    if: ${{ github.repository == 'dagger/dagger' }}
+    runs-on:
+      # TODO: 👇 Change this to match your runner name
+      - northflank-ubuntu-${{ inputs.ubuntu }}-amd64-${{ inputs.size }}
+      # NOTE: 👆 The assumption is that a Dagger Engine available & already running.
+      #       Expose it to the Dagger CLI running inside the CI runner via e.g. _EXPERIMENTAL_DAGGER_RUNNER_HOST=unix:///run/dagger/engine.sock
+      #       FWIW 1: https://github.com/dagger/dagger/blob/4b5a66bbe803e06b3e85720c2e8350eb2d8ce00b/helm/dagger/templates/engine-statefulset.yaml#L73-L77
+      #       FWIW 2: https://docs.dagger.io/configuration/custom-runner/#connection-interface
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: ${{ inputs.function }}
+        uses: ./.github/actions/call-ci-alt-runner
+        with:
+          function: ${{ inputs.function }}
+      - name: ${{ inputs.function }} (CACHE TEST)
+        uses: ./.github/actions/call-ci-alt-runner
+        with:
+          function: ${{ inputs.function }}

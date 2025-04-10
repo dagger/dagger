@@ -1,0 +1,48 @@
+name: Alternative CI Runners 4
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint-on-northflank-remote-engine:
+    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
+    with:
+      function: check --targets=docs
+
+  # TODO: Start with the job above, then comment one (or more?) of the jobs below.
+  # sdk-go-on-northflank-remote-engine:
+  #   needs: docs-lint-on-northflank-remote-engine
+  #   uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
+  #   with:
+  #     function: check --targets=sdk/go
+
+  # sdk-python-on-northflank-remote-engine:
+  #   needs: docs-lint-on-northflank-remote-engine
+  #   uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
+  #   with:
+  #     function: check --targets=sdk/python
+
+  # sdk-typescript-on-northflank-remote-engine:
+  #   needs: docs-lint-on-northflank-remote-engine
+  #   uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
+  #   with:
+  #     function: check --targets=sdk/typescript
+
+  ## TODO: This is the heaviest job in this group.
+  ##       You might want to leave it last.
+  ##       Also OK to not get to it. Definitely a stretch.
+  ## test-cli-engine-on-northflank-remote-engine:
+  ##   needs: docs-lint-on-northflank-remote-engine
+  ##   uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
+  ##   with:
+  ##     function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
+  ##     timeout: 20
