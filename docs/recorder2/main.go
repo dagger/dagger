@@ -74,7 +74,7 @@ func includeWithDefaults(tapes ...string) dagger.DirectoryFilterOpts {
 }
 
 func includeWithShell(tapes ...string) dagger.DirectoryFilterOpts {
-	return includeWithDefaults(append([]string{"shell.tape"}, tapes...)...)
+	return includeWithDefaults(append([]string{"shell.tape", "shell-nomod.tape"}, tapes...)...)
 }
 
 func (r *Recorder) filteredVhs(filter dagger.DirectoryFilterOpts) *dagger.VhsWithSource {

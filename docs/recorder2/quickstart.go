@@ -28,6 +28,10 @@ func (f *Quickstart) Terminal() *dagger.Directory {
 	return f.quickstart("quickstart/basics/terminal.tape")
 }
 
+func (f *Quickstart) PublishShell() *dagger.Directory {
+	return f.quickstart("quickstart/basics/publish-shell.tape")
+}
+
 func (f *Quickstart) Buildenv() *dagger.Directory {
 	return f.quickstart("quickstart/ci/buildenv.tape")
 }
@@ -48,9 +52,9 @@ func (f *Quickstart) quickstart(tape string) *dagger.Directory {
 	source := dag.CurrentModule().Source().
 		Directory("tapes").
 		Filter(includeWithShell(tape)).
-		WithDirectory("", dag.Git("https://github.com/dagger/hello-dagger").Head().Tree()).
-		WithDirectory(".dagger", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
-		//WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
+		//WithDirectory("", dag.Git("https://github.com/dagger/hello-dagger").Head().Tree()).
+		//WithDirectory(".dagger", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
+		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
 		Terminal()
 
 	return f.Recorder.Vhs.WithSource(source).Render(tape)
