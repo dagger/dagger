@@ -882,8 +882,20 @@ func (v *LLMVariable) Type() *ast.Type {
 }
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
-	// TODO
-	return dagql.Null[*Binding](), nil
+	var res dagql.Nullable[*Binding]
+	if err := llm.Sync(ctx, dag); err != nil {
+		return res, err
+	}
+	if llm.mcp.LastResult() == nil {
+		return res, nil
+	}
+	res.Value = &Binding{
+		Key:   name,
+		Value: llm.mcp.LastResult(),
+		env:   llm.mcp.env,
+	}
+	res.Valid = true
+	return res, nil
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"dagger/evals/internal/dagger"
+	"dagger/evals/internal/telemetry"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type Evals struct {
@@ -52,7 +54,7 @@ func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
 				WithFileOutput("file", "A file containing knowledge you don't have."),
 			).
 			WithPrompt("Ask me what to write to the file."),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.Env().Output("file").AsFile().Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, reply, "potato")
@@ -64,7 +66,7 @@ func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 10}).
 			WithPrompt("What is 2 + 2? Respond with a single number."),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.LastReply(ctx)
 			require.NoError(t, err)
 			require.Contains(t, reply, "4")
@@ -89,7 +91,7 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 				WithTestspaceOutput("out", "The workspace containing your findings."),
 			).
 			WithPrompt(`Research and record three findings.`),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			findings, err := llm.Env().Output("out").AsTestspace().Findings(ctx)
 			require.NoError(t, err)
 			model, err := llm.Model(ctx)
@@ -149,18 +151,18 @@ func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
 					dag.Container().
 						WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
 					"A scratch container to start from.")).
-			WithPrompt("give me a minimal container for PHP 7 development").
+			WithPrompt("give me a minimal container for Go development").
 			Loop().
 			WithPrompt("now install nano").
 			Loop().
-			WithPrompt("undo that and install vim instead").
+			WithPrompt("go back to before you installed nano and install vim instead").
 			Loop(),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			res := llm.BindResult("_").AsContainer()
 
-			out, err := res.WithExec([]string{"php", "--version"}).Stdout(ctx)
+			out, err := res.WithExec([]string{"go", "version"}).Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "PHP 7")
+			require.Contains(t, out, "go version")
 
 			out, err = res.WithExec([]string{"vim", "--version"}).Stdout(ctx)
 			require.NoError(t, err)
@@ -210,7 +212,7 @@ func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
 					WithFileOutput("bin", "The compiled Booklit binary."),
 			).
 			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0."),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			BuildMultiAssert(ctx, t, llm)
 		})
 }
@@ -240,7 +242,7 @@ func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
 			).
 			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0.").
 			WithPrompt("Return the compiled binary."),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			BuildMultiAssert(ctx, t, llm)
 		})
 }
@@ -295,7 +297,7 @@ func (m *Evals) ReadImplicitVars(ctx context.Context) (*Report, error) {
 					"The directory in which to write the file.").
 				WithDirectoryOutput("out", "The directory containing the written file.")).
 			WithPrompt("I gave you some content, a directory, and a filename. Write the content to the specified file in the directory."),
-		func(t testing.TB, llm *dagger.LLM) {
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			content, err := llm.Env().
 				Output("out").
 				AsDirectory().
@@ -328,15 +330,17 @@ type Report struct {
 func withLLMReport(
 	ctx context.Context,
 	llm *dagger.LLM,
-	check func(testing.TB, *dagger.LLM),
+	check func(context.Context, testing.TB, *dagger.LLM),
 ) (*Report, error) {
 	report := new(strings.Builder)
 
 	llm, err := llm.Sync(ctx)
 	if err != nil {
-		fmt.Fprintln(report, "Evaluation errored:")
+		fmt.Fprintln(report, "### Evaluation Result")
 		fmt.Fprintln(report)
 		fmt.Fprintln(report, err)
+		fmt.Fprintln(report)
+		fmt.Fprintln(report, "ERRORED")
 		return &Report{
 			Succeeded: false,
 			Report:    report.String(),
@@ -346,6 +350,13 @@ func withLLMReport(
 	var succeeded bool
 	t := newT(ctx, "eval")
 	(func() {
+		ctx, span := Tracer().Start(ctx, "assert", telemetry.Reveal())
+		defer func() {
+			if t.Failed() {
+				span.SetStatus(codes.Error, "assertions failed")
+			}
+			span.End()
+		}()
 		defer func() {
 			x := recover()
 			switch x {
@@ -358,34 +369,22 @@ func withLLMReport(
 				fmt.Fprintln(report)
 			}
 		}()
-		check(t, llm)
+		check(ctx, t, llm)
 	}())
 
-	finalMessage := "<UNEXPECTED>"
-	if t.Failed() {
-		finalMessage = "FAILED"
-		fmt.Fprintln(report, "Evaluation failed:")
-		fmt.Fprintln(report)
-		fmt.Fprintln(report, t.Logs())
-	} else if t.Skipped() {
-		finalMessage = "SKIPPED"
-		fmt.Fprintln(report, "Evaluation skipped:")
-		fmt.Fprintln(report)
-		fmt.Fprintln(report, t.Logs())
-	} else {
-		finalMessage = "SUCCESS"
-		succeeded = true
-	}
-
+	fmt.Fprintln(report, "### Message Log")
+	fmt.Fprintln(report)
 	history, err := llm.History(ctx)
 	if err != nil {
 		fmt.Fprintln(report, "Failed to get history:", err)
 	} else {
-		fmt.Fprintln(report, "<messages>")
+		numLines := len(history)
+		// Calculate the width needed for the largest line number
+		width := len(fmt.Sprintf("%d", numLines))
 		for i, line := range history {
-			fmt.Fprintf(report, "%d. %s\n", i+1, line)
+			// Format with right-aligned padding, number, separator, and content
+			fmt.Fprintf(report, "    %*d | %s\n", width, i+1, line)
 		}
-		fmt.Fprintln(report, "</messages>")
 	}
 	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
 	if err != nil {
@@ -396,12 +395,25 @@ func withLLMReport(
 		fmt.Fprintln(report, "Failed to get output tokens:", err)
 	}
 	fmt.Fprintln(report)
+
 	fmt.Fprintln(report, "### Total Token Cost")
 	fmt.Fprintln(report)
 	fmt.Fprintln(report, "* Input Tokens:", inputTokens)
 	fmt.Fprintln(report, "* Output Tokens:", outputTokens)
 	fmt.Fprintln(report)
-	fmt.Fprintln(report, finalMessage)
+
+	fmt.Fprintln(report, "### Evaluation Result")
+	fmt.Fprintln(report)
+	if t.Failed() {
+		fmt.Fprintln(report, t.Logs())
+		fmt.Fprintln(report, "FAILED")
+	} else if t.Skipped() {
+		fmt.Fprintln(report, t.Logs())
+		fmt.Fprintln(report, "SKIPPED")
+	} else {
+		fmt.Fprintln(report, "SUCCESS")
+		succeeded = true
+	}
 
 	return &Report{
 		Succeeded: succeeded,
