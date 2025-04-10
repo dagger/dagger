@@ -332,24 +332,15 @@ func withLLMReport(
 	llm *dagger.LLM,
 	check func(context.Context, testing.TB, *dagger.LLM),
 ) (*Report, error) {
-	report := new(strings.Builder)
+	reportMD := new(strings.Builder)
 
-	llm, err := llm.Sync(ctx)
-	if err != nil {
-		fmt.Fprintln(report, "### Evaluation Result")
-		fmt.Fprintln(report)
-		fmt.Fprintln(report, err)
-		fmt.Fprintln(report)
-		fmt.Fprintln(report, "ERRORED")
-		return &Report{
-			Succeeded: false,
-			Report:    report.String(),
-		}, nil
-	}
+	report := &Report{}
 
-	var succeeded bool
 	t := newT(ctx, "eval")
+
+	evaledLlm, evalErr := llm.Sync(ctx)
 	(func() {
+		// demarcate assertions from the eval
 		ctx, span := Tracer().Start(ctx, "assert", telemetry.Reveal())
 		defer func() {
 			if t.Failed() {
@@ -357,68 +348,76 @@ func withLLMReport(
 			}
 			span.End()
 		}()
+
+		// capture test panics, from assertions, skips, or otherwise
 		defer func() {
 			x := recover()
 			switch x {
 			case nil:
 			case testSkipped{}, testFailed{}:
 			default:
-				succeeded = false
-				fmt.Fprintln(report, "PANIC:", x)
-				report.Write(debug.Stack())
-				fmt.Fprintln(report)
+				fmt.Fprintln(reportMD, "PANIC:", x)
+				reportMD.Write(debug.Stack())
+				fmt.Fprintln(reportMD)
 			}
 		}()
+
+		// basic check: running the evals succeeded without e.g. hitting API limits
+		require.NoError(t, evalErr, "LLM evaluation did not complete")
+
+		// now that we know it didn't error, re-assign
+		llm = evaledLlm
+
+		// run eval-specific assertions
 		check(ctx, t, llm)
 	}())
 
-	fmt.Fprintln(report, "### Message Log")
-	fmt.Fprintln(report)
+	fmt.Fprintln(reportMD, "### Message Log")
+	fmt.Fprintln(reportMD)
 	history, err := llm.History(ctx)
 	if err != nil {
-		fmt.Fprintln(report, "Failed to get history:", err)
+		fmt.Fprintln(reportMD, "Failed to get history:", err)
 	} else {
 		numLines := len(history)
 		// Calculate the width needed for the largest line number
 		width := len(fmt.Sprintf("%d", numLines))
 		for i, line := range history {
 			// Format with right-aligned padding, number, separator, and content
-			fmt.Fprintf(report, "    %*d | %s\n", width, i+1, line)
+			fmt.Fprintf(reportMD, "    %*d | %s\n", width, i+1, line)
 		}
 	}
 	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
 	if err != nil {
-		fmt.Fprintln(report, "Failed to get input tokens:", err)
+		fmt.Fprintln(reportMD, "Failed to get input tokens:", err)
 	}
 	outputTokens, err := llm.TokenUsage().OutputTokens(ctx)
 	if err != nil {
-		fmt.Fprintln(report, "Failed to get output tokens:", err)
+		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
 	}
-	fmt.Fprintln(report)
+	fmt.Fprintln(reportMD)
 
-	fmt.Fprintln(report, "### Total Token Cost")
-	fmt.Fprintln(report)
-	fmt.Fprintln(report, "* Input Tokens:", inputTokens)
-	fmt.Fprintln(report, "* Output Tokens:", outputTokens)
-	fmt.Fprintln(report)
+	fmt.Fprintln(reportMD, "### Total Token Cost")
+	fmt.Fprintln(reportMD)
+	fmt.Fprintln(reportMD, "* Input Tokens:", inputTokens)
+	fmt.Fprintln(reportMD, "* Output Tokens:", outputTokens)
+	fmt.Fprintln(reportMD)
 
-	fmt.Fprintln(report, "### Evaluation Result")
-	fmt.Fprintln(report)
+	fmt.Fprintln(reportMD, "### Evaluation Result")
+	fmt.Fprintln(reportMD)
 	if t.Failed() {
-		fmt.Fprintln(report, t.Logs())
-		fmt.Fprintln(report, "FAILED")
+		fmt.Fprintln(reportMD, t.Logs())
+		fmt.Fprintln(reportMD, "FAILED")
 	} else if t.Skipped() {
-		fmt.Fprintln(report, t.Logs())
-		fmt.Fprintln(report, "SKIPPED")
+		fmt.Fprintln(reportMD, t.Logs())
+		fmt.Fprintln(reportMD, "SKIPPED")
 	} else {
-		fmt.Fprintln(report, "SUCCESS")
-		succeeded = true
+		fmt.Fprintln(reportMD, "SUCCESS")
+		report.Succeeded = true
 	}
 
-	return &Report{
-		Succeeded: succeeded,
-		Report:    report.String(),
-	}, nil
+	report.Report = reportMD.String()
+
+	return report, nil
 }
 
 type evalT struct {
