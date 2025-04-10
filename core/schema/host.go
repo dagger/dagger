@@ -189,7 +189,7 @@ func (s *hostSchema) Install() {
 
 		// hidden from external clients via the __ prefix
 		dagql.Func("__internalService", s.internalService).
-			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
+			Doc(`(Internal-only) service() but scoped to the exact right buildkit session ID.`),
 
 		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
 			Deprecated(`setSecretFile is superceded by use of the secret API with file:// URIs`).
