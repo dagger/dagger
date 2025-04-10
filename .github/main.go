@@ -175,9 +175,11 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
-		WithJob(runner.Job("evals", "evals", dagger.GhaJobOpts{
-			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
-			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+		WithJob(runner.Job("testdev-evals", "evals", dagger.GhaJobOpts{
+			DaggerVersion: ".", // always evaluate dev engine for latest LLM changes
+			Runner:        []string{GoldRunner(true)},
+			Condition:     fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
+			Secrets:       []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{
 				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
 				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
