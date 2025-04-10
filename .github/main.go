@@ -175,7 +175,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
-		WithJob(runner.Job("run-evals", "evals", dagger.GhaJobOpts{
+		WithJob(runner.Job("evals", "evals", dagger.GhaJobOpts{
 			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{

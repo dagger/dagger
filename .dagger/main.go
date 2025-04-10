@@ -171,12 +171,6 @@ func (dev *DaggerDev) Test() *Test {
 
 func (dev *DaggerDev) Evals(
 	ctx context.Context,
-	// Evals to run. Defaults to all.
-	// +optional
-	evals []string,
-	// Models to run against. Defaults to all.
-	// +optional
-	models []string,
 	// +defaultPath=./core/llm_docs.md
 	docs *dagger.File,
 	// +defaultPath=./core/llm_dagger_prompt.md
@@ -185,7 +179,10 @@ func (dev *DaggerDev) Evals(
 	return dag.Evaluator(dagger.EvaluatorOpts{
 		Docs:          docs,
 		InitialPrompt: systemPrompt,
-	}).EvalsAcrossModels(ctx)
+	}).EvalsAcrossModels(ctx, dagger.EvaluatorEvalsAcrossModelsOpts{
+		// TODO: re-enable all models when stable
+		Models: []string{"gpt-4o", "gemini-2.0-flash"},
+	})
 }
 
 // Find benchmark suites to run
