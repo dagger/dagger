@@ -176,7 +176,8 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		WithJob(runner.Job("run-evals", "evals", dagger.GhaJobOpts{
-			Secrets: []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+			Condition: fmt.Sprintf(`${{ github.repository == %q }}`, upstreamRepository),
+			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{
 				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
 				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
