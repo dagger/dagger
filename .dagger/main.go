@@ -168,6 +168,19 @@ func (dev *DaggerDev) Evals(
 	})
 }
 
+func (dev *DaggerDev) GenerateSystemPrompt(
+	ctx context.Context,
+	// +defaultPath=./core/llm_docs.md
+	docs *dagger.File,
+	// +defaultPath=./core/llm_dagger_prompt.md
+	systemPrompt *dagger.File,
+) (string, error) {
+	return dag.Evaluator(dagger.EvaluatorOpts{
+		Docs:          docs,
+		InitialPrompt: systemPrompt,
+	}).GenerateSystemPrompt(ctx)
+}
+
 // Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {
 	return &Bench{Test: dev.Test()}
