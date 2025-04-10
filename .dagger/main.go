@@ -162,10 +162,7 @@ func (dev *DaggerDev) Evals(
 	return dag.Evaluator(dagger.EvaluatorOpts{
 		Docs:          docs,
 		InitialPrompt: systemPrompt,
-	}).EvalsAcrossModels(ctx, dagger.EvaluatorEvalsAcrossModelsOpts{
-		// TODO: re-enable all models when stable
-		Models: []string{"gpt-4o", "gemini-2.0-flash"},
-	})
+	}).EvalsAcrossModels(ctx)
 }
 
 func (dev *DaggerDev) GenerateSystemPrompt(
