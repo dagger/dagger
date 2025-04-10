@@ -7,7 +7,8 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"sync"
+
+	"github.com/sourcegraph/conc/pool"
 )
 
 type Evaluator struct {
@@ -79,14 +80,11 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 		}
 		models = knownModels
 	}
-	modelErrs := make([]error, len(models))
-	w := new(sync.WaitGroup)
-	for i, model := range models {
+	p := pool.New().WithErrors()
+	for _, model := range models {
 		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model),
 			telemetry.Reveal())
-		w.Add(1)
-		modelErrs[i] = (func() (rerr error) {
-			defer w.Done()
+		p.Go(func() (rerr error) {
 			defer telemetry.End(modelSpan, func() error { return rerr })
 			var failedEvals error
 			for _, name := range evals {
@@ -128,10 +126,9 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 				return fmt.Errorf("model %q: %w", model, failedEvals)
 			}
 			return nil
-		})()
+		})
 	}
-	w.Wait()
-	return errors.Join(modelErrs...)
+	return p.Wait()
 }
 
 func (m *Evaluator) SystemPrompt(ctx context.Context,
