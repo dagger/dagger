@@ -13,4 +13,6 @@ class MyModule:
     ) -> dagger.Container:
         """Return a container with a mounted file"""
         name = await f.name()
-        return dag.container().from_("alpine:latest").with_mounted_file(f"/src/{name}", f)
+        return (
+            dag.container().from_("alpine:latest").with_mounted_file(f"/src/{name}", f)
+        )

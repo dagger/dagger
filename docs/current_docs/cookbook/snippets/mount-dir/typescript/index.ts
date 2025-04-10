@@ -12,6 +12,9 @@ class MyModule {
      */
     source: Directory,
   ): Container {
-    return dag.container().from("alpine:latest").withMountedDirectory("/src", source)
+    return dag
+      .container()
+      .from("alpine:latest")
+      .withMountedDirectory("/src", source)
   }
 }
