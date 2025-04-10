@@ -208,7 +208,7 @@ func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
 							WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
 							WithEnvVariable("GOCACHE", "/go/build-cache").
 							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
-						"The container to use to build Booklit.").
+						"The Go container to use to build Booklit.").
 					WithFileOutput("bin", "The compiled Booklit binary."),
 			).
 			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0."),
@@ -237,7 +237,7 @@ func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
 							WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
 							WithEnvVariable("GOCACHE", "/go/build-cache").
 							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
-						"The container to use to build Booklit.").
+						"The Go container to use to build Booklit.").
 					WithFileOutput("bin", "The compiled Booklit binary."),
 			).
 			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0.").
