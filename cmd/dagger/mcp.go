@@ -13,14 +13,14 @@ import (
 )
 
 var (
-	mcpStdio   bool
-	mcpSseAddr string
-	core       bool
+	mcpStdio      bool
+	mcpSseAddr    string
+	envPrivileged bool
 )
 
 func init() {
 	mcpCmd.PersistentFlags().BoolVar(&mcpStdio, "stdio", true, "Use standard input/output for communicating with the MCP server")
-	mcpCmd.PersistentFlags().BoolVar(&core, "core", false, "Expose the core API as tools")
+	mcpCmd.PersistentFlags().BoolVar(&envPrivileged, "env-privileged", false, "Expose the core API as tools")
 	mcpCmd.PersistentFlags().StringVar(&mcpSseAddr, "sse-addr", "", "Address of the MCP SSE server (no SSE server if empty)")
 }
 
@@ -61,7 +61,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return err
 	}
 
-	if err == errModuleNotFound && !core {
+	if err == errModuleNotFound && !envPrivileged {
 		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
 	}
 
@@ -80,8 +80,8 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		q = q.Root().Select("env")
 
 		extraCore := ""
-		if core {
-			q = q.Arg("privileged", core)
+		if envPrivileged {
+			q = q.Arg("privileged", envPrivileged)
 			extraCore = " and Dagger core"
 		}
 
@@ -93,7 +93,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 
 		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
 	} else {
-		q = q.Root().Select("env").Arg("privileged", core).Select("id")
+		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
 		logMsg = "Exposing Dagger core as an MCP server"
 	}
 
