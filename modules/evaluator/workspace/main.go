@@ -82,7 +82,7 @@ func (w *Workspace) WithFinding(finding string) *Workspace {
 
 // defaultAttempts configures a sane(?) default number of attempts to run for
 // each provider.
-func (m *Workspace) defaultAttempts(provider string) int {
+func (*Workspace) defaultAttempts(provider string) int {
 	switch strings.ToLower(provider) {
 	case "google":
 		// Gemini has no token usage limit, just an API rate limit.
@@ -146,7 +146,7 @@ func (w *Workspace) Evaluate(
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
 				telemetry.Reveal())
 			defer telemetry.End(span, func() error { return rerr })
-			stdio := telemetry.SpanStdio(ctx, "") //, log.String(telemetry.ContentTypeAttr, "text/markdown"))
+			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
 
 			defer func() {
