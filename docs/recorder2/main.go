@@ -54,6 +54,10 @@ func New(
 	}
 }
 
+func (r *Recorder) Container() *dagger.Container {
+	return r.Vhs.Container()
+}
+
 func (r *Recorder) Render(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
 	features, err := r.Features().All(ctx, githubToken)
 	if err != nil {
