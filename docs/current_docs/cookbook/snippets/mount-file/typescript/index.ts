@@ -13,6 +13,9 @@ class MyModule {
     f: File,
   ): Promise<Container> {
     const name = await f.name()
-    return dag.container().from("alpine:latest").withMountedFile(`/src/${name}`, f)
+    return dag
+      .container()
+      .from("alpine:latest")
+      .withMountedFile(`/src/${name}`, f)
   }
 }
