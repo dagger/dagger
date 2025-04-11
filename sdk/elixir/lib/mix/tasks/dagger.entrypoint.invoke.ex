@@ -14,6 +14,8 @@ defmodule Mix.Tasks.Dagger.Entrypoint.Invoke do
   use Mix.Task
 
   def run([module]) do
+    Application.ensure_all_started(:dagger)
+
     Mix.Task.run("compile")
     Mix.Task.reenable("dagger.entrypoint.invoke")
 
