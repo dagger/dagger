@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -147,46 +147,19 @@ func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
 			WithEnv(dag.Env().
-				WithContainerInput("ctr",
-					dag.Container().
-						WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
-					"A scratch container to start from.")).
-			WithPrompt("give me a minimal container for Go development").
+				WithDirectoryInput("dir", dag.Directory(),
+					"A directory in which to write files.")).
+			WithPrompt("Create the file /a with contents 1.").
 			Loop().
-			WithPrompt("now install nano").
+			WithPrompt("Create the file /b with contents 2.").
 			Loop().
-			WithPrompt("go back to before you installed nano and install vim instead").
+			WithPrompt("Nevermind - get rid of /b and create /c with contents 3.").
 			Loop(),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			res := llm.BindResult("_").AsContainer()
-
-			out, err := res.WithExec([]string{"go", "version"}).Stdout(ctx)
+			entries, err := llm.BindResult("_").AsDirectory().Entries(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "go version")
-
-			out, err = res.WithExec([]string{"vim", "--version"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "VIM - Vi IMproved")
-
-			_, err = res.WithExec([]string{"which", "nano"}, dagger.ContainerWithExecOpts{
-				Expect: dagger.ReturnTypeFailure,
-			}).Sync(ctx)
-			require.NoError(t, err)
-
-			tmp := t.TempDir()
-			path, err := res.AsTarball().Export(ctx, filepath.Join(tmp, "image.tar"))
-			require.NoError(t, err)
-
-			image, err := tarball.ImageFromPath(path, nil)
-			require.NoError(t, err)
-
-			config, err := image.ConfigFile()
-			require.NoError(t, err)
-
-			require.NotEmpty(t, config.History)
-			for _, layer := range config.History {
-				require.NotContains(t, layer.CreatedBy, "nano", "Layer should not contain nano")
-			}
+			sort.Strings(entries)
+			require.Equal(t, []string{"a", "c"}, entries)
 		})
 }
 
