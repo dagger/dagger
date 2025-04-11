@@ -11,7 +11,7 @@ defmodule Dagger.Directory do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Converts this directory into a git repository"
+  @doc "Converts this directory to a local git repository"
   @spec as_git(t()) :: Dagger.GitRepository.t()
   def as_git(%__MODULE__{} = directory) do
     query_builder =
@@ -51,7 +51,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Gets the difference between this directory and an another directory."
+  @doc "Return the difference between this directory and an another directory. The difference is encoded as a directory."
   @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
   def diff(%__MODULE__{} = directory, other) do
     query_builder =
@@ -84,7 +84,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Builds a new Docker container from this directory."
+  @doc "Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features."
   @spec docker_build(t(), [
           {:platform, Dagger.Platform.t() | nil},
           {:dockerfile, String.t() | nil},
@@ -140,7 +140,7 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
-  @doc "Retrieves a file at the given path."
+  @doc "Retrieve a file at the given path."
   @spec file(t(), String.t()) :: Dagger.File.t()
   def file(%__MODULE__{} = directory, path) do
     query_builder =
@@ -152,7 +152,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory as per exclude/include filters."
+  @doc "Return a snapshot with some paths included or excluded"
   @spec filter(t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) :: Dagger.Directory.t()
   def filter(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
@@ -237,7 +237,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory plus a directory written at the given path."
+  @doc "Return a snapshot with a directory added"
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]}
@@ -307,7 +307,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory plus a new file written at the given path."
+  @doc "Return a snapshot with a new file added"
   @spec with_new_file(t(), String.t(), String.t(), [{:permissions, integer() | nil}]) ::
           Dagger.Directory.t()
   def with_new_file(%__MODULE__{} = directory, path, contents, optional_args \\ []) do
@@ -336,7 +336,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory with the directory at the given path removed."
+  @doc "Return a snapshot with a subdirectory removed"
   @spec without_directory(t(), String.t()) :: Dagger.Directory.t()
   def without_directory(%__MODULE__{} = directory, path) do
     query_builder =
@@ -348,7 +348,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory with the file at the given path removed."
+  @doc "Return a snapshot with a file removed"
   @spec without_file(t(), String.t()) :: Dagger.Directory.t()
   def without_file(%__MODULE__{} = directory, path) do
     query_builder =
@@ -360,7 +360,7 @@ defmodule Dagger.Directory do
     }
   end
 
-  @doc "Retrieves this directory with the files at the given paths removed."
+  @doc "Return a snapshot with files removed"
   @spec without_files(t(), [String.t()]) :: Dagger.Directory.t()
   def without_files(%__MODULE__{} = directory, paths) do
     query_builder =

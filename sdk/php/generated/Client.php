@@ -27,9 +27,9 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Creates a scratch container.
+     * Creates a scratch container, with no image or metadata.
      *
-     * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+     * To pull an image, follow up with the "from" function.
      */
     public function container(?Platform $platform = null): Container
     {

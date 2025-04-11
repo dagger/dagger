@@ -39,11 +39,9 @@ var _ SchemaResolvers = &containerSchema{}
 func (s *containerSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("container", s.container).
-			Doc(`Creates a scratch container.`,
-				`Optional platform argument initializes new containers to execute and
-				publish as that platform. Platform defaults to that of the builder's
-				host.`).
-			ArgDoc("platform", `Platform to initialize the container with.`),
+			Doc(`Creates a scratch container, with no image or metadata.`,
+				`To pull an image, follow up with the "from" function.`).
+			ArgDoc("platform", `Platform to initialize the container with. Defaults to the native platform of the current engine`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Container]{
@@ -60,11 +58,11 @@ func (s *containerSchema) Install() {
 			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
 
 		dagql.NodeFunc("from", s.from).
-			Doc(`Initializes this container from a pulled base image.`).
+			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			ArgDoc("address",
-				`Image's address from its registry.`,
-				`Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").`),
-
+				`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
+			),
+		// FIXME: deprecate
 		dagql.Func("build", s.build).
 			Doc(`Initializes this container from a Dockerfile build.`).
 			ArgDoc("context", "Directory context used by the Dockerfile.").
@@ -86,14 +84,12 @@ func (s *containerSchema) Install() {
 			),
 
 		dagql.Func("rootfs", s.rootfs).
-			Doc(`Retrieves this container's root filesystem. Mounts are not included.`),
-
+			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.`),
 		dagql.Func("withRootfs", s.withRootfs).
-			Doc(`Retrieves the container with the given directory mounted to /.`).
-			ArgDoc("directory", "Directory to mount."),
-
+			Doc(`Change the container's root filesystem. The previous root filesystem will be lost.`).
+			ArgDoc("directory", "The new root filesystem."),
 		dagql.Func("directory", s.directory).
-			Doc(`Retrieves a directory at the given path.`,
+			Doc(`Retrieve a directory from the container's root filesystem`,
 				`Mounts are included.`).
 			ArgDoc("path", `The path of the directory to retrieve (e.g., "./src").`).
 			ArgDoc("expand",
@@ -122,14 +118,14 @@ func (s *containerSchema) Install() {
 			Doc("Retrieves the working directory for all commands."),
 
 		dagql.Func("withWorkdir", s.withWorkdir).
-			Doc(`Retrieves this container with a different working directory.`).
+			Doc(`Change the container's working directory. Like WORKDIR in Dockerfile.`).
 			ArgDoc("path", `The path to set as the working directory (e.g., "/app").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutWorkdir", s.withoutWorkdir).
-			Doc(`Retrieves this container with an unset working directory.`,
+			Doc(`Unset the container's working directory.`,
 				`Should default to "/".`),
 
 		dagql.Func("envVariables", s.envVariables).
@@ -140,9 +136,9 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the environment variable to retrieve (e.g., "PATH").`),
 
 		dagql.Func("withEnvVariable", s.withEnvVariable).
-			Doc(`Retrieves this container plus the given environment variable.`).
-			ArgDoc("name", `The name of the environment variable (e.g., "HOST").`).
-			ArgDoc("value", `The value of the environment variable. (e.g., "localhost").`).
+			Doc(`Set a new environment variable in the container.`).
+			ArgDoc("name", `Name of the environment variable (e.g., "HOST").`).
+			ArgDoc("value", `Value of the environment variable. (e.g., "localhost").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value according to the current `+
 					`environment variables defined in the container (e.g. "/opt/bin:$PATH").`),
@@ -155,9 +151,9 @@ func (s *containerSchema) Install() {
 			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
 
 		dagql.Func("withSecretVariable", s.withSecretVariable).
-			Doc(`Retrieves this container plus an env variable containing the given secret.`).
-			ArgDoc("name", `The name of the secret variable (e.g., "API_SECRET").`).
-			ArgDoc("secret", `The identifier of the secret value.`),
+			Doc(`Set a new environment variable, using a secret value`).
+			ArgDoc("name", `Name of the secret variable (e.g., "API_SECRET").`).
+			ArgDoc("secret", `Identifier of the secret value.`),
 
 		dagql.Func("withoutEnvVariable", s.withoutEnvVariable).
 			Doc(`Retrieves this container minus the given environment variable.`).
@@ -184,26 +180,26 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
 
 		dagql.Func("entrypoint", s.entrypoint).
-			Doc(`Retrieves entrypoint to be prepended to the arguments of all commands.`),
+			Doc(`Return the container's OCI entrypoint.`),
 
 		dagql.Func("withEntrypoint", s.withEntrypoint).
-			Doc(`Retrieves this container but with a different command entrypoint.`).
-			ArgDoc("args", `Entrypoint to use for future executions (e.g., ["go", "run"]).`).
-			ArgDoc("keepDefaultArgs", `Don't remove the default arguments when setting the entrypoint.`),
+			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.`).
+			ArgDoc("args", `Arguments of the entrypoint. Example: ["go", "run"].`).
+			ArgDoc("keepDefaultArgs", `Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.`),
 
 		dagql.Func("withoutEntrypoint", s.withoutEntrypoint).
-			Doc(`Retrieves this container with an unset command entrypoint.`).
+			Doc(`Reset the container's OCI entrypoint.`).
 			ArgDoc("keepDefaultArgs", `Don't remove the default arguments when unsetting the entrypoint.`),
 
 		dagql.Func("defaultArgs", s.defaultArgs).
-			Doc(`Retrieves default arguments for future commands.`),
+			Doc(`Return the container's default arguments.`),
 
 		dagql.Func("withDefaultArgs", s.withDefaultArgs).
-			Doc(`Configures default arguments for future commands.`).
+			Doc(`Configures default arguments for future commands. Like CMD in Dockerfile.`).
 			ArgDoc("args", `Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).`),
 
 		dagql.Func("withoutDefaultArgs", s.withoutDefaultArgs).
-			Doc(`Retrieves this container with unset default arguments for future commands.`),
+			Doc(`Remove the container's default arguments.`),
 
 		dagql.Func("mounts", s.mounts).
 			Doc(`Retrieves the list of paths where a directory is mounted.`),
@@ -298,10 +294,10 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withFile", s.withFile).
-			Doc(`Retrieves this container plus the contents of the given file copied to the given path.`).
-			ArgDoc("path", `Location of the copied file (e.g., "/tmp/file.txt").`).
-			ArgDoc("source", `Identifier of the file to copy.`).
-			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`).
+			Doc(`Return a container snapshot with a file added`).
+			ArgDoc("path", `Path of the new file. Example: "/path/to/new-file.txt"`).
+			ArgDoc("source", `File to add`).
+			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
 			ArgDoc("owner",
 				`A user:group to set for the file.`,
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
@@ -318,8 +314,8 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withoutFiles", s.withoutFiles).
-			Doc(`Retrieves this container with the files at the given paths removed.`).
-			ArgDoc("paths", `Location of the files to remove (e.g., ["/file.txt"]).`).
+			Doc(`Return a new container spanshot with specified files removed`).
+			ArgDoc("paths", `Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of paths according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
@@ -339,10 +335,10 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withNewFile", s.withNewFile).
 			View(AllVersion).
-			Doc(`Retrieves this container plus a new file written at the given path.`).
-			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
-			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
-			ArgDoc("permissions", `Permission given to the written file (e.g., 0600).`).
+			Doc(`Return a new container snapshot, with a file added to its filesystem`).
+			ArgDoc("path", `Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"`).
+			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
+			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
 			ArgDoc("owner",
 				`A user:group to set for the file.`,
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
@@ -362,7 +358,7 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withDirectory", s.withDirectory).
-			Doc(`Retrieves this container plus a directory written at the given path.`).
+			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			ArgDoc("path", `Location of the written directory (e.g., "/tmp/directory").`).
 			ArgDoc("directory", `Identifier of the directory to write`).
 			ArgDoc("exclude", `Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).`).
@@ -376,7 +372,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutDirectory", s.withoutDirectory).
-			Doc(`Retrieves this container with the directory at the given path removed.`).
+			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -384,43 +380,33 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withExec", s.withExec).
 			View(AllVersion).
-			Doc(`Retrieves this container after executing the specified command inside it.`).
+			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			ArgDoc("args",
-				`Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).`,
-				`If empty, the container's default command is used.`).
+				`Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].`,
+				`To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]`,
+				`Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").`).
 			ArgDoc("useEntrypoint",
-				`If the container has an entrypoint, prepend it to the args.`).
+				`Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.`).
 			ArgRemove("skipEntrypoint").
 			ArgDoc("stdin",
-				`Content to write to the command's standard input before closing (e.g.,
-				"Hello world").`).
+				`Content to write to the command's standard input. Example: "Hello world")`).
 			ArgDoc("redirectStdout",
-				`Redirect the command's standard output to a file in the container (e.g.,
-			"/tmp/stdout").`).
+				`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`).
 			ArgDoc("redirectStderr",
-				`Redirect the command's standard error to a file in the container (e.g.,
-			"/tmp/stderr").`).
+				`Like redirectStdout, but for standard error`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
-				`Execute the command with all root capabilities. This is similar to
-				running a command with "sudo" or executing "docker run" with the
-				"--privileged" flag. Containerization does not provide any security
-				guarantees when using this option. It should only be used when
-				absolutely necessary and only with trusted commands.`).
+				`Execute the command with all root capabilities. Like --privileged in Docker`,
+				`DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the args according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`).
 			ArgDoc("noInit",
-				`If set, skip the automatic init process injected into containers by default.`,
-				`This should only be used if the user requires that their exec process be the
-				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+				`Skip the automatic init process injected into containers by default.`,
+				`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 			),
-
 		dagql.Func("withExec", s.withExec).
 			View(BeforeVersion("v0.13.0")).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
@@ -484,13 +470,13 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("stdout", s.stdout).
 			View(AllVersion).
-			Doc(`The output stream of the last executed command.`,
-				`Returns an error if no command was set.`),
+			Doc(`The buffered standard output stream of the last executed command`,
+				`Returns an error if no command was executed`),
 
 		dagql.Func("stderr", s.stderr).
 			View(AllVersion).
-			Doc(`The error stream of the last executed command.`,
-				`Returns an error if no command was set.`),
+			Doc(`The buffered standard error stream of the last executed command`,
+				`Returns an error if no command was executed`),
 
 		dagql.Func("stdout", s.stdoutLegacy).
 			View(BeforeVersion("v0.12.0")).
@@ -503,8 +489,8 @@ func (s *containerSchema) Install() {
 				`Will execute default command if none is set, or error if there's no default.`),
 
 		dagql.Func("exitCode", s.exitCode).
-			Doc(`The exit code of the last executed command.`,
-				`Returns an error if no command was set.`),
+			Doc(`The exit code of the last executed command`,
+				`Returns an error if no command was executed`),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
 			Doc(`Retrieves this container plus the given OCI anotation.`).
@@ -516,13 +502,12 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the annotation.`),
 
 		dagql.Func("publish", s.publish).
-			DoNotCache("Writes to the specified Docker registry.").
-			Doc(`Publishes this container as a new image to the specified address.`,
-				`Publish returns a fully qualified ref.`,
-				`It can also publish platform variants.`).
+			DoNotCache("side effect on an external system (OCI registry)").
+			Doc(`Package the container state as an OCI image, and publish it to a registry`,
+				`Returns the fully qualified address of the published image, with digest`).
 			ArgDoc("address",
-				`Registry's address to publish the image to.`,
-				`Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").`).
+				`The OCI address to publish to`,
+				`Same format as "docker push". Example: "registry.example.com/user/repo:tag"`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
 				`Used for multi-platform image.`).
@@ -536,8 +521,8 @@ func (s *containerSchema) Install() {
 				compressed using Gzip.`).
 			ArgDoc("mediaTypes",
 				`Use the specified media types for the published image's layers.`,
-				`Defaults to OCI, which is largely compatible with most recent
-				registries, but Docker may be needed for older registries without OCI
+				`Defaults to "OCI", which is compatible with most recent
+				registries, but "Docker" may be needed for older registries without OCI
 				support.`),
 
 		dagql.Func("platform", s.platform).
@@ -574,7 +559,7 @@ func (s *containerSchema) Install() {
 			Extend(),
 
 		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, s.asTarballPath)).
-			Doc(`Returns a File representing the container serialized to a tarball.`).
+			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
 				`Used for multi-platform images.`).
@@ -596,12 +581,10 @@ func (s *containerSchema) Install() {
 			ArgDoc("tag", `Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
-			Doc(`Retrieves this container with a registry authentication for a given address.`).
-			ArgDoc("address",
-				`Registry's address to bind the authentication to.`,
-				`Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).`).
-			ArgDoc("username", `The username of the registry's account (e.g., "Dagger").`).
-			ArgDoc("secret", `The API key, password or token to authenticate to this registry.`),
+			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
+			ArgDoc("address", `The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`).
+			ArgDoc("username", `The username to authenticate with. Example: "alice"`).
+			ArgDoc("secret", `The API key, password or token to authenticate to this registry`),
 
 		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
@@ -612,13 +595,13 @@ func (s *containerSchema) Install() {
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
 		dagql.Func("withExposedPort", s.withExposedPort).
-			Doc(`Expose a network port.`,
+			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
 				`Exposed ports serve two purposes:`,
 				`- For health checks and introspection, when running services`,
 				`- For setting the EXPOSE OCI field when publishing the container`).
-			ArgDoc("port", `Port number to expose`).
-			ArgDoc("protocol", `Transport layer network protocol`).
-			ArgDoc("description", `Optional port description`).
+			ArgDoc("port", `Port number to expose. Example: 8080`).
+			ArgDoc("protocol", `Network protocol. Example: "tcp"`).
+			ArgDoc("description", `Port description. Example: "payment API endpoint"`).
 			ArgDoc("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
 
 		dagql.Func("withoutExposedPort", s.withoutExposedPort).
@@ -631,14 +614,14 @@ func (s *containerSchema) Install() {
 				`This includes ports already exposed by the image, even if not explicitly added with dagger.`),
 
 		dagql.Func("withServiceBinding", s.withServiceBinding).
-			Doc(`Establish a runtime dependency on a service.`,
+			Doc(`Establish a runtime dependency on a from a container to a network service.`,
 				`The service will be started automatically when needed and detached
 				when it is no longer needed, executing the default command if none is
 				set.`,
 				`The service will be reachable from the container via the provided hostname alias.`,
 				`The service dependency will also convey to any files or directories produced by the container.`).
-			ArgDoc("alias", `A name that can be used to reach the service from the container`).
-			ArgDoc("service", `Identifier of the service container`),
+			ArgDoc("alias", `Hostname that will resolve to the target service (only accessible from within this container)`).
+			ArgDoc("service", `The target service`),
 
 		dagql.Func("withFocus", s.withFocus).
 			View(BeforeVersion("v0.13.4")).

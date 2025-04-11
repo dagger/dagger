@@ -1063,7 +1063,7 @@ func (CLISuite) TestCLIFunctions(ctx context.Context, t *testctx.T) {
 
 import (
 	"context"
-	
+
 	"dagger/test/internal/dagger"
 )
 
@@ -1160,7 +1160,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
 		require.Contains(t, lines, "file                          Retrieves a file at the given path.")
-		require.Contains(t, lines, "as-tarball                    Returns a File representing the container serialized to a tarball.")
+		require.Contains(t, lines, "as-tarball                    Package the container state as an OCI image, and return it as a tar archive")
 	})
 
 	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
@@ -1174,7 +1174,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
 		require.Contains(t, lines, "file                          Retrieves a file at the given path.")
-		require.Contains(t, lines, "as-tarball                    Returns a File representing the container serialized to a tarball.")
+		require.Contains(t, lines, "as-tarball                    Package the container state as an OCI image, and return it as a tar archive")
 	})
 
 	t.Run("return user interface", func(ctx context.Context, t *testctx.T) {
@@ -1453,17 +1453,17 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 	// we pin the dep to a random commit and then verify
 	// that the update actually changes the pin
 	noDeps := `{
-		"name": "foo", 
+		"name": "foo",
 		"sdk": "go"
 	}`
 
 	// pin a random old commit to verify pin is changed
 	depHasOldVersion := `{
-		"name": "foo", 
-		"sdk": "go", 
+		"name": "foo",
+		"sdk": "go",
 		"dependencies": [
-			{ 
-				"name": "docker", 
+			{
+				"name": "docker",
 				"source": "github.com/shykes/daggerverse/docker@docker/v0.4.1",
 				"pin": "` + randomMainPin + `"
 			}
@@ -1471,11 +1471,11 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 	}`
 
 	depHasBranch := `{
-		"name": "foo", 
-		"sdk": "go", 
+		"name": "foo",
+		"sdk": "go",
 		"dependencies": [
-			{ 
-				"name": "docker", 
+			{
+				"name": "docker",
 				"source": "github.com/shykes/daggerverse/docker@main",
 				"pin": "` + randomMainPin + `"
 			}
@@ -1483,22 +1483,22 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 	}`
 
 	depIsLocal := `{
-		"name": "foo", 
-		"sdk": "go", 
+		"name": "foo",
+		"sdk": "go",
 		"dependencies": [
-			{ 
-				"name": "bar", 
+			{
+				"name": "bar",
 				"source": "./bar"
 			}
 		]
 	}`
 
 	depHasNoVersion := `{
-		"name": "foo", 
-		"sdk": "go", 
+		"name": "foo",
+		"sdk": "go",
 		"dependencies": [
-			{ 
-				"name": "docker", 
+			{
+				"name": "docker",
 				"source": "github.com/shykes/daggerverse/docker",
 				"pin": "` + randomMainPin + `"
 			}
@@ -1506,16 +1506,16 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 	}`
 
 	multipleDeps := `{
-		"name": "foo", 
-		"sdk": "go", 
+		"name": "foo",
+		"sdk": "go",
 		"dependencies": [
-			{ 
-				"name": "docker", 
+			{
+				"name": "docker",
 				"source": "github.com/shykes/daggerverse/docker@v0.4.1",
 				"pin": "` + randomMainPin + `"
 			},
-			{ 
-				"name": "wolfi", 
+			{
+				"name": "wolfi",
 				"source": "github.com/shykes/daggerverse/wolfi@v0.1.3",
 				"pin": "` + randomWolfiPin + `"
 			}

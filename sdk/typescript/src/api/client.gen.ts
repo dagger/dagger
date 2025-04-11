@@ -219,7 +219,7 @@ export type ContainerPublishOpts = {
   /**
    * Use the specified media types for the published image's layers.
    *
-   * Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
+   * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
 }
@@ -335,7 +335,7 @@ export type ContainerWithDirectoryOpts = {
 
 export type ContainerWithEntrypointOpts = {
   /**
-   * Don't remove the default arguments when setting the entrypoint.
+   * Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
    */
   keepDefaultArgs?: boolean
 }
@@ -349,22 +349,22 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * If the container has an entrypoint, prepend it to the args.
+   * Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    */
   useEntrypoint?: boolean
 
   /**
-   * Content to write to the command's standard input before closing (e.g., "Hello world").
+   * Content to write to the command's standard input. Example: "Hello world")
    */
   stdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+   * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * Like redirectStdout, but for standard error
    */
   redirectStderr?: string
 
@@ -375,13 +375,13 @@ export type ContainerWithExecOpts = {
 
   /**
    * Provides Dagger access to the executed command.
-   *
-   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
 
   /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * Execute the command with all root capabilities. Like --privileged in Docker
+   *
+   * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
    */
   insecureRootCapabilities?: boolean
 
@@ -391,21 +391,21 @@ export type ContainerWithExecOpts = {
   expand?: boolean
 
   /**
-   * If set, skip the automatic init process injected into containers by default.
+   * Skip the automatic init process injected into containers by default.
    *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
    */
   noInit?: boolean
 }
 
 export type ContainerWithExposedPortOpts = {
   /**
-   * Transport layer network protocol
+   * Network protocol. Example: "tcp"
    */
   protocol?: NetworkProtocol
 
   /**
-   * Optional port description
+   * Port description. Example: "payment API endpoint"
    */
   description?: string
 
@@ -417,7 +417,7 @@ export type ContainerWithExposedPortOpts = {
 
 export type ContainerWithFileOpts = {
   /**
-   * Permission given to the copied file (e.g., 0600).
+   * Permissions of the new file. Example: 0600
    */
   permissions?: number
 
@@ -554,7 +554,7 @@ export type ContainerWithMountedTempOpts = {
 
 export type ContainerWithNewFileOpts = {
   /**
-   * Permission given to the written file (e.g., 0600).
+   * Permissions of the new file. Example: 0600
    */
   permissions?: number
 
@@ -737,12 +737,12 @@ export type DirectoryExportOpts = {
 
 export type DirectoryFilterOpts = {
   /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
    */
   exclude?: string[]
 
   /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
    */
   include?: string[]
 }
@@ -806,7 +806,7 @@ export type DirectoryWithNewDirectoryOpts = {
 
 export type DirectoryWithNewFileOpts = {
   /**
-   * Permission given to the copied file (e.g., 0600).
+   * Permissions of the new file. Example: 0600
    */
   permissions?: number
 }
@@ -1161,7 +1161,7 @@ export type ClientCacheVolumeOpts = {
 
 export type ClientContainerOpts = {
   /**
-   * Platform to initialize the container with.
+   * Platform to initialize the container with. Defaults to the native platform of the current engine
    */
   platform?: Platform
 }
@@ -1785,7 +1785,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Returns a File representing the container serialized to a tarball.
+   * Package the container state as an OCI image, and return it as a tar archive
    * @param opts.platformVariants Identifiers for other platform specific containers.
    *
    * Used for multi-platform images.
@@ -1827,7 +1827,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves default arguments for future commands.
+   * Return the container's default arguments.
    */
   defaultArgs = async (): Promise<string[]> => {
     const ctx = this._ctx.select("defaultArgs")
@@ -1838,7 +1838,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves a directory at the given path.
+   * Retrieve a directory from the container's root filesystem
    *
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
@@ -1850,7 +1850,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves entrypoint to be prepended to the arguments of all commands.
+   * Return the container's OCI entrypoint.
    */
   entrypoint = async (): Promise<string[]> => {
     const ctx = this._ctx.select("entrypoint")
@@ -1894,9 +1894,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * The exit code of the last executed command.
+   * The exit code of the last executed command
    *
-   * Returns an error if no command was set.
+   * Returns an error if no command was executed
    */
   exitCode = async (): Promise<number> => {
     if (this._exitCode) {
@@ -2007,10 +2007,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Initializes this container from a pulled base image.
-   * @param address Image's address from its registry.
-   *
-   * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
+   * Download a container image, and apply it to the container state. All previous state will be lost.
+   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
    */
   from = (address: string): Container => {
     const ctx = this._ctx.select("from", { address })
@@ -2100,14 +2098,12 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Publishes this container as a new image to the specified address.
+   * Package the container state as an OCI image, and publish it to a registry
    *
-   * Publish returns a fully qualified ref.
+   * Returns the fully qualified address of the published image, with digest
+   * @param address The OCI address to publish to
    *
-   * It can also publish platform variants.
-   * @param address Registry's address to publish the image to.
-   *
-   * Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
+   * Same format as "docker push". Example: "registry.example.com/user/repo:tag"
    * @param opts.platformVariants Identifiers for other platform specific containers.
    *
    * Used for multi-platform image.
@@ -2116,7 +2112,7 @@ export class Container extends BaseClient {
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
    *
-   * Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
+   * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
    */
   publish = async (
     address: string,
@@ -2143,7 +2139,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container's root filesystem. Mounts are not included.
+   * Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
    */
   rootfs = (): Directory => {
     const ctx = this._ctx.select("rootfs")
@@ -2151,9 +2147,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * The error stream of the last executed command.
+   * The buffered standard error stream of the last executed command
    *
-   * Returns an error if no command was set.
+   * Returns an error if no command was executed
    */
   stderr = async (): Promise<string> => {
     if (this._stderr) {
@@ -2168,9 +2164,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * The output stream of the last executed command.
+   * The buffered standard output stream of the last executed command
    *
-   * Returns an error if no command was set.
+   * Returns an error if no command was executed
    */
   stdout = async (): Promise<string> => {
     if (this._stdout) {
@@ -2267,7 +2263,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Configures default arguments for future commands.
+   * Configures default arguments for future commands. Like CMD in Dockerfile.
    * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
   withDefaultArgs = (args: string[]): Container => {
@@ -2292,7 +2288,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus a directory written at the given path.
+   * Return a new container snapshot, with a directory added to its filesystem
    * @param path Location of the written directory (e.g., "/tmp/directory").
    * @param directory Identifier of the directory to write
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -2314,9 +2310,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container but with a different command entrypoint.
-   * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
-   * @param opts.keepDefaultArgs Don't remove the default arguments when setting the entrypoint.
+   * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
+   * @param args Arguments of the entrypoint. Example: ["go", "run"].
+   * @param opts.keepDefaultArgs Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
    */
   withEntrypoint = (
     args: string[],
@@ -2327,9 +2323,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus the given environment variable.
-   * @param name The name of the environment variable (e.g., "HOST").
-   * @param value The value of the environment variable. (e.g., "localhost").
+   * Set a new environment variable in the container.
+   * @param name Name of the environment variable (e.g., "HOST").
+   * @param value Value of the environment variable. (e.g., "localhost").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
    */
   withEnvVariable = (
@@ -2342,23 +2338,25 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container after executing the specified command inside it.
-   * @param args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+   * Execute a command in the container, and return a new snapshot of the container state after execution.
+   * @param args Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
    *
-   * If empty, the container's default command is used.
-   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
+   *
+   * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
+   * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
+   * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+   * @param opts.redirectStderr Like redirectStdout, but for standard error
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
-   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
+   * @param opts.noInit Skip the automatic init process injected into containers by default.
    *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     const metadata = {
@@ -2374,16 +2372,16 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Expose a network port.
+   * Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
    *
    * Exposed ports serve two purposes:
    *
    * - For health checks and introspection, when running services
    *
    * - For setting the EXPOSE OCI field when publishing the container
-   * @param port Port number to expose
-   * @param opts.protocol Transport layer network protocol
-   * @param opts.description Optional port description
+   * @param port Port number to expose. Example: 8080
+   * @param opts.protocol Network protocol. Example: "tcp"
+   * @param opts.description Port description. Example: "payment API endpoint"
    * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
   withExposedPort = (
@@ -2403,10 +2401,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus the contents of the given file copied to the given path.
-   * @param path Location of the copied file (e.g., "/tmp/file.txt").
-   * @param source Identifier of the file to copy.
-   * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   * Return a container snapshot with a file added
+   * @param path Path of the new file. Example: "/path/to/new-file.txt"
+   * @param source File to add
+   * @param opts.permissions Permissions of the new file. Example: 0600
    * @param opts.owner A user:group to set for the file.
    *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -2569,10 +2567,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus a new file written at the given path.
-   * @param path Location of the written file (e.g., "/tmp/file.txt").
-   * @param contents Content of the file to write (e.g., "Hello world!").
-   * @param opts.permissions Permission given to the written file (e.g., 0600).
+   * Return a new container snapshot, with a file added to its filesystem
+   * @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
+   * @param contents Contents of the new file. Example: "Hello world!"
+   * @param opts.permissions Permissions of the new file. Example: 0600
    * @param opts.owner A user:group to set for the file.
    *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -2590,12 +2588,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with a registry authentication for a given address.
-   * @param address Registry's address to bind the authentication to.
-   *
-   * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
-   * @param username The username of the registry's account (e.g., "Dagger").
-   * @param secret The API key, password or token to authenticate to this registry.
+   * Attach credentials for future publishing to a registry. Use in combination with publish
+   * @param address The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
+   * @param username The username to authenticate with. Example: "alice"
+   * @param secret The API key, password or token to authenticate to this registry
    */
   withRegistryAuth = (
     address: string,
@@ -2611,8 +2607,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the container with the given directory mounted to /.
-   * @param directory Directory to mount.
+   * Change the container's root filesystem. The previous root filesystem will be lost.
+   * @param directory The new root filesystem.
    */
   withRootfs = (directory: Directory): Container => {
     const ctx = this._ctx.select("withRootfs", { directory })
@@ -2620,9 +2616,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus an env variable containing the given secret.
-   * @param name The name of the secret variable (e.g., "API_SECRET").
-   * @param secret The identifier of the secret value.
+   * Set a new environment variable, using a secret value
+   * @param name Name of the secret variable (e.g., "API_SECRET").
+   * @param secret Identifier of the secret value.
    */
   withSecretVariable = (name: string, secret: Secret): Container => {
     const ctx = this._ctx.select("withSecretVariable", { name, secret })
@@ -2630,15 +2626,15 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Establish a runtime dependency on a service.
+   * Establish a runtime dependency on a from a container to a network service.
    *
    * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
    *
    * The service will be reachable from the container via the provided hostname alias.
    *
    * The service dependency will also convey to any files or directories produced by the container.
-   * @param alias A name that can be used to reach the service from the container
-   * @param service Identifier of the service container
+   * @param alias Hostname that will resolve to the target service (only accessible from within this container)
+   * @param service The target service
    */
   withServiceBinding = (alias: string, service: Service): Container => {
     const ctx = this._ctx.select("withServiceBinding", { alias, service })
@@ -2675,7 +2671,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with a different working directory.
+   * Change the container's working directory. Like WORKDIR in Dockerfile.
    * @param path The path to set as the working directory (e.g., "/app").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
@@ -2694,7 +2690,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with unset default arguments for future commands.
+   * Remove the container's default arguments.
    */
   withoutDefaultArgs = (): Container => {
     const ctx = this._ctx.select("withoutDefaultArgs")
@@ -2702,7 +2698,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with the directory at the given path removed.
+   * Return a new container snapshot, with a directory removed from its filesystem
    * @param path Location of the directory to remove (e.g., ".github/").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
@@ -2715,7 +2711,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with an unset command entrypoint.
+   * Reset the container's OCI entrypoint.
    * @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
    */
   withoutEntrypoint = (opts?: ContainerWithoutEntrypointOpts): Container => {
@@ -2764,8 +2760,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with the files at the given paths removed.
-   * @param paths Location of the files to remove (e.g., ["/file.txt"]).
+   * Return a new container spanshot with specified files removed
+   * @param paths Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withoutFiles = (
@@ -2842,7 +2838,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container with an unset working directory.
+   * Unset the container's working directory.
    *
    * Should default to "/".
    */
@@ -2998,7 +2994,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Converts this directory into a git repository
+   * Converts this directory to a local git repository
    */
   asGit = (): GitRepository => {
     const ctx = this._ctx.select("asGit")
@@ -3028,8 +3024,8 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Gets the difference between this directory and an another directory.
-   * @param other Identifier of the directory to compare.
+   * Return the difference between this directory and an another directory. The difference is encoded as a directory.
+   * @param other The directory to compare against
    */
   diff = (other: Directory): Directory => {
     const ctx = this._ctx.select("diff", { other })
@@ -3053,7 +3049,7 @@ export class Directory extends BaseClient {
 
   /**
    * Retrieves a directory at the given path.
-   * @param path Location of the directory to retrieve (e.g., "/src").
+   * @param path Location of the directory to retrieve. Example: "/src"
    */
   directory = (path: string): Directory => {
     const ctx = this._ctx.select("directory", { path })
@@ -3061,7 +3057,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Builds a new Docker container from this directory.
+   * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
    * @param opts.platform The platform to build.
    * @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
    * @param opts.target Target build stage to build.
@@ -3111,7 +3107,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves a file at the given path.
+   * Retrieve a file at the given path.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
   file = (path: string): File => {
@@ -3120,9 +3116,9 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory as per exclude/include filters.
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * Return a snapshot with some paths included or excluded
+   * @param opts.exclude If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
+   * @param opts.include If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
    */
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
@@ -3182,7 +3178,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory plus a directory written at the given path.
+   * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3241,10 +3237,10 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory plus a new file written at the given path.
-   * @param path Location of the written file (e.g., "/file.txt").
-   * @param contents Content of the written file (e.g., "Hello world!").
-   * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   * Return a snapshot with a new file added
+   * @param path Path of the new file. Example: "foo/bar.txt"
+   * @param contents Contents of the new file. Example: "Hello world!"
+   * @param opts.permissions Permissions of the new file. Example: 0600
    */
   withNewFile = (
     path: string,
@@ -3267,8 +3263,8 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory with the directory at the given path removed.
-   * @param path Location of the directory to remove (e.g., ".github/").
+   * Return a snapshot with a subdirectory removed
+   * @param path Path of the subdirectory to remove. Example: ".github/workflows"
    */
   withoutDirectory = (path: string): Directory => {
     const ctx = this._ctx.select("withoutDirectory", { path })
@@ -3276,8 +3272,8 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory with the file at the given path removed.
-   * @param path Location of the file to remove (e.g., "/file.txt").
+   * Return a snapshot with a file removed
+   * @param path Path of the file to remove (e.g., "/file.txt").
    */
   withoutFile = (path: string): Directory => {
     const ctx = this._ctx.select("withoutFile", { path })
@@ -3285,8 +3281,8 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieves this directory with the files at the given paths removed.
-   * @param paths Location of the file to remove (e.g., ["/file.txt"]).
+   * Return a snapshot with files removed
+   * @param paths Paths of the files to remove (e.g., ["/file.txt"]).
    */
   withoutFiles = (paths: string[]): Directory => {
     const ctx = this._ctx.select("withoutFiles", { paths })
@@ -7426,10 +7422,10 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Creates a scratch container.
+   * Creates a scratch container, with no image or metadata.
    *
-   * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-   * @param opts.platform Platform to initialize the container with.
+   * To pull an image, follow up with the "from" function.
+   * @param opts.platform Platform to initialize the container with. Defaults to the native platform of the current engine
    */
   container = (opts?: ClientContainerOpts): Container => {
     const ctx = this._ctx.select("container", { ...opts })

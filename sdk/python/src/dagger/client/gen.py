@@ -671,7 +671,8 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> "File":
-        """Returns a File representing the container serialized to a tarball.
+        """Package the container state as an OCI image, and return it as a tar
+        archive
 
         Parameters
         ----------
@@ -754,7 +755,7 @@ class Container(Type):
         return Container(_ctx)
 
     async def default_args(self) -> list[str]:
-        """Retrieves default arguments for future commands.
+        """Return the container's default arguments.
 
         Returns
         -------
@@ -780,7 +781,7 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> "Directory":
-        """Retrieves a directory at the given path.
+        """Retrieve a directory from the container's root filesystem
 
         Mounts are included.
 
@@ -801,7 +802,7 @@ class Container(Type):
         return Directory(_ctx)
 
     async def entrypoint(self) -> list[str]:
-        """Retrieves entrypoint to be prepended to the arguments of all commands.
+        """Return the container's OCI entrypoint.
 
         Returns
         -------
@@ -871,9 +872,9 @@ class Container(Type):
         ]
 
     async def exit_code(self) -> int:
-        """The exit code of the last executed command.
+        """The exit code of the last executed command
 
-        Returns an error if no command was set.
+        Returns an error if no command was executed
 
         Returns
         -------
@@ -1044,14 +1045,14 @@ class Container(Type):
         return File(_ctx)
 
     def from_(self, address: str) -> Self:
-        """Initializes this container from a pulled base image.
+        """Download a container image, and apply it to the container state. All
+        previous state will be lost.
 
         Parameters
         ----------
         address:
-            Image's address from its registry.
-            Formatted as [host]/[user]/[repo]:[tag] (e.g.,
-            "docker.io/dagger/dagger:main").
+            Address of the container image to download, in standard OCI ref
+            format. Example:"registry.dagger.io/engine:latest"
         """
         _args = [
             Arg("address", address),
@@ -1228,18 +1229,18 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> str:
-        """Publishes this container as a new image to the specified address.
+        """Package the container state as an OCI image, and publish it to a
+        registry
 
-        Publish returns a fully qualified ref.
-
-        It can also publish platform variants.
+        Returns the fully qualified address of the published image, with
+        digest
 
         Parameters
         ----------
         address:
-            Registry's address to publish the image to.
-            Formatted as [host]/[user]/[repo]:[tag] (e.g.
-            "docker.io/dagger/dagger:main").
+            The OCI address to publish to
+            Same format as "docker push". Example:
+            "registry.example.com/user/repo:tag"
         platform_variants:
             Identifiers for other platform specific containers.
             Used for multi-platform image.
@@ -1253,9 +1254,9 @@ class Container(Type):
             be compressed using Gzip.
         media_types:
             Use the specified media types for the published image's layers.
-            Defaults to OCI, which is largely compatible with most recent
-            registries, but Docker may be needed for older registries without
-            OCI support.
+            Defaults to "OCI", which is compatible with most recent
+            registries, but "Docker" may be needed for older registries
+            without OCI support.
 
         Returns
         -------
@@ -1285,15 +1286,18 @@ class Container(Type):
         return await _ctx.execute(str)
 
     def rootfs(self) -> "Directory":
-        """Retrieves this container's root filesystem. Mounts are not included."""
+        """Return a snapshot of the container's root filesystem. The snapshot can
+        be modified then written back using withRootfs. Use that method for
+        filesystem modifications.
+        """
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
 
     async def stderr(self) -> str:
-        """The error stream of the last executed command.
+        """The buffered standard error stream of the last executed command
 
-        Returns an error if no command was set.
+        Returns an error if no command was executed
 
         Returns
         -------
@@ -1314,9 +1318,9 @@ class Container(Type):
         return await _ctx.execute(str)
 
     async def stdout(self) -> str:
-        """The output stream of the last executed command.
+        """The buffered standard output stream of the last executed command
 
-        Returns an error if no command was set.
+        Returns an error if no command was executed
 
         Returns
         -------
@@ -1516,7 +1520,8 @@ class Container(Type):
         return Container(_ctx)
 
     def with_default_args(self, args: list[str]) -> Self:
-        """Configures default arguments for future commands.
+        """Configures default arguments for future commands. Like CMD in
+        Dockerfile.
 
         Parameters
         ----------
@@ -1575,7 +1580,8 @@ class Container(Type):
         owner: str | None = "",
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container plus a directory written at the given path.
+        """Return a new container snapshot, with a directory added to its
+        filesystem
 
         Parameters
         ----------
@@ -1616,14 +1622,17 @@ class Container(Type):
         *,
         keep_default_args: bool | None = False,
     ) -> Self:
-        """Retrieves this container but with a different command entrypoint.
+        """Set an OCI-style entrypoint. It will be included in the container's
+        OCI configuration. Note, withExec ignores the entrypoint by default.
 
         Parameters
         ----------
         args:
-            Entrypoint to use for future executions (e.g., ["go", "run"]).
+            Arguments of the entrypoint. Example: ["go", "run"].
         keep_default_args:
-            Don't remove the default arguments when setting the entrypoint.
+            Don't reset the default arguments when setting the entrypoint. By
+            default it is reset, since entrypoint and default args are often
+            tightly coupled.
         """
         _args = [
             Arg("args", args),
@@ -1639,14 +1648,14 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container plus the given environment variable.
+        """Set a new environment variable in the container.
 
         Parameters
         ----------
         name:
-            The name of the environment variable (e.g., "HOST").
+            Name of the environment variable (e.g., "HOST").
         value:
-            The value of the environment variable. (e.g., "localhost").
+            Value of the environment variable. (e.g., "localhost").
         expand:
             Replace "${VAR}" or "$VAR" in the value according to the current
             environment variables defined in the container (e.g.
@@ -1674,48 +1683,48 @@ class Container(Type):
         expand: bool | None = False,
         no_init: bool | None = False,
     ) -> Self:
-        """Retrieves this container after executing the specified command inside
-        it.
+        """Execute a command in the container, and return a new snapshot of the
+        container state after execution.
 
         Parameters
         ----------
         args:
-            Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
-            If empty, the container's default command is used.
+            Command to execute. Must be valid exec() arguments, not a shell
+            command. Example: ["go", "run", "main.go"].
+            To run a shell command, execute the shell and pass the shell
+            command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
+            Defaults to the container's default arguments (see "defaultArgs"
+            and "withDefaultArgs").
         use_entrypoint:
-            If the container has an entrypoint, prepend it to the args.
+            Apply the OCI entrypoint, if present, by prepending it to the
+            args. Ignored by default.
         stdin:
-            Content to write to the command's standard input before closing
-            (e.g., "Hello world").
+            Content to write to the command's standard input. Example: "Hello
+            world")
         redirect_stdout:
-            Redirect the command's standard output to a file in the container
-            (e.g., "/tmp/stdout").
+            Redirect the command's standard output to a file in the container.
+            Example: "./stdout.txt"
         redirect_stderr:
-            Redirect the command's standard error to a file in the container
-            (e.g., "/tmp/stderr").
+            Like redirectStdout, but for standard error
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
+            Execute the command with all root capabilities. Like --privileged
+            in Docker
+            DANGER: this grants the command full access to the host system.
+            Only use when 1) you trust the command being executed and 2) you
+            specifically need this level of access.
         expand:
             Replace "${VAR}" or "$VAR" in the args according to the current
             environment variables defined in the container (e.g. "/$VAR/foo").
         no_init:
-            If set, skip the automatic init process injected into containers
-            by default.
-            This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
+            Skip the automatic init process injected into containers by
+            default.
+            Only use this if you specifically need the command to be pid 1 in
+            the container. Otherwise it may result in unexpected behavior. If
+            you're not sure, you don't need this.
         """
         _args = [
             Arg("args", args),
@@ -1742,7 +1751,8 @@ class Container(Type):
         description: str | None = None,
         experimental_skip_healthcheck: bool | None = False,
     ) -> Self:
-        """Expose a network port.
+        """Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck
+        support)
 
         Exposed ports serve two purposes:
 
@@ -1753,11 +1763,11 @@ class Container(Type):
         Parameters
         ----------
         port:
-            Port number to expose
+            Port number to expose. Example: 8080
         protocol:
-            Transport layer network protocol
+            Network protocol. Example: "tcp"
         description:
-            Optional port description
+            Port description. Example: "payment API endpoint"
         experimental_skip_healthcheck:
             Skip the health check when run as a service.
         """
@@ -1779,17 +1789,16 @@ class Container(Type):
         owner: str | None = "",
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container plus the contents of the given file copied to
-        the given path.
+        """Return a container snapshot with a file added
 
         Parameters
         ----------
         path:
-            Location of the copied file (e.g., "/tmp/file.txt").
+            Path of the new file. Example: "/path/to/new-file.txt"
         source:
-            Identifier of the file to copy.
+            File to add
         permissions:
-            Permission given to the copied file (e.g., 0600).
+            Permissions of the new file. Example: 0600
         owner:
             A user:group to set for the file.
             The user and group can either be an ID (1000:1000) or a name
@@ -2065,16 +2074,17 @@ class Container(Type):
         owner: str | None = "",
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container plus a new file written at the given path.
+        """Return a new container snapshot, with a file added to its filesystem
 
         Parameters
         ----------
         path:
-            Location of the written file (e.g., "/tmp/file.txt").
+            Path of the new file. May be relative or absolute. Example:
+            "README.md" or "/etc/profile"
         contents:
-            Content of the file to write (e.g., "Hello world!").
+            Contents of the new file. Example: "Hello world!"
         permissions:
-            Permission given to the written file (e.g., 0600).
+            Permissions of the new file. Example: 0600
         owner:
             A user:group to set for the file.
             The user and group can either be an ID (1000:1000) or a name
@@ -2101,19 +2111,18 @@ class Container(Type):
         username: str,
         secret: "Secret",
     ) -> Self:
-        """Retrieves this container with a registry authentication for a given
-        address.
+        """Attach credentials for future publishing to a registry. Use in
+        combination with publish
 
         Parameters
         ----------
         address:
-            Registry's address to bind the authentication to.
-            Formatted as [host]/[user]/[repo]:[tag] (e.g.
-            docker.io/dagger/dagger:main).
+            The image address that needs authentication. Same format as
+            "docker push". Example: "registry.dagger.io/dagger:latest"
         username:
-            The username of the registry's account (e.g., "Dagger").
+            The username to authenticate with. Example: "alice"
         secret:
-            The API key, password or token to authenticate to this registry.
+            The API key, password or token to authenticate to this registry
         """
         _args = [
             Arg("address", address),
@@ -2124,12 +2133,13 @@ class Container(Type):
         return Container(_ctx)
 
     def with_rootfs(self, directory: "Directory") -> Self:
-        """Retrieves the container with the given directory mounted to /.
+        """Change the container's root filesystem. The previous root filesystem
+        will be lost.
 
         Parameters
         ----------
         directory:
-            Directory to mount.
+            The new root filesystem.
         """
         _args = [
             Arg("directory", directory),
@@ -2138,15 +2148,14 @@ class Container(Type):
         return Container(_ctx)
 
     def with_secret_variable(self, name: str, secret: "Secret") -> Self:
-        """Retrieves this container plus an env variable containing the given
-        secret.
+        """Set a new environment variable, using a secret value
 
         Parameters
         ----------
         name:
-            The name of the secret variable (e.g., "API_SECRET").
+            Name of the secret variable (e.g., "API_SECRET").
         secret:
-            The identifier of the secret value.
+            Identifier of the secret value.
         """
         _args = [
             Arg("name", name),
@@ -2156,7 +2165,8 @@ class Container(Type):
         return Container(_ctx)
 
     def with_service_binding(self, alias: str, service: "Service") -> Self:
-        """Establish a runtime dependency on a service.
+        """Establish a runtime dependency on a from a container to a network
+        service.
 
         The service will be started automatically when needed and detached
         when it is no longer needed, executing the default command if none is
@@ -2171,9 +2181,10 @@ class Container(Type):
         Parameters
         ----------
         alias:
-            A name that can be used to reach the service from the container
+            Hostname that will resolve to the target service (only accessible
+            from within this container)
         service:
-            Identifier of the service container
+            The target service
         """
         _args = [
             Arg("alias", alias),
@@ -2238,7 +2249,7 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container with a different working directory.
+        """Change the container's working directory. Like WORKDIR in Dockerfile.
 
         Parameters
         ----------
@@ -2271,9 +2282,7 @@ class Container(Type):
         return Container(_ctx)
 
     def without_default_args(self) -> Self:
-        """Retrieves this container with unset default arguments for future
-        commands.
-        """
+        """Remove the container's default arguments."""
         _args: list[Arg] = []
         _ctx = self._select("withoutDefaultArgs", _args)
         return Container(_ctx)
@@ -2284,7 +2293,8 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container with the directory at the given path removed.
+        """Return a new container snapshot, with a directory removed from its
+        filesystem
 
         Parameters
         ----------
@@ -2307,7 +2317,7 @@ class Container(Type):
         *,
         keep_default_args: bool | None = False,
     ) -> Self:
-        """Retrieves this container with an unset command entrypoint.
+        """Reset the container's OCI entrypoint.
 
         Parameters
         ----------
@@ -2386,12 +2396,13 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> Self:
-        """Retrieves this container with the files at the given paths removed.
+        """Return a new container spanshot with specified files removed
 
         Parameters
         ----------
         paths:
-            Location of the files to remove (e.g., ["/file.txt"]).
+            Paths of the files to remove. Example: ["foo.txt,
+            "/root/.ssh/config"
         expand:
             Replace "${VAR}" or "$VAR" in the value of paths according to the
             current environment variables defined in the container (e.g.
@@ -2510,7 +2521,7 @@ class Container(Type):
         return Container(_ctx)
 
     def without_workdir(self) -> Self:
-        """Retrieves this container with an unset working directory.
+        """Unset the container's working directory.
 
         Should default to "/".
         """
@@ -2658,7 +2669,7 @@ class Directory(Type):
     """A directory."""
 
     def as_git(self) -> "GitRepository":
-        """Converts this directory into a git repository"""
+        """Converts this directory to a local git repository"""
         _args: list[Arg] = []
         _ctx = self._select("asGit", _args)
         return GitRepository(_ctx)
@@ -2706,12 +2717,13 @@ class Directory(Type):
         return ModuleSource(_ctx)
 
     def diff(self, other: Self) -> Self:
-        """Gets the difference between this directory and an another directory.
+        """Return the difference between this directory and an another directory.
+        The difference is encoded as a directory.
 
         Parameters
         ----------
         other:
-            Identifier of the directory to compare.
+            The directory to compare against
         """
         _args = [
             Arg("other", other),
@@ -2748,7 +2760,7 @@ class Directory(Type):
         Parameters
         ----------
         path:
-            Location of the directory to retrieve (e.g., "/src").
+            Location of the directory to retrieve. Example: "/src"
         """
         _args = [
             Arg("path", path),
@@ -2766,7 +2778,10 @@ class Directory(Type):
         secrets: "list[Secret] | None" = None,
         no_init: bool | None = False,
     ) -> Container:
-        """Builds a new Docker container from this directory.
+        """Use Dockerfile compatibility to build a container from this directory.
+        Only use this function for Dockerfile compatibility. Otherwise use the
+        native Container type directly, it is feature-complete and supports
+        all Dockerfile features.
 
         Parameters
         ----------
@@ -2870,7 +2885,7 @@ class Directory(Type):
         return await _ctx.execute(str)
 
     def file(self, path: str) -> "File":
-        """Retrieves a file at the given path.
+        """Retrieve a file at the given path.
 
         Parameters
         ----------
@@ -2889,16 +2904,16 @@ class Directory(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> Self:
-        """Retrieves this directory as per exclude/include filters.
+        """Return a snapshot with some paths included or excluded
 
         Parameters
         ----------
         exclude:
-            Exclude artifacts that match the given pattern (e.g.,
-            ["node_modules/", ".git*"]).
+            If set, paths matching one of these glob patterns is excluded from
+            the new snapshot. Example: ["node_modules/", ".git*", ".env"]
         include:
-            Include only artifacts that match the given pattern (e.g.,
-            ["app/", "package.*"]).
+            If set, only paths matching one of these glob patterns is included
+            in the new snapshot. Example: (e.g., ["app/", "package.*"]).
         """
         _args = [
             Arg("exclude", () if exclude is None else exclude, ()),
@@ -3050,7 +3065,7 @@ class Directory(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> Self:
-        """Retrieves this directory plus a directory written at the given path.
+        """Return a snapshot with a directory added
 
         Parameters
         ----------
@@ -3158,16 +3173,16 @@ class Directory(Type):
         *,
         permissions: int | None = 420,
     ) -> Self:
-        """Retrieves this directory plus a new file written at the given path.
+        """Return a snapshot with a new file added
 
         Parameters
         ----------
         path:
-            Location of the written file (e.g., "/file.txt").
+            Path of the new file. Example: "foo/bar.txt"
         contents:
-            Content of the written file (e.g., "Hello world!").
+            Contents of the new file. Example: "Hello world!"
         permissions:
-            Permission given to the copied file (e.g., 0600).
+            Permissions of the new file. Example: 0600
         """
         _args = [
             Arg("path", path),
@@ -3194,12 +3209,12 @@ class Directory(Type):
         return Directory(_ctx)
 
     def without_directory(self, path: str) -> Self:
-        """Retrieves this directory with the directory at the given path removed.
+        """Return a snapshot with a subdirectory removed
 
         Parameters
         ----------
         path:
-            Location of the directory to remove (e.g., ".github/").
+            Path of the subdirectory to remove. Example: ".github/workflows"
         """
         _args = [
             Arg("path", path),
@@ -3208,12 +3223,12 @@ class Directory(Type):
         return Directory(_ctx)
 
     def without_file(self, path: str) -> Self:
-        """Retrieves this directory with the file at the given path removed.
+        """Return a snapshot with a file removed
 
         Parameters
         ----------
         path:
-            Location of the file to remove (e.g., "/file.txt").
+            Path of the file to remove (e.g., "/file.txt").
         """
         _args = [
             Arg("path", path),
@@ -3222,12 +3237,12 @@ class Directory(Type):
         return Directory(_ctx)
 
     def without_files(self, paths: list[str]) -> Self:
-        """Retrieves this directory with the files at the given paths removed.
+        """Return a snapshot with files removed
 
         Parameters
         ----------
         paths:
-            Location of the file to remove (e.g., ["/file.txt"]).
+            Paths of the files to remove (e.g., ["/file.txt"]).
         """
         _args = [
             Arg("paths", paths),
@@ -8157,16 +8172,15 @@ class Client(Root):
         *,
         platform: Platform | None = None,
     ) -> Container:
-        """Creates a scratch container.
+        """Creates a scratch container, with no image or metadata.
 
-        Optional platform argument initializes new containers to execute and
-        publish as that platform. Platform defaults to that of the builder's
-        host.
+        To pull an image, follow up with the "from" function.
 
         Parameters
         ----------
         platform:
-            Platform to initialize the container with.
+            Platform to initialize the container with. Defaults to the native
+            platform of the current engine
         """
         _args = [
             Arg("platform", platform, None),

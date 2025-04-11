@@ -55,7 +55,7 @@ func (s *directorySchema) Install() {
 				It is guaranteed to be stable between invocations of the same Dagger engine.`,
 			),
 		dagql.Func("file", s.file).
-			Doc(`Retrieves a file at the given path.`).
+			Doc(`Retrieve a file at the given path.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 		dagql.Func("withFile", s.withFile).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
@@ -68,39 +68,39 @@ func (s *directorySchema) Install() {
 			ArgDoc("sources", `Identifiers of the files to copy.`).
 			ArgDoc("permissions", `Permission given to the copied files (e.g., 0600).`),
 		dagql.Func("withNewFile", s.withNewFile).
-			Doc(`Retrieves this directory plus a new file written at the given path.`).
-			ArgDoc("path", `Location of the written file (e.g., "/file.txt").`).
-			ArgDoc("contents", `Content of the written file (e.g., "Hello world!").`).
-			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`),
+			Doc(`Return a snapshot with a new file added`).
+			ArgDoc("path", `Path of the new file. Example: "foo/bar.txt"`).
+			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
+			ArgDoc("permissions", `Permissions of the new file. Example: 0600`),
 		dagql.Func("withoutFile", s.withoutFile).
-			Doc(`Retrieves this directory with the file at the given path removed.`).
-			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+			Doc(`Return a snapshot with a file removed`).
+			ArgDoc("path", `Path of the file to remove (e.g., "/file.txt").`),
 		dagql.Func("withoutFiles", s.withoutFiles).
-			Doc(`Retrieves this directory with the files at the given paths removed.`).
-			ArgDoc("paths", `Location of the file to remove (e.g., ["/file.txt"]).`),
+			Doc(`Return a snapshot with files removed`).
+			ArgDoc("paths", `Paths of the files to remove (e.g., ["/file.txt"]).`),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
-			ArgDoc("path", `Location of the directory to retrieve (e.g., "/src").`),
+			ArgDoc("path", `Location of the directory to retrieve. Example: "/src"`),
 		dagql.Func("withDirectory", s.withDirectory).
-			Doc(`Retrieves this directory plus a directory written at the given path.`).
+			Doc(`Return a snapshot with a directory added`).
 			ArgDoc("path", `Location of the written directory (e.g., "/src/").`).
 			ArgDoc("directory", `Identifier of the directory to copy.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 		dagql.Func("filter", s.filter).
-			Doc(`Retrieves this directory as per exclude/include filters.`).
-			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
-			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			Doc(`Return a snapshot with some paths included or excluded`).
+			ArgDoc("exclude", `If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`).
+			ArgDoc("include", `If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			ArgDoc("path", `Location of the directory created (e.g., "/logs").`).
 			ArgDoc("permissions", `Permission granted to the created directory (e.g., 0777).`),
 		dagql.Func("withoutDirectory", s.withoutDirectory).
-			Doc(`Retrieves this directory with the directory at the given path removed.`).
-			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`),
+			Doc(`Return a snapshot with a subdirectory removed`).
+			ArgDoc("path", `Path of the subdirectory to remove. Example: ".github/workflows"`),
 		dagql.Func("diff", s.diff).
-			Doc(`Gets the difference between this directory and an another directory.`).
-			ArgDoc("other", `Identifier of the directory to compare.`),
+			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
+			ArgDoc("other", `The directory to compare against`),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -111,7 +111,7 @@ func (s *directorySchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
-			Doc(`Builds a new Docker container from this directory.`).
+			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
 			ArgDoc("platform", `The platform to build.`).
 			ArgDoc("buildArgs", `Build arguments to use in the build.`).
@@ -128,7 +128,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 		dagql.Func("asGit", s.asGit).
-			Doc(`Converts this directory into a git repository`),
+			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").

@@ -14,7 +14,7 @@ namespace Dagger;
 class Directory extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Converts this directory into a git repository
+     * Converts this directory to a local git repository
      */
     public function asGit(): GitRepository
     {
@@ -47,7 +47,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Gets the difference between this directory and an another directory.
+     * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
     public function diff(DirectoryId|Directory $other): Directory
     {
@@ -76,7 +76,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Builds a new Docker container from this directory.
+     * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
      */
     public function dockerBuild(
         ?Platform $platform = null,
@@ -134,7 +134,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves a file at the given path.
+     * Retrieve a file at the given path.
      */
     public function file(string $path): File
     {
@@ -144,7 +144,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory as per exclude/include filters.
+     * Return a snapshot with some paths included or excluded
      */
     public function filter(?array $exclude = null, ?array $include = null): Directory
     {
@@ -221,7 +221,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory plus a directory written at the given path.
+     * Return a snapshot with a directory added
      */
     public function withDirectory(
         string $path,
@@ -283,7 +283,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory plus a new file written at the given path.
+     * Return a snapshot with a new file added
      */
     public function withNewFile(string $path, string $contents, ?int $permissions = 420): Directory
     {
@@ -307,7 +307,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory with the directory at the given path removed.
+     * Return a snapshot with a subdirectory removed
      */
     public function withoutDirectory(string $path): Directory
     {
@@ -317,7 +317,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory with the file at the given path removed.
+     * Return a snapshot with a file removed
      */
     public function withoutFile(string $path): Directory
     {
@@ -327,7 +327,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this directory with the files at the given paths removed.
+     * Return a snapshot with files removed
      */
     public function withoutFiles(array $paths): Directory
     {

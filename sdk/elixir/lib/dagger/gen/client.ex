@@ -25,9 +25,9 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Creates a scratch container.
+  Creates a scratch container, with no image or metadata.
 
-  Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+  To pull an image, follow up with the "from" function.
   """
   @spec container(t(), [{:platform, Dagger.Platform.t() | nil}]) :: Dagger.Container.t()
   def container(%__MODULE__{} = client, optional_args \\ []) do

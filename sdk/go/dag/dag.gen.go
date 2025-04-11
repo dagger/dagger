@@ -52,9 +52,9 @@ func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume
 	return client.CacheVolume(key, opts...)
 }
 
-// Creates a scratch container.
+// Creates a scratch container, with no image or metadata.
 //
-// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+// To pull an image, follow up with the "from" function.
 func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	client := initClient()
 	return client.Container(opts...)

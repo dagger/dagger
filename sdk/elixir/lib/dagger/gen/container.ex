@@ -44,7 +44,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Returns a File representing the container serialized to a tarball."
+  @doc "Package the container state as an OCI image, and return it as a tar archive"
   @spec as_tarball(t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
@@ -101,7 +101,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves default arguments for future commands."
+  @doc "Return the container's default arguments."
   @spec default_args(t()) :: {:ok, [String.t()]} | {:error, term()}
   def default_args(%__MODULE__{} = container) do
     query_builder =
@@ -111,7 +111,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves a directory at the given path.
+  Retrieve a directory from the container's root filesystem
 
   Mounts are included.
   """
@@ -129,7 +129,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
+  @doc "Return the container's OCI entrypoint."
   @spec entrypoint(t()) :: {:ok, [String.t()]} | {:error, term()}
   def entrypoint(%__MODULE__{} = container) do
     query_builder =
@@ -168,9 +168,9 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  The exit code of the last executed command.
+  The exit code of the last executed command
 
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
   def exit_code(%__MODULE__{} = container) do
@@ -291,7 +291,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Initializes this container from a pulled base image."
+  @doc "Download a container image, and apply it to the container state. All previous state will be lost."
   @spec from(t(), String.t()) :: Dagger.Container.t()
   def from(%__MODULE__{} = container, address) do
     query_builder =
@@ -384,11 +384,9 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Publishes this container as a new image to the specified address.
+  Package the container state as an OCI image, and publish it to a registry
 
-  Publish returns a fully qualified ref.
-
-  It can also publish platform variants.
+  Returns the fully qualified address of the published image, with digest
   """
   @spec publish(t(), String.t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
@@ -413,7 +411,7 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
-  @doc "Retrieves this container's root filesystem. Mounts are not included."
+  @doc "Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications."
   @spec rootfs(t()) :: Dagger.Directory.t()
   def rootfs(%__MODULE__{} = container) do
     query_builder =
@@ -426,9 +424,9 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  The error stream of the last executed command.
+  The buffered standard error stream of the last executed command
 
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   @spec stderr(t()) :: {:ok, String.t()} | {:error, term()}
   def stderr(%__MODULE__{} = container) do
@@ -439,9 +437,9 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  The output stream of the last executed command.
+  The buffered standard output stream of the last executed command
 
-  Returns an error if no command was set.
+  Returns an error if no command was executed
   """
   @spec stdout(t()) :: {:ok, String.t()} | {:error, term()}
   def stdout(%__MODULE__{} = container) do
@@ -557,7 +555,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Configures default arguments for future commands."
+  @doc "Configures default arguments for future commands. Like CMD in Dockerfile."
   @spec with_default_args(t(), [String.t()]) :: Dagger.Container.t()
   def with_default_args(%__MODULE__{} = container, args) do
     query_builder =
@@ -591,7 +589,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus a directory written at the given path."
+  @doc "Return a new container snapshot, with a directory added to its filesystem"
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
@@ -615,7 +613,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container but with a different command entrypoint."
+  @doc "Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default."
   @spec with_entrypoint(t(), [String.t()], [{:keep_default_args, boolean() | nil}]) ::
           Dagger.Container.t()
   def with_entrypoint(%__MODULE__{} = container, args, optional_args \\ []) do
@@ -631,7 +629,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus the given environment variable."
+  @doc "Set a new environment variable in the container."
   @spec with_env_variable(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
           Dagger.Container.t()
   def with_env_variable(%__MODULE__{} = container, name, value, optional_args \\ []) do
@@ -648,7 +646,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container after executing the specified command inside it."
+  @doc "Execute a command in the container, and return a new snapshot of the container state after execution."
   @spec with_exec(t(), [String.t()], [
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
@@ -685,7 +683,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Expose a network port.
+  Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
 
   Exposed ports serve two purposes:
 
@@ -716,7 +714,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus the contents of the given file copied to the given path."
+  @doc "Return a container snapshot with a file added"
   @spec with_file(t(), String.t(), Dagger.File.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
@@ -878,7 +876,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus a new file written at the given path."
+  @doc "Return a new container snapshot, with a file added to its filesystem"
   @spec with_new_file(t(), String.t(), String.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
@@ -900,7 +898,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with a registry authentication for a given address."
+  @doc "Attach credentials for future publishing to a registry. Use in combination with publish"
   @spec with_registry_auth(t(), String.t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
   def with_registry_auth(%__MODULE__{} = container, address, username, secret) do
     query_builder =
@@ -916,7 +914,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves the container with the given directory mounted to /."
+  @doc "Change the container's root filesystem. The previous root filesystem will be lost."
   @spec with_rootfs(t(), Dagger.Directory.t()) :: Dagger.Container.t()
   def with_rootfs(%__MODULE__{} = container, directory) do
     query_builder =
@@ -930,7 +928,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus an env variable containing the given secret."
+  @doc "Set a new environment variable, using a secret value"
   @spec with_secret_variable(t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
   def with_secret_variable(%__MODULE__{} = container, name, secret) do
     query_builder =
@@ -946,7 +944,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Establish a runtime dependency on a service.
+  Establish a runtime dependency on a from a container to a network service.
 
   The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
 
@@ -1000,7 +998,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with a different working directory."
+  @doc "Change the container's working directory. Like WORKDIR in Dockerfile."
   @spec with_workdir(t(), String.t(), [{:expand, boolean() | nil}]) :: Dagger.Container.t()
   def with_workdir(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -1027,7 +1025,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with unset default arguments for future commands."
+  @doc "Remove the container's default arguments."
   @spec without_default_args(t()) :: Dagger.Container.t()
   def without_default_args(%__MODULE__{} = container) do
     query_builder =
@@ -1039,7 +1037,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with the directory at the given path removed."
+  @doc "Return a new container snapshot, with a directory removed from its filesystem"
   @spec without_directory(t(), String.t(), [{:expand, boolean() | nil}]) :: Dagger.Container.t()
   def without_directory(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -1054,7 +1052,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with an unset command entrypoint."
+  @doc "Reset the container's OCI entrypoint."
   @spec without_entrypoint(t(), [{:keep_default_args, boolean() | nil}]) :: Dagger.Container.t()
   def without_entrypoint(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
@@ -1111,7 +1109,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container with the files at the given paths removed."
+  @doc "Return a new container spanshot with specified files removed"
   @spec without_files(t(), [String.t()], [{:expand, boolean() | nil}]) :: Dagger.Container.t()
   def without_files(%__MODULE__{} = container, paths, optional_args \\ []) do
     query_builder =
@@ -1211,7 +1209,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves this container with an unset working directory.
+  Unset the container's working directory.
 
   Should default to "/".
   """

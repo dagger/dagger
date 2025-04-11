@@ -148,7 +148,7 @@
                 <div class="col-md-8">
                     <a href="#method_asGit">asGit</a>()
         
-                                            <p><p>Converts this directory into a git repository</p></p>                </div>
+                                            <p><p>Converts this directory to a local git repository</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,7 +178,7 @@
                 <div class="col-md-8">
                     <a href="#method_diff">diff</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $other)
         
-                                            <p><p>Gets the difference between this directory and an another directory.</p></p>                </div>
+                                            <p><p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -208,7 +208,7 @@
                 <div class="col-md-8">
                     <a href="#method_dockerBuild">dockerBuild</a>(<abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null, string|null $dockerfile = &#039;Dockerfile&#039;, string|null $target = &#039;&#039;, array|null $buildArgs = null, array|null $secrets = null, bool|null $noInit = false)
         
-                                            <p><p>Builds a new Docker container from this directory.</p></p>                </div>
+                                            <p><p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -238,7 +238,7 @@
                 <div class="col-md-8">
                     <a href="#method_file">file</a>(string $path)
         
-                                            <p><p>Retrieves a file at the given path.</p></p>                </div>
+                                            <p><p>Retrieve a file at the given path.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -248,7 +248,7 @@
                 <div class="col-md-8">
                     <a href="#method_filter">filter</a>(array|null $exclude = null, array|null $include = null)
         
-                                            <p><p>Retrieves this directory as per exclude/include filters.</p></p>                </div>
+                                            <p><p>Return a snapshot with some paths included or excluded</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -308,7 +308,7 @@
                 <div class="col-md-8">
                     <a href="#method_withDirectory">withDirectory</a>(string $path, <abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $directory, array|null $exclude = null, array|null $include = null)
         
-                                            <p><p>Retrieves this directory plus a directory written at the given path.</p></p>                </div>
+                                            <p><p>Return a snapshot with a directory added</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -348,7 +348,7 @@
                 <div class="col-md-8">
                     <a href="#method_withNewFile">withNewFile</a>(string $path, string $contents, int|null $permissions = 420)
         
-                                            <p><p>Retrieves this directory plus a new file written at the given path.</p></p>                </div>
+                                            <p><p>Return a snapshot with a new file added</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -368,7 +368,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutDirectory">withoutDirectory</a>(string $path)
         
-                                            <p><p>Retrieves this directory with the directory at the given path removed.</p></p>                </div>
+                                            <p><p>Return a snapshot with a subdirectory removed</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -378,7 +378,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutFile">withoutFile</a>(string $path)
         
-                                            <p><p>Retrieves this directory with the file at the given path removed.</p></p>                </div>
+                                            <p><p>Return a snapshot with a file removed</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -388,7 +388,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutFiles">withoutFiles</a>(array $paths)
         
-                                            <p><p>Retrieves this directory with the files at the given paths removed.</p></p>                </div>
+                                            <p><p>Return a snapshot with files removed</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -498,7 +498,7 @@
             
 
         <div class="method-description">
-                            <p><p>Converts this directory into a git repository</p></p>                        
+                            <p><p>Converts this directory to a local git repository</p></p>                        
         </div>
         <div class="tags">
             
@@ -614,7 +614,7 @@
             
 
         <div class="method-description">
-                            <p><p>Gets the difference between this directory and an another directory.</p></p>                        
+                            <p><p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -730,7 +730,7 @@
             
 
         <div class="method-description">
-                            <p><p>Builds a new Docker container from this directory.</p></p>                        
+                            <p><p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -886,7 +886,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves a file at the given path.</p></p>                        
+                            <p><p>Retrieve a file at the given path.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -928,7 +928,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory as per exclude/include filters.</p></p>                        
+                            <p><p>Return a snapshot with some paths included or excluded</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1170,7 +1170,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory plus a directory written at the given path.</p></p>                        
+                            <p><p>Return a snapshot with a directory added</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1378,7 +1378,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory plus a new file written at the given path.</p></p>                        
+                            <p><p>Return a snapshot with a new file added</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1472,7 +1472,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory with the directory at the given path removed.</p></p>                        
+                            <p><p>Return a snapshot with a subdirectory removed</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1514,7 +1514,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory with the file at the given path removed.</p></p>                        
+                            <p><p>Return a snapshot with a file removed</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1556,7 +1556,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this directory with the files at the given paths removed.</p></p>                        
+                            <p><p>Return a snapshot with files removed</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
