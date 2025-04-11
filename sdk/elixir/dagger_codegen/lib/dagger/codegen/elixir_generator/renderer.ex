@@ -33,6 +33,8 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
   Uses multiline string when newline is detected.
   """
   def render_string(s) do
+    s = escape(s)
+
     if String.contains?(s, "\n") do
       [
         "\"\"\"",
@@ -45,6 +47,8 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
       [?", s, ?"]
     end
   end
+
+  defp escape(s), do: s |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
 
   @doc "Render atom value."
   def render_atom(string), do: ":#{string}"
