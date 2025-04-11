@@ -38,8 +38,8 @@ By default, the TypeScript SDK executes functions using the Node.js runtime, but
 
 To change the TypeScript SDK runtime, set the field `dagger.runtime` in your Dagger module's `package.json` file.
 
-#### Node.js
-
+<Tabs groupId="ts_runtime">
+<TabItem value="Node.js">
 Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
 
 ```json
@@ -55,9 +55,8 @@ You can also set a specific version with a suffix (e.g., `node@20.15.0`).
     "runtime": "node@20.15.0"
   }
 ```
-
-#### Bun
-
+</TabItem>
+<TabItem value="Bun">
 Set the field to `bun` to use the Bun runtime.
 
 ```json
@@ -74,16 +73,53 @@ You can also set a specific version with a suffix (e.g., `bun@1.0.11`).
   }
 ```
 
+Alternatively, executing `bun init` or `bun install` will create a `bun.lock` or `bun.lockb` file, which Dagger will [automatically detect](#automatic-detection) and configure Bun for use:
+
+```shell
+bun init
+dagger init --sdk=typescript --name=example --source=.
+```
+
+:::important
+The module's `source` field must reference the same directory as the `bun.lock` or `bun.lockb` file.
+:::
+
 :::warning
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
+</TabItem>
+<TabItem value="Deno">
+Set the field to `deno` to use the Deno runtime.
+
+```json
+  "dagger": {
+    "runtime": "deno"
+  }
+```
+
+Alternatively, executing `deno init` will create a `deno.json` file, which Dagger will [automatically detect](#automatic-detection) and configure Deno for use:
+
+```shell
+deno init
+dagger init --sdk=typescript --name=example --source=.
+```
+
+:::important
+The module's `source` field must reference the same directory as the `deno.json` file.
+:::
+
+:::warning
+Deno runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+</TabItem>
+</Tabs>
 
 #### Automatic detection
 
-When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
+When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's files inside the project's `dagger` directory.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
-- In the absence of the lock files mentioned above, if a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime.
+- In the absence of the lock files mentioned above, if a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime. Alternatively, if a `deno.json` file is present, Dagger will choose `deno` as the runtime.
 - If no or only unknown lock files are present, `node` is chosen.
 
 :::warning
