@@ -211,27 +211,30 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 	if err != nil {
 		return "", err
 	}
+	// an initial env with no outputs, since message history is all we want at
+	// first
+	researchEnv := dag.Env().
+		WithFileInput("docs", m.Docs,
+			"The documentation the model is meant to adhere to.").
+		WithFileInput("initialSystemPrompt", m.InitialPrompt,
+			"An initial system prompt to evaluate and improve.").
+		WithFileInput("report",
+			dag.Directory().
+				WithNewFile("report.txt", report).
+				File("report.txt"),
+			"The report of all eval attempt results.")
 	return m.llm().
-		WithEnv(
-			dag.Env().
-				WithFileInput("docs", m.Docs,
-					"The documentation the model is meant to adhere to.").
-				WithFileInput("initialSystemPrompt", m.InitialPrompt,
-					"An initial system prompt to evaluate and improve.").
-				WithFileInput("report",
-					dag.Directory().
-						WithNewFile("report.txt", report).
-						File("report.txt"),
-					"The report of all eval attempt results.").
-				WithDirectoryInput("dest", dag.Directory(),
-					"An empty directory in which to write prompt.md").
-				WithFileOutput("prompt", "The prompt.md file written to the directory.")).
+		WithEnv(researchEnv).
 		WithPrompt("Generate a report summarizing your current understanding of the failures or successes. If there are any failures, focus on those. Be sure to include examples from the report to back up your analysis. Respond in Markdown format, with a brief summary of issues at the end.").
 		Loop().
 		WithPrompt("Cross reference your summary with the documentation and the system prompt that was used. Suggest improvements without specializing the prompt too much for the specific evaluation.").
 		WithPrompt("Compare the successful results with the failed ones - why did the successful ones work? What element of the documentation or prompt was most relevant, in the general sense? How can the prompt guide the model to achieve the same result? When failures occur for multiple reasons, the more general reason is always more interesting than the specific one.").
 		Loop().
-		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste. Consider breaking the problem down into a planning phase and an execution phase.").
+		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
+		Loop().
+		WithEnv(researchEnv.
+			WithDirectoryInput("dest", dag.Directory(),
+				"An empty directory in which to write prompt.md")).
 		WithPrompt("Write the new system prompt to prompt.md in the destination directory.").
 		Env().
 		Output("prompt").
