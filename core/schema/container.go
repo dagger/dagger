@@ -1881,7 +1881,7 @@ func (s *containerSchema) asTarball(
 	if !ok {
 		return inst, fmt.Errorf("no dagop")
 	}
-	bkref, err := op.CreateRef(ctx, nil,
+	bkref, err := op.Cache().New(ctx, nil, op.Group(),
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
