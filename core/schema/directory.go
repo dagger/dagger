@@ -517,6 +517,7 @@ func (s *directorySchema) asGit(
 	_ struct{},
 ) (*core.GitRepository, error) {
 	return &core.GitRepository{
+		Query: dir.Query,
 		Backend: &core.LocalGitRepository{
 			Query:     dir.Query,
 			Directory: dir,
