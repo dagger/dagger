@@ -414,7 +414,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	if !ok {
 		return nil, fmt.Errorf("no dagop")
 	}
-	bkref, err := op.CreateRef(ctx, nil,
+	bkref, err := op.Cache().New(ctx, nil, op.Group(),
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
