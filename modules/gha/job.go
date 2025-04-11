@@ -12,6 +12,9 @@ type Job struct {
 	Name    string
 	Command string
 
+	// Make the job conditional on an expression
+	Condition string
+
 	// Additional commands to run before the main one
 	SetupCommands []string
 	// Additional commands to run after the main one
@@ -30,6 +33,9 @@ type Job struct {
 	// For each secret, an env variable with the same name is created.
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
 	Secrets []string
+	// Lines to append to .env.
+	// Example: ["OPENAI_API_KEY=op://CI/openai-api-key"]
+	Env []string
 	// Dispatch jobs to the given runner
 	// Example: ["ubuntu-latest"]
 	Runner []string
@@ -50,6 +56,10 @@ type Job struct {
 func (gha *Gha) Job(
 	name string,
 	command string,
+
+	// Only run the job if this condition expression succeeds.
+	// +optional
+	condition string,
 
 	// Additional commands to run before the main one.
 	// +optional
@@ -84,6 +94,10 @@ func (gha *Gha) Job(
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
 	// +optional
 	secrets []string,
+	// Dagger secret URIs to load and assign as env variables.
+	// Example: ["OPENAI_API_KEY=op://CI/openai-api-key"]
+	// +optional
+	env []string,
 	// Dispatch jobs to the given runner
 	// Example: ["ubuntu-latest"]
 	// +optional
@@ -99,6 +113,7 @@ func (gha *Gha) Job(
 	uploadLogs bool,
 ) *Job {
 	j := &Job{
+		Condition:        condition,
 		Name:             name,
 		PublicToken:      publicToken,
 		StopEngine:       stopEngine,
@@ -110,6 +125,7 @@ func (gha *Gha) Job(
 		SparseCheckout:   sparseCheckout,
 		LFS:              lfs,
 		Secrets:          secrets,
+		Env:              env,
 		Runner:           runner,
 		Module:           module,
 		UploadLogs:       uploadLogs,

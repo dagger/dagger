@@ -1,13 +1,13 @@
 {
-  "name": "gha",
+  "name": "workspace",
   "engineVersion": "v0.18.2",
   "sdk": {
     "source": "go"
   },
   "dependencies": [
     {
-      "name": "wolfi",
-      "source": "../wolfi"
+      "name": "evals",
+      "source": "../evals"
     }
   ]
 }
