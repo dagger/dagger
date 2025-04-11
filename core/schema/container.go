@@ -581,7 +581,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("tag", `Identifies the tag to import from the archive, if the archive bundles multiple tags.`),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
-			Doc(`Attach credentials for future publishing to a registry. Use in combinationw with publish`).
+			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			ArgDoc("address", `The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`).
 			ArgDoc("username", `The username to authenticate with. Example: "alice"`).
 			ArgDoc("secret", `The API key, password or token to authenticate to this registry`),
