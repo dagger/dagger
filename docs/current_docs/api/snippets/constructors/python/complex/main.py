@@ -9,8 +9,6 @@ from dagger import (
 )
 
 
-
-
 @object_type
 class Workspace:
     source: Annotated[
