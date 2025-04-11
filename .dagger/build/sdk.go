@@ -76,7 +76,6 @@ const TypescriptSDKTSXVersion = "4.15.6"
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
 	tsxNodeModule := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
-		WithExec([]string{"npm", "install", "-g", "npm"}).
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
 		Directory("/usr/local/lib/node_modules/tsx")
 
