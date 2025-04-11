@@ -1,8 +1,8 @@
 module github.com/dagger/dagger
 
-go 1.23.0
+go 1.23.3
 
-toolchain go1.23.6
+toolchain go1.24.1
 
 require (
 	dagger.io/dagger v0.18.0
@@ -296,6 +296,7 @@ require (
 	github.com/prometheus/common v0.60.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/riza-io/mcp-go v0.4.3 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
