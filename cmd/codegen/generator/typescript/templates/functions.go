@@ -69,6 +69,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"IsClientOnly":              funcs.isClientOnly,
 		"IsDevMode":                 funcs.isDevMode,
 		"GitDependencies":           funcs.gitDependencies,
+		"IsBundle":                  funcs.isBundle,
 	}
 }
 
@@ -334,4 +335,8 @@ func (funcs typescriptTemplateFuncs) isDevMode() bool {
 
 func (funcs typescriptTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
 	return funcs.cfg.GitDependencies
+}
+
+func (funcs typescriptTemplateFuncs) isBundle() bool {
+	return funcs.cfg.Bundle
 }
