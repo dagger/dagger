@@ -17,7 +17,6 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
 	"github.com/dagger/testctx"
 )
 
@@ -30,50 +29,116 @@ func TestGit(t *testing.T) {
 func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	checkClean := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, clean bool) {
+		out, err := c.Container().From("alpine").
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", checkout).
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		if clean {
+			require.Empty(t, out)
+		} else {
+			require.NotEmpty(t, out)
+		}
+	}
+
 	testGitCheckout := func(ctx context.Context, t *testctx.T, git *dagger.GitRepository) {
 		// head
 		byHead := git.Head()
 		mainCommit, err := byHead.Commit(ctx)
 		require.NoError(t, err)
+		mainRef, err := byHead.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", mainRef)
+		checkClean(ctx, t, byHead.Tree(), true)
 		readme, err := byHead.Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, readme, "Dagger")
+		head, err := byHead.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "ref: refs/heads/main")
 
 		// main
 		byBranch := git.Branch("main")
 		commit, err := byBranch.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mainCommit, commit)
+		ref, err := byBranch.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", ref)
+		checkClean(ctx, t, byBranch.Tree(), true)
 		readme, err = byBranch.Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, readme, "Dagger")
-
-		// v0.9.5
-		byTag := git.Tag("v0.9.5")
-		commit, err = byTag.Commit(ctx)
+		head, err = byBranch.Tree().File(".git/HEAD").Contents(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb", commit)
-		readme, err = byTag.Tree().File("README.md").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, readme, "Dagger")
-
-		// c80ac2c13df7d573a069938e01ca13f7a81f0345
-		byCommit := git.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345")
-		commit, err = byCommit.Commit(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", commit)
-		readme, err = byCommit.Tree().File("README.md").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, readme, "Dagger")
+		require.Contains(t, head, "ref: refs/heads/main")
 
 		// refs/heads/main
 		byHeadMain := git.Ref("refs/heads/main")
 		commit, err = byHeadMain.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mainCommit, commit)
+		ref, err = byHeadMain.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", ref)
+		checkClean(ctx, t, byHeadMain.Tree(), true)
 		readme, err = byHeadMain.Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, readme, "Dagger")
+		head, err = byHeadMain.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "ref: refs/heads/main")
+
+		// v0.9.5
+		byTag := git.Tag("v0.9.5")
+		commit, err = byTag.Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb", commit)
+		ref, err = byTag.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v0.9.5", ref)
+		checkClean(ctx, t, byTag.Tree(), true)
+		readme, err = byTag.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+		head, err = byTag.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb")
+
+		// v0.6.1 (annotated tag)
+		byAnnotatedTag := git.Tag("v0.6.1")
+		commit, err = byAnnotatedTag.Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "6ed6264f1c4efbf84d310a104b57ef1bc57d57b0", commit)
+		ref, err = byAnnotatedTag.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v0.6.1", ref)
+		checkClean(ctx, t, byAnnotatedTag.Tree(), true)
+		readme, err = byAnnotatedTag.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+		head, err = byAnnotatedTag.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "6ed6264f1c4efbf84d310a104b57ef1bc57d57b0")
+
+		// c80ac2c13df7d573a069938e01ca13f7a81f0345
+		byCommit := git.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345")
+		commit, err = byCommit.Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", commit)
+		ref, err = byCommit.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", ref)
+		checkClean(ctx, t, byCommit.Tree(), true)
+		readme, err = byCommit.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+		head, err = byCommit.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "c80ac2c13df7d573a069938e01ca13f7a81f0345")
 
 		// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 		// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
@@ -81,16 +146,31 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		commit, err = byHiddenCommit.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "318970484f692d7a76cfa533c5d47458631c9654", commit)
+		ref, err = byHiddenCommit.Ref(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "318970484f692d7a76cfa533c5d47458631c9654", ref)
+		checkClean(ctx, t, byHiddenCommit.Tree(), true)
 		readme, err = byHiddenCommit.Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, readme, "Dagger")
+		head, err = byHiddenCommit.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, head, "318970484f692d7a76cfa533c5d47458631c9654")
 	}
 
 	testGitTags := func(ctx context.Context, t *testctx.T, git *dagger.GitRepository) {
-		// tags
 		tags, err := git.Tags(ctx)
 		require.NoError(t, err)
-		require.Subset(t, tags, []string{"v0.14.0", "v0.15.0"})
+		require.Subset(t, tags, []string{
+			// tags
+			"v0.14.0", "v0.15.0",
+			// annotated tags
+			"v0.6.1",
+		})
+		require.NotSubset(t, tags, []string{
+			// annotated tags
+			"v0.6.1^{}",
+		})
 	}
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
@@ -125,7 +205,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		testGitTags(ctx, t, git)
 	})
 	t.Run("local empty", func(ctx context.Context, t *testctx.T) {
-		git := dag.Directory().AsGit()
+		git := c.Directory().AsGit()
 		_, err := git.Head().Commit(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = git.Tags(ctx)
@@ -166,6 +246,36 @@ func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 		ent, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, ent, ".git/")
+	})
+}
+
+func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	log := func(ctx context.Context, dir *dagger.Directory) (string, error) {
+		res, err := c.Container().From("alpine").
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", dir).
+			WithExec([]string{"git", "log", "--oneline"}).
+			Stdout(ctx)
+		return strings.TrimSpace(res), err
+	}
+
+	t.Run("default depth", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+		res, err := log(ctx, dir)
+		require.NoError(t, err)
+		lines := strings.Split(res, "\n")
+		require.Len(t, lines, 1)
+	})
+
+	t.Run("depth 5", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+		res, err := log(ctx, dir)
+		require.NoError(t, err)
+		lines := strings.Split(res, "\n")
+		require.Len(t, lines, 5)
 	})
 }
 
@@ -393,7 +503,7 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "failed to fetch remote")
+		requireErrOut(t, err, "Authentication failed")
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
@@ -404,7 +514,7 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "failed to fetch remote")
+		requireErrOut(t, err, "Authentication failed")
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
@@ -428,6 +538,50 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "Hello, world!", dt)
 	})
+}
+
+func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
+	// test case for dagger/dagger#9405, where upstream changes between fetches
+
+	c := connect(ctx, t)
+
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v1.0 && git push origin main && git push origin v1.0`})
+	commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	commit = strings.TrimSpace(commit)
+
+	ref := c.Git(url).Commit(commit)
+	entries, err := ref.Tree().Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "xyz")
+
+	ctr = ctr.
+		WithExec([]string{"sh", "-c", `touch abc && git add abc && git commit -m "abc" && git tag -d v1.0 && git tag v1.0 && git push origin main && git push -f origin v1.0`})
+	commit, err = ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	commit = strings.TrimSpace(commit)
+
+	// in the original case, this failed, because we failed to update our tags
+	ref = c.Git(url).Commit(commit)
+	entries, err = ref.Tree().Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "abc")
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {

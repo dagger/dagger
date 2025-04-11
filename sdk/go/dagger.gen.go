@@ -5370,6 +5370,7 @@ type GitRef struct {
 
 	commit *string
 	id     *GitRefID
+	ref    *string
 }
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
@@ -5431,10 +5432,25 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The resolved ref name at this ref.
+func (r *GitRef) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // GitRefTreeOpts contains options for GitRef.Tree
 type GitRefTreeOpts struct {
 	// Set to true to discard .git directory.
 	DiscardGitDir bool
+	// The depth of the tree to fetch.
+	Depth int
 }
 
 // The filesystem tree at this ref.
@@ -5444,6 +5460,10 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 		// `discardGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DiscardGitDir) {
 			q = q.Arg("discardGitDir", opts[i].DiscardGitDir)
+		}
+		// `depth` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Depth) {
+			q = q.Arg("depth", opts[i].Depth)
 		}
 	}
 

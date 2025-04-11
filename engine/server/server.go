@@ -49,7 +49,6 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	srcgit "github.com/moby/buildkit/source/git"
 	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/buildkit/util/entitlements"
@@ -64,6 +63,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
+	"github.com/moby/locker"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -78,7 +78,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/engine/sources/local"
 )
@@ -179,6 +178,8 @@ type Server struct {
 	daggerSessions   map[string]*daggerSession // session id -> session state
 	daggerSessionsMu sync.RWMutex
 	clientDBs        *clientdb.DBs
+
+	locker *locker.Locker
 }
 
 type NewServerOpts struct {
@@ -213,6 +214,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
 		daggerSessions: make(map[string]*daggerSession),
+		locker:         locker.New(),
 	}
 
 	//
@@ -441,17 +443,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(hs)
 
-	gs, err := gitdns.NewSource(gitdns.Opt{
-		Opt: srcgit.Opt{
-			CacheAccessor: srv.workerCache,
-		},
-		BaseDNSConfig: srv.dns,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(gs)
-
 	ls, err := local.NewSource(local.Opt{
 		CacheAccessor: srv.workerCache,
 	})
@@ -621,6 +612,10 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+func (srv *Server) Locker() *locker.Locker {
+	return srv.locker
 }
 
 func (srv *Server) gcClientDBs() {
