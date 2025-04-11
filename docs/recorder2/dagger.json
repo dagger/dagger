@@ -1,13 +1,14 @@
 {
   "name": "recorder",
-  "engineVersion": "v0.18.0",
+  "engineVersion": "v0.18.2",
   "sdk": {
     "source": "go"
   },
   "dependencies": [
     {
       "name": "dagger-cli",
-      "source": "../../cmd/dagger"
+      "source": "github.com/dagger/dagger/cmd/dagger@v0.18.2",
+      "pin": "0b46ea3c49b5d67509f67747742e5d8b24be9ef7"
     },
     {
       "name": "docker",
