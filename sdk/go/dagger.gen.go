@@ -6760,14 +6760,26 @@ func (r *Module) SDK() *SDKConfig {
 	}
 }
 
+// ModuleServeOpts contains options for Module.Serve
+type ModuleServeOpts struct {
+	// expose the dependencies of this module to the client
+	ServeDependencies bool
+}
+
 // Serve a module's API in the current session.
 //
 // Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context) error {
+func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	if r.serve != nil {
 		return nil
 	}
 	q := r.query.Select("serve")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `serveDependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ServeDependencies) {
+			q = q.Arg("serveDependencies", opts[i].ServeDependencies)
+		}
+	}
 
 	return q.Execute(ctx)
 }
