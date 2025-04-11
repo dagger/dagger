@@ -786,7 +786,18 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Call: ToolFunc(func(ctx context.Context, args struct {
 				Tools []string `json:"tools"`
 			}) (any, error) {
+				toolCounts := make(map[string]int)
 				for _, tool := range args.Tools {
+					toolCounts[tool]++
+				}
+				// perform a sanity check; some LLMs will do silly things like request
+				// the same tool 3 times when told to call it 3 times
+				for tool, count := range toolCounts {
+					if count > 1 {
+						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
+					}
+				}
+				for tool := range toolCounts {
 					m.selectedTools[tool] = true
 				}
 				return "ok", nil
