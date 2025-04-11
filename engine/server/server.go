@@ -49,7 +49,6 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	srcgit "github.com/moby/buildkit/source/git"
 	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/buildkit/util/entitlements"
@@ -79,7 +78,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/engine/sources/local"
 )
@@ -444,17 +442,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(hs)
-
-	gs, err := gitdns.NewSource(gitdns.Opt{
-		Opt: srcgit.Opt{
-			CacheAccessor: srv.workerCache,
-		},
-		BaseDNSConfig: srv.dns,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(gs)
 
 	ls, err := local.NewSource(local.Opt{
 		CacheAccessor: srv.workerCache,
