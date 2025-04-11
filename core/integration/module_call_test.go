@@ -390,14 +390,14 @@ func (m *Test) FnRef(ref *dagger.GitRef) *dagger.Directory {
 
 			out, err := modGen.With(daggerCall("fn-repo", "--repo", ".git", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, mainSha, out)
+			require.Equal(t, "ref: refs/heads/master", strings.TrimSpace(out))
 
 			out, err = modGen.With(daggerCall("fn-ref", "--ref", ".git", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, mainSha, out)
+			require.Equal(t, "ref: refs/heads/master", strings.TrimSpace(out))
 			out, err = modGen.With(daggerCall("fn-ref", "--ref", ".git#ye-olde", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, yeOldeSha, out)
+			require.Equal(t, "ref: refs/heads/ye-olde", strings.TrimSpace(out))
 		})
 
 		t.Run("remote git", func(ctx context.Context, t *testctx.T) {
@@ -410,11 +410,11 @@ func (m *Test) FnRef(ref *dagger.GitRef) *dagger.Directory {
 			remote := "https://github.com/dagger/dagger.git"
 			out, err := modGen.With(daggerCall("fn-repo", "--repo", remote, "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(out))
+			require.Equal(t, "ref: refs/heads/main", strings.TrimSpace(out))
 
 			out, err = modGen.With(daggerCall("fn-ref", "--ref", remote, "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(out))
+			require.Equal(t, "ref: refs/heads/main", strings.TrimSpace(out))
 			out, err = modGen.With(daggerCall("fn-ref", "--ref", remote+"#v0.16.2", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "b3e6f765a547b22edc61a24336177348b9f00d94", strings.TrimSpace(out))
