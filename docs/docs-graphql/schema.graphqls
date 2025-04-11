@@ -1127,7 +1127,7 @@ type Container {
   withoutWorkdir: Container!
 
   """
-  Attach credentials for future publishing to a registry. Use in combinationw with publish
+  Attach credentials for future publishing to a registry. Use in combination with publish
   """
   withRegistryAuth(
     """

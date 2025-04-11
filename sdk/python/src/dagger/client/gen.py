@@ -2112,7 +2112,7 @@ class Container(Type):
         secret: "Secret",
     ) -> Self:
         """Attach credentials for future publishing to a registry. Use in
-        combinationw with publish
+        combination with publish
 
         Parameters
         ----------

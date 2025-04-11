@@ -898,7 +898,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Attach credentials for future publishing to a registry. Use in combinationw with publish"
+  @doc "Attach credentials for future publishing to a registry. Use in combination with publish"
   @spec with_registry_auth(t(), String.t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
   def with_registry_auth(%__MODULE__{} = container, address, username, secret) do
     query_builder =

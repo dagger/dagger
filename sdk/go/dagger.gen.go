@@ -1924,7 +1924,7 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 	}
 }
 
-// Attach credentials for future publishing to a registry. Use in combinationw with publish
+// Attach credentials for future publishing to a registry. Use in combination with publish
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
 	q := r.query.Select("withRegistryAuth")

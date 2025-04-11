@@ -834,7 +834,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Attach credentials for future publishing to a registry. Use in combinationw with publish
+     * Attach credentials for future publishing to a registry. Use in combination with publish
      */
     public function withRegistryAuth(string $address, string $username, SecretId|Secret $secret): Container
     {

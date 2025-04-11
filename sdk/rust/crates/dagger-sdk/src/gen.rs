@@ -3590,7 +3590,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Attach credentials for future publishing to a registry. Use in combinationw with publish
+    /// Attach credentials for future publishing to a registry. Use in combination with publish
     ///
     /// # Arguments
     ///

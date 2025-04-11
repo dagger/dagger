@@ -2588,7 +2588,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Attach credentials for future publishing to a registry. Use in combinationw with publish
+   * Attach credentials for future publishing to a registry. Use in combination with publish
    * @param address The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
    * @param username The username to authenticate with. Example: "alice"
    * @param secret The API key, password or token to authenticate to this registry
