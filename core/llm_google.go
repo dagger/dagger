@@ -184,6 +184,12 @@ func (c *GenaiClient) processStreamResponse(
 	return content, toolCalls, tokenUsage, nil
 }
 
+var _ LLMClient = (*GenaiClient)(nil)
+
+func (c *GenaiClient) IsRetryable(err error) bool {
+	return false
+}
+
 func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	// setup tracing & telemetry
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(

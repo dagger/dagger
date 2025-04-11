@@ -44,6 +44,13 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
 }
 
+var _ LLMClient = (*GenaiClient)(nil)
+
+func (c *OpenAIClient) IsRetryable(err error) bool {
+	// OpenAI client immplements retrying internally; nothing to do here.
+	return false
+}
+
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),

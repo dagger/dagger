@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -46,6 +47,24 @@ const maxAnthropicCacheBlocks = 4
 // Sonnet's minimum is 1024, Haiku's is 2048. Better to err on the higher side
 // so we don't waste cache breakpoints.
 const anthropicCacheThreshold = 2048
+
+var _ LLMClient = (*AnthropicClient)(nil)
+
+var anthropicRetryable = []string{
+	// there's gotta be a better way to do this...
+	string(anthropic.RateLimitErrorTypeRateLimitError),
+	string(anthropic.OverloadedErrorTypeOverloadedError),
+}
+
+func (c *AnthropicClient) IsRetryable(err error) bool {
+	msg := err.Error()
+	for _, retryable := range anthropicRetryable {
+		if strings.Contains(msg, retryable) {
+			return true
+		}
+	}
+	return false
+}
 
 //nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
