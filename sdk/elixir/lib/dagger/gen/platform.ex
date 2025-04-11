@@ -3,7 +3,7 @@ defmodule Dagger.Platform do
   @moduledoc """
   The platform config OS and architecture in a Container.
 
-  The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
+  The format is [os]/[platform]/[version] (e.g., \"darwin/arm64/v7\", \"windows/amd64\", \"linux/arm64\").
   """
 
   @type t() :: String.t()
