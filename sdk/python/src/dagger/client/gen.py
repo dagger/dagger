@@ -8250,6 +8250,9 @@ class Client(Root):
     def env(self, *, privileged: bool | None = False) -> Env:
         """Initialize a new environment
 
+        .. caution::
+            Experimental: Environments are not yet stabilized
+
         Parameters
         ----------
         privileged:
@@ -8376,6 +8379,9 @@ class Client(Root):
         max_api_calls: int | None = None,
     ) -> LLM:
         """Initialize a Large Language Model (LLM)
+
+        .. caution::
+            Experimental: LLM support is not yet stabilized
 
         Parameters
         ----------

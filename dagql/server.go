@@ -153,31 +153,23 @@ var coreDirectives = []DirectiveSpec{
 		},
 	},
 	{
-		Name: "impure",
+		Name: "experimental",
 		Description: FormatDescription(
-			`Indicates that a field may resolve to different values when called
-			repeatedly with the same inputs, or that the field has side effects.
-			Impure fields are never cached.`),
+			`Explains why this element is marked experimental.
+			Formatted in [Markdown](https://daringfireball.net/projects/markdown/).`),
 		Args: []InputSpec{
 			{
-				Name: "reason",
-				Description: FormatDescription(
-					`Explains why this element is impure, i.e. whether it performs side
-					effects or yield a different result with the same arguments.`),
-				Type: String(""),
+				Name:        "reason",
+				Description: FormatDescription(`Explains why this element was marked experimental.`),
+				Type:        String(""),
+				Default:     String("Not stabilized"),
 			},
 		},
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
-		},
-	},
-	{
-		Name: "meta",
-		Description: FormatDescription(
-			`Indicates that a field's selection can be removed from any query without
-			changing the result. Meta fields are dropped from cache keys.`),
-		Locations: []DirectiveLocation{
-			DirectiveLocationFieldDefinition,
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationInputFieldDefinition,
+			DirectiveLocationEnumValue,
 		},
 	},
 	{

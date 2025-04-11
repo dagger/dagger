@@ -1,52 +1,30 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
+	"os"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/opencontainers/go-digest"
+	"github.com/spf13/cobra"
 )
 
+var rootCmd = &cobra.Command{}
+
+var introspectCmd = &cobra.Command{
+	Use:  "introspect",
+	RunE: Introspect,
+}
+
+var schemaCmd = &cobra.Command{
+	Use:  "schema",
+	RunE: Schema,
+}
+
+func init() {
+	rootCmd.AddCommand(introspectCmd)
+	rootCmd.AddCommand(schemaCmd)
+}
+
 func main() {
-	ctx := context.Background()
-
-	root := &core.Query{}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
-		panic(err)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
-
-	res, err := schema.SchemaIntrospectionJSON(ctx, dag)
-	if err != nil {
-		panic(err)
-	}
-
-	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(res), &schemaResp); err != nil {
-		panic(fmt.Errorf("failed to unmarshal introspection JSON: %w", err))
-	}
-
-	schemaTypes := introspection.Types{}
-	for _, schemaType := range schemaResp.Schema.Types {
-		if strings.HasPrefix(schemaType.Name, "_") {
-			continue
-		}
-		schemaTypes = append(schemaTypes, schemaType)
-	}
-	schemaResp.Schema.Types = schemaTypes
-
-	res, err = json.MarshalIndent(schemaResp, "", "  ")
-	if err != nil {
-		panic(fmt.Errorf("failed to marshal introspection JSON: %w", err))
-	}
-
-	fmt.Println(string(res))
 }
