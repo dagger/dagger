@@ -15,11 +15,11 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/moby/buildkit/util/gitutil"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -245,7 +245,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			// Check if repo is public
 			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 				Name: "origin",
-				URLs: []string{remote.Remote},
+				URLs: []string{remote.Remote()},
 			})
 
 			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})

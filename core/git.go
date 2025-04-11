@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/gitutil"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/gitutil"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -170,7 +170,7 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 		"ls-remote",
 		"--tags", // we only want tags
 		"--refs", // we don't want to include ^{} entries for annotated tags
-		remote.Remote,
+		remote.Remote(),
 	}
 	if len(patterns) > 0 {
 		queryArgs = append(queryArgs, "--")

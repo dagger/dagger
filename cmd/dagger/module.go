@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
-	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
