@@ -1,0 +1,6 @@
+kind: Added
+body: add the ability to load a module without specifying an SDK
+time: 2025-04-10T19:08:18.75139555Z
+custom:
+    Author: grouville, tiborvass
+    PR: "9984"
