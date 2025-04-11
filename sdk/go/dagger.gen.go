@@ -652,6 +652,8 @@ type ContainerAsTarballOpts struct {
 	// Use the specified media types for the image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+	//
+	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
 }
 
@@ -681,6 +683,8 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
+	//
+	// Default: "Dockerfile"
 	Dockerfile string
 	// Target build stage to build.
 	Target string
@@ -877,6 +881,8 @@ type ContainerExportOpts struct {
 	// Use the specified media types for the exported image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+	//
+	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
@@ -1144,6 +1150,8 @@ type ContainerPublishOpts struct {
 	// Use the specified media types for the published image's layers.
 	//
 	// Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
+	//
+	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
 }
 
@@ -1508,6 +1516,8 @@ type ContainerWithExecOpts struct {
 	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
+	//
+	// Default: SUCCESS
 	Expect ReturnType
 	// Provides Dagger access to the executed command.
 	//
@@ -1574,6 +1584,8 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 // ContainerWithExposedPortOpts contains options for Container.WithExposedPort
 type ContainerWithExposedPortOpts struct {
 	// Transport layer network protocol
+	//
+	// Default: TCP
 	Protocol NetworkProtocol
 	// Optional port description
 	Description string
@@ -1706,6 +1718,8 @@ type ContainerWithMountedCacheOpts struct {
 	// Identifier of the directory to use as the cache volume's root.
 	Source *Directory
 	// Sharing mode of the cache volume.
+	//
+	// Default: SHARED
 	Sharing CacheSharingMode
 	// A user:group to set for the mounted cache directory.
 	//
@@ -1828,6 +1842,8 @@ type ContainerWithMountedSecretOpts struct {
 	// Permission given to the mounted secret (e.g., 0600).
 	//
 	// This option requires an owner to be set to be active.
+	//
+	// Default: 256
 	Mode int
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
@@ -1890,6 +1906,8 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
 	// Permission given to the written file (e.g., 0600).
+	//
+	// Default: 420
 	Permissions int
 	// A user:group to set for the file.
 	//
@@ -2121,6 +2139,8 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 // ContainerWithoutExposedPortOpts contains options for Container.WithoutExposedPort
 type ContainerWithoutExposedPortOpts struct {
 	// Port protocol to unexpose
+	//
+	// Default: TCP
 	Protocol NetworkProtocol
 }
 
@@ -2446,6 +2466,8 @@ type DirectoryAsModuleOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
 	//
 	// If not set, the module source code is loaded from the root of the directory.
+	//
+	// Default: "."
 	SourceRootPath string
 }
 
@@ -2469,6 +2491,8 @@ type DirectoryAsModuleSourceOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
 	//
 	// If not set, the module source code is loaded from the root of the directory.
+	//
+	// Default: "."
 	SourceRootPath string
 }
 
@@ -2526,6 +2550,8 @@ type DirectoryDockerBuildOpts struct {
 	// The platform to build.
 	Platform Platform
 	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+	//
+	// Default: "Dockerfile"
 	Dockerfile string
 	// Target build stage to build.
 	Target string
@@ -2859,6 +2885,8 @@ func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWit
 // DirectoryWithNewDirectoryOpts contains options for Directory.WithNewDirectory
 type DirectoryWithNewDirectoryOpts struct {
 	// Permission granted to the created directory (e.g., 0777).
+	//
+	// Default: 420
 	Permissions int
 }
 
@@ -2881,6 +2909,8 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 // DirectoryWithNewFileOpts contains options for Directory.WithNewFile
 type DirectoryWithNewFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
+	//
+	// Default: 420
 	Permissions int
 }
 
@@ -5702,6 +5732,8 @@ func (r *Host) MarshalJSON() ([]byte, error) {
 // HostServiceOpts contains options for Host.Service
 type HostServiceOpts struct {
 	// Upstream host to forward traffic to.
+	//
+	// Default: "localhost"
 	Host string
 }
 
@@ -7951,6 +7983,8 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 // GitOpts contains options for Client.Git
 type GitOpts struct {
 	// DEPRECATED: Set to true to keep .git directory.
+	//
+	// Default: true
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
 	ExperimentalServiceHost *Service
