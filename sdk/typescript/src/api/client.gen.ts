@@ -1171,6 +1171,11 @@ export type ClientEnvOpts = {
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    */
   privileged?: boolean
+
+  /**
+   * Set this module as the initial selection and fallback root
+   */
+  module?: Module_
 }
 
 export type ClientGitOpts = {
@@ -7495,6 +7500,7 @@ export class Client extends BaseClient {
   /**
    * Initialize a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+   * @param opts.module Set this module as the initial selection and fallback root
    */
   env = (opts?: ClientEnvOpts): Env => {
     const ctx = this._ctx.select("env", { ...opts })

@@ -97,6 +97,7 @@ func (s *LLMSession) reset() {
 	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 		WithEnv(s.dag.Env(dagger.EnvOpts{
 			Privileged: true,
+			Module:     s.dag.CurrentModule().Source().AsModule(),
 		}))
 }
 

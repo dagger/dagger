@@ -18,6 +18,7 @@ func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
 			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
+			ArgDoc("module", "Set this module as the initial selection and fallback root").
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
@@ -53,11 +54,35 @@ func (s environmentSchema) Install() {
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct {
 	Privileged bool `default:"false"`
+	Module     dagql.Optional[core.ModuleID]
 }) (*core.Env, error) {
 	env := core.NewEnv()
+
+	// If module is provided, load it once
+	var moduleObj dagql.Object
+	if args.Module.Valid {
+		obj, err := s.srv.Load(ctx, args.Module.Value.ID())
+		if err != nil {
+			return nil, fmt.Errorf("failed to load module: %w", err)
+		}
+
+		module, ok := obj.(dagql.Object)
+		if !ok {
+			return nil, fmt.Errorf("unexpected module type: %T", obj)
+		}
+
+		moduleObj = module
+
+		// Set as initial selection
+		env = env.WithInitialSelection(moduleObj)
+	}
+
+	// Set the root based on privileged flag and module availability
 	if args.Privileged {
+		// In privileged mode, set the global root
 		env = env.WithRoot(s.srv.Root())
 	}
+
 	return env, nil
 }
 

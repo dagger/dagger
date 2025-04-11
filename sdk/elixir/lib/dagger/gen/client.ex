@@ -124,12 +124,14 @@ defmodule Dagger.Client do
   end
 
   @doc "Initialize a new environment"
-  @spec env(t(), [{:privileged, boolean() | nil}]) :: Dagger.Env.t()
+  @spec env(t(), [{:privileged, boolean() | nil}, {:module, Dagger.ModuleID.t() | nil}]) ::
+          Dagger.Env.t()
   def env(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("env")
       |> QB.maybe_put_arg("privileged", optional_args[:privileged])
+      |> QB.maybe_put_arg("module", optional_args[:module])
 
     %Dagger.Env{
       query_builder: query_builder,
