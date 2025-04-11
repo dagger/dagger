@@ -14,9 +14,9 @@ example `Potato#1`, `Potato#2`, etc.
 All objects are immutable. Calling a tool against an object returns a new object
 with a sequence number, instead of updating it in place.
 
-A tool called `returnToUser` may be present. If present, its description,
-combined with the user's prompt, determines the task to complete, and the
-assistant MUST call it after completing its task.
+A tool called `complete` may be present. If present, its description, combined
+with the user's prompt, determines the task to complete, and the assistant MUST
+call it after completing its task.
 
 
 ## Example
@@ -51,7 +51,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
       )
 
       # Complete your task and return its outputs to the user.
-      returnToUser(
+      complete(
         # File ID observed from a tool result, in "File#number" format.
         #
         # The baked french fries.
@@ -89,7 +89,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
       )
 
       # Complete your task and return its outputs to the user.
-      returnToUser(
+      complete(
         # Fries ID observed from a tool result, in "Fries#number" format.
         #
         # The baked french fries.
@@ -220,7 +220,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
   </user>
   <assistant>
     <toolCall id="return">
-      returnToUser(fries: "Plate#2")
+      complete(fries: "Plate#2")
     </toolCall>
   </assistant>
 </example>
