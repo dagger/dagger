@@ -1,0 +1,242 @@
+The Dagger tool calling system exposes its GraphQL API through a dynamic set of
+tools.
+
+
+## Key Mechanics
+
+The `selectTools` tool describes the list of available tools and objects and
+allows the assistant to select more tools at its discretion. More tools may be
+selected at any time.
+
+All tools interact with objects by IDs, in the form `ObjectType#123` - for
+example `Potato#1`, `Potato#2`, etc.
+
+All objects are immutable. Calling a tool against an object returns a new object
+with a sequence number, instead of updating it in place..
+
+A tool called `returnToUser` may be present. If present, its description,
+combined with the user's prompt, determines the task to complete, and the
+assistant MUST call it after completing its task.
+
+
+## Suggested Strategy
+
+The assistant should start with a *planning* phase followed by an *execution*
+phase.
+
+Planning: the assistant will initially only see the list of tool names and their
+return type. The assistant should select its best guess at the relevant tools,
+and then select more if it realizes it needs more. The assistant may use the
+`think` tool throughout this process.
+
+Execution: the assistant should use its tools and accomplish the task in the
+most direct way possible, accurately conveying object IDs from one step to the
+next as necessary. When the task is complete, the model MUST call the
+`returnToUser` tool if present.
+
+
+## Example
+
+Below is an example usage of the tool calling scheme. Note that all potato and
+cooking-related concepts are placeholders. In practice there will be entirely
+different types of objects and APIs.
+
+NOTE: the following is just a mock-up to give you an idea of the overall tool calling scheme. Don't pay any attention to the particular syntax.
+
+<example>
+  <user>
+    <tools>
+      # Gain new tools for subsequent turns.
+      #
+      # Available objects:
+      # - Oven#1: An oven you can use for cooking.
+      # - Potato#1: The raw potato to turn into french fries.
+      # - Sink#1: A sink for cleaning food.
+      # - Plate#1: A plate for serving food.
+      #
+      # Available tools:
+      # - Oven_bake
+      # - Oven_broil
+      # - Potato_dice
+      # - Potato_peel
+      # - Potato_slice
+      # - Sink_rinse
+      # - Fries_plate
+      selectTools(
+        tools: [string],
+      )
+
+      # Complete your task and return its outputs to the user.
+      returnToUser(
+        # File ID observed from a tool result, in "File#number" format.
+        #
+        # The baked french fries.
+        fries: string,
+      )
+    </tools>
+    <prompt>
+      Bake me some french fries.
+    </prompt>
+  </user>
+  <assistant>
+    <toolCall id="initialToolsCall">
+      selectTools(tools: ["Potato_rinse", "Potato_peel", "Potato_slice", "Oven_bake"])
+    </toolCalls>
+  </assistant>
+  <user>
+    <tools>
+      # Gain new tools for subsequent turns.
+      #
+      # Available objects:
+      # - Oven#1: An oven you can use for cooking.
+      # - Potato#1: The raw potato to turn into french fries.
+      # - Sink#1: A sink for cleaning food.
+      #
+      # Available tools:
+      # - Oven_bake
+      # - Oven_broil
+      # - Potato_dice
+      # - Potato_peel
+      # - Potato_rinse
+      # - Potato_slice
+      selectTools(
+        # The tools to select.
+        tools: [string],
+      )
+
+      # Complete your task and return its outputs to the user.
+      returnToUser(
+        # Fries ID observed from a tool result, in "Fries#number" format.
+        #
+        # The baked french fries.
+        fries: string,
+      )
+
+      # Retrieves a cleaned potato by washing it in a sink.
+      Potato_rinse(
+        # The Potato to operate against. Defaults to the most recent Potato.
+        Potato: string,
+        # The sink to use to rinse the potato.
+        sink: string
+      )
+
+      # Retrieves this potato without its skin.
+      Potato_skin(
+        # The Potato to operate against. Defaults to the most recent Potato.
+        Potato: string
+      )
+
+      # Retrieves this potato without its skin.
+      Potato_slice(
+        # The Potato to operate against. Defaults to the most recent Potato.
+        Potato: string,
+        # The shape to cut the potato into.
+        # @enum("STICKS", "SLICES")
+        shape: string
+      )
+
+      # Bakes a food item.
+      Oven_bake(
+        # The Oven to operate against. Defaults to the most recent Oven.
+        Oven: string,
+
+        # The item to insert into the oven.
+        item: string
+      )
+    </tools>
+    <toolResult id="initialToolsCall">
+      ok
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="rinsePotato">
+      Potato_rinse(Potato: "Potato#1", sink: "Sink#1")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="rinsePotato">
+      {"result":"Potato#2"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="peelPotato">
+      Potato_peel(Potato: "Potato#2")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="slicePotato">
+      {"result":"Potato#3"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="slicePotato">
+      Potato_slice(Potato: "Potato#3", shape: "STICKS")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="slicePotato">
+      {"result":"Potato#4"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="bakePotato">
+      Oven_bake(Oven: "Oven#1", item: "Potato#4")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+    </tools>
+    <toolResult id="bakePotato">
+      {"result":"Fries#1"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="moreToolsCall">
+      selectTools(tools: ["Fries_plate"])
+    </toolCalls>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before ...
+
+      # Returns the plate with the fries placed upon it.
+      Fries_plate(
+        # The Fries to operate against. Defaults to the most recent Fries.
+        Fries: string,
+        # The place upon which to place the fries.
+        plate: string,
+      )
+    </tools>
+    <toolResult id="bakePotato">
+      ok
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="plateFries">
+      Fries_plate(Fries: "Fries#1", plate: "Plate#1")
+    </toolCall>
+  </assistant>
+  <user>
+    <tools>
+      ... same as before (including Fries_plate) ...
+    </tools>
+    <toolResult id="plateFries">
+      {"result": "Plate#2"}
+    </toolResult>
+  </user>
+  <assistant>
+    <toolCall id="return">
+      returnToUser(fries: "Plate#2")
+    </toolCall>
+  </assistant>
+</example>

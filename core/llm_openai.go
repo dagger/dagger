@@ -138,6 +138,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		}
 		params.Tools = toolParams
 	}
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(params)
 
 	var chatCompletion *openai.ChatCompletion
 
@@ -192,6 +194,8 @@ func (c *OpenAIClient) queryWithStreaming(
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Opt(true),
 	}
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(params)
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 	if stream.Err() != nil {
@@ -208,6 +212,8 @@ func (c *OpenAIClient) queryWithStreaming(
 	for stream.Next() {
 		res := stream.Current()
 		acc.AddChunk(res)
+
+		dbgEnc.Encode(res)
 
 		// Keep track of the token usage
 		//

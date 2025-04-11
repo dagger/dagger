@@ -654,6 +654,9 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if msg == "" {
+		return errors.New("no interjection provided; giving up")
+	}
 	fmt.Fprint(stdio.Stdout, msg)
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
@@ -753,6 +756,10 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 				ToolCallID:  toolCall.ID,
 				ToolErrored: isError,
 			})
+		}
+		if llm.mcp.returned {
+			// we returned; exit the loop, since some models just keep going
+			break
 		}
 	}
 	return nil
@@ -855,12 +862,6 @@ func (llm *LLM) Env() *Env {
 	return llm.mcp.env
 }
 
-func (llm *LLM) With(value dagql.Object) *LLM {
-	llm = llm.Clone()
-	llm.mcp.Select(value)
-	return llm
-}
-
 // A variable in the LLM environment
 type LLMVariable struct {
 	// The name of the variable
@@ -885,12 +886,12 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 	if err := llm.Sync(ctx, dag); err != nil {
 		return res, err
 	}
-	if llm.mcp.Current() == nil {
+	if llm.mcp.LastResult() == nil {
 		return res, nil
 	}
 	res.Value = &Binding{
 		Key:   name,
-		Value: llm.mcp.Current(),
+		Value: llm.mcp.LastResult(),
 		env:   llm.mcp.env,
 	}
 	res.Valid = true
