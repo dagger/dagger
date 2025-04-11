@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    New `depth` arg to `GitRef.tree` to control the depth of a clone
+time: 2025-04-11T11:48:38.013120188+01:00
+custom:
+    Author: jedevc
+    PR: "9980"
