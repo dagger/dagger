@@ -16,6 +16,10 @@ func newHistoryReplay(messages []ModelMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
+func (r *LLMReplayer) IsRetryable(err error) bool {
+	return false
+}
+
 func (c *LLMReplayer) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	if len(history) >= len(c.messages) {
 		return nil, fmt.Errorf("no more messages")

@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -85,6 +87,7 @@ type LLMProvider string
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
 	SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	IsRetryable(err error) bool
 }
 
 type LLMResponse struct {
@@ -710,7 +713,40 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 			return err
 		}
 
-		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
+		var res *LLMResponse
+
+		b := backoff.NewExponentialBackOff()
+		// Sane defaults (ideally not worth extra knobs)
+		b.InitialInterval = 1 * time.Second
+		b.MaxInterval = 30 * time.Second
+		b.MaxElapsedTime = 2 * time.Minute
+
+		messagesToSend := llm.messagesWithSystemPrompt()
+
+		// Retry operation
+		client := llm.Endpoint.Client
+		err = backoff.Retry(func() error {
+			var sendErr error
+			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+			if sendErr != nil {
+				var finished *ModelFinishedError
+				if errors.As(sendErr, &finished) {
+					// Don't retry if the model finished explicitly, treat as permanent.
+					return backoff.Permanent(sendErr)
+				}
+				if !client.IsRetryable(sendErr) {
+					// Maybe an invalid request - give up.
+					return backoff.Permanent(sendErr)
+				}
+				// Log retry attempts? Maybe with increasing severity?
+				// For now, just return the error to signal backoff to retry.
+				return sendErr
+			}
+			// Success, stop retrying
+			return nil
+		}, backoff.WithContext(b, ctx))
+
+		// Check the final error after retries (if any)
 		if err != nil {
 			var finished *ModelFinishedError
 			if errors.As(err, &finished) {
@@ -725,7 +761,8 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 					break
 				}
 			}
-			return err
+			// Handle persistent error after all retries failed.
+			return fmt.Errorf("failed to send query after retries: %w", err)
 		}
 
 		// Add the model reply to the history
