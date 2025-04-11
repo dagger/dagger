@@ -318,7 +318,7 @@ func (m *MCP) typeTools(srv *dagql.Server, all bool, schema *ast.Schema, typeNam
 		tools = append(tools, LLMTool{
 			Name:        toolName,
 			Returns:     field.Type.String(),
-			Description: field.Description,
+			Description: fmt.Sprintf("Returns %s. %s", field.Type, field.Description),
 			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return m.call(ctx, srv, typeName, field, args)

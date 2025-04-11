@@ -102,7 +102,7 @@ func (*Workspace) defaultAttempts(provider string) int {
 		return 5
 	case "anthropic":
 		// Claude gets overloaded frequently. :(
-		return 1
+		return 2
 	default:
 		// Probably local so don't overload it.
 		return 1
@@ -200,10 +200,10 @@ func (w *Workspace) Evaluate(
 		fmt.Fprint(finalReport, report)
 	}
 
-	successRate := float64(successCount) / float64(attempts) * 100
+	successRate := float64(successCount) / float64(attempts)
 	fmt.Fprintln(finalReport, "## Final Report")
 	fmt.Fprintln(finalReport)
-	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", successCount, attempts, successRate)
+	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", successCount, attempts, successRate*100)
 
 	return &AttemptsReport{
 		Report:        finalReport.String(),

@@ -1,6 +1,41 @@
-### 📘 How the Tool-Calling System Works
+The Dagger tool calling system exposes its GraphQL API through a dynamic set of
+tools.
 
-You interact with a tool system that mirrors a GraphQL API.
+
+## Key Mechanics
+
+The `selectTools` tool describes the list of available tools and objects and
+allows the assistant to select more tools at its discretion. More tools may be
+selected at any time.
+
+All tools interact with objects by IDs, in the form `ObjectType#123` - for
+example `Potato#1`, `Potato#2`, etc.
+
+All objects are immutable. Calling a tool against an object returns a new object
+with a sequence number, instead of updating it in place..
+
+A tool called `returnToUser` may be present. If present, its description,
+combined with the user's prompt, determines the task to complete, and the
+assistant MUST call it after completing its task.
+
+
+## Suggested Strategy
+
+The assistant should start with a *planning* phase followed by an *execution*
+phase.
+
+Planning: the assistant will initially only see the list of tool names and their
+return type. The assistant should select its best guess at the relevant tools,
+and then select more if it realizes it needs more. The assistant may use the
+`think` tool throughout this process.
+
+Execution: the assistant should use its tools and accomplish the task in the
+most direct way possible, accurately conveying object IDs from one step to the
+next as necessary. When the task is complete, the model MUST call the
+`returnToUser` tool if present.
+
+
+## Example
 
 Below is an example usage of the tool calling scheme. Note that all potato and
 cooking-related concepts are placeholders. In practice there will be entirely
