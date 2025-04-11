@@ -3,13 +3,12 @@ Source config.tape
 
 Output quickstart/ci/publish.gif
 
-Sleep 1s
+Source shell.tape
 
-Type "dagger -c 'publish .'"
+Type "publish"
 Sleep 1s
 Enter
 
-# Wait for the system prompt
-Wait@120s
+Wait+Screen@120s /@sha256/
 
-Sleep 3s
+Sleep 5s

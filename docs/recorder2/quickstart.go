@@ -18,11 +18,13 @@ func (f *Quickstart) All() *dagger.Directory {
 	// TODO: add docker
 	return dag.Directory().
 		WithDirectory("", f.Terminal()).
-		WithDirectory("", f.Buildenv()).
-		WithDirectory("", f.Test()).
-		WithDirectory("", f.Build()).
+		WithDirectory("", f.BuildenvTerminal()).
+		WithDirectory("", f.BuildService()).
+		WithDirectory("", f.Docker()).
 		WithDirectory("", f.Publish())
 }
+
+// Basics quickstart recordings
 
 func (f *Quickstart) Terminal() *dagger.Directory {
 	return f.quickstart("quickstart/basics/terminal.tape")
@@ -32,28 +34,28 @@ func (f *Quickstart) PublishShell() *dagger.Directory {
 	return f.quickstart("quickstart/basics/publish-shell.tape")
 }
 
-func (f *Quickstart) Buildenv() *dagger.Directory {
-	return f.quickstart("quickstart/ci/buildenv.tape")
+// CI quickstart recordings
+
+func (f *Quickstart) BuildenvTerminal() *dagger.Directory {
+	return f.quickstart("quickstart/ci/buildenv-terminal.tape")
 }
 
-func (f *Quickstart) Test() *dagger.Directory {
-	return f.quickstart("quickstart/ci/test.tape")
-}
-
-func (f *Quickstart) Build() *dagger.Directory {
-	return f.quickstart("quickstart/ci/build.tape")
+func (f *Quickstart) BuildService() *dagger.Directory {
+	return f.quickstart("quickstart/ci/build-service.tape")
 }
 
 func (f *Quickstart) Publish() *dagger.Directory {
 	return f.quickstart("quickstart/ci/publish.tape")
 }
 
+func (f *Quickstart) Docker() *dagger.Directory {
+	return f.quickstart("quickstart/ci/docker.tape")
+}
+
 func (f *Quickstart) quickstart(tape string) *dagger.Directory {
 	source := dag.CurrentModule().Source().
 		Directory("tapes").
 		Filter(includeWithShell(tape)).
-		//WithDirectory("", dag.Git("https://github.com/dagger/hello-dagger").Head().Tree()).
-		//WithDirectory(".dagger", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
 		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/quickstart/ci/snippets/go")).
 		WithDirectory("", dag.Git("https://github.com/dagger/hello-dagger", dagger.GitOpts{KeepGitDir: true}).Head().Tree())
 
