@@ -1,7 +1,6 @@
 ---
 slug: /cookbook
 ---
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
@@ -75,6 +74,13 @@ Besides helping with the final image size, mounts are more performant and resour
 <TabItem value="PHP">
 
 ```php file=./snippets/copy-dir/php/src/MyModule.php
+```
+
+</TabItem>
+
+<TabItem value="Java">
+
+```java file=./snippets/copy-dir/java/MyModule.java
 ```
 
 </TabItem>
@@ -285,6 +291,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/copy-modify-dir/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -423,6 +435,12 @@ For examples of SSH-based cloning, including private or public Git repositories 
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/clone-git-repository/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -544,6 +562,12 @@ Besides helping with the final image size, mounts are more performant and resour
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/copy-file/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/copy-file/java/MyModule.java
 ```
 
 </TabItem>
@@ -740,6 +764,12 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/copy-filter-dir-post/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -839,6 +869,12 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/read-file-http/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -913,6 +949,12 @@ The following Dagger Function accepts a `File` argument and copies the specified
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/copy-file-runtime/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -965,6 +1007,12 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/copy-filter-dir-pre/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/copy-filter-dir-pre/java/MyModule.java
 ```
 
 </TabItem>
@@ -1044,6 +1092,12 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/set-common-default-path/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -1119,6 +1173,12 @@ The following Dagger Function performs a multi-stage build.
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/multi-stage-build/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1169,6 +1229,12 @@ The following Dagger Function performs a matrix build.
 <TabItem value="PHP">
 
 ```php file=./snippets/builds/matrix-build/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/matrix-build/java/MyModule.java
 ```
 
 </TabItem>
@@ -1240,6 +1306,12 @@ The following Dagger Function builds a single image for different CPU architectu
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/multi-arch/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1289,6 +1361,12 @@ install the module first with `dagger install github.com/levlaz/daggerverse/cont
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/multi-arch-cc/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/multi-arch-cc/java/MyModule.java
 ```
 
 </TabItem>
@@ -1345,6 +1423,12 @@ The following Dagger Function builds an image from a Dockerfile.
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/dockerfile/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1388,6 +1472,12 @@ The following function builds an image from a Dockerfile with a build context th
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/dockerfile-context/java/MyModule.java
 ```
 
 </TabItem>
@@ -1440,6 +1530,12 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) annotations](
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/oci-annotations/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1484,6 +1580,12 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) labels](https
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/oci-labels/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/oci-labels/java/MyModule.java
 ```
 
 </TabItem>
@@ -1545,6 +1647,12 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/builds/cache/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1591,6 +1699,12 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1739,6 +1853,12 @@ The following Dagger Function accepts a GitHub hosts configuration file as a `Se
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/secret-file/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1783,6 +1903,12 @@ The following code listing demonstrates how to inject a secret into a Dockerfile
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/secret-dockerfile/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/secret-dockerfile/java/MyModule.java
 ```
 
 </TabItem>
