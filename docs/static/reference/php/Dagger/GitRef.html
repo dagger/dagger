@@ -163,10 +163,20 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_ref">ref</a>()
+        
+                                            <p><p>The resolved ref name at this ref.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_tree">tree</a>(bool|null $discardGitDir = false)
+                    <a href="#method_tree">tree</a>(bool|null $discardGitDir = false, int|null $depth = 1)
         
                                             <p><p>The filesystem tree at this ref.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -331,10 +341,42 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_tree">
+                    <h3 id="method_ref">
         <div class="location">at line 37</div>
+        <code>                    string
+    <strong>ref</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The resolved ref name at this ref.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_tree">
+        <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>tree</strong>(bool|null $discardGitDir = false)
+    <strong>tree</strong>(bool|null $discardGitDir = false, int|null $depth = 1)
         </code>
     </h3>
     <div class="details">    
@@ -351,6 +393,11 @@
                     <tr>
                 <td>bool|null</td>
                 <td>$discardGitDir</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>int|null</td>
+                <td>$depth</td>
                 <td></td>
             </tr>
             </table>

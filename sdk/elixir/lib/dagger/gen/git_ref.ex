@@ -36,14 +36,27 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  The resolved ref name at this ref.
+  """
+  @spec ref(t()) :: {:ok, String.t()} | {:error, term()}
+  def ref(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("ref")
+
+    Client.execute(git_ref.client, query_builder)
+  end
+
+  @doc """
   The filesystem tree at this ref.
   """
-  @spec tree(t(), [{:discard_git_dir, boolean() | nil}]) :: Dagger.Directory.t()
+  @spec tree(t(), [{:discard_git_dir, boolean() | nil}, {:depth, integer() | nil}]) ::
+          Dagger.Directory.t()
   def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
     query_builder =
       git_ref.query_builder
       |> QB.select("tree")
       |> QB.maybe_put_arg("discardGitDir", optional_args[:discard_git_dir])
+      |> QB.maybe_put_arg("depth", optional_args[:depth])
 
     %Dagger.Directory{
       query_builder: query_builder,

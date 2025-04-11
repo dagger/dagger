@@ -2390,10 +2390,16 @@ type GitRef {
   """A unique identifier for this GitRef."""
   id: GitRefID!
 
+  """The resolved ref name at this ref."""
+  ref: String!
+
   """The filesystem tree at this ref."""
   tree(
     """Set to true to discard .git directory."""
     discardGitDir: Boolean = false
+
+    """The depth of the tree to fetch."""
+    depth: Int = 1
   ): Directory!
 }
 

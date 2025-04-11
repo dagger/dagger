@@ -8073,6 +8073,10 @@
                         <td data-property-name=""><a class="property-name" id="GitRef-id" href="#GitRef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span> </td>
                         <td> A unique identifier for this GitRef. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRef-ref" href="#GitRef-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved ref name at this ref. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRef-tree" href="#GitRef-tree"><code>tree</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The filesystem tree at this ref. </td>
@@ -8085,6 +8089,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>discardGitDir</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Set to true to discard .git directory.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>depth</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>The depth of the tree to fetch.</p>
                               </div>
                             </div>
                           </div>
