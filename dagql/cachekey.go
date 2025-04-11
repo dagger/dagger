@@ -50,7 +50,17 @@ func CachePerClientObject[A any](
 // It should be used when the operation should be run for each session, but not more than once for a given session.
 func CachePerSession[P Typed, A any](
 	ctx context.Context,
-	_ Instance[P],
+	inst Instance[P],
+	args A,
+	cacheCfg CacheConfig,
+) (*CacheConfig, error) {
+	return CachePerSessionObject(ctx, inst, args, cacheCfg)
+}
+
+// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Instance.
+func CachePerSessionObject[A any](
+	ctx context.Context,
+	_ Object,
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {

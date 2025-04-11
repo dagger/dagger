@@ -11,12 +11,9 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/llbsolver/provenance"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
@@ -302,25 +299,6 @@ func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
 	res.ExposedPorts = mergeMap(dst.ExposedPorts, src.ExposedPorts)
 
 	return res
-}
-
-func resolveProvenance(ctx context.Context, bk *buildkit.Client, st llb.State) (*provenance.Capture, error) {
-	def, err := st.Marshal(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: def.ToPB(),
-	})
-	if err != nil {
-		return nil, err
-	}
-	p := res.Ref.Provenance()
-	if p == nil {
-		return nil, errors.Errorf("no provenance was resolved")
-	}
-	return p, nil
 }
 
 func ptr[T any](v T) *T {

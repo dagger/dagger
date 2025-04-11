@@ -19,6 +19,7 @@ import (
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
@@ -1461,6 +1462,11 @@ func (srv *Server) Platform() core.Platform {
 // The content store for the engine as a whole
 func (srv *Server) OCIStore() content.Store {
 	return srv.contentStore
+}
+
+// The dns configuration for the engine as a whole
+func (srv *Server) DNS() *oci.DNSConfig {
+	return srv.dns
 }
 
 // The lease manager for the engine as a whole

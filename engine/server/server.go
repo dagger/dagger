@@ -64,6 +64,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
+	"github.com/moby/locker"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -179,6 +180,8 @@ type Server struct {
 	daggerSessions   map[string]*daggerSession // session id -> session state
 	daggerSessionsMu sync.RWMutex
 	clientDBs        *clientdb.DBs
+
+	locker *locker.Locker
 }
 
 type NewServerOpts struct {
@@ -213,6 +216,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
 		daggerSessions: make(map[string]*daggerSession),
+		locker:         locker.New(),
 	}
 
 	//
@@ -621,6 +625,10 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+func (srv *Server) Locker() *locker.Locker {
+	return srv.locker
 }
 
 func (srv *Server) gcClientDBs() {
