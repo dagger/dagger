@@ -64,12 +64,12 @@ func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
 // Test basic prompting.
 func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 10}).
-			WithPrompt("What is 2 + 2? Respond with a single number."),
+		m.llm(dagger.LLMOpts{MaxAPICalls: 5}).
+			WithPrompt("Hello there! Respond with 'potato' if you received this message."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.LastReply(ctx)
 			require.NoError(t, err)
-			require.Contains(t, reply, "4")
+			require.Contains(t, reply, "potato")
 		})
 }
 
