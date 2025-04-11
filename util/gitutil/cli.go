@@ -3,13 +3,16 @@ package gitutil
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
 
-	"github.com/pkg/errors"
+	"dagger.io/dagger/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // GitCLI carries config to pass to the git cli to make running multiple
@@ -130,7 +133,15 @@ func (cli *GitCLI) New(opts ...Option) *GitCLI {
 }
 
 // Run executes a git command with the given args.
-func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, err error) {
+func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, strings.Join(append([]string{"git"}, args...), " "), trace.WithAttributes(
+		attribute.Bool(telemetry.UIEncapsulatedAttr, true),
+	))
+	defer telemetry.End(span, func() error { return rerr })
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
 	gitBinary := "git"
 	if cli.git != "" {
 		gitBinary = cli.git
@@ -140,107 +151,93 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, err error
 		"http_proxy", "https_proxy", "no_proxy", "all_proxy",
 	}
 
-	for {
-		var cmd *exec.Cmd
-		if cli.exec == nil {
-			cmd = exec.CommandContext(ctx, gitBinary)
-		} else {
-			cmd = exec.Command(gitBinary)
-		}
-
-		cmd.Dir = cli.dir
-		if cmd.Dir == "" {
-			cmd.Dir = cli.workTree
-		}
-
-		// Block sneaky repositories from using repos from the filesystem as submodules.
-		cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
-		if cli.workTree != "" {
-			cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
-		}
-		if cli.gitDir != "" {
-			cmd.Args = append(cmd.Args, "--git-dir", cli.gitDir)
-		}
-		cmd.Args = append(cmd.Args, cli.args...)
-		cmd.Args = append(cmd.Args, args...)
-
-		buf := bytes.NewBuffer(nil)
-		errbuf := bytes.NewBuffer(nil)
-		cmd.Stdin = nil
-		cmd.Stdout = buf
-		cmd.Stderr = errbuf
-		if cli.streams != nil {
-			stdout, stderr, flush := cli.streams(ctx)
-			if stdout != nil {
-				cmd.Stdout = io.MultiWriter(stdout, cmd.Stdout)
-			}
-			if stderr != nil {
-				cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
-			}
-			defer stdout.Close()
-			defer stderr.Close()
-			defer func() {
-				if err != nil {
-					flush()
-				}
-			}()
-		}
-
-		cmd.Env = []string{
-			"PATH=" + os.Getenv("PATH"),
-			"GIT_TERMINAL_PROMPT=0",
-			"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts),
-			//	"GIT_TRACE=1",
-			"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
-			"HOME=/dev/null",        // Disable reading from user gitconfig.
-			"LC_ALL=C",              // Ensure consistent output.
-		}
-		for _, ev := range proxyEnvVars {
-			if v, ok := os.LookupEnv(ev); ok {
-				cmd.Env = append(cmd.Env, ev+"="+v)
-			}
-		}
-		if cli.sshAuthSock != "" {
-			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
-		}
-
-		if cli.exec != nil {
-			// remote git commands spawn helper processes that inherit FDs and don't
-			// handle parent death signal so exec.CommandContext can't be used
-			err = cli.exec(ctx, cmd)
-		} else {
-			err = cmd.Run()
-		}
-
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				cerr := context.Cause(ctx)
-				if cerr != nil {
-					return buf.Bytes(), errors.Wrapf(cerr, "context completed: git stderr:\n%s", errbuf.String())
-				}
-			default:
-			}
-
-			if strings.Contains(errbuf.String(), "--depth") || strings.Contains(errbuf.String(), "shallow") {
-				if newArgs := argsNoDepth(args); len(args) > len(newArgs) {
-					args = newArgs
-					continue
-				}
-			}
-			if strings.Contains(errbuf.String(), "not our ref") || strings.Contains(errbuf.String(), "unadvertised object") {
-				// server-side error: https://github.com/git/git/blob/34b6ce9b30747131b6e781ff718a45328aa887d0/upload-pack.c#L811-L812
-				// client-side error: https://github.com/git/git/blob/34b6ce9b30747131b6e781ff718a45328aa887d0/fetch-pack.c#L2250-L2253
-				if newArgs := argsNoCommitRefspec(args); len(args) > len(newArgs) {
-					args = newArgs
-					continue
-				}
-			}
-
-			return buf.Bytes(), errors.Wrapf(err, "git stderr:\n%s", errbuf.String())
-		}
-		return buf.Bytes(), nil
+	var cmd *exec.Cmd
+	if cli.exec == nil {
+		cmd = exec.CommandContext(ctx, gitBinary)
+	} else {
+		cmd = exec.Command(gitBinary)
 	}
+
+	cmd.Dir = cli.dir
+	if cmd.Dir == "" {
+		cmd.Dir = cli.workTree
+	}
+
+	// Block sneaky repositories from using repos from the filesystem as submodules.
+	cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
+	if cli.workTree != "" {
+		cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
+	}
+	if cli.gitDir != "" {
+		cmd.Args = append(cmd.Args, "--git-dir", cli.gitDir)
+	}
+	cmd.Args = append(cmd.Args, cli.args...)
+	cmd.Args = append(cmd.Args, args...)
+
+	buf := bytes.NewBuffer(nil)
+	errbuf := bytes.NewBuffer(nil)
+	cmd.Stdin = nil
+	cmd.Stdout = io.MultiWriter(buf, stdio.Stdout)
+	cmd.Stderr = io.MultiWriter(errbuf, stdio.Stderr)
+	if cli.streams != nil {
+		stdout, stderr, flush := cli.streams(ctx)
+		if stdout != nil {
+			cmd.Stdout = io.MultiWriter(stdout, cmd.Stdout)
+		}
+		if stderr != nil {
+			cmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
+		}
+		defer stdout.Close()
+		defer stderr.Close()
+		defer func() {
+			if rerr != nil {
+				flush()
+			}
+		}()
+	}
+
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.sshKnownHosts),
+		//	"GIT_TRACE=1",
+		"GIT_ASKPASS=echo",      // Ensure git does not ask for a password (avoids cryptic error message)
+		"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
+		"HOME=/dev/null",        // Disable reading from user gitconfig.
+		"LC_ALL=C",              // Ensure consistent output.
+	}
+	for _, ev := range proxyEnvVars {
+		if v, ok := os.LookupEnv(ev); ok {
+			cmd.Env = append(cmd.Env, ev+"="+v)
+		}
+	}
+	if cli.sshAuthSock != "" {
+		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
+	}
+
+	var err error
+	if cli.exec != nil {
+		// remote git commands spawn helper processes that inherit FDs and don't
+		// handle parent death signal so exec.CommandContext can't be used
+		err = cli.exec(ctx, cmd)
+	} else {
+		err = cmd.Run()
+	}
+
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			cerr := context.Cause(ctx)
+			if cerr != nil {
+				return buf.Bytes(), fmt.Errorf("context completed: %w", cerr)
+			}
+		default:
+		}
+		// NB: break glass
+		return buf.Bytes(), fmt.Errorf("git error: %w\nstderr:\n%s", err, errbuf.String())
+		// return buf.Bytes(), fmt.Errorf("git error: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func getGitSSHCommand(knownHosts string) string {
@@ -251,30 +248,4 @@ func getGitSSHCommand(knownHosts string) string {
 		gitSSHCommand += " -o StrictHostKeyChecking=no"
 	}
 	return gitSSHCommand
-}
-
-func argsNoDepth(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		if a != "--depth=1" {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-func argsNoCommitRefspec(args []string) []string {
-	if len(args) <= 2 {
-		return args
-	}
-	if args[0] != "fetch" {
-		return args
-	}
-
-	// assume the refspec is the last arg
-	if IsCommitSHA(args[len(args)-1]) {
-		return args[:len(args)-1]
-	}
-
-	return args
 }

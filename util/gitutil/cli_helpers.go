@@ -2,7 +2,6 @@ package gitutil
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -26,12 +25,7 @@ func (cli *GitCLI) GitDir(ctx context.Context) (string, error) {
 	if cli.gitDir != "" {
 		return cli.gitDir, nil
 	}
-
-	dir, err := cli.WorkTree(ctx)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, ".git"), nil
+	return cli.clean(cli.Run(ctx, "rev-parse", "--absolute-git-dir"))
 }
 
 func (cli *GitCLI) clean(dt []byte, err error) (string, error) {

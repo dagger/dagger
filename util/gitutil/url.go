@@ -1,12 +1,13 @@
 package gitutil
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/moby/buildkit/util/sshutil"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -50,9 +51,35 @@ type GitURL struct {
 	// Fragment can contain additional metadata
 	Fragment *GitURLFragment
 
-	// Remote is a valid URL remote to pass into the Git CLI tooling (i.e.
-	// without the fragment metadata)
-	Remote string
+	scpStyle bool // true if the URL is in SCP style
+}
+
+// Remote is a valid URL remote to pass into the Git CLI tooling (i.e. without the fragment metadata)
+func (gitURL *GitURL) Remote() string {
+	gitURLCopy := *gitURL
+	gitURLCopy.Fragment = nil
+	return gitURLCopy.String()
+}
+
+func (gitURL *GitURL) String() string {
+	if gitURL.scpStyle {
+		result := sshutil.SCPStyleURL{
+			User:     gitURL.User,
+			Host:     gitURL.Host,
+			Path:     gitURL.Path,
+			Fragment: gitURL.Fragment.String(),
+		}
+		return result.String()
+	}
+
+	result := &url.URL{
+		Scheme:   gitURL.Scheme,
+		User:     gitURL.User,
+		Host:     gitURL.Host,
+		Path:     gitURL.Path,
+		Fragment: gitURL.Fragment.String(),
+	}
+	return result.String()
 }
 
 // GitURLFragment is the buildkit-specific metadata extracted from the fragment
@@ -74,13 +101,23 @@ func splitGitFragment(fragment string) *GitURLFragment {
 	return &GitURLFragment{Ref: ref, Subdir: subdir}
 }
 
+func (fragment *GitURLFragment) String() string {
+	if fragment == nil {
+		return ""
+	}
+	if fragment.Subdir == "" {
+		return fragment.Ref
+	}
+	return fragment.Ref + ":" + fragment.Subdir
+}
+
 // ParseURL parses a BuildKit-style Git URL (that may contain additional
 // fragment metadata) and returns a parsed GitURL object.
 func ParseURL(remote string) (*GitURL, error) {
 	if proto := protoRegexp.FindString(remote); proto != "" {
 		proto = strings.ToLower(strings.TrimSuffix(proto, "://"))
 		if _, ok := supportedProtos[proto]; !ok {
-			return nil, errors.Wrap(ErrInvalidProtocol, proto)
+			return nil, fmt.Errorf("%w %q", ErrInvalidProtocol, proto)
 		}
 		url, err := url.Parse(remote)
 		if err != nil {
@@ -114,7 +151,6 @@ func fromURL(url *url.URL) *GitURL {
 		Host:     url.Host,
 		Path:     url.Path,
 		Fragment: splitGitFragment(url.Fragment),
-		Remote:   withoutFragment.String(),
 	}
 }
 
@@ -127,6 +163,6 @@ func fromSCPStyleURL(url *sshutil.SCPStyleURL) *GitURL {
 		Host:     url.Host,
 		Path:     url.Path,
 		Fragment: splitGitFragment(url.Fragment),
-		Remote:   withoutFragment.String(),
+		scpStyle: true,
 	}
 }

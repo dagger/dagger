@@ -78,10 +78,11 @@ func TestParseURL(t *testing.T) {
 		{
 			url: "git@github.com:moby/buildkit.git",
 			result: GitURL{
-				Scheme: SSHProtocol,
-				Host:   "github.com",
-				Path:   "moby/buildkit.git",
-				User:   url.User("git"),
+				Scheme:   SSHProtocol,
+				Host:     "github.com",
+				Path:     "moby/buildkit.git",
+				User:     url.User("git"),
+				scpStyle: true,
 			},
 		},
 		{
@@ -92,6 +93,7 @@ func TestParseURL(t *testing.T) {
 				Path:     "moby/buildkit.git",
 				Fragment: &GitURLFragment{Ref: "v1.0.0"},
 				User:     url.User("git"),
+				scpStyle: true,
 			},
 		},
 		{
@@ -102,15 +104,17 @@ func TestParseURL(t *testing.T) {
 				Path:     "moby/buildkit.git",
 				Fragment: &GitURLFragment{Ref: "v1.0.0", Subdir: "hack"},
 				User:     url.User("git"),
+				scpStyle: true,
 			},
 		},
 		{
 			url: "nonstandarduser@example.com:/srv/repos/weird/project.git",
 			result: GitURL{
-				Scheme: SSHProtocol,
-				Host:   "example.com",
-				Path:   "/srv/repos/weird/project.git",
-				User:   url.User("nonstandarduser"),
+				Scheme:   SSHProtocol,
+				Host:     "example.com",
+				Path:     "/srv/repos/weird/project.git",
+				User:     url.User("nonstandarduser"),
+				scpStyle: true,
 			},
 		},
 		{
@@ -159,6 +163,7 @@ func TestParseURL(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
+				require.Equal(t, test.result.String(), remote.String())
 				require.Equal(t, test.result.Scheme, remote.Scheme)
 				require.Equal(t, test.result.Host, remote.Host)
 				require.Equal(t, test.result.Path, remote.Path)
