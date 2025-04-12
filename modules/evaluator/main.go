@@ -320,7 +320,7 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 		// EvalsAcrossModels (w2b self calls)
 		promptFile := dag.Directory().WithNewFile("prompt.txt", prompt).File("prompt.txt")
 
-		evals, err := m.EvalsAcrossModels(ctx, nil, nil, 2, promptFile)
+		evals, err := m.EvalsAcrossModels(ctx, nil, nil, 0, promptFile)
 		if err != nil {
 			return "", err
 		}
