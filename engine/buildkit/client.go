@@ -660,7 +660,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
-		return fmt.Errorf("failed to get main client caller to to prompt for allow llm: %w", err)
+		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
@@ -681,7 +681,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, error) {
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
-		return "", fmt.Errorf("failed to get main client caller to to prompt user for human help: %w", err)
+		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).PromptString(ctx, &session.StringRequest{

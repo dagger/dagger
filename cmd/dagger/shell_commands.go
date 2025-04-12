@@ -60,7 +60,7 @@ func (c *ShellCommand) Name() string {
 	return name
 }
 
-// Short is the the summary for the command
+// Short is the summary for the command
 func (c *ShellCommand) Short() string {
 	return strings.Split(c.Description, "\n")[0]
 }
