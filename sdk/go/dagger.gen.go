@@ -276,6 +276,7 @@ type PortForward struct {
 type Binding struct {
 	query *querybuilder.Selection
 
+	asString *string
 	digest   *string
 	id       *BindingID
 	name     *string
@@ -412,6 +413,19 @@ func (r *Binding) AsSocket() *Socket {
 	return &Socket{
 		query: q,
 	}
+}
+
+// The binding's string value
+func (r *Binding) AsString(ctx context.Context) (string, error) {
+	if r.asString != nil {
+		return *r.asString, nil
+	}
+	q := r.query.Select("asString")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The digest of the binding value
@@ -701,6 +715,8 @@ type ContainerBuildOpts struct {
 }
 
 // Initializes this container from a Dockerfile build.
+//
+// Deprecated: Use Directory.dockerBuild instead
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	assertNotNil("context", context)
 	q := r.query.Select("build")
@@ -4113,6 +4129,17 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 	q := r.query.Select("withStringInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update an input value of type string
+func (r *Env) WithStringOutput(name string, description string) *Env {
+	q := r.query.Select("withStringOutput")
+	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{

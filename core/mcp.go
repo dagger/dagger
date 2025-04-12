@@ -667,19 +667,25 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			fmt.Sprintf("  %s (%s): %s", name, typeName, b.Description))
 
 		argSchema := map[string]any{
-			"type":           "string",
-			"description":    desc,
-			jsonSchemaIDAttr: typeName,
+			"type": "string",
 		}
 
-		desc := fmt.Sprintf("%s ID to return.", typeName)
-		enum := m.allIDs(typeName)
-		if len(enum) == 0 {
-			desc += " (UNAVAILABLE)"
-			anyUnavailable = true
+		var desc string
+		if typeName == "String" {
+			desc = b.Description
 		} else {
-			argSchema["enum"] = enum
+			argSchema[jsonSchemaIDAttr] = typeName
+			desc := fmt.Sprintf("%s ID to return. %s", typeName, b.Description)
+			enum := m.allIDs(typeName)
+			if len(enum) == 0 {
+				desc += " (UNAVAILABLE)"
+				anyUnavailable = true
+			} else {
+				argSchema["enum"] = enum
+			}
 		}
+
+		argSchema["description"] = desc
 
 		props[name] = argSchema
 	}
@@ -709,7 +715,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			if !ok {
 				return nil, fmt.Errorf("invalid arguments: %T", args)
 			}
-			for name := range m.env.outputsByName {
+			for name, output := range m.env.outputsByName {
 				arg, ok := vals[name]
 				if !ok {
 					return nil, fmt.Errorf("required output %s not provided", name)
@@ -718,22 +724,21 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 				if !ok {
 					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
 				}
-				bnd, ok := m.env.objsByID[argStr]
-				if !ok {
-					return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
-				}
-				obj := bnd.Value
-				if output, found := m.env.Output(name); found {
-					if expected := output.expectedType; expected != nil {
-						expectedType := expected.TypeName()
-						actualType := obj.Type().Name()
-						if expectedType != actualType {
-							return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, expectedType, actualType)
-						}
+				expected := output.expectedType
+				expectedType := expected.TypeName()
+				if expectedType == "String" {
+					output.Value = dagql.String(argStr)
+				} else {
+					bnd, ok := m.env.objsByID[argStr]
+					if !ok {
+						return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
+					}
+					obj := bnd.Value
+					actualType := obj.Type().Name()
+					if expectedType != actualType {
+						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, expectedType, actualType)
 					}
 					output.Value = obj
-				} else {
-					return nil, fmt.Errorf("undefined output: %q", name)
 				}
 			}
 			m.returned = true

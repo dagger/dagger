@@ -33,6 +33,11 @@ func (s environmentSchema) Install() {
 		dagql.Func("withStringInput", s.withStringInput).
 			ArgDoc("name", "The name of the binding").
 			ArgDoc("value", "The string value to assign to the binding").
+			ArgDoc("description", "The description of the input").
+			Doc("Create or update an input value of type string"),
+		dagql.Func("withStringOutput", s.withStringOutput).
+			ArgDoc("name", "The name of the binding").
+			ArgDoc("description", "The description of the output").
 			Doc("Create or update an input value of type string"),
 	}.Install(s.srv)
 	dagql.Fields[*core.Binding]{
@@ -42,6 +47,8 @@ func (s environmentSchema) Install() {
 			Doc("The binding type"),
 		dagql.Func("digest", s.bindingDigest).
 			Doc("The digest of the binding value"),
+		dagql.Func("asString", s.bindingAsString).
+			Doc("The binding's string value"),
 	}.Install(s.srv)
 	hook := core.EnvHook{Server: s.srv}
 	envObjType, ok := s.srv.ObjectType(new(core.Env).Type().Name())
@@ -98,6 +105,13 @@ func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, a
 	return env.WithInput(args.Name, dagql.NewString(args.Value), args.Description), nil
 }
 
+func (s environmentSchema) withStringOutput(ctx context.Context, env *core.Env, args struct {
+	Name        string
+	Description string
+}) (*core.Env, error) {
+	return env.WithOutput(args.Name, dagql.String(""), args.Description), nil
+}
+
 func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
 	return b.Key, nil
 }
@@ -108,4 +122,11 @@ func (s environmentSchema) bindingTypeName(ctx context.Context, b *core.Binding,
 
 func (s environmentSchema) bindingDigest(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
 	return b.Digest().String(), nil
+}
+
+func (s environmentSchema) bindingAsString(ctx context.Context, b *core.Binding, args struct{}) (dagql.Nullable[dagql.String], error) {
+	if str, ok := b.AsString(); ok {
+		return dagql.NonNull[dagql.String](dagql.NewString(str)), nil
+	}
+	return dagql.Null[dagql.String](), fmt.Errorf("binding is not a string")
 }
