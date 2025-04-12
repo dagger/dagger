@@ -344,6 +344,24 @@ func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
 	return false
 }
 
+func displayArgs(args any) string {
+	switch args := args.(type) {
+	case map[string]any:
+		var sb strings.Builder
+		sb.WriteString("(")
+		argList := make([]string, 0, len(args))
+		for key, value := range args {
+			argList = append(argList, fmt.Sprintf("%s: %v", key, value))
+		}
+		sort.Strings(argList)
+		sb.WriteString(strings.Join(argList, ", "))
+		sb.WriteString(")")
+		return sb.String()
+	default:
+		return fmt.Sprintf(" %v", args)
+	}
+}
+
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
@@ -355,7 +373,7 @@ func (m *MCP) call(ctx context.Context,
 ) (_ any, rerr error) {
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("%s %v", fieldDef.Name, args),
+		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
 		telemetry.ActorEmoji("🤖"),
 		telemetry.Passthrough(),
 		telemetry.Reveal())
