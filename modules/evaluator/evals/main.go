@@ -57,7 +57,7 @@ func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.Env().Output("file").AsFile().Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, reply, "potato")
+			require.Contains(t, strings.ToLower(reply), "potato")
 		})
 }
 
@@ -69,7 +69,7 @@ func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.LastReply(ctx)
 			require.NoError(t, err)
-			require.Contains(t, reply, "potato")
+			require.Contains(t, strings.ToLower(reply), "potato")
 		})
 }
 
@@ -86,8 +86,10 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
 			WithEnv(dag.Env().
-				WithTestspaceInput("dir", dag.Testspace(m.Attempt), "Your workspace for performing research.").
-				WithTestspaceOutput("out", "The workspace containing your findings."),
+				WithTestspaceInput("dir", dag.Testspace(m.Attempt),
+					"Your workspace for performing research.").
+				WithTestspaceOutput("out",
+					"The workspace containing your findings."),
 			).
 			WithPrompt(`Research and record three findings.`),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
