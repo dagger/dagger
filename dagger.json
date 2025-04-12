@@ -31,10 +31,6 @@
       "source": "sdk/elixir/dev"
     },
     {
-      "name": "evaluator",
-      "source": "modules/evaluator"
-    },
-    {
       "name": "go",
       "source": "modules/go"
     },
