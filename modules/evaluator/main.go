@@ -17,6 +17,9 @@ type Evaluator struct {
 	WriterModel   string
 }
 
+// Require at least 2/3 or 6/10
+const MinSuccessRate = 0.6
+
 func New(
 	// The documentation for the tool calling scheme to generate a prompt for.
 	// +optional
@@ -177,9 +180,9 @@ func (m *Evaluator) EvalsAcrossModels(
 					if err != nil {
 						return err
 					}
-					if result.SuccessRate < 0.5 {
+					if result.SuccessRate <= MinSuccessRate {
 						return fmt.Errorf("success rate too low: %.f%% (%d attempts)",
-							result.SuccessRate,
+							result.SuccessRate*100,
 							result.TotalAttempts)
 					}
 					return nil

@@ -102,7 +102,7 @@ func (*Workspace) defaultAttempts(provider string) int {
 		return 5
 	case "anthropic":
 		// Claude gets overloaded frequently. :(
-		return 2
+		return 3
 	default:
 		// Probably local so don't overload it.
 		return 1
