@@ -128,5 +128,5 @@ func (s environmentSchema) bindingAsString(ctx context.Context, b *core.Binding,
 	if str, ok := b.AsString(); ok {
 		return dagql.NonNull[dagql.String](dagql.NewString(str)), nil
 	}
-	return dagql.Null[dagql.String](), fmt.Errorf("binding is not a string")
+	return dagql.Null[dagql.String](), nil
 }
