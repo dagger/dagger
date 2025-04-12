@@ -77,7 +77,6 @@ func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 var SmartModels = []string{
 	"gpt-4o",
 	"gemini-2.0-flash",
-	"claude-3-5-haiku-latest",
 	"claude-3-5-sonnet-latest",
 	"claude-3-7-sonnet-latest",
 }

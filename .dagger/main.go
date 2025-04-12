@@ -162,7 +162,7 @@ func (dev *DaggerDev) Evals(
 	return dag.Evaluator(dagger.EvaluatorOpts{
 		Docs:          docs,
 		InitialPrompt: systemPrompt,
-	}).EvalsAcrossModels(ctx)
+	}).EvalsAcrossModels().Check(ctx)
 }
 
 func (dev *DaggerDev) GenerateSystemPrompt(
