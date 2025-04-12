@@ -53,41 +53,110 @@ func (m *Evaluator) env() *dagger.Env {
 	return env
 }
 
+type ModelResult struct {
+	ModelName   string
+	EvalReports []EvalResult
+}
+
+type EvalResult struct {
+	Name          string
+	Error         string
+	Report        string
+	SuccessRate   float64
+	TotalAttempts int
+}
+
+func (result *EvalResult) Check() error {
+	if result.Error != "" {
+		return errors.New(result.Error)
+	}
+	if result.SuccessRate < 0.5 {
+		return fmt.Errorf("success rate too low: %.f%% (%d attempts)",
+			result.SuccessRate,
+			result.TotalAttempts)
+	}
+	return nil
+}
+
+func (result *ModelResult) Check() error {
+	var errs error
+	for _, eval := range result.EvalReports {
+		if err := eval.Check(); err != nil {
+			errs = errors.Join(
+				errs,
+				fmt.Errorf("%s > %s: %w", result.ModelName, eval.Name, err),
+			)
+		}
+	}
+	return errs
+}
+
+type EvalsAcrossModels struct {
+	ModelResults []ModelResult
+}
+
+func (result *EvalsAcrossModels) Check() error {
+	var errs error
+	for _, result := range result.ModelResults {
+		if err := result.Check(); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+	return errs
+}
+
 // Run evals across models.
 //
 // Models run in parallel, and evals run in series, with all attempts in
 // parallel.
-func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
+func (m *Evaluator) EvalsAcrossModels(
+	ctx context.Context,
 	// Evals to run. Defaults to all.
 	// +optional
 	evals []string,
 	// Models to run evals across. Defaults to all.
 	// +optional
 	models []string,
-) error {
+	// Attempts to run each eval. Defaults to a per-provider value.
+	// +optional
+	attempts int,
+	// A system prompt to use.
+	// +optional
+	systemPrompt *dagger.File,
+) (*EvalsAcrossModels, error) {
 	work := dag.Workspace()
+	if systemPrompt != nil {
+		work = work.WithSystemPromptFile(systemPrompt)
+	}
 	if len(evals) == 0 {
 		names, err := work.EvalNames(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		evals = names
 	}
 	if len(models) == 0 {
 		knownModels, err := work.KnownModels(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		models = knownModels
 	}
-	p := pool.New().WithErrors()
+	p := pool.NewWithResults[ModelResult]()
 	for _, model := range models {
 		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model),
 			telemetry.Reveal())
-		p.Go(func() (rerr error) {
-			defer telemetry.End(modelSpan, func() error { return rerr })
-			var failedEvals error
+		p.Go(func() ModelResult {
+			report := ModelResult{
+				ModelName: model,
+			}
+			defer telemetry.End(modelSpan, func() error {
+				return report.Check()
+			})
 			for _, name := range evals {
+				result := EvalResult{
+					Name: name,
+				}
 				evalErr := (func() (rerr error) {
 					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
 						telemetry.Reveal())
@@ -95,40 +164,36 @@ func (m *Evaluator) EvalsAcrossModels(ctx context.Context,
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()
 					attempts := work.Evaluate(name, dagger.WorkspaceEvaluateOpts{
-						Model: model,
+						Model:    model,
+						Attempts: attempts,
 					})
-					report, err := attempts.Report(ctx)
+					var err error
+					result.Report, err = attempts.Report(ctx)
 					if err != nil {
 						return err
 					}
 					fmt.Fprint(stdio.Stdout, report)
-					successRate, err := attempts.SuccessRate(ctx)
+					result.SuccessRate, err = attempts.SuccessRate(ctx)
 					if err != nil {
 						return err
 					}
-					totalAttempts, err := attempts.TotalAttempts(ctx)
+					result.TotalAttempts, err = attempts.TotalAttempts(ctx)
 					if err != nil {
 						return err
-					}
-					if successRate < 0.5 {
-						return fmt.Errorf("success rate too low: %.f%% (%d attempts)", successRate, totalAttempts)
 					}
 					return nil
 				})()
 				if evalErr != nil {
-					failedEvals = errors.Join(
-						failedEvals,
-						fmt.Errorf("%s > %s failed: %w", model, name, evalErr),
-					)
+					result.Error = evalErr.Error()
 				}
+				report.EvalReports = append(report.EvalReports, result)
 			}
-			if failedEvals != nil {
-				return failedEvals
-			}
-			return nil
+			return report
 		})
 	}
-	return p.Wait()
+	return &EvalsAcrossModels{
+		ModelResults: p.Wait(),
+	}, nil
 }
 
 func (m *Evaluator) SystemPrompt(ctx context.Context,
@@ -211,18 +276,24 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 	if err != nil {
 		return "", err
 	}
-	// an initial env with no outputs, since message history is all we want at
-	// first
-	researchEnv := dag.Env().
-		WithFileInput("docs", m.Docs,
-			"The documentation the model is meant to adhere to.").
-		WithFileInput("initialSystemPrompt", m.InitialPrompt,
-			"An initial system prompt to evaluate and improve.").
-		WithFileInput("report",
-			dag.Directory().
-				WithNewFile("report.txt", report).
-				File("report.txt"),
-			"The report of all eval attempt results.")
+	return m.analyzeAndGenerateSystemPrompt(
+		ctx,
+		// an initial env with no outputs, since message history is all we want at
+		// first
+		dag.Env().
+			WithFileInput("docs", m.Docs,
+				"The documentation the model is meant to adhere to.").
+			WithFileInput("initialSystemPrompt", m.InitialPrompt,
+				"An initial system prompt to evaluate and improve.").
+			WithFileInput("report",
+				dag.Directory().
+					WithNewFile("report.txt", report).
+					File("report.txt"),
+				"The report of all eval attempt results."),
+	)
+}
+
+func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, researchEnv *dagger.Env) (string, error) {
 	return m.llm().
 		WithEnv(researchEnv).
 		WithPrompt("Generate a report summarizing your current understanding of the failures or successes. If there are any failures, focus on those. Be sure to include examples from the report to back up your analysis. Respond in Markdown format, with a brief summary of issues at the end.").
@@ -230,16 +301,60 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 		WithPrompt("Cross reference your summary with the documentation and the system prompt that was used. Suggest improvements without specializing the prompt too much for the specific evaluation.").
 		WithPrompt("Compare the successful results with the failed ones - why did the successful ones work? What element of the documentation or prompt was most relevant, in the general sense? How can the prompt guide the model to achieve the same result? When failures occur for multiple reasons, the more general reason is always more interesting than the specific one.").
 		Loop().
+		WithEnv(researchEnv.WithStringOutput("prompt", "The generated prompt.")).
 		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
-		Loop().
-		WithEnv(researchEnv.
-			WithDirectoryInput("dest", dag.Directory(),
-				"An empty directory in which to write prompt.md")).
-		WithPrompt("Write the new system prompt to prompt.md in the destination directory.").
 		Env().
 		Output("prompt").
-		AsFile().
-		Contents(ctx)
+		AsString(ctx)
+}
+
+// Iterate continuously runs evals across all models.
+func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
+	prompt, err := m.InitialPrompt.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	for {
+		// little awkward, we turn it back into a file for ease-of-reuse of
+		// EvalsAcrossModels (w2b self calls)
+		promptFile := dag.Directory().WithNewFile("prompt.txt", prompt).File("prompt.txt")
+
+		evals, err := m.EvalsAcrossModels(ctx, nil, nil, 2, promptFile)
+		if err != nil {
+			return "", err
+		}
+		if evals.Check() == nil {
+			return prompt, nil
+		}
+		reports := dag.Directory()
+		for _, report := range evals.ModelResults {
+			for _, result := range report.EvalReports {
+				reports = reports.WithNewFile(report.ModelName+"-"+result.Name+".md", result.Report)
+			}
+		}
+		prompt, err = m.analyzeAndGenerateSystemPrompt(
+			ctx,
+			// an initial env with no outputs, since message history is all we want at
+			// first
+			dag.Env().
+				WithFileInput("docs", m.Docs,
+					"The documentation the model is meant to adhere to.").
+				WithFileInput("systemPrompt",
+					promptFile,
+					"The system prompt to evaluate and improve.").
+				WithFileInput("results",
+					dag.Directory().
+						WithNewFile("results.txt", evals.Check().Error()).
+						File("results.txt"),
+					"The summary of failures.").
+				WithDirectoryInput("reports",
+					reports,
+					"A directory containing all reports, as MODEL_NAME-EVAL_NAME.md"),
+		)
+		if err != nil {
+			return "", err
+		}
+	}
 }
 
 func (m *Evaluator) work() *dagger.Workspace {

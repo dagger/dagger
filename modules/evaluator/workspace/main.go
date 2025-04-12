@@ -28,7 +28,7 @@ var knownModels = []string{
 	"gpt-4o",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
-	"claude-3-5-haiku-latest",
+	// "claude-3-5-haiku-latest",
 	"claude-3-5-sonnet-latest",
 	"claude-3-7-sonnet-latest",
 }
