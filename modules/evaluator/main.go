@@ -70,11 +70,6 @@ func (result *EvalResult) Check() error {
 	if result.Error != "" {
 		return errors.New(result.Error)
 	}
-	if result.SuccessRate < 0.5 {
-		return fmt.Errorf("success rate too low: %.f%% (%d attempts)",
-			result.SuccessRate,
-			result.TotalAttempts)
-	}
 	return nil
 }
 
@@ -84,7 +79,7 @@ func (result *ModelResult) Check() error {
 		if err := eval.Check(); err != nil {
 			errs = errors.Join(
 				errs,
-				fmt.Errorf("%s > %s: %w", result.ModelName, eval.Name, err),
+				fmt.Errorf("%s: %w", eval.Name, err),
 			)
 		}
 	}
@@ -99,7 +94,7 @@ func (result *EvalsAcrossModels) Check() error {
 	var errs error
 	for _, result := range result.ModelResults {
 		if err := result.Check(); err != nil {
-			errs = errors.Join(errs, err)
+			errs = errors.Join(errs, fmt.Errorf("%s > %w", result.ModelName, err))
 		}
 	}
 	return errs
@@ -159,7 +154,8 @@ func (m *Evaluator) EvalsAcrossModels(
 				}
 				evalErr := (func() (rerr error) {
 					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
-						telemetry.Reveal())
+						telemetry.Reveal(),
+						telemetry.Encapsulate())
 					defer telemetry.End(evalSpan, func() error { return rerr })
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()
@@ -172,7 +168,7 @@ func (m *Evaluator) EvalsAcrossModels(
 					if err != nil {
 						return err
 					}
-					fmt.Fprint(stdio.Stdout, report)
+					fmt.Fprint(stdio.Stdout, result.Report)
 					result.SuccessRate, err = attempts.SuccessRate(ctx)
 					if err != nil {
 						return err
@@ -180,6 +176,11 @@ func (m *Evaluator) EvalsAcrossModels(
 					result.TotalAttempts, err = attempts.TotalAttempts(ctx)
 					if err != nil {
 						return err
+					}
+					if result.SuccessRate < 0.5 {
+						return fmt.Errorf("success rate too low: %.f%% (%d attempts)",
+							result.SuccessRate,
+							result.TotalAttempts)
 					}
 					return nil
 				})()
