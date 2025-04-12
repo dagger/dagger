@@ -412,6 +412,9 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+		if target.ObjectType().TypeName() != selfType {
+			return nil, fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
+		}
 	}
 	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
 	if err != nil {
@@ -525,7 +528,9 @@ func (m *MCP) toolCallToSelection(
 	targetObjType := target.ObjectType()
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
 	if !ok {
-		return sel, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+		return sel, fmt.Errorf("field %q not found in object type %q",
+			fieldDef.Name,
+			targetObjType.TypeName())
 	}
 	var unknownArgs error
 	for name := range argsMap {
