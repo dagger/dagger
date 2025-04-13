@@ -702,6 +702,13 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		// until a prompt is given
 		return nil
 	}
+
+	b := backoff.NewExponentialBackOff()
+	// Sane defaults (ideally not worth extra knobs)
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
@@ -713,15 +720,10 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 			return err
 		}
 
-		var res *LLMResponse
-
-		b := backoff.NewExponentialBackOff()
-		// Sane defaults (ideally not worth extra knobs)
-		b.InitialInterval = 1 * time.Second
-		b.MaxInterval = 30 * time.Second
-		b.MaxElapsedTime = 2 * time.Minute
 
 		messagesToSend := llm.messagesWithSystemPrompt()
+
+		var res *LLMResponse
 
 		// Retry operation
 		client := llm.Endpoint.Client
