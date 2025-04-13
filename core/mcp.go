@@ -25,15 +25,16 @@ import (
 // A frontend for LLM tool calling
 type LLMTool struct {
 	// Tool name
-	Name string
-	// Return type (just a hint to the model)
-	Returns string
+	Name string `json:"name"`
 	// Tool description
-	Description string
+	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
-	Schema map[string]any
+	Schema map[string]any `json:"schema"`
+	// Return type, used to hint to the model in tool lists - not exposed through
+	// this field, since there's no such thing (I wish!)
+	Returns string `json:"-"`
 	// Function implementing the tool.
-	Call func(context.Context, any) (any, error)
+	Call func(context.Context, any) (any, error) `json:"-"`
 }
 
 // Internal implementation of the MCP standard,
