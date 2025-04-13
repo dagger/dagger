@@ -688,6 +688,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	props := map[string]any{}
 	required := []string{}
 	desc := `Complete your task and return the requested outputs to the user.`
+	desc += "\n\nYour task is to return the following outputs:\n"
 
 	var outputs []string
 	var anyUnavailable bool
