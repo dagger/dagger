@@ -179,10 +179,57 @@ func (env *Env) describe(id *call.ID) string {
 		str.WriteString(".")
 	}
 	str.WriteString(id.Field())
-	// TODO: we could include args but I'm not sure we even need to.
-	// punted for now since I'd want to represent ID args as LLM IDs, which will
-	// be a little bit of boilerplate.
+
+	// Include arguments in the description
+	if args := id.Args(); len(args) > 0 {
+		str.WriteString("(")
+		for i, arg := range args {
+			if i > 0 {
+				str.WriteString(", ")
+			}
+			str.WriteString(arg.Name())
+			str.WriteString(": ")
+			str.WriteString(env.displayLit(arg.Value()))
+		}
+		str.WriteString(")")
+	}
 	return str.String()
+}
+
+func (env *Env) displayLit(lit call.Literal) string {
+	switch x := lit.(type) {
+	case *call.LiteralID:
+		// For ID arguments, try to use LLM IDs
+		if llmID, ok := env.idByHash[x.Value().Digest()]; ok {
+			return llmID
+		} else {
+			return x.Value().Type().NamedType()
+		}
+	case *call.LiteralList:
+		list := "["
+		_ = x.Range(func(i int, value call.Literal) error {
+			if i > 0 {
+				list += ","
+			}
+			list += env.displayLit(value)
+			return nil
+		})
+		list += "]"
+		return list
+	case *call.LiteralObject:
+		obj := "{"
+		_ = x.Range(func(i int, name string, value call.Literal) error {
+			if i > 0 {
+				obj += ","
+			}
+			obj += name + ": " + env.displayLit(value)
+			return nil
+		})
+		obj += "}"
+		return obj
+	default:
+		return lit.Display()
+	}
 }
 
 func (env *Env) Types() []string {
