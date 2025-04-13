@@ -92,7 +92,7 @@ type LLMClient interface {
 
 type LLMResponse struct {
 	Content    string
-	ToolCalls  []ToolCall
+	ToolCalls  []LLMToolCall
 	TokenUsage LLMTokenUsage
 }
 
@@ -113,13 +113,13 @@ func (*LLMTokenUsage) Type() *ast.Type {
 type ModelMessage struct {
 	Role        string        `json:"role"`
 	Content     string        `json:"content"`
-	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string        `json:"tool_call_id,omitempty"`
 	ToolErrored bool          `json:"tool_errored,omitempty"`
 	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
 }
 
-type ToolCall struct {
+type LLMToolCall struct {
 	ID       string   `json:"id"`
 	Function FuncCall `json:"function"`
 	Type     string   `json:"type"`
