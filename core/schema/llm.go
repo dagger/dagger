@@ -164,25 +164,16 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	return core.NewLLM(ctx, parent, model, maxAPICalls)
 }
 
-func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Array[dagql.String], error) {
-	history, err := llm.History(ctx, s.srv)
-	if err != nil {
-		return nil, err
-	}
-	return dagql.NewStringArray(history...), nil
+func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
+	return llm.History(ctx, s.srv)
 }
 
-func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.String, error) {
-	history, err := llm.HistoryJSON(ctx, s.srv)
-	if err != nil {
-		return "", err
-	}
-	return dagql.NewString(history), nil
+func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {
+	return llm.HistoryJSON(ctx, s.srv)
 }
 
-func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.String, error) {
-	doc, err := llm.ToolsDoc(ctx, s.srv)
-	return dagql.NewString(doc), err
+func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+	return llm.ToolsDoc(ctx, s.srv)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {

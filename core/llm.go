@@ -720,7 +720,6 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 			return err
 		}
 
-
 		messagesToSend := llm.messagesWithSystemPrompt()
 
 		var res *LLMResponse
@@ -890,15 +889,15 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
+func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
-		return "", err
+		return nil, err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(result), nil
+	return JSON(result), nil
 }
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
