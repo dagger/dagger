@@ -322,7 +322,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 		tools = append(tools, LLMTool{
 			Name:        toolName,
 			Returns:     field.Type.String(),
-			Description: fmt.Sprintf("Returns %s. %s", field.Type, field.Description),
+			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
 			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return m.call(ctx, srv, typeName, field, args)
@@ -680,8 +680,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 	props := map[string]any{}
 	required := []string{}
-	desc := `Complete your task and return its outputs to the user.`
-	desc += "\n\nYour task is to return the following outputs:\n"
+	desc := `Complete your task and return the requested outputs to the user.`
 
 	var outputs []string
 	var anyUnavailable bool
@@ -702,7 +701,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			desc = b.Description
 		} else {
 			argSchema[jsonSchemaIDAttr] = typeName
-			desc := fmt.Sprintf("%s ID to return. %s", typeName, b.Description)
+			desc = fmt.Sprintf("%s ID. %s", typeName, b.Description)
 			enum := m.allIDs(typeName)
 			if len(enum) == 0 {
 				desc += " (UNAVAILABLE)"
