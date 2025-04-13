@@ -790,7 +790,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		for _, toolCall := range res.ToolCalls {
 			content, isError := llm.mcp.Call(ctx, tools, toolCall)
 			llm.messages = append(llm.messages, ModelMessage{
-				Role:        "user", // Anthropic only allows tool calls in user messages
+				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
 				ToolCallID:  toolCall.ID,
 				ToolErrored: isError,
@@ -837,13 +837,23 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
+func squash(str string) string {
+	return strings.ReplaceAll(str, "\n", `\n`)
+}
+
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var history []string
+	var lastRole string
 	for _, msg := range llm.messages {
-		content := strings.TrimRight(msg.Content, "\n")
+		if len(history) > 0 && lastRole != msg.Role {
+			// add a blank line when roles change
+			history = append(history, "")
+			lastRole = msg.Role
+		}
+		content := squash(msg.Content)
 		switch msg.Role {
 		case "user":
 			var item string
