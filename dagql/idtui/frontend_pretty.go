@@ -1275,7 +1275,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 			url += "?span=" + fe.ZoomedSpan.String()
 		}
 		if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
-			url += "#" + fe.FocusedSpan.String()
+			url += "?span=" + fe.FocusedSpan.String()
 		}
 		return func() tea.Msg {
 			if err := browser.OpenURL(url); err != nil {
