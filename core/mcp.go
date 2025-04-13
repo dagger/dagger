@@ -108,15 +108,21 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
-	builtins, err := m.Builtins(srv)
+	allTools, err := m.tools(srv)
 	if err != nil {
 		return nil, err
 	}
-	objTools, err := m.tools(srv, false)
+	builtins, err := m.Builtins(srv, allTools)
 	if err != nil {
 		return nil, err
 	}
-	return append(builtins, objTools...), nil
+	var tools []LLMTool
+	for _, tool := range allTools {
+		if m.selectedTools[tool.Name] {
+			tools = append(tools, tool)
+		}
+	}
+	return append(tools, builtins...), nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -153,7 +159,7 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (m *MCP) tools(srv *dagql.Server, all bool) ([]LLMTool, error) {
+func (m *MCP) tools(srv *dagql.Server) ([]LLMTool, error) {
 	schema := srv.Schema()
 	tools := []LLMTool{}
 	typeNames := m.env.Types()
@@ -161,7 +167,7 @@ func (m *MCP) tools(srv *dagql.Server, all bool) ([]LLMTool, error) {
 		typeNames = append(typeNames, m.env.Root().Type().Name())
 	}
 	for _, typeName := range typeNames {
-		typeTools, err := m.typeTools(srv, all, schema, typeName)
+		typeTools, err := m.typeTools(srv, schema, typeName)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +176,7 @@ func (m *MCP) tools(srv *dagql.Server, all bool) ([]LLMTool, error) {
 	return tools, nil
 }
 
-func (m *MCP) typeTools(srv *dagql.Server, all bool, schema *ast.Schema, typeName string) ([]LLMTool, error) {
+func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) ([]LLMTool, error) {
 	typeDef, ok := schema.Types[typeName]
 	if !ok {
 		return nil, fmt.Errorf("type %q not found", typeName)
@@ -179,9 +185,6 @@ func (m *MCP) typeTools(srv *dagql.Server, all bool, schema *ast.Schema, typeNam
 	for _, field := range typeDef.Fields {
 		if _, found := m.env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
-			continue
-		}
-		if !all && !m.selectedTools[typeName+"_"+field.Name] {
 			continue
 		}
 		if strings.HasPrefix(field.Name, "_") {
@@ -771,22 +774,39 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}, true
 }
 
-func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
+			Name:        "think",
+			Description: `A tool for thinking through problems, brainstorming ideas, or planning without executing any actions`,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"thought": map[string]any{
+						"type":        "string",
+						"description": "Your thoughts.",
+					},
+				},
+				"required": []string{"thought"},
+			},
+			Call: func(context.Context, any) (any, error) {
+				return "Finished thinking.", nil
+			},
+		},
+	}
+
+	if len(tools) > 0 {
+		builtins = append(builtins, LLMTool{
 			Name: "selectTools",
 			Description: (func() string {
 				desc := `Select tools for interacting with the available objects.`
-				tools, err := m.tools(srv, true)
-				if err == nil {
-					desc += "\n\nAvailable tools:"
-					for _, tool := range tools {
-						if m.selectedTools[tool.Name] {
-							// already have it
-							continue
-						}
-						desc += "\n- " + tool.Name + " -> " + tool.Returns
+				desc += "\n\nAvailable tools:"
+				for _, tool := range tools {
+					if m.selectedTools[tool.Name] {
+						// already have it
+						continue
 					}
+					desc += "\n- " + tool.Name + " -> " + tool.Returns
 				}
 				var objects []string
 				for _, bnd := range m.env.objsByID {
@@ -831,24 +851,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				}
 				return "ok", nil
 			}),
-		},
-		{
-			Name:        "think",
-			Description: `A tool for thinking through problems, brainstorming ideas, or planning without executing any actions. Use this tool when you need to work through complex problems, develop strategies, or outline approaches before taking action.`,
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"thought": map[string]any{
-						"type":        "string",
-						"description": "Your thoughts.",
-					},
-				},
-				"required": []string{"thought"},
-			},
-			Call: func(context.Context, any) (any, error) {
-				return "Finished thinking.", nil
-			},
-		},
+		})
 	}
 
 	if returnTool, ok := m.returnBuiltin(); ok {
