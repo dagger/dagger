@@ -41,11 +41,19 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
 	{{- if IsArgOptional $arg }}
 	{{ $arg.Description | Comment }}
-	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
-	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
-	{{- else }}
-	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatInputType }}
+	{{- if not $arg.DefaultValueZero }}
+	{{- if $arg.Description }}
+	//
 	{{- end }}
+	// Default: {{ $arg.DefaultValue }}
+	{{- end }}
+	{{- $formattedTypeRef := "" }}
+	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
+	{{- $formattedTypeRef = $arg.TypeRef | FormatOutputType }}
+	{{- else }}
+	{{- $formattedTypeRef = $arg.TypeRef | FormatInputType }}
+	{{- end }}
+	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- end }}
 	{{- end }}

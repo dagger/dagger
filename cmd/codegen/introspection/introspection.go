@@ -268,6 +268,24 @@ func (v InputValue) IsOptional() bool {
 	return v.DefaultValue != nil || (v.TypeRef != nil && v.TypeRef.IsOptional())
 }
 
+func (v InputValue) DefaultValueZero() bool {
+	if v.DefaultValue == nil {
+		return true
+	}
+	// detect zero-ish values in go, and avoid adding them as tags, since they
+	// just add clutter (and look confusing)
+	switch *v.DefaultValue {
+	case
+		`false`, // boolean
+		`0`,     // int
+		`""`,    // string
+		`[]`:    // array
+		return true
+	}
+
+	return false
+}
+
 type EnumValue struct {
 	Name              string     `json:"name"`
 	Description       string     `json:"description"`
