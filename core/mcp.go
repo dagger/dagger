@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -831,10 +833,13 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 					desc += "\n- " + tool.Name + " -> " + tool.Returns
 				}
 				var objects []string
-				for _, bnd := range m.env.objsByID {
-					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCount)) {
+					count := m.env.typeCount[typeName]
+					for i := 1; i <= count; i++ {
+						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, count)]
+						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+					}
 				}
-				sort.Strings(objects)
 				if len(objects) > 0 {
 					desc += "\n\nAvailable objects:"
 					for _, input := range objects {
