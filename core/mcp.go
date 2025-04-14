@@ -410,7 +410,7 @@ func (m *MCP) call(ctx context.Context,
 	} else {
 		self, ok := argsMap[selfType]
 		if !ok {
-			// default to the most recent object of this type
+			// default to the newest object of this type
 			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCount[selfType])
 		}
 		recv, ok := self.(string)
@@ -1068,9 +1068,10 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	if typeName != "Query" {
+		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCount[typeName])
 		schema := map[string]any{
 			"type":        "string",
-			"description": fmt.Sprintf("The %s to operate against. Defaults to the most recent %s.", typeName, typeName),
+			"description": fmt.Sprintf("The %s to operate against. Default: %s", typeName, latest),
 		}
 		if ids := m.allIDs(typeName); len(ids) > 0 {
 			schema["enum"] = ids
