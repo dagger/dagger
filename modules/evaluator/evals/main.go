@@ -183,12 +183,10 @@ func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
 							WithEnvVariable("GOCACHE", "/go/build-cache").
 							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
 						"The Go container to use to build Booklit.").
-					WithFileOutput("bin", "The compiled Booklit binary."),
+					WithFileOutput("bin", "The /out/booklit binary."),
 			).
-			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			BuildMultiAssert(ctx, t, llm)
-		})
+			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit."),
+		buildMultiAssert)
 }
 
 // BuildMulti is like BuildMulti but without explicitly referencing the relevant
@@ -212,17 +210,14 @@ func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
 							WithEnvVariable("GOCACHE", "/go/build-cache").
 							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
 						"The Go container to use to build Booklit.").
-					WithFileOutput("bin", "The compiled Booklit binary."),
+					WithFileOutput("bin", "The /out/booklit binary."),
 			).
-			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0.").
-			WithPrompt("Return the compiled binary."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			BuildMultiAssert(ctx, t, llm)
-		})
+			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit."),
+		buildMultiAssert)
 }
 
 // Extracted for reuse between BuildMulti tests
-func BuildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
+func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 	f, err := llm.Env().Output("bin").AsFile().Sync(ctx)
 	require.NoError(t, err)
 
