@@ -9706,10 +9706,10 @@ typedoc-plugin-frontmatter@^1.3.0:
   dependencies:
     yaml "^2.7.0"
 
-typedoc-plugin-markdown@^4.6.1:
-  version "4.6.1"
-  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.1.tgz#b710f8965938e44cd99be53f414074c2b1818186"
-  integrity sha512-SrJv9zkpCWdG1cvtWniFU6M7MkCZuheN2R3fuqDPF+O+PeZ8bzmfj1ju/BJwoPWIKyFJVPhK8Sg6tBrM1y+VoA==
+typedoc-plugin-markdown@^4.6.2:
+  version "4.6.2"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.2.tgz#e3c0681c2d3f24beceb8fb73470216b843bb50ec"
+  integrity sha512-JVCIoK7FDN3t3PSLkwDyrBFyjtDznqDCJotP9evxhLyb6bEZTqhAGB0tPy1RmgHuY2WoAONMrsWs8LfLsD+A6A==
 
 typedoc@^0.28.2:
   version "0.28.2"
