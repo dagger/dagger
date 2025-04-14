@@ -830,7 +830,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 						// already have it
 						continue
 					}
-					desc += "\n- " + tool.Name + " -> " + tool.Returns
+					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
 				}
 				var objects []string
 				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCount)) {
