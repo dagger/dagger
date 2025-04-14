@@ -29,6 +29,7 @@ kinds:
   - label: Deprecated
   - label: Removed
   - label: Fixed
+  - label: Experimental
   - label: Security
   - label: Dependencies
 headerFormat: |-
