@@ -29,8 +29,8 @@ var facts = []string{
 	"Go is a programming language for garbage collection.",
 }
 
-// Returns an interesting fact, if there is one.
-func (m *Workspace) Research() (string, error) {
+// Find the next available fact.
+func (m *Workspace) NextFact() (string, error) {
 	number := len(m.Facts)
 	if number >= len(facts) {
 		return "", errors.New("out of facts")

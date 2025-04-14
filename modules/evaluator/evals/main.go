@@ -91,7 +91,7 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 				WithWorkspaceOutput("out",
 					"The workspace containing your facts."),
 			).
-			WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace.`),
+			WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			facts, err := llm.Env().Output("out").AsWorkspace().Facts(ctx)
 			require.NoError(t, err)
