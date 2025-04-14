@@ -72,7 +72,11 @@ func (h *Daggerverse) DeployPreviewWithDaggerMain(
 	branch := fmt.Sprintf("dgvs-test-with-dagger-main-%s", target)
 	commitMsg := fmt.Sprintf(`dgvs: Test Dagger Engine main @ %s
 
-daggerverse-checks in GitHub Actions ensures that module crawling works as expected. Should complete within 5 mins.`, h.date())
+daggerverse-checks in GitHub Actions ensures that module crawling works as expected. Should complete within 5 mins.
+
+Triggered by %s.
+
+		`, h.date(), fmt.Sprintf("https://github.com/dagger/dagger/pull/%s", target))
 
 	// push the preview environment trigger branch
 	gh := h.Gh.WithSource(daggerio).
