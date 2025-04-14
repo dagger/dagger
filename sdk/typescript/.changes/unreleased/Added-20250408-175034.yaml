@@ -10,6 +10,7 @@ body: |
   Transition to the bundle SDK is done automatically on the next `dagger develop` so it's not a breaking change.
 
   How to migrate to the bundle SDK:
+  - Remove `@dagger.io/dagger=./sdk` from your package.json dependencies.
   - Remove the `sdk` directory from your module.
   - Run `dagger develop`
   You need to manually remove the sdk directory because the runtime cannot remove files from your host, even if
