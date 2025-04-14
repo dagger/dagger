@@ -5,12 +5,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	bksession "github.com/moby/buildkit/session"
 	"golang.org/x/sys/unix"
@@ -191,17 +194,52 @@ func mainInit() {
 }
 
 func startSessionSubprocess() error {
+	// create a pipe to synchronize with the child process on when the session has started
+	// when the child closes the write end of the pipe, we know it has started (or died, which
+	// will result in errors for the nested exec process on any use of a session attachable)
+	r, w, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+
 	// start the session subprocess
 	cmd := exec.Command("/proc/self/exe")
-	cmd.ExtraFiles = []*os.File{os.NewFile(3, "session-conn")}
+	cmd.ExtraFiles = []*os.File{os.NewFile(3, "session-conn"), w}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
-	return cmd.Start()
+	err = cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start session subprocess: %w", err)
+	}
+
+	// wait for the session attachables to be ready (or the child to die)
+
+	// need to close our dup of the write end of the pipe
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("failed to close pipe: %w", err)
+	}
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		io.Copy(io.Discard, r)
+	}()
+	// something really really wrong would have to happen for this to block indefinitely, but be
+	// cautious anyways w/ an overly generous timeout
+	select {
+	case <-doneCh:
+		return nil
+	case <-time.After(5 * time.Minute):
+		return fmt.Errorf("timed out waiting for session subprocess to start")
+	}
 }
 
 func mainSession() {
 	ctx := context.Background()
+
+	// this is closed when the session server is about to run, letting the parent process know that
+	pipeW := os.NewFile(4, "session-pipe-w")
 
 	attachables := []bksession.Attachable{
 		// secrets
@@ -228,5 +266,9 @@ func mainSession() {
 
 	sessionSrv := client.NewBuildkitSessionServer(ctx, conn, attachables...)
 	defer sessionSrv.Stop()
+
+	if err := pipeW.Close(); err != nil {
+		panic(err)
+	}
 	sessionSrv.Run(ctx)
 }
