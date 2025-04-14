@@ -690,8 +690,9 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 	props := map[string]any{}
 	required := []string{}
-	desc := `Complete your task and return the requested outputs to the user.`
-	desc += "\n\nYour task is to return the following outputs:\n"
+
+	desc := "Return the requested outputs to the user.\n\n"
+	desc += "Your task is to return the following outputs:\n"
 
 	var outputs []string
 	var anyUnavailable bool
@@ -701,7 +702,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 		typeName := b.expectedType.TypeName()
 
 		outputs = append(outputs,
-			fmt.Sprintf("  %s (%s): %s", name, typeName, b.Description))
+			fmt.Sprintf("- %s (%s): %s", name, typeName, b.Description))
 
 		argSchema := map[string]any{
 			"type": "string",
@@ -730,7 +731,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	// append outputs
 	sort.Strings(outputs)
 	for _, out := range outputs {
-		desc += fmt.Sprintf("\n- %s", out)
+		desc += fmt.Sprintf("\n%s", out)
 	}
 
 	if anyUnavailable {
@@ -836,7 +837,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCount)) {
 					count := m.env.typeCount[typeName]
 					for i := 1; i <= count; i++ {
-						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, count)]
+						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
 						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
 					}
 				}

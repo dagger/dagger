@@ -49,11 +49,12 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
         tools: [string],
       )
 
-      # Complete your task and return its outputs to the user.
+      # Return the requested outputs to the user.
+      #
+      # Your task is to return the following outputs:
+      # - fries (Plate): The baked french fries, on a plate.
       complete(
-        # File ID observed from a tool result, in "File#number" format.
-        #
-        # The baked french fries.
+        # Plate ID. The baked french fries, on a plate.
         fries: string,
       )
     </tools>
@@ -87,11 +88,12 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
         tools: [string],
       )
 
-      # Complete your task and return its outputs to the user.
+      # Return the requested outputs to the user.
+      #
+      # Your task is to return the following outputs:
+      # - fries (Plate): The baked french fries, on a plate.
       complete(
-        # Fries ID observed from a tool result, in "Fries#number" format.
-        #
-        # The baked french fries.
+        # Plate ID. The baked french fries.
         fries: string,
       )
 

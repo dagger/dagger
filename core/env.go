@@ -459,7 +459,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 				return nil, fmt.Errorf("binding %q undefined", binding.Key)
 			}
 			if val.Type().Name() != typeName {
-				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.Type().Name())
+				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.Type())
 			}
 			return val, nil
 		},
