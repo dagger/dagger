@@ -86,27 +86,26 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
 			WithEnv(dag.Env().
-				WithTestspaceInput("dir", dag.Testspace(m.Attempt),
+				WithWorkspaceInput("dir", dag.Workspace(m.Attempt),
 					"Your workspace for performing research.").
-				WithTestspaceOutput("out",
-					"The workspace containing your findings."),
+				WithWorkspaceOutput("out",
+					"The workspace containing your facts."),
 			).
-			WithPrompt(`Research and record three findings.`),
+			WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace.`),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			findings, err := llm.Env().Output("out").AsTestspace().Findings(ctx)
+			facts, err := llm.Env().Output("out").AsWorkspace().Facts(ctx)
 			require.NoError(t, err)
 			model, err := llm.Model(ctx)
 			require.NoError(t, err)
 			if slices.Contains(SmartModels, model) {
-				require.Len(t, findings, 3)
-				all := map[string]int{}
-				for _, f := range findings {
-					all[f]++
-				}
-				require.Len(t, all, 3, "all findings should be unique")
+				require.ElementsMatch(t, []string{
+					"The human body has at least five bones.",
+					"Most sand is wet.",
+					"Go is a programming language for garbage collection.",
+				}, facts)
 			} else {
 				// can't expect much from local models atm
-				require.NotEmpty(t, findings)
+				require.NotEmpty(t, facts)
 			}
 		})
 }

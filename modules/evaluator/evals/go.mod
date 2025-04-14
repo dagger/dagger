@@ -5,7 +5,6 @@ go 1.23.6
 require (
 	github.com/99designs/gqlgen v0.17.70
 	github.com/Khan/genqlient v0.8.0
-	github.com/google/go-containerregistry v0.20.3
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.23
 	go.opentelemetry.io/otel v1.34.0
@@ -24,14 +23,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.4.0
 	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.71.0
-)
-
-require (
-	github.com/containerd/stargz-snapshotter/estargz v0.16.3 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.0 // indirect
-	github.com/vbatts/tar-split v0.11.6 // indirect
 )
 
 require (
