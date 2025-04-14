@@ -513,25 +513,9 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 
 		if doFetch {
-			svcs, err := ref.Repo.Query.Services(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get services: %w", err)
-			}
-			detach, _, err := svcs.StartBindings(ctx, ref.Repo.Services)
+			err := ref.fetchRemote(ctx, git, depth)
 			if err != nil {
 				return err
-			}
-			defer detach()
-
-			var refSpec string
-			if gitutil.IsCommitSHA(ref.FullRef) {
-				// TODO: may need fallback if git remote doesn't support fetching by commit
-				refSpec = ref.FullRef
-			} else {
-				refSpec = ref.FullRef + ":" + ref.FullRef
-			}
-			if _, err := git.Run(ctx, "fetch", "-u", "--tags", "--force", "origin", refSpec); err != nil {
-				return fmt.Errorf("failed to fetch remote %s: %w", ref.Repo.URL.Remote(), err)
 			}
 			_, err = git.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 			if err != nil {
@@ -594,6 +578,62 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	checkout := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
 	checkout.Result = snap
 	return checkout, nil
+}
+
+func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, depth int) error {
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+
+	var refSpec string
+	if gitutil.IsCommitSHA(ref.FullRef) {
+		// TODO: may need fallback if git remote doesn't support fetching by commit
+		refSpec = ref.FullRef
+	} else {
+		refSpec = ref.FullRef + ":" + ref.FullRef
+	}
+
+	args := []string{
+		"fetch",
+		"--tags",
+		"--update-head-ok",
+		"--force",
+	}
+	if depth == 0 {
+		args = append(args, "--depth="+fmt.Sprint(depth))
+	} else {
+		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+			args = append(args, "--unshallow")
+		}
+	}
+	args = append(args, "origin", refSpec)
+
+	svcs, err := ref.Repo.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, ref.Repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	if _, err := git.Run(ctx, args...); err != nil {
+		if strings.Contains(err.Error(), "does not support shallow") {
+			// fallback to full fetch
+			args = slices.DeleteFunc(args, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = git.Run(ctx, args...)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to fetch remote %s: %w", ref.Repo.URL.Remote(), err)
+		}
+	}
+
+	return nil
 }
 
 func doGitCheckout(
