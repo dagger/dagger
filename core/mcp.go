@@ -1077,6 +1077,7 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 		schema := map[string]any{
 			"type":        "string",
 			"description": fmt.Sprintf("The %s to operate against. Default: %s", typeName, latest),
+			"default":     latest,
 		}
 		if ids := m.allIDs(typeName); len(ids) > 0 {
 			schema["enum"] = ids
@@ -1100,7 +1101,11 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 
 		// Add default value if present
 		if arg.DefaultValue != nil {
-			argSchema["default"] = arg.DefaultValue.Raw
+			val, err := arg.DefaultValue.Value(nil)
+			if err != nil {
+				return nil, fmt.Errorf("default value: %w", err)
+			}
+			argSchema["default"] = val
 		}
 
 		properties[arg.Name] = argSchema
