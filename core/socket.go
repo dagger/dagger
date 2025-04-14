@@ -204,6 +204,9 @@ func (store *SocketStore) CheckAgent(ctx context.Context, req *sshforward.CheckA
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
 	}
+	if caller == nil {
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: was nil")
+	}
 
 	urlEncoded := store.getSocketURLEncoded(sock)
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(engine.SocketURLEncodedKey, urlEncoded))
