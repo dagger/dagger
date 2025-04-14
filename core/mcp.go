@@ -19,6 +19,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -796,9 +797,23 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				},
 				"required": []string{"thought"},
 			},
-			Call: func(context.Context, any) (any, error) {
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				Thought string
+			}) (_ any, rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx, "think",
+					telemetry.Reveal(),
+					trace.WithAttributes(
+						attribute.String(telemetry.UIMessageAttr, "thought"),
+						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					),
+				)
+				defer telemetry.End(span, func() error { return rerr })
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				defer stdio.Close()
+				fmt.Fprint(stdio.Stdout, args.Thought)
 				return "Finished thinking.", nil
-			},
+			}),
 		},
 	}
 
@@ -869,6 +884,10 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
+		if builtin.Name == "think" {
+			// has its own custom telemetry
+			continue
+		}
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
 			attrs := []attribute.KeyValue{
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
