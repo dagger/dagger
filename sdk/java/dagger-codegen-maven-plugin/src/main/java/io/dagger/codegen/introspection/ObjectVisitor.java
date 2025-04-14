@@ -166,7 +166,7 @@ class ObjectVisitor extends AbstractVisitor {
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
                             Helpers.formatName(arg))
-                        .addJavadoc(Helpers.escapeJavadoc(arg.getDescription()) + "\n")
+                        .addJavadoc(Helpers.argJavaDoc(arg.getDescription()))
                         .build())
             .toList();
     fieldMethodBuilder.addParameters(mandatoryParams);
@@ -178,9 +178,10 @@ class ObjectVisitor extends AbstractVisitor {
               .addJavadoc("$L optional arguments\n", Helpers.formatName(field))
               .build());
     }
-    fieldMethodBuilder.addJavadoc(Helpers.escapeJavadoc(field.getDescription()));
-    // field.getRequiredArgs().forEach(arg -> fieldMethodBuilder.addJavadoc("\n@param $L $L",
-    // arg.getName(), arg.getDescription()));
+    var fieldDoc = Helpers.escapeJavadoc(field.getDescription());
+    if (!fieldDoc.isBlank()) {
+      fieldMethodBuilder.addJavadoc(fieldDoc);
+    }
 
     if (field.getTypeRef().isScalar()
         && !Helpers.isIdToConvert(field)
