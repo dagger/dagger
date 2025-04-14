@@ -1,5 +1,7 @@
 package main
 
+import "errors"
+
 type Testspace struct {
 	Findings []string
 	// +private
@@ -15,7 +17,7 @@ func New(
 }
 
 // Record an interesting finding.
-func (m *Testspace) WithFinding(finding string) *Testspace {
+func (m *Testspace) Record(finding string) *Testspace {
 	m.Findings = append(m.Findings, finding)
 	return m
 }
@@ -30,9 +32,12 @@ var findings = []string{
 var maxFindings = len(findings)
 
 // Returns an interesting finding, if there is one.
-func (m *Testspace) Research() string {
-	if len(m.Findings) >= maxFindings {
-		return ""
+func (m *Testspace) Research(
+	// Which finding to... find. Starting with 0.
+	number int,
+) (string, error) {
+	if number >= maxFindings {
+		return "", errors.New("number out of range")
 	}
-	return findings[len(m.Findings)]
+	return findings[number], nil
 }
