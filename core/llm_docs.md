@@ -8,7 +8,7 @@ All tools interact with Objects referenced by IDs in the form `ObjectType#123` (
 
 All objects are immutable. Each tool call creates a new object as output that becomes available for subsequent operations.
 
-A tool called `complete` may be present. If available, you MUST call it after completing the requested task.
+A tool called `save` may be present. If available, you MUST call it after completing the requested task.
 
 ## Conceptual Framework
 
@@ -49,11 +49,11 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
         tools: [string],
       )
 
-      # Return the requested outputs to the user.
+      # Save your work, making the requested outputs available to the user.
       #
       # Your task is to return the following outputs:
       # - fries (Plate): The baked french fries, on a plate.
-      complete(
+      save(
         # Plate ID. The baked french fries, on a plate.
         fries: string,
       )
@@ -88,11 +88,11 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
         tools: [string],
       )
 
-      # Return the requested outputs to the user.
+      # Save your work, making the requested outputs available to the user.
       #
       # Your task is to return the following outputs:
       # - fries (Plate): The baked french fries, on a plate.
-      complete(
+      save(
         # Plate ID. The baked french fries.
         fries: string,
       )
@@ -221,7 +221,7 @@ NOTE: the following is just a mock-up to give you an idea of the overall tool ca
   </user>
   <assistant>
     <toolCall id="return">
-      complete(fries: "Plate#2")
+      save(fries: "Plate#2")
     </toolCall>
   </assistant>
 </example>
