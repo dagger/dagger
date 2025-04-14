@@ -1715,6 +1715,11 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The binding's string value
+    pub async fn as_string(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("asString");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The digest of the binding value
     pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
@@ -5953,6 +5958,7 @@ impl Env {
     ///
     /// * `name` - The name of the binding
     /// * `value` - The string value to assign to the binding
+    /// * `description` - The description of the input
     pub fn with_string_input(
         &self,
         name: impl Into<String>,
@@ -5962,6 +5968,26 @@ impl Env {
         let mut query = self.selection.select("withStringInput");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update an input value of type string
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - The description of the output
+    pub fn with_string_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withStringOutput");
+        query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
             proc: self.proc.clone(),
@@ -7123,7 +7149,7 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// return the raw llm message history as json
-    pub async fn history_json(&self) -> Result<String, DaggerError> {
+    pub async fn history_json(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("historyJSON");
         query.execute(self.graphql_client.clone()).await
     }

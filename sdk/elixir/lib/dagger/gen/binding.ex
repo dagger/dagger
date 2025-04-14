@@ -179,6 +179,15 @@ defmodule Dagger.Binding do
     }
   end
 
+  @doc "The binding's string value"
+  @spec as_string(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def as_string(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asString")
+
+    Client.execute(binding.client, query_builder)
+  end
+
   @doc "The digest of the binding value"
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = binding) do

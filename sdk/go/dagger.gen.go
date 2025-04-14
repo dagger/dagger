@@ -6073,7 +6073,7 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 type LLM struct {
 	query *querybuilder.Selection
 
-	historyJSON *string
+	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
 	model       *string
@@ -6136,13 +6136,13 @@ func (r *LLM) History(ctx context.Context) ([]string, error) {
 }
 
 // return the raw llm message history as json
-func (r *LLM) HistoryJSON(ctx context.Context) (string, error) {
+func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	if r.historyJSON != nil {
 		return *r.historyJSON, nil
 	}
 	q := r.query.Select("historyJSON")
 
-	var response string
+	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

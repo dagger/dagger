@@ -52,6 +52,9 @@ type Binding {
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
+  """The binding's string value"""
+  asString: String
+
   """The digest of the binding value"""
   digest: String!
 
@@ -216,7 +219,7 @@ type Container {
     behavior.
     """
     noInit: Boolean = false
-  ): Container!
+  ): Container! @deprecated(reason: "Use Directory.dockerBuild instead")
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
@@ -2006,6 +2009,16 @@ type Env {
     """The string value to assign to the binding"""
     value: String!
 
+    """The description of the input"""
+    description: String!
+  ): Env!
+
+  """Create or update an input value of type string"""
+  withStringOutput(
+    """The name of the binding"""
+    name: String!
+
+    """The description of the output"""
     description: String!
   ): Env!
 }
@@ -2620,7 +2633,7 @@ type LLM {
   history: [String!]!
 
   """return the raw llm message history as json"""
-  historyJSON: String!
+  historyJSON: JSON!
 
   """A unique identifier for this LLM."""
   id: LLMID!

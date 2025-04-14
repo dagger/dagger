@@ -70,6 +70,7 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated "Use Directory.dockerBuild instead"
   @doc "Initializes this container from a Dockerfile build."
   @spec build(t(), Dagger.Directory.t(), [
           {:dockerfile, String.t() | nil},

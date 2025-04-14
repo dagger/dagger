@@ -487,6 +487,27 @@ class Binding(Type):
         _ctx = self._select("asSocket", _args)
         return Socket(_ctx)
 
+    async def as_string(self) -> str | None:
+        """The binding's string value
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asString", _args)
+        return await _ctx.execute(str | None)
+
     async def digest(self) -> str:
         """The digest of the binding value
 
@@ -714,6 +735,9 @@ class Container(Type):
     ) -> Self:
         """Initializes this container from a Dockerfile build.
 
+        .. deprecated::
+            Use Directory.dockerBuild instead
+
         Parameters
         ----------
         context:
@@ -740,6 +764,11 @@ class Container(Type):
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
         """
+        warnings.warn(
+            'Method "build" is deprecated: Use Directory.dockerBuild instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
@@ -4539,6 +4568,7 @@ class Env(Type):
         value:
             The string value to assign to the binding
         description:
+            The description of the input
         """
         _args = [
             Arg("name", name),
@@ -4546,6 +4576,23 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withStringInput", _args)
+        return Env(_ctx)
+
+    def with_string_output(self, name: str, description: str) -> Self:
+        """Create or update an input value of type string
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the output
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
@@ -6413,15 +6460,13 @@ class LLM(Type):
         _ctx = self._select("history", _args)
         return await _ctx.execute(list[str])
 
-    async def history_json(self) -> str:
+    async def history_json(self) -> JSON:
         """return the raw llm message history as json
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        JSON
+            An arbitrary JSON-encoded value.
 
         Raises
         ------
@@ -6432,7 +6477,7 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("historyJSON", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(JSON)
 
     async def id(self) -> LLMID:
         """A unique identifier for this LLM.
