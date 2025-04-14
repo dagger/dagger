@@ -1,4 +1,4 @@
-module dagger/testspace
+module dagger/workspace
 
 go 1.23.6
 
