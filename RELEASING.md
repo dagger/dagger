@@ -390,9 +390,8 @@ go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
 go mod tidy
 cd ..
 
-# run recursive dagger develop
-dagger develop
-dagger call with-mod-codegen source -o .
+dagger develop --recursive .
+dagger develop --recursive ./releaser
 
 # add, commit and push the changes to the PR
 git add .
