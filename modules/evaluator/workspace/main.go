@@ -183,16 +183,17 @@ func (w *Workspace) Evaluate(
 			reports[attempt] = report.String()
 
 			// Write report to OTel too
-			fmt.Fprint(stdio.Stdout, report.String())
 			toolsDoc, err := eval.ToolsDoc(ctx)
 			if err != nil {
 				rerr = err
 				return
 			}
 			// Only print this to OTel, it's too expensive to process with an LLM in the report
-			fmt.Fprintln(stdio.Stdout, "### Tools")
+			fmt.Fprintln(stdio.Stdout, "## Tools")
 			fmt.Fprintln(stdio.Stdout)
 			fmt.Fprintln(stdio.Stdout, toolsDoc)
+			fmt.Fprintln(stdio.Stdout)
+			fmt.Fprint(stdio.Stdout, report.String())
 		}()
 	}
 
