@@ -541,6 +541,21 @@ defmodule Dagger.Env do
       client: env.client
     }
   end
+
+  @doc "Create or update an input value of type string"
+  @spec with_string_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_string_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withStringOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Env do

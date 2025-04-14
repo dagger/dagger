@@ -3810,6 +3810,10 @@
                         <td> Retrieve the binding value, as type Socket </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The binding's string value </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The digest of the binding value </td>
                       </tr>
@@ -4105,8 +4109,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use Directory.dockerBuild instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7164,6 +7169,28 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The description of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withStringOutput" href="#Env-withStringOutput"><code>withStringOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update an input value of type string </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The description of the output</p>
                               </div>
                             </div>
                           </div>
@@ -8745,7 +8772,7 @@
                         <td> return the llm message history </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-historyJSON" href="#LLM-historyJSON"><code>historyJSON</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="LLM-historyJSON" href="#LLM-historyJSON"><code>historyJSON</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
                         <td> return the raw llm message history as json </td>
                       </tr>
                       <tr>

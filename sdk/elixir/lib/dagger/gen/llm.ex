@@ -57,7 +57,7 @@ defmodule Dagger.LLM do
   end
 
   @doc "return the raw llm message history as json"
-  @spec history_json(t()) :: {:ok, String.t()} | {:error, term()}
+  @spec history_json(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
   def history_json(%__MODULE__{} = llm) do
     query_builder =
       llm.query_builder |> QB.select("historyJSON")

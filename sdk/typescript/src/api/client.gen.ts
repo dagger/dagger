@@ -1454,6 +1454,7 @@ export type __TypeFieldsOpts = {
 
 export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
+  private readonly _asString?: string = undefined
   private readonly _digest?: string = undefined
   private readonly _name?: string = undefined
   private readonly _typeName?: string = undefined
@@ -1464,6 +1465,7 @@ export class Binding extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: BindingID,
+    _asString?: string,
     _digest?: string,
     _name?: string,
     _typeName?: string,
@@ -1471,6 +1473,7 @@ export class Binding extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._asString = _asString
     this._digest = _digest
     this._name = _name
     this._typeName = _typeName
@@ -1601,6 +1604,21 @@ export class Binding extends BaseClient {
   asSocket = (): Socket => {
     const ctx = this._ctx.select("asSocket")
     return new Socket(ctx)
+  }
+
+  /**
+   * The binding's string value
+   */
+  asString = async (): Promise<string> => {
+    if (this._asString) {
+      return this._asString
+    }
+
+    const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -1808,6 +1826,7 @@ export class Container extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @deprecated Use Directory.dockerBuild instead
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
@@ -4303,6 +4322,7 @@ export class Env extends BaseClient {
    * Create or update an input value of type string
    * @param name The name of the binding
    * @param value The string value to assign to the binding
+   * @param description The description of the input
    */
   withStringInput = (name: string, value: string, description: string): Env => {
     const ctx = this._ctx.select("withStringInput", {
@@ -4310,6 +4330,16 @@ export class Env extends BaseClient {
       value,
       description,
     })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update an input value of type string
+   * @param name The name of the binding
+   * @param description The description of the output
+   */
+  withStringOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withStringOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -5837,7 +5867,7 @@ export class InterfaceTypeDef extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
-  private readonly _historyJSON?: string = undefined
+  private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
@@ -5850,7 +5880,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
-    _historyJSON?: string,
+    _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
@@ -5923,14 +5953,14 @@ export class LLM extends BaseClient {
   /**
    * return the raw llm message history as json
    */
-  historyJSON = async (): Promise<string> => {
+  historyJSON = async (): Promise<JSON> => {
     if (this._historyJSON) {
       return this._historyJSON
     }
 
     const ctx = this._ctx.select("historyJSON")
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<JSON> = await ctx.execute()
 
     return response
   }
