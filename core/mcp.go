@@ -731,7 +731,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 
 	if anyUnavailable {
-		desc += "\n\nWARNING: Some outputs are unavailable. DO NOT CALL THIS TOOL YET."
+		desc += "\n\nWARNING: Some outputs are unavailable. Your task is not complete."
 	}
 
 	return LLMTool{
