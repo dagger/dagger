@@ -403,22 +403,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.Instance[*core.GitRepo
 	}
 
 	if ref, ok := inst.Self.Backend.(*core.RemoteGitRef); ok {
+		// include the fully resolved ref + commit, since the remote repo *might* change
 		inst = inst.WithDigest(dagql.HashFrom(
-			// include the remote
-			ref.Repo.URL.Remote(),
-			// and the fully resolved ref + commit
-			ref.FullRef, ref.Commit,
-
-			// and the top-level discard git dir setting
-			strconv.FormatBool(inst.Self.Repo.DiscardGitDir),
-
-			// also include what auth methods are used, currently we can't
-			// handle a cache hit where the result has a different auth
-			// method than the caller used (i.e. a git repo is pulled w/
-			// a token but hits cache for a dir where a ssh sock was used)
-			strconv.FormatBool(ref.Repo.AuthToken.Self != nil),
-			strconv.FormatBool(ref.Repo.AuthHeader.Self != nil),
-			strconv.FormatBool(ref.Repo.SSHAuthSocket != nil),
+			dagql.CurrentID(ctx).Digest().String(),
+			ref.FullRef,
+			ref.Commit,
 		))
 		return inst, nil
 	}
@@ -532,26 +521,57 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 			return inst, err
 		}
 
+		// use the commit + fully-qualified ref for the base of the content hash
+		var dgstInputs []string
+		var commit string
+		err = s.srv.Select(ctx, parent, &commit, dagql.Selector{Field: "commit"})
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, commit)
+		var fullref string
+		err = s.srv.Select(ctx, parent, &fullref, dagql.Selector{Field: "ref"})
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, fullref)
+
 		remoteRepo, isRemoteRepo := parent.Self.Repo.Backend.(*core.RemoteGitRepository)
 		if isRemoteRepo {
 			usedAuth := remoteRepo.AuthToken.Self != nil ||
 				remoteRepo.AuthHeader.Self != nil ||
 				remoteRepo.SSHAuthSocket != nil
 			if usedAuth {
-				contentHash, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+				// do a full hash of the actual files/dirs in the private git repo so
+				// that the cache key of the returned value can't be known unless the
+				// full contents are already known
+				dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
 				if err != nil {
 					return inst, fmt.Errorf("failed to get content hash: %w", err)
 				}
-				inst = inst.WithDigest(dagql.HashFrom(
-					dagql.CurrentID(ctx).Digest().String(),
-					// do a full hash of the actual files/dirs in the private git repo so
-					// that the cache key of the returned value can't be known unless the
-					// full contents are already known
-					contentHash.String(),
-				))
+				dgstInputs = append(dgstInputs, dgst.String(),
+					// also include what auth methods are used, currently we can't
+					// handle a cache hit where the result has a different auth
+					// method than the caller used (i.e. a git repo is pulled w/
+					// a token but hits cache for a dir where a ssh sock was used)
+					strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
+					strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
+					strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
+				)
 			}
 		}
 
+		dgstInputs = append(dgstInputs, strconv.Itoa(args.Depth))
+
+		includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
+		dgstInputs = append(dgstInputs, strconv.FormatBool(includedGitDir))
+		if includedGitDir && remoteRepo != nil {
+			// the contents of the directory have references to relevant remote git
+			// state, so we include the remote URL in the hash
+			dgstInputs = append(dgstInputs, remoteRepo.URL.Remote())
+		}
+
+		inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
 		return inst, nil
 	}
 
