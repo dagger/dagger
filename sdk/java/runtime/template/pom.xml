@@ -10,7 +10,7 @@
     <name>dagger-module-placeholder</name>
 
     <properties>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <dagger.module.deps>0.18.4-template-module</dagger.module.deps>
     </properties>
