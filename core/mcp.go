@@ -691,7 +691,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	props := map[string]any{}
 	required := []string{}
 
-	desc := "Return the requested outputs to the user.\n\n"
+	desc := "Save your work, making the requested outputs available to the user.\n\n"
 	desc += "Your task is to return the following outputs:\n"
 
 	var outputs []string
@@ -739,7 +739,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 
 	return LLMTool{
-		Name:        "complete",
+		Name:        "save",
 		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",

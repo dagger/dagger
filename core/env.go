@@ -463,7 +463,9 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			}
 			return val, nil
 		},
-		dagql.CacheSpec{},
+		dagql.CacheSpec{
+			DoNotCache: "Bindings are mutable",
+		},
 	)
 	return nil
 }
