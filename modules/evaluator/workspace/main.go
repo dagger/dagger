@@ -149,8 +149,6 @@ func (w *Workspace) Evaluate(
 		go func() {
 			defer wg.Done()
 
-			report := new(strings.Builder)
-
 			var rerr error
 			ctx, span := Tracer().Start(ctx,
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
@@ -159,22 +157,7 @@ func (w *Workspace) Evaluate(
 			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
 
-			defer func() {
-				reports[attempt] = report.String()
-				fmt.Fprint(stdio.Stdout, report.String())
-			}()
-
-			fmt.Fprintf(report, "## Attempt %d\n", attempt+1)
-			fmt.Fprintln(report)
-
 			eval := w.evaluate(model, attempt, evalFn)
-
-			evalReport, err := eval.Report(ctx)
-			if err != nil {
-				rerr = err
-				return
-			}
-			fmt.Fprintln(report, evalReport)
 
 			succeeded, err := eval.Succeeded(ctx)
 			if err != nil {
@@ -186,6 +169,30 @@ func (w *Workspace) Evaluate(
 			} else {
 				rerr = errors.New("evaluation failed")
 			}
+
+			evalReport, err := eval.Report(ctx)
+			if err != nil {
+				rerr = err
+				return
+			}
+
+			report := new(strings.Builder)
+			fmt.Fprintf(report, "## Attempt %d\n", attempt+1)
+			fmt.Fprintln(report)
+			fmt.Fprintln(report, evalReport)
+			reports[attempt] = report.String()
+
+			// Write report to OTel too
+			fmt.Fprint(stdio.Stdout, report.String())
+			toolsDoc, err := eval.ToolsDoc(ctx)
+			if err != nil {
+				rerr = err
+				return
+			}
+			// Only print this to OTel, it's too expensive to process with an LLM in the report
+			fmt.Fprintln(stdio.Stdout, "### Tools")
+			fmt.Fprintln(stdio.Stdout)
+			fmt.Fprintln(stdio.Stdout, toolsDoc)
 		}()
 	}
 

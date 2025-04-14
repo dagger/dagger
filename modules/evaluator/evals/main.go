@@ -299,6 +299,7 @@ func (m *Evals) llm(opts ...dagger.LLMOpts) *dagger.LLM {
 type Report struct {
 	Succeeded bool
 	Report    string
+	ToolsDoc  string
 }
 
 func withLLMReport(
@@ -390,6 +391,12 @@ func withLLMReport(
 	}
 
 	report.Report = reportMD.String()
+
+	toolsDoc, err := llm.Tools(ctx)
+	if err != nil {
+		fmt.Fprintln(reportMD, "Failed to get tools:", err)
+	}
+	report.ToolsDoc = toolsDoc
 
 	return report, nil
 }
