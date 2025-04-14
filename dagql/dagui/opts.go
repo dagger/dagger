@@ -54,6 +54,7 @@ type FrontendOpts struct {
 }
 
 const (
+	HideErrorsVerbosity       = -1
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
 	ExpandCompletedVerbosity  = 2
@@ -83,7 +84,7 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// _still_ not interesting
 		return false
 	}
-	if span.IsFailedOrCausedFailure() {
+	if span.IsFailedOrCausedFailure() && verbosity > HideErrorsVerbosity {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
