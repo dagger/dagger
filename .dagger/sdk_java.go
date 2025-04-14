@@ -149,7 +149,7 @@ func (t JavaSDK) BumpDeps(ctx context.Context) *dagger.Directory {
 }
 
 func (t JavaSDK) Maven(ctx context.Context) *dagger.Container {
-	src := t.Dagger.Source().Directory(javaSDKPath)
+	src := t.Dagger.Source.Directory(javaSDKPath)
 	mountPath := "/" + javaSDKPath
 
 	return dag.Container().

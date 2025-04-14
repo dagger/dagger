@@ -41,7 +41,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 				dag.Directory().
 					WithDirectory(
 						"",
-						t.Dagger.Source(),
+						t.Dagger.Source,
 						dagger.DirectoryWithDirectoryOpts{
 							Include: []string{
 								"docs/current_docs/**/*.py",
@@ -63,7 +63,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 			}
 			span.End()
 		}()
-		before := t.Dagger.Source()
+		before := t.Dagger.Source
 		after, err := t.Generate(ctx)
 		if err != nil {
 			return err
@@ -80,7 +80,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		return dag.
-			Go(t.Dagger.WithModCodegenTargets([]string{pythonRuntimeSubdir}).Source()).
+			Go(t.Dagger.SourceDeveloped(pythonRuntimeSubdir)).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{pythonRuntimeSubdir}})
 	})
 

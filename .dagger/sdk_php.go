@@ -37,7 +37,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 			}
 			span.End()
 		}()
-		src := t.Dagger.Source().Directory(phpSDKPath)
+		src := t.Dagger.Source.Directory(phpSDKPath)
 		_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).Lint().Sync(ctx)
 		return err
 	})
@@ -50,7 +50,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 			}
 			span.End()
 		}()
-		before := t.Dagger.Source()
+		before := t.Dagger.Source
 		after, err := t.Generate(ctx)
 		if err != nil {
 			return err
@@ -70,7 +70,7 @@ func (t PHPSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	src := t.Dagger.Source().Directory(phpSDKPath)
+	src := t.Dagger.Source.Directory(phpSDKPath)
 	base := dag.PhpSDKDev().Base().
 		With(installer).
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})

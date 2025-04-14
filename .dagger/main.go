@@ -13,14 +13,13 @@ import (
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Src *dagger.Directory // +private
+	Source *dagger.Directory
 
 	Version string
 	Tag     string
 	Git     *dagger.VersionGit // +private
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
-	ModCodegen        bool
 	ModCodegenTargets []string
 
 	// Can be used by nested clients to forward docker credentials to avoid
@@ -49,7 +48,7 @@ func New(
 	}
 
 	dev := &DaggerDev{
-		Src:       source,
+		Source:    source,
 		Tag:       tag,
 		Git:       v.Git(),
 		Version:   version,
@@ -76,34 +75,13 @@ func New(
 	return dev, nil
 }
 
-// Enable module auto-codegen when retrieving the dagger source code
-func (dev *DaggerDev) WithModCodegen() *DaggerDev {
-	clone := *dev
-	clone.ModCodegen = true
-	return &clone
-}
-
-func (dev *DaggerDev) WithModCodegenTargets(targets []string) *DaggerDev {
-	clone := *dev
-	clone.ModCodegen = true
-	clone.ModCodegenTargets = targets
-	return &clone
-}
-
-// Develop the Dagger CLI
-func (dev *DaggerDev) CLI() *CLI {
-	return &CLI{Dagger: dev}
-}
-
-// Return the Dagger source code
-func (dev *DaggerDev) Source() *dagger.Directory {
-	if !dev.ModCodegen {
-		return dev.Src
+func (dev *DaggerDev) SourceDeveloped(targets ...string) *dagger.Directory {
+	if targets == nil {
+		targets = dev.ModCodegenTargets
 	}
-
-	src := dev.Src
-	for _, module := range dev.ModCodegenTargets {
-		layer := dev.Src.
+	src := dev.Source
+	for _, module := range targets {
+		layer := dev.Source.
 			AsModule(dagger.DirectoryAsModuleOpts{
 				SourceRootPath: module,
 			}).
@@ -114,8 +92,13 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 	return src
 }
 
+// Develop the Dagger CLI
+func (dev *DaggerDev) CLI() *CLI {
+	return &CLI{Dagger: dev}
+}
+
 func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string, error) {
-	entries, err := dev.Src.Glob(ctx, "**/"+filename)
+	entries, err := dev.Source.Glob(ctx, "**/"+filename)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +118,7 @@ func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string
 
 // Dagger's Go toolchain
 func (dev *DaggerDev) Go() *GoToolchain {
-	return &GoToolchain{Go: dag.Go(dev.Source())}
+	return &GoToolchain{Go: dag.Go(dev.Source)}
 }
 
 type GoToolchain struct {

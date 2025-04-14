@@ -84,7 +84,7 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.
 }
 
 func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.Container) *dagger.Container) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source())
+	builder, err := build.NewBuilder(ctx, dev.Source)
 	if err != nil {
 		return nil, err
 	}

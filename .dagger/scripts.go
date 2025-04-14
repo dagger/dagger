@@ -21,12 +21,12 @@ func (s Scripts) Lint(ctx context.Context) error {
 	eg := errgroup.Group{}
 	eg.Go(func() error {
 		return dag.Shellcheck().
-			Check(s.Dagger.Source().File("install.sh")).
+			Check(s.Dagger.Source.File("install.sh")).
 			Assert(ctx)
 	})
 	eg.Go(func() error {
 		return dag.PsAnalyzer().
-			Check(s.Dagger.Source().File("install.ps1"), dagger.PsAnalyzerCheckOpts{
+			Check(s.Dagger.Source.File("install.ps1"), dagger.PsAnalyzerCheckOpts{
 				// Exclude the unused parameters for now due because PSScriptAnalyzer treat
 				// parameters in `Install-Dagger` as unused but the script won't run if we delete
 				// it.
@@ -44,7 +44,7 @@ func (s Scripts) Test(ctx context.Context) error {
 		}).
 		Container().
 		WithWorkdir("/opt/dagger").
-		WithFile("/usr/local/bin/install.sh", s.Dagger.Source().File("install.sh"), dagger.ContainerWithFileOpts{
+		WithFile("/usr/local/bin/install.sh", s.Dagger.Source.File("install.sh"), dagger.ContainerWithFileOpts{
 			Permissions: 0755,
 		})
 

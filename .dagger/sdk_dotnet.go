@@ -24,7 +24,7 @@ func (t DotnetSDK) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	src := t.Dagger.Src.Directory("sdk/dotnet")
+	src := t.Dagger.Source.Directory("sdk/dotnet")
 	return dag.DotnetSDKDev(dagger.DotnetSDKDevOpts{Source: src}).Test(ctx, introspection)
 }
 
@@ -42,7 +42,7 @@ func (t DotnetSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := t.Dagger.Src.Directory("sdk/dotnet")
+	src := t.Dagger.Source.Directory("sdk/dotnet")
 
 	return dag.
 		Directory().
