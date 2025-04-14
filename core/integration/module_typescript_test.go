@@ -1958,3 +1958,149 @@ export class Test {
 		requireErrOut(t, err, "Error: cannot return float '4.4' if return type is 'number' (integer), please use 'float' as return type instead")
 	})
 }
+
+func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.T) {
+	checkFileExistence := func(t *testctx.T, files []string, filesToCheck []string) {
+		for _, file := range filesToCheck {
+			require.Contains(t, files, file)
+		}
+	}
+
+	t.Run("default to bundle", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+
+		files, err := modGen.Directory("/work/sdk").Entries(ctx)
+		require.NoError(t, err)
+		checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts"})
+
+		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("migrate to bundle", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  }
+}`).
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+
+		files, err := modGen.Directory("/work/sdk").Entries(ctx)
+		require.NoError(t, err)
+		checkFileExistence(t, files, []string{"package.json", "src/", "tsconfig.json"})
+
+		t.Run("with clean sdk directory", func(ctx context.Context, t *testctx.T) {
+			cleanModGen := modGen.
+				WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2"
+  }
+}`).
+				WithoutDirectory("/work/sdk").
+				With(daggerExec("develop"))
+
+			files, err := cleanModGen.Directory("/work/sdk").Entries(ctx)
+			require.NoError(t, err)
+			checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts"})
+
+			out, err := cleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", out)
+		})
+
+		t.Run("with non-clean sdk directory", func(ctx context.Context, t *testctx.T) {
+			nonCleanModGen := modGen.
+				WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2"
+  }
+}`).
+				With(daggerExec("develop"))
+
+			files, err := nonCleanModGen.Directory("/work/sdk").Entries(ctx)
+			require.NoError(t, err)
+			checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts", "package.json", "src/", "tsconfig.json"})
+
+			// It should still work even if the sdk directory isn't clean.
+			out, err := nonCleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", out)
+		})
+	})
+
+	t.Run("migrate to local", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2"
+  }
+}`).
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+
+		files, err := modGen.Directory("/work/sdk").Entries(ctx)
+		require.NoError(t, err)
+		checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts"})
+
+		t.Run("with clean sdk directory", func(ctx context.Context, t *testctx.T) {
+			cleanModGen := modGen.
+				WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  }
+}`).
+				WithoutDirectory("/work/sdk").
+				With(daggerExec("develop"))
+
+			files, err := cleanModGen.Directory("/work/sdk").Entries(ctx)
+			require.NoError(t, err)
+			checkFileExistence(t, files, []string{"package.json", "src/", "tsconfig.json"})
+
+			out, err := cleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", out)
+		})
+
+		t.Run("with non-clean sdk directory", func(ctx context.Context, t *testctx.T) {
+			nonCleanModGen := modGen.
+				WithNewFile("/work/package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  }
+}`).
+				With(daggerExec("develop"))
+
+			files, err := nonCleanModGen.Directory("/work/sdk").Entries(ctx)
+			require.NoError(t, err)
+			checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts", "package.json", "src/", "tsconfig.json"})
+
+			// It should still work even if the sdk directory isn't clean.
+			out, err := nonCleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", out)
+		})
+	})
+}
