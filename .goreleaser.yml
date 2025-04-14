@@ -75,6 +75,7 @@ winget:
     license: "asl20"
     publisher_url: "https://dagger.io"
     publisher_support_url: https://github.com/dagger/dagger/issues/new/choose
+    path: manifests/d/Dagger/Cli/{{ .Version }}
     package_identifier: Dagger.Cli
     use: archive
     skip_upload: false
