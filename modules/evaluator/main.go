@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/sourcegraph/conc/pool"
 )
@@ -269,13 +270,6 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 	eval := m.work().Evaluate(name, dagger.WorkspaceEvaluateOpts{
 		Model: model,
 	})
-	successRate, err := eval.SuccessRate(ctx)
-	if err != nil {
-		return "", err
-	}
-	if successRate == 1 {
-		return "All evaluations were successful.", nil
-	}
 	report, err := eval.Report(ctx)
 	if err != nil {
 		return "", err
@@ -295,21 +289,6 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, e
 					File("report.txt"),
 				"The report of all eval attempt results."),
 	)
-}
-
-func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, researchEnv *dagger.Env) (string, error) {
-	return m.llm().
-		WithEnv(researchEnv).
-		WithPrompt("Generate a report summarizing your current understanding of the failures or successes. If there are any failures, focus on those. Be sure to include examples from the report to back up your analysis. Respond in Markdown format, with a brief summary of issues at the end.").
-		Loop().
-		WithPrompt("Cross reference your summary with the documentation and the system prompt that was used. Suggest improvements without specializing the prompt too much for the specific evaluation.").
-		WithPrompt("Compare the successful results with the failed ones - why did the successful ones work? What element of the documentation or prompt was most relevant, in the general sense? How can the prompt guide the model to achieve the same result? When failures occur for multiple reasons, the more general reason is always more interesting than the specific one.").
-		Loop().
-		WithEnv(researchEnv.WithStringOutput("prompt", "The generated prompt.")).
-		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
-		Env().
-		Output("prompt").
-		AsString(ctx)
 }
 
 // Iterate continuously runs evals across all models.
@@ -336,6 +315,10 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 				reports = reports.WithNewFile(report.ModelName+"-"+result.Name+".md", result.Report)
 			}
 		}
+		reportFilenames, err := reports.Entries(ctx)
+		if err != nil {
+			return "", err
+		}
 		prompt, err = m.analyzeAndGenerateSystemPrompt(
 			ctx,
 			// an initial env with no outputs, since message history is all we want at
@@ -346,19 +329,33 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 				WithFileInput("systemPrompt",
 					promptFile,
 					"The system prompt to evaluate and improve.").
-				WithFileInput("results",
-					dag.Directory().
-						WithNewFile("results.txt", evals.Check().Error()).
-						File("results.txt"),
-					"The summary of failures.").
+				WithStringInput("failures", evals.Check().Error(), "The summary of failures.").
 				WithDirectoryInput("reports",
 					reports,
-					"A directory containing all reports, as MODEL_NAME-EVAL_NAME.md"),
+					"A directory containing all reports: "+strings.Join(reportFilenames, ", ")),
 		)
 		if err != nil {
 			return "", err
 		}
 	}
+}
+
+func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, researchEnv *dagger.Env) (string, error) {
+	return m.llm().
+		WithEnv(researchEnv).
+		WithPrompt("Generate a report summarizing your current understanding of the failures or successes. Grade the overall result, with a brief description., followed by further analysis. If there are any failures, focus on those. Be sure to include examples from the report to back up your analysis. Respond in Markdown format, with a brief summary of issues at the end.").
+		Loop().
+		WithPrompt("Cross reference your summary with the documentation and the system prompt that was used. Suggest improvements without over-specializing for any particular evaluation. Focus on deeper issues -- don't cheat.").
+		WithPrompt("Compare the successful results with the failed ones - why did the successful ones work? What element of the documentation or prompt was most relevant, in the general sense? How can the prompt guide the model to achieve the same result? When failures occur for multiple reasons, the more general reason is always more interesting.").
+		Loop().
+		WithEnv(
+			researchEnv.
+				WithStringOutput("prompt", "Your newly generated prompt."),
+		).
+		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
+		Env().
+		Output("prompt").
+		AsString(ctx)
 }
 
 func (m *Evaluator) work() *dagger.Workspace {
