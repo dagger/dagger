@@ -156,6 +156,9 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
 	}
+	if caller == nil {
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: was nil")
+	}
 
 	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
 		ID: secret.Self.URI,
