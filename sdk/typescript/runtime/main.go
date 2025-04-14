@@ -302,11 +302,9 @@ func (t *TypescriptSdk) GenerateClient(
 
 	if dev {
 		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
-			WithoutDirectory("codegen").
-			WithoutDirectory("runtime").
-			WithoutDirectory("tsx_module"),
+			Directory("/bundled_lib").
+			WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export/client")),
 		).
-			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
 			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=true", fmt.Sprintf("--library-dir=%s", outputDir)})
 	} else {
 		ctr = ctr.
@@ -541,7 +539,7 @@ func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	case Bundle:
 		return t.SDKSourceDir.
 			Directory("/bundled_lib").
-			WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export"))
+			WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export/module"))
 	case Local:
 		return t.SDKSourceDir.
 			WithoutDirectory("codegen").
