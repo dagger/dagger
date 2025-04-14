@@ -60,7 +60,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 			}
 			span.End()
 		}()
-		before := t.Dagger.Source()
+		before := t.Dagger.Source
 		after, err := t.Generate(ctx)
 		if err != nil {
 			return err
@@ -94,7 +94,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	}
 
 	sdkDev, _ := t.base(installer)
-	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	ctr := sdkDev.WithBase(t.Dagger.Source.Directory(elixirSDKPath)).With(installer)
 	return sdkDev.Generate(ctr, introspection), nil
 }
 
@@ -119,7 +119,7 @@ func (t ElixirSDK) Publish(
 
 	if semver.IsValid(version) {
 		mixFile := "/sdk/elixir/mix.exs"
-		mixExs, err := t.Dagger.Source().File(mixFile).Contents(ctx)
+		mixExs, err := t.Dagger.Source.File(mixFile).Contents(ctx)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)
 
 // Bump the Elixir SDK's Engine dependency
 func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
-	contents, err := t.Dagger.Source().File(elixirSDKVersionFilePath).Contents(ctx)
+	contents, err := t.Dagger.Source.File(elixirSDKVersionFilePath).Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +161,12 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 
 func (t ElixirSDK) base(installer func(*dagger.Container) *dagger.Container) (*dagger.ElixirSDKDev, *dagger.Container) {
 	sdkDev := dag.ElixirSDKDev()
-	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	ctr := sdkDev.WithBase(t.Dagger.Source.Directory(elixirSDKPath)).With(installer)
 	return sdkDev, ctr
 }
 
 func (t ElixirSDK) elixirBase(baseImage string) *dagger.Container {
-	src := t.Dagger.Source().Directory(elixirSDKPath)
+	src := t.Dagger.Source.Directory(elixirSDKPath)
 	mountPath := "/" + elixirSDKPath
 
 	return dag.Container().

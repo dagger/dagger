@@ -71,7 +71,7 @@ func (e *DaggerEngine) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, e.Dagger.Source())
+	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func (e *DaggerEngine) Lint(
 		}
 
 		return dag.
-			Go(e.Dagger.WithModCodegen().Source()).
+			Go(e.Dagger.SourceDeveloped()).
 			Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
 	})
 	eg.Go(func() error {
@@ -371,7 +371,7 @@ func (e *DaggerEngine) Publish(
 }
 
 func (e *DaggerEngine) Scan(ctx context.Context) error {
-	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source(), dagger.DirectoryWithDirectoryOpts{
+	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
 			".trivyignore.yml",
@@ -414,7 +414,7 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 		args = append(args, "/mnt/src")
 
 		// HACK: filter out directories that present occasional issues
-		src := e.Dagger.Source()
+		src := e.Dagger.Source
 		src = src.
 			WithoutDirectory("docs").
 			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").

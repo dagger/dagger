@@ -23,7 +23,7 @@ func (w *Wolfi) Container(
 	overlays []*dagger.Container,
 ) *dagger.Container {
 	config := dag.Alpine(dagger.AlpineOpts{
-		Distro:   dagger.DistroWolfi,
+		Distro:   dagger.AlpineDistroWolfi,
 		Packages: packages,
 		Arch:     arch,
 	})

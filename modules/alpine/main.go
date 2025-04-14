@@ -21,10 +21,9 @@ import (
 
 type Distro string
 
-// FIXME: these names stutter - but "alpine" clashes with the name of the module
 const (
-	DistroAlpine Distro = "DISTRO_ALPINE"
-	DistroWolfi  Distro = "DISTRO_WOLFI"
+	DistroAlpine Distro = "ALPINE"
+	DistroWolfi  Distro = "WOLFI"
 )
 
 func New(
@@ -41,7 +40,7 @@ func New(
 
 	// Alpine distribution to use
 	// +optional
-	// +default="DISTRO_ALPINE"
+	// +default="ALPINE"
 	distro Distro,
 ) (Alpine, error) {
 	if arch == "" {

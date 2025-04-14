@@ -1,6 +1,6 @@
 {
   "name": "ps-analyzer",
-  "engineVersion": "v0.12.4",
+  "engineVersion": "v0.18.3",
   "sdk": {
     "source": "go"
   },

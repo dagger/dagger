@@ -87,7 +87,7 @@ func (cli *CLI) Publish(
 	}
 	ctr = ctr.
 		WithWorkdir("/app").
-		WithDirectory(".", cli.Dagger.Source()).
+		WithDirectory(".", cli.Dagger.Source).
 		WithDirectory(".", cli.Dagger.Git.Directory()).
 		WithDirectory("build", cli.goreleaserBinaries())
 
@@ -191,7 +191,7 @@ func (cli *CLI) PublishMetadata(
 		}).
 		Container().
 		WithWorkdir("/src").
-		WithDirectory(".", cli.Dagger.Source()).
+		WithDirectory(".", cli.Dagger.Source).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithEnvVariable("AWS_REGION", awsRegion).

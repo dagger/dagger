@@ -27,7 +27,7 @@ func (t GoSDK) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		return dag.
-			Go(t.Dagger.Source()).
+			Go(t.Dagger.Source).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{"sdk/go"}})
 	})
 	eg.Go(func() (rerr error) {
@@ -38,7 +38,7 @@ func (t GoSDK) Lint(ctx context.Context) (rerr error) {
 			}
 			span.End()
 		}()
-		before := t.Dagger.Source()
+		before := t.Dagger.Source
 		after, err := t.Generate(ctx)
 		if err != nil {
 			return err
