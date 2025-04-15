@@ -1,14 +1,7 @@
 {
   "name": "coding-agent",
-  "engineVersion": "v0.18.0",
+  "engineVersion": "v0.18.3",
   "sdk": {
     "source": "php"
-  },
-  "dependencies": [
-    {
-      "name": "toy-workspace",
-      "source": "github.com/shykes/toy-programmer/toy-workspace",
-      "pin": "672f09ff9ad3ba8c709c7d10757cd09d410b9b68"
-    }
-  ]
+  }
 }

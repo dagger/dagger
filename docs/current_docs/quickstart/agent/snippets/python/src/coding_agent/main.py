@@ -10,28 +10,31 @@ class CodingAgent:
         assignment: str,
     ) -> dagger.Container:
         """Write a Go program"""
-        workspace = dag.toy_workspace()
         environment = (
             dag.env()
-            .with_toy_workspace_input(
-                "before", workspace, "tools to complete the assignment"
-            )
             .with_string_input("assignment", assignment, "the assignment to complete")
-            .with_toy_workspace_output("after", "the completed assignment")
+            .with_container_input(
+                "builder", dag.container().from_("golang").with_workdir("/app"), "a container to use for building go code"
+            )
+            .with_container_output("completed", "the completed assignment in the golang container")
         )
 
-        return (
+        work = (
             dag.llm()
             .with_env(environment)
             .with_prompt(
                 """
-            You are an expert go programmer. You have access to a workspace.
-            Use the default directory in the workspace.
-            Do not stop until the code builds.
-            Your assignment is: $assignment"""
+            You are an expert Go programmer with an assignment to create a go program
+			Create files in the default directory in $builder
+			Always build the code to make sure it is valid
+			Do not stop until your assignment is completed and the code builds
+			Your assignment is: $assignment"""
             )
+        )
+
+        return (
+            work
             .env()
-            .output("after")
-            .as_toy_workspace()
-            .container()
+            .output("completed")
+            .as_container()
         )
