@@ -51,13 +51,13 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * Creates a service that forwards traffic to a specified address via the host.
      */
-    public function service(?string $host = 'localhost', array $ports): Service
+    public function service(array $ports, ?string $host = 'localhost'): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
+        $innerQueryBuilder->setArgument('ports', $ports);
         if (null !== $host) {
         $innerQueryBuilder->setArgument('host', $host);
         }
-        $innerQueryBuilder->setArgument('ports', $ports);
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -77,15 +77,15 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * Creates a tunnel that forwards traffic from the host to a service.
      */
-    public function tunnel(ServiceId|Service $service, ?array $ports = null, ?bool $native = false): Service
+    public function tunnel(ServiceId|Service $service, ?bool $native = false, ?array $ports = null): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
         $innerQueryBuilder->setArgument('service', $service);
-        if (null !== $ports) {
-        $innerQueryBuilder->setArgument('ports', $ports);
-        }
         if (null !== $native) {
         $innerQueryBuilder->setArgument('native', $native);
+        }
+        if (null !== $ports) {
+        $innerQueryBuilder->setArgument('ports', $ports);
         }
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

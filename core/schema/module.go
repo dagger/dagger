@@ -29,14 +29,18 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("function", s.function).
 			Doc(`Creates a function.`).
-			ArgDoc("name", `Name of the function, in its original format from the implementation language.`).
-			ArgDoc("returnType", `Return type of the function.`),
+			Args(
+				dagql.Arg("name").Doc(`Name of the function, in its original format from the implementation language.`),
+				dagql.Arg("returnType").Doc(`Return type of the function.`),
+			),
 
 		dagql.Func("sourceMap", s.sourceMap).
 			Doc(`Creates source map metadata.`).
-			ArgDoc("filename", "The filename from the module source.").
-			ArgDoc("line", "The line number within the filename.").
-			ArgDoc("column", "The column number within the line."),
+			Args(
+				dagql.Arg("filename").Doc("The filename from the module source."),
+				dagql.Arg("line").Doc("The line number within the filename."),
+				dagql.Arg("column").Doc("The column number within the line."),
+			),
 
 		dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
@@ -53,10 +57,14 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FunctionCall]{
 		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
 			Doc(`Set the return value of the function call to the provided value.`).
-			ArgDoc("value", `JSON serialization of the return value.`),
+			Args(
+				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
+			),
 		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
 			Doc(`Return an error from the function.`).
-			ArgDoc("error", `The error to return.`),
+			Args(
+				dagql.Arg("error").Doc(`The error to return.`),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Module]{
@@ -72,7 +80,9 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
-			ArgDoc("description", `The description to set`),
+			Args(
+				dagql.Arg("description").Doc(`The description to set`),
+			),
 
 		dagql.Func("withObject", s.moduleWithObject).
 			Doc(`This module plus the given Object type and associated functions.`),
@@ -87,7 +97,9 @@ func (s *moduleSchema) Install() {
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
-			ArgDoc("includeDependencies", "Expose the dependencies of this module to the client"),
+			Args(
+				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -99,32 +111,43 @@ func (s *moduleSchema) Install() {
 
 		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
-			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
-			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
-			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			),
 
 		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
-			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("withDescription", s.functionWithDescription).
 			Doc(`Returns the function with the given doc string.`).
-			ArgDoc("description", `The doc string to set.`),
+			Args(
+				dagql.Arg("description").Doc(`The doc string to set.`),
+			),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
-			ArgDoc("sourceMap", `The source map for the function definition.`),
+			Args(
+				dagql.Arg("sourceMap").Doc(`The source map for the function definition.`),
+			),
 
 		dagql.Func("withArg", s.functionWithArg).
 			Doc(`Returns the function with the provided argument`).
-			ArgDoc("name", `The name of the argument`).
-			ArgDoc("typeDef", `The type of the argument`).
-			ArgDoc("description", `A doc string for the argument, if any`).
-			ArgDoc("defaultValue", `A default value to use for this argument if not explicitly set by the caller, if any`).
-			ArgDoc("defaultPath", `If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`).
-			ArgDoc("ignore", `Patterns to ignore when loading the contextual argument value.`),
+			Args(
+				dagql.Arg("name").Doc(`The name of the argument`),
+				dagql.Arg("typeDef").Doc(`The type of the argument`),
+				dagql.Arg("description").Doc(`A doc string for the argument, if any`),
+				dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
+				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
+				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
+				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
@@ -157,10 +180,12 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withField", s.typeDefWithObjectField).
 			Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
-			ArgDoc("name", `The name of the field in the object`).
-			ArgDoc("typeDef", `The type of the field`).
-			ArgDoc("description", `A doc string for the field, if any`).
-			ArgDoc("sourceMap", `The source map for the field definition.`),
+			Args(
+				dagql.Arg("name").Doc(`The name of the field in the object`),
+				dagql.Arg("typeDef").Doc(`The type of the field`),
+				dagql.Arg("description").Doc(`A doc string for the field, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the field definition.`),
+			),
 
 		dagql.Func("withFunction", s.typeDefWithFunction).
 			Doc(`Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.`),
@@ -172,15 +197,19 @@ func (s *moduleSchema) Install() {
 			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
 				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
 				This is how functions are able to return their own, or any other circular reference.`).
-			ArgDoc("name", `The name of the enum`).
-			ArgDoc("description", `A doc string for the enum, if any`).
-			ArgDoc("sourceMap", `The source map for the enum definition.`),
+			Args(
+				dagql.Arg("name").Doc(`The name of the enum`),
+				dagql.Arg("description").Doc(`A doc string for the enum, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the enum definition.`),
+			),
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
-			ArgDoc("value", `The name of the value in the enum`).
-			ArgDoc("description", `A doc string for the value, if any`).
-			ArgDoc("sourceMap", `The source map for the enum value definition.`),
+			Args(
+				dagql.Arg("value").Doc(`The name of the value in the enum`),
+				dagql.Arg("description").Doc(`A doc string for the value, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)

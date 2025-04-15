@@ -100,16 +100,16 @@ defmodule Dagger.Host do
   Creates a tunnel that forwards traffic from the host to a service.
   """
   @spec tunnel(t(), Dagger.Service.t(), [
-          {:ports, [Dagger.PortForward.t()]},
-          {:native, boolean() | nil}
+          {:native, boolean() | nil},
+          {:ports, [Dagger.PortForward.t()]}
         ]) :: Dagger.Service.t()
   def tunnel(%__MODULE__{} = host, service, optional_args \\ []) do
     query_builder =
       host.query_builder
       |> QB.select("tunnel")
       |> QB.put_arg("service", Dagger.ID.id!(service))
-      |> QB.maybe_put_arg("ports", optional_args[:ports])
       |> QB.maybe_put_arg("native", optional_args[:native])
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
 
     %Dagger.Service{
       query_builder: query_builder,

@@ -534,8 +534,8 @@ defmodule Dagger.Container do
   Be sure to set any exposed ports before calling this api.
   """
   @spec up(t(), [
-          {:ports, [Dagger.PortForward.t()]},
           {:random, boolean() | nil},
+          {:ports, [Dagger.PortForward.t()]},
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
@@ -547,8 +547,8 @@ defmodule Dagger.Container do
     query_builder =
       container.query_builder
       |> QB.select("up")
-      |> QB.maybe_put_arg("ports", optional_args[:ports])
       |> QB.maybe_put_arg("random", optional_args[:random])
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg(

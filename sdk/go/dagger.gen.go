@@ -1300,12 +1300,12 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 
 // ContainerUpOpts contains options for Container.Up
 type ContainerUpOpts struct {
+	// Bind each tunnel port to a random port on the host.
+	Random bool
 	// List of frontend/backend port mappings to forward.
 	//
 	// Frontend is the port accepting traffic on the host, backend is the service port.
 	Ports []PortForward
-	// Bind each tunnel port to a random port on the host.
-	Random bool
 	// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
 	//
 	// If empty, the container's default command is used.
@@ -1333,13 +1333,13 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 	}
 	q := r.query.Select("up")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
 		// `random` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Random) {
 			q = q.Arg("random", opts[i].Random)
+		}
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
 		}
 		// `args` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Args) {
@@ -2565,16 +2565,16 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
-	// The platform to build.
-	Platform Platform
 	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
 	//
 	// Default: "Dockerfile"
 	Dockerfile string
-	// Target build stage to build.
-	Target string
+	// The platform to build.
+	Platform Platform
 	// Build arguments to use in the build.
 	BuildArgs []BuildArg
+	// Target build stage to build.
+	Target string
 	// Secrets to pass to the build.
 	//
 	// They will be mounted at /run/secrets/[secret-name].
@@ -2589,21 +2589,21 @@ type DirectoryDockerBuildOpts struct {
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.query.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
 		// `dockerfile` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
 		}
-		// `target` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Target) {
-			q = q.Arg("target", opts[i].Target)
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
 		}
 		// `buildArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
+		}
+		// `target` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Target) {
+			q = q.Arg("target", opts[i].Target)
 		}
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
@@ -2784,20 +2784,24 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 
 // DirectoryTerminalOpts contains options for Directory.Terminal
 type DirectoryTerminalOpts struct {
+	// If set, override the default container used for the terminal.
+	Container *Container
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
-	// If set, override the default container used for the terminal.
-	Container *Container
 }
 
 // Opens an interactive terminal in new container with this directory mounted inside.
 func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `container` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Container) {
+			q = q.Arg("container", opts[i].Container)
+		}
 		// `cmd` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
 			q = q.Arg("cmd", opts[i].Cmd)
@@ -2809,10 +2813,6 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-		// `container` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Container) {
-			q = q.Arg("container", opts[i].Container)
 		}
 	}
 
@@ -4881,7 +4881,7 @@ type FunctionWithArgOpts struct {
 	DefaultPath string
 	// Patterns to ignore when loading the contextual argument value.
 	Ignore []string
-
+	// The source map for the argument definition.
 	SourceMap *SourceMap
 }
 
@@ -5823,6 +5823,10 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 
 // HostTunnelOpts contains options for Host.Tunnel
 type HostTunnelOpts struct {
+	// Map each service port to the same port on the host, as if the service were running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
 	// Configure explicit port forwarding rules for the tunnel.
 	//
 	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
@@ -5831,10 +5835,6 @@ type HostTunnelOpts struct {
 	//
 	// If ports are given and native is true, the ports are additive.
 	Ports []PortForward
-	// Map each service port to the same port on the host, as if the service were running natively.
-	//
-	// Note: enabling may result in port conflicts.
-	Native bool
 }
 
 // Creates a tunnel that forwards traffic from the host to a service.
@@ -5842,13 +5842,13 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	assertNotNil("service", service)
 	q := r.query.Select("tunnel")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
 		// `native` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Native) {
 			q = q.Arg("native", opts[i].Native)
+		}
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
 		}
 	}
 	q = q.Arg("service", service)
@@ -8078,8 +8078,6 @@ type GitOpts struct {
 	//
 	// Default: true
 	KeepGitDir bool
-	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Service
 	// Set SSH known hosts
 	SSHKnownHosts string
 	// Set SSH auth socket
@@ -8088,6 +8086,8 @@ type GitOpts struct {
 	HTTPAuthToken *Secret
 	// Secret used to populate the Authorization HTTP header
 	HTTPAuthHeader *Secret
+	// A service which must be started before the repo is fetched.
+	ExperimentalServiceHost *Service
 }
 
 // Queries a Git repository.
@@ -8097,10 +8097,6 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
-		}
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 		// `sshKnownHosts` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
@@ -8117,6 +8113,10 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `httpAuthHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HTTPAuthHeader) {
 			q = q.Arg("httpAuthHeader", opts[i].HTTPAuthHeader)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 	}
 	q = q.Arg("url", url)

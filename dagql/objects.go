@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -888,6 +889,73 @@ type InputSpec struct {
 	Directives []*ast.Directive
 }
 
+func (spec *InputSpec) merge(other *InputSpec) {
+	if other.Name != "" {
+		spec.Name = other.Name
+	}
+	if other.Description != "" {
+		spec.Description = other.Description
+	}
+	if other.Type != nil {
+		spec.Type = other.Type
+	}
+	if other.Default != nil {
+		spec.Default = other.Default
+	}
+	if other.DeprecatedReason != "" {
+		spec.DeprecatedReason = other.DeprecatedReason
+	}
+	if other.Sensitive {
+		spec.Sensitive = other.Sensitive
+	}
+	if len(other.Directives) > 0 {
+		spec.Directives = slices.Clone(spec.Directives)
+		spec.Directives = append(spec.Directives, other.Directives...)
+	}
+}
+
+type Argument struct {
+	Spec InputSpec
+}
+
+func Arg(name string) Argument {
+	return Argument{
+		Spec: InputSpec{
+			Name: name,
+		},
+	}
+}
+
+func (arg Argument) Doc(paras ...string) Argument {
+	arg.Spec.Description = FormatDescription(paras...)
+	return arg
+}
+
+func (arg Argument) Sensitive() Argument {
+	arg.Spec.Sensitive = true
+	return arg
+}
+
+func (arg Argument) Deprecated(paras ...string) Argument {
+	if len(paras) == 0 && arg.Spec.Description != "" {
+		arg.Spec.DeprecatedReason = arg.Spec.Description
+		arg.Spec.Description = deprecationDescription(arg.Spec.Description)
+		return arg
+	}
+	arg.Spec.DeprecatedReason = FormatDescription(paras...)
+	return arg
+}
+
+func (arg Argument) Experimental(paras ...string) Argument {
+	if len(paras) == 0 && arg.Spec.Description != "" {
+		arg.Spec.ExperimentalReason = arg.Spec.Description
+		arg.Spec.Description = experimentalDescription(arg.Spec.Description)
+		return arg
+	}
+	arg.Spec.ExperimentalReason = FormatDescription(paras...)
+	return arg
+}
+
 type InputSpecs []InputSpec
 
 func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
@@ -1060,83 +1128,26 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 	return field
 }
 
-func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	for i, arg := range field.Spec.Args {
-		if arg.Name == name {
-			field.Spec.Args[i].Description = FormatDescription(paras...)
-			return field
-		}
-	}
-	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
-}
-
-func (field Field[T]) ArgSensitive(name string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	for i, arg := range field.Spec.Args {
-		if arg.Name == name {
-			field.Spec.Args[i].Sensitive = true
-			return field
-		}
-	}
-	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
-}
-
-func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	for i, arg := range field.Spec.Args {
-		if arg.Name == name {
-			reason := FormatDescription(paras...)
-			field.Spec.Args[i].DeprecatedReason = reason
-			if field.Spec.Args[i].Description == "" {
-				field.Spec.Args[i].Description = deprecationDescription(reason)
-			}
-			return field
-		}
-	}
-	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
-}
-
-func (field Field[T]) ArgExperimental(name string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	for i, arg := range field.Spec.Args {
-		if arg.Name == name {
-			reason := FormatDescription(paras...)
-			field.Spec.Args[i].ExperimentalReason = reason
-			if field.Spec.Args[i].Description == "" {
-				field.Spec.Args[i].Description = experimentalDescription(reason)
-			}
-			return field
-		}
-	}
-	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
-}
-
-func (field Field[T]) ArgRemove(name string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-
-	args := make(InputSpecs, 0, len(field.Spec.Args)-1)
+func (field Field[T]) Args(args ...Argument) Field[T] {
+	original := make(map[string]InputSpec, len(field.Spec.Args))
 	for _, arg := range field.Spec.Args {
-		if arg.Name == name {
-			continue
+		if arg.Name == "" {
+			panic("argument name cannot be empty")
 		}
-		args = append(args, arg)
-	}
-	if len(args) == len(field.Spec.Args) {
-		panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+		original[arg.Name] = arg
 	}
 
-	field.Spec.Args = args
+	newArgs := make([]InputSpec, 0, len(args))
+	for _, patch := range args {
+		arg, ok := original[patch.Spec.Name]
+		if !ok {
+			panic(fmt.Sprintf("argument %q not found", patch.Spec.Name))
+		}
+		arg.merge(&patch.Spec)
+		newArgs = append(newArgs, arg)
+	}
+	field.Spec.Args = newArgs
+
 	return field
 }
 

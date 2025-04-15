@@ -1387,8 +1387,8 @@ class Container(Type):
     async def up(
         self,
         *,
-        ports: list[PortForward] | None = None,
         random: bool | None = False,
+        ports: list[PortForward] | None = None,
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
@@ -1403,12 +1403,12 @@ class Container(Type):
 
         Parameters
         ----------
+        random:
+            Bind each tunnel port to a random port on the host.
         ports:
             List of frontend/backend port mappings to forward.
             Frontend is the port accepting traffic on the host, backend is the
             service port.
-        random:
-            Bind each tunnel port to a random port on the host.
         args:
             Command to run instead of the container's default command (e.g.,
             ["go", "run", "main.go"]).
@@ -1447,8 +1447,8 @@ class Container(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("args", () if args is None else args, ()),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
@@ -2749,10 +2749,10 @@ class Directory(Type):
     def docker_build(
         self,
         *,
-        platform: Platform | None = None,
         dockerfile: str | None = "Dockerfile",
-        target: str | None = "",
+        platform: Platform | None = None,
         build_args: list[BuildArg] | None = None,
+        target: str | None = "",
         secrets: "list[Secret] | None" = None,
         no_init: bool | None = False,
     ) -> Container:
@@ -2763,14 +2763,14 @@ class Directory(Type):
 
         Parameters
         ----------
-        platform:
-            The platform to build.
         dockerfile:
             Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-        target:
-            Target build stage to build.
+        platform:
+            The platform to build.
         build_args:
             Build arguments to use in the build.
+        target:
+            Target build stage to build.
         secrets:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name].
@@ -2782,10 +2782,10 @@ class Directory(Type):
             result in unexpected behavior.
         """
         _args = [
-            Arg("platform", platform, None),
             Arg("dockerfile", dockerfile, "Dockerfile"),
-            Arg("target", target, ""),
+            Arg("platform", platform, None),
             Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("target", target, ""),
             Arg("secrets", () if secrets is None else secrets, ()),
             Arg("noInit", no_init, False),
         ]
@@ -2991,16 +2991,18 @@ class Directory(Type):
     def terminal(
         self,
         *,
+        container: Container | None = None,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
-        container: Container | None = None,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
         mounted inside.
 
         Parameters
         ----------
+        container:
+            If set, override the default container used for the terminal.
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
@@ -3012,16 +3014,14 @@ class Directory(Type):
             --privileged" flag. Containerization does not provide any security
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
-        container:
-            If set, override the default container used for the terminal.
         """
         _args = [
+            Arg("container", container, None),
             Arg("cmd", () if cmd is None else cmd, ()),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-            Arg("container", container, None),
         ]
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
@@ -5136,6 +5136,7 @@ class Function(Type):
         ignore:
             Patterns to ignore when loading the contextual argument value.
         source_map:
+            The source map for the argument definition.
         """
         _args = [
             Arg("name", name),
@@ -6061,8 +6062,8 @@ class Host(Type):
         self,
         service: "Service",
         *,
-        ports: list[PortForward] | None = None,
         native: bool | None = False,
+        ports: list[PortForward] | None = None,
     ) -> "Service":
         """Creates a tunnel that forwards traffic from the host to a service.
 
@@ -6070,6 +6071,10 @@ class Host(Type):
         ----------
         service:
             Service to send traffic from the tunnel.
+        native:
+            Map each service port to the same port on the host, as if the
+            service were running natively.
+            Note: enabling may result in port conflicts.
         ports:
             Configure explicit port forwarding rules for the tunnel.
             If a port's frontend is unspecified or 0, a random port will be
@@ -6079,15 +6084,11 @@ class Host(Type):
             native is false, each port maps to a random port chosen by the
             host.
             If ports are given and native is true, the ports are additive.
-        native:
-            Map each service port to the same port on the host, as if the
-            service were running natively.
-            Note: enabling may result in port conflicts.
         """
         _args = [
             Arg("service", service),
-            Arg("ports", () if ports is None else ports, ()),
             Arg("native", native, False),
+            Arg("ports", () if ports is None else ports, ()),
         ]
         _ctx = self._select("tunnel", _args)
         return Service(_ctx)
@@ -8103,11 +8104,11 @@ class Client(Root):
         url: str,
         *,
         keep_git_dir: bool | None = True,
-        experimental_service_host: "Service | None" = None,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
         http_auth_token: "Secret | None" = None,
         http_auth_header: "Secret | None" = None,
+        experimental_service_host: "Service | None" = None,
     ) -> GitRepository:
         """Queries a Git repository.
 
@@ -8120,8 +8121,6 @@ class Client(Root):
             Suffix ".git" is optional.
         keep_git_dir:
             DEPRECATED: Set to true to keep .git directory.
-        experimental_service_host:
-            A service which must be started before the repo is fetched.
         ssh_known_hosts:
             Set SSH known hosts
         ssh_auth_socket:
@@ -8131,15 +8130,17 @@ class Client(Root):
             Authorization
         http_auth_header:
             Secret used to populate the Authorization HTTP header
+        experimental_service_host:
+            A service which must be started before the repo is fetched.
         """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, True),
-            Arg("experimentalServiceHost", experimental_service_host, None),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),
             Arg("httpAuthToken", http_auth_token, None),
             Arg("httpAuthHeader", http_auth_header, None),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
