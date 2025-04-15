@@ -40,6 +40,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 var (
@@ -186,6 +187,10 @@ var rootCmd = &cobra.Command{
 
 		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
 
+		if err := checkCloudToken(cmd.Context(), cmd.OutOrStdout()); err != nil {
+			return err
+		}
+
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
 			"name": commandName(cmd),
 		})
@@ -255,6 +260,15 @@ func checkForUpdates(ctx context.Context, w io.Writer) {
 			cancel()
 		}
 	})
+}
+
+// checkCloudTokens triggers the Login flow if an invalid credentials file is detected.
+func checkCloudToken(ctx context.Context, w io.Writer) error {
+	_, err := auth.Token(ctx)
+	if v, ok := err.(*os.PathError); ok && v.Err == os.ErrNotExist {
+		return auth.Login(ctx, w)
+	}
+	return nil
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
