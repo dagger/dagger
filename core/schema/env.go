@@ -17,9 +17,11 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
+			Doc(`Initialize a new environment`).
 			Experimental("Environments are not yet stabilized").
-			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
-			Doc(`Initialize a new environment`),
+			Args(
+				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
+			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
@@ -31,9 +33,12 @@ func (s environmentSchema) Install() {
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
 		dagql.Func("withStringInput", s.withStringInput).
-			ArgDoc("name", "The name of the binding").
-			ArgDoc("value", "The string value to assign to the binding").
-			Doc("Create or update an input value of type string"),
+			Doc("Create or update an input value of type string").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("value").Doc("The string value to assign to the binding"),
+				dagql.Arg("description").Doc("An optional description of the binding"),
+			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).

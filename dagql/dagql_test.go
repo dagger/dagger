@@ -753,7 +753,9 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 			Password string
 		}) (*points.Point, error) {
 			return self, nil
-		}).ArgSensitive("password"),
+		}).Args(
+			dagql.Arg("password").Sensitive(),
+		),
 	}.Install(srv)
 
 	var res struct {
@@ -1718,7 +1720,9 @@ func TestIntrospection(t *testing.T) {
 			DocumentedArg string
 		}) (string, error) {
 			return args.DocumentedArg, nil
-		}).ArgDoc("documentedArg", "a really cool argument"),
+		}).Args(
+			dagql.Arg("documentedArg").Doc("a really cool argument"),
+		),
 
 		dagql.Func("deprecatedField", func(ctx context.Context, self Query, args struct {
 			Foo string
@@ -1736,7 +1740,9 @@ func TestIntrospection(t *testing.T) {
 			DeprecatedArg string
 		}) (string, error) {
 			return args.DeprecatedArg, nil
-		}).ArgDeprecated("deprecatedArg", "because I said so"),
+		}).Args(
+			dagql.Arg("deprecatedArg").Doc("because I said so").Deprecated(),
+		),
 
 		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return time.Now().String(), nil

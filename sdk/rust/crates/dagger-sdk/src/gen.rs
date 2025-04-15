@@ -2722,11 +2722,11 @@ impl Container {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("up");
-        if let Some(ports) = opts.ports {
-            query = query.arg("ports", ports);
-        }
         if let Some(random) = opts.random {
             query = query.arg("random", random);
+        }
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
         }
         if let Some(args) = opts.args {
             query = query.arg("args", args);
@@ -4495,17 +4495,17 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build_opts<'a>(&self, opts: DirectoryDockerBuildOpts<'a>) -> Container {
         let mut query = self.selection.select("dockerBuild");
-        if let Some(platform) = opts.platform {
-            query = query.arg("platform", platform);
-        }
         if let Some(dockerfile) = opts.dockerfile {
             query = query.arg("dockerfile", dockerfile);
         }
-        if let Some(target) = opts.target {
-            query = query.arg("target", target);
+        if let Some(platform) = opts.platform {
+            query = query.arg("platform", platform);
         }
         if let Some(build_args) = opts.build_args {
             query = query.arg("buildArgs", build_args);
+        }
+        if let Some(target) = opts.target {
+            query = query.arg("target", target);
         }
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
@@ -4663,6 +4663,9 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal_opts<'a>(&self, opts: DirectoryTerminalOpts<'a>) -> Directory {
         let mut query = self.selection.select("terminal");
+        if let Some(container) = opts.container {
+            query = query.arg("container", container);
+        }
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
         }
@@ -4674,9 +4677,6 @@ impl Directory {
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
-        }
-        if let Some(container) = opts.container {
-            query = query.arg("container", container);
         }
         Directory {
             proc: self.proc.clone(),
@@ -5953,6 +5953,7 @@ impl Env {
     ///
     /// * `name` - The name of the binding
     /// * `value` - The string value to assign to the binding
+    /// * `description` - An optional description of the binding
     pub fn with_string_input(
         &self,
         name: impl Into<String>,
@@ -6245,6 +6246,7 @@ pub struct FunctionWithArgOpts<'a> {
     /// Patterns to ignore when loading the contextual argument value.
     #[builder(setter(into, strip_option), default)]
     pub ignore: Option<Vec<&'a str>>,
+    /// The source map for the argument definition.
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<SourceMapId>,
 }
@@ -6981,11 +6983,11 @@ impl Host {
                 Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
-        if let Some(ports) = opts.ports {
-            query = query.arg("ports", ports);
-        }
         if let Some(native) = opts.native {
             query = query.arg("native", native);
+        }
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
         }
         Service {
             proc: self.proc.clone(),
@@ -8283,14 +8285,14 @@ impl Query {
         if let Some(keep_git_dir) = opts.keep_git_dir {
             query = query.arg("keepGitDir", keep_git_dir);
         }
-        if let Some(experimental_service_host) = opts.experimental_service_host {
-            query = query.arg("experimentalServiceHost", experimental_service_host);
-        }
         if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
             query = query.arg("sshKnownHosts", ssh_known_hosts);
         }
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        if let Some(experimental_service_host) = opts.experimental_service_host {
+            query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         GitRepository {
             proc: self.proc.clone(),

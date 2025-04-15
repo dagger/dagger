@@ -181,9 +181,9 @@ defmodule Dagger.Client do
   @doc "Queries a Git repository."
   @spec git(t(), String.t(), [
           {:keep_git_dir, boolean() | nil},
-          {:experimental_service_host, Dagger.ServiceID.t() | nil},
           {:ssh_known_hosts, String.t() | nil},
-          {:ssh_auth_socket, Dagger.SocketID.t() | nil}
+          {:ssh_auth_socket, Dagger.SocketID.t() | nil},
+          {:experimental_service_host, Dagger.ServiceID.t() | nil}
         ]) :: Dagger.GitRepository.t()
   def git(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
@@ -191,9 +191,9 @@ defmodule Dagger.Client do
       |> QB.select("git")
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("keepGitDir", optional_args[:keep_git_dir])
-      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
       |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
     %Dagger.GitRepository{
       query_builder: query_builder,

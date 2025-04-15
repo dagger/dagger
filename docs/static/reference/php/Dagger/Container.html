@@ -426,7 +426,7 @@
                     void
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_up">up</a>(array|null $ports = null, bool|null $random = false, array|null $args = null, bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+                    <a href="#method_up">up</a>(bool|null $random = false, array|null $ports = null, array|null $args = null, bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         
                                             <p><p>Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -2088,7 +2088,7 @@
                     <h3 id="method_up">
         <div class="location">at line 419</div>
         <code>                    void
-    <strong>up</strong>(array|null $ports = null, bool|null $random = false, array|null $args = null, bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
+    <strong>up</strong>(bool|null $random = false, array|null $ports = null, array|null $args = null, bool|null $useEntrypoint = false, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -2103,13 +2103,13 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td>array|null</td>
-                <td>$ports</td>
+                <td>bool|null</td>
+                <td>$random</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>bool|null</td>
-                <td>$random</td>
+                <td>array|null</td>
+                <td>$ports</td>
                 <td></td>
             </tr>
                     <tr>
