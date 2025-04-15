@@ -3840,22 +3840,7 @@ class Env(Type):
         """return all input values for the environment"""
         _args: list[Arg] = []
         _ctx = self._select("inputs", _args)
-        _ctx = Binding(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: BindingID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Binding(
-                Client.from_context(_ctx)._select(
-                    "loadBindingFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Binding)
 
     def output(self, name: str) -> Binding:
         """retrieve an output value by name"""
@@ -3869,22 +3854,7 @@ class Env(Type):
         """return all output values for the environment"""
         _args: list[Arg] = []
         _ctx = self._select("outputs", _args)
-        _ctx = Binding(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: BindingID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Binding(
-                Client.from_context(_ctx)._select(
-                    "loadBindingFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Binding)
 
     def with_cache_volume_input(
         self,
@@ -4650,22 +4620,7 @@ class Error(Type):
         """The extensions of the error."""
         _args: list[Arg] = []
         _ctx = self._select("values", _args)
-        _ctx = ErrorValue(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ErrorValueID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            ErrorValue(
-                Client.from_context(_ctx)._select(
-                    "loadErrorValueFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(ErrorValue)
 
     def with_value(self, name: str, value: JSON) -> Self:
         """Add a value to the error.
@@ -6443,11 +6398,7 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        _id = await _ctx.execute(LLMID)
-        _ctx = Client.from_context(_ctx)._select("loadLLMFromID", [Arg("id", _id)])
-        return LLM(_ctx)
+        return await self._ctx.execute_sync(self)
 
     def __await__(self):
         return self.sync().__await__()
@@ -7125,22 +7076,7 @@ class ModuleSource(Type):
         """The clients generated for the module."""
         _args: list[Arg] = []
         _ctx = self._select("configClients", _args)
-        _ctx = ModuleConfigClient(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ModuleConfigClientID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            ModuleConfigClient(
-                Client.from_context(_ctx)._select(
-                    "loadModuleConfigClientFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(ModuleConfigClient)
 
     async def config_exists(self) -> bool:
         """Whether an existing dagger.json for the module was found.
