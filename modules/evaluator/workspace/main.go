@@ -25,7 +25,7 @@ type Workspace struct {
 }
 
 var knownModels = []string{
-	"gpt-4o",
+	"gpt-4.1",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
 	// "claude-3-5-haiku-latest",
