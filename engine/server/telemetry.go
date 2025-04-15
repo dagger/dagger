@@ -444,7 +444,7 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	tx, err := ps.client.db.Begin()
 	if err != nil {
-		return fmt.Errorf("export logs %+v: begin tx: %w", logs, err)
+		return fmt.Errorf("export logs (%d records): begin tx: %w", len(logs), err)
 	}
 	defer tx.Rollback()
 
