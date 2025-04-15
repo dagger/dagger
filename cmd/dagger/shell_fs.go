@@ -112,16 +112,24 @@ func (h *shellCallHandler) contextRoot() string {
 	return h.wd.Context.ModRef("/")
 }
 
-func (h *shellCallHandler) contextModRef(path string) string {
+func (h *shellCallHandler) contextModRef(path string) (string, error) {
+	apath, err := h.contextAbsPath(path)
+	if err != nil {
+		return apath, err
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.wd.Context.ModRef(path)
+	return h.wd.Context.ModRef(apath), nil
 }
 
-func (h *shellCallHandler) contextArgRef(path string) string {
+func (h *shellCallHandler) contextArgRef(path string) (string, error) {
+	apath, err := h.contextAbsPath(path)
+	if err != nil {
+		return apath, err
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.wd.Context.ArgRef(path)
+	return h.wd.Context.ArgRef(apath), nil
 }
 
 // moduleContext is an in-memory representation of a ModuleSource, used to produce paths quickly
@@ -603,7 +611,7 @@ func (h *shellCallHandler) workdirPath() string {
 // If the target module is on a different source/context, the absolute ref
 // is returned instead.
 func (h *shellCallHandler) modRelPath(def *moduleDef) string {
-	if h.contextModRef(def.SourceRootSubpath) == def.SourceRoot {
+	if srcRoot, _ := h.contextModRef(def.SourceRootSubpath); srcRoot == def.SourceRoot {
 		// use relative path if it's shorter
 		path, err := filepath.Rel(h.workdirAbsPath(), def.SourceRootSubpath)
 		if err == nil {

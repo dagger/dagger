@@ -763,6 +763,48 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ShellSuite) TestDirectoryFlag(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		initial  string
+		path     string
+		expected string
+	}{
+		{
+			initial:  ".",
+			path:     "sub/a",
+			expected: "foo\n",
+		},
+		{
+			initial:  "sub/a",
+			path:     ".",
+			expected: "foo\n",
+		},
+		{
+			initial:  "sub/a",
+			path:     "../b",
+			expected: "bar\n",
+		},
+		{
+			initial:  "sub/a",
+			path:     "../../ab",
+			expected: "foobar\n",
+		},
+	} {
+		t.Run(tc.initial+" - "+tc.path, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			out, err := goGitBase(t, c).
+				WithNewFile("sub/a/foo", "foo").
+				WithNewFile("sub/b/bar", "bar").
+				WithNewFile("ab/foobar", "foobar").
+				WithWorkdir(tc.initial).
+				With(daggerShell(fmt.Sprintf("directory | with-directory / %s | entries", tc.path))).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, out)
+		})
+	}
+}
+
 func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	script := fmt.Sprintf("directory | with-directory / $(container | from %s | directory /etc) --include=passwd,shadow | entries", alpineImage)
