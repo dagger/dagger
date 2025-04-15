@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,12 +26,12 @@ type Workspace struct {
 }
 
 var knownModels = []string{
+	"gpt-4o",
 	"gpt-4.1",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
-	// "claude-3-5-haiku-latest",
 	"claude-3-5-sonnet-latest",
-	"claude-3-7-sonnet-latest",
+	// "claude-3-7-sonnet-latest",
 }
 
 type EvalFunc = func(*dagger.Evals) *dagger.EvalsReport
@@ -113,6 +114,8 @@ type AttemptsReport struct {
 	Report        string
 	SuccessRate   float64
 	TotalAttempts int
+	InputTokens   int
+	OutputTokens  int
 }
 
 // Run an evaluation and return its report.
@@ -142,14 +145,14 @@ func (w *Workspace) Evaluate(
 	}
 
 	reports := make([]string, attempts)
+	var inputTokens, outputTokens int32
 	wg := new(sync.WaitGroup)
 	var successCount int
 	for attempt := range attempts {
 		wg.Add(1)
-		go func() {
+		go func() (rerr error) {
 			defer wg.Done()
 
-			var rerr error
 			ctx, span := Tracer().Start(ctx,
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
 				telemetry.Reveal())
@@ -161,8 +164,7 @@ func (w *Workspace) Evaluate(
 
 			succeeded, err := eval.Succeeded(ctx)
 			if err != nil {
-				rerr = err
-				return
+				return err
 			}
 			if succeeded {
 				successCount++
@@ -172,8 +174,7 @@ func (w *Workspace) Evaluate(
 
 			evalReport, err := eval.Report(ctx)
 			if err != nil {
-				rerr = err
-				return
+				return err
 			}
 
 			report := new(strings.Builder)
@@ -185,8 +186,7 @@ func (w *Workspace) Evaluate(
 			// Write report to OTel too
 			toolsDoc, err := eval.ToolsDoc(ctx)
 			if err != nil {
-				rerr = err
-				return
+				return err
 			}
 			// Only print this to OTel, it's too expensive to process with an LLM in the report
 			fmt.Fprintln(stdio.Stdout, "## Tools")
@@ -194,6 +194,20 @@ func (w *Workspace) Evaluate(
 			fmt.Fprintln(stdio.Stdout, toolsDoc)
 			fmt.Fprintln(stdio.Stdout)
 			fmt.Fprint(stdio.Stdout, report.String())
+
+			i, err := eval.InputTokens(ctx)
+			if err != nil {
+				return err
+			}
+
+			o, err := eval.OutputTokens(ctx)
+			if err != nil {
+				return err
+			}
+
+			atomic.AddInt32(&inputTokens, int32(i))
+			atomic.AddInt32(&outputTokens, int32(o))
+			return nil
 		}()
 	}
 
@@ -217,6 +231,8 @@ func (w *Workspace) Evaluate(
 		Report:        finalReport.String(),
 		SuccessRate:   successRate,
 		TotalAttempts: attempts,
+		InputTokens:   int(atomic.LoadInt32(&inputTokens)),
+		OutputTokens:  int(atomic.LoadInt32(&outputTokens)),
 	}, nil
 }
 
