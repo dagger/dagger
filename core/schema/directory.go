@@ -136,10 +136,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("container", `If set, override the default container used for the terminal.`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-			FILESYSTEM.`).
+				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the

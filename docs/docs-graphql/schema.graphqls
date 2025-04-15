@@ -122,12 +122,7 @@ type Container {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -473,12 +468,7 @@ type Container {
     """
     cmd: [String!] = []
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -517,12 +507,7 @@ type Container {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -577,12 +562,7 @@ type Container {
     """The args of the command."""
     args: [String!]!
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -1432,12 +1412,7 @@ type Directory {
     """
     cmd: [String!] = []
 
-    """
-    Provides Dagger access to the executed command.
-    
-    Do not use this option unless you trust the command being executed; the
-    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
+    """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
