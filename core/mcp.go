@@ -693,11 +693,11 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 		// no outputs desired
 		return LLMTool{}, false
 	}
+
 	props := map[string]any{}
 	required := []string{}
 
-	desc := "Save your work, making the requested outputs available to the user.\n\n"
-	desc += "Your task is to return the following outputs:\n"
+	desc := "Save your work, making the requested outputs available to the user:\n"
 
 	var outputs []string
 	var anyUnavailable bool
@@ -721,7 +721,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			desc = fmt.Sprintf("%s ID. %s", typeName, b.Description)
 			enum := m.allIDs(typeName)
 			if len(enum) == 0 {
-				desc += " (UNAVAILABLE)"
+				desc += " (TODO)"
 				anyUnavailable = true
 			} else {
 				argSchema["enum"] = enum
@@ -740,7 +740,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 
 	if anyUnavailable {
-		desc += "\n\nWARNING: Some outputs are unavailable. Your task is not complete."
+		desc += "\n\nWARNING: you still have some outputs to create - don't call this yet! (See TODOs.)"
 	}
 
 	return LLMTool{
