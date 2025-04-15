@@ -200,6 +200,7 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 		case "Query":
 			switch field.Name {
 			case
+				"currentFunctionCall",
 				"currentModule",
 				"currentTypeDefs",
 				"defaultPlatform",
