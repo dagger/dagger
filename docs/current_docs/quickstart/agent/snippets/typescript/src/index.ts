@@ -15,8 +15,15 @@ export class CodingAgent {
     const environment = dag
       .env()
       .withStringInput("assignment", assignment, "the assignment to complete")
-      .withContainerInput("builder", dag.container().from("golang").withWorkdir("/app"), "a container to use for building go code")
-      .withContainerOutput("completed", "the completed assignment in the golang container")
+      .withContainerInput(
+        "builder",
+        dag.container().from("golang").withWorkdir("/app"),
+        "a container to use for building go code",
+      )
+      .withContainerOutput(
+        "completed",
+        "the completed assignment in the golang container",
+      )
 
     const work = dag
       .llm()
@@ -29,9 +36,6 @@ export class CodingAgent {
         Your assignment is: $assignment`,
       )
 
-    return work
-      .env()
-      .output("completed")
-      .asContainer()
+    return work.env().output("completed").asContainer()
   }
 }
