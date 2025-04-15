@@ -212,10 +212,10 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
-		has_dist := d.HasFile("dist")
+		hasDist := d.HasFile("dist")
 		d.mu.Unlock()
 
-		if has_dist {
+		if hasDist {
 			entries, _ = m.Source().Directory("dist").Entries(ctx)
 			d.mu.Lock()
 			for _, entry := range entries {
