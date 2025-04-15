@@ -385,7 +385,15 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
-		m.AddFile(UserGenPath, genFile)
+		genPath := UserGenPath
+
+		// For now, patch vendored client library with generated bindings.
+		// TODO: Always generate outside library, even if vendored.
+		if m.VendorPath != "" {
+			genPath = path.Join(m.VendorPath, SDKGenPath)
+		}
+
+		m.AddFile(genPath, genFile)
 	}
 
 	return m
