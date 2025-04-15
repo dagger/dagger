@@ -1,6 +1,5 @@
 import dagger
 from dagger import dag, function, object_type
-from pylsp.plugins.signature import GOOGLE
 
 
 @object_type
