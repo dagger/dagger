@@ -383,7 +383,7 @@ func (m *MCP) selectionToToolResult(
 		// Handle object returns.
 		//
 		var val dagql.Typed
-		if sync, ok := retObjType.FieldSpec("sync"); ok {
+		if sync, ok := retObjType.FieldSpec("sync", srv.View); ok {
 			syncSel := dagql.Selector{
 				Field: sync.Name,
 			}
