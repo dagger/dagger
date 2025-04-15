@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/gofrs/flock"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
@@ -125,10 +127,24 @@ func saveToken(token *oauth2.Token) error {
 		return err
 	}
 
-	if err := os.WriteFile(credentialsFile, data, 0o600); err != nil {
-		return err
+	return writeFile(credentialsFile, data, 0o600)
+}
+
+// writeFile writes data to the named file with locking to prevent race conditions
+func writeFile(filename string, data []byte, perm os.FileMode) error {
+	fileLock := flock.New(filename + ".lock")
+
+	locked, err := fileLock.TryLockContext(context.Background(), 3*time.Second)
+	if err != nil {
+		return fmt.Errorf("could not acquire lock on %s: %w", filename, err)
 	}
-	return nil
+	if !locked {
+		return fmt.Errorf("could not acquire lock on %s: timed out", filename)
+	}
+
+	defer fileLock.Unlock()
+
+	return os.WriteFile(filename, data, perm)
 }
 
 type Org struct {
@@ -158,8 +174,5 @@ func SetCurrentOrg(org *Org) error {
 		return err
 	}
 
-	if err := os.WriteFile(orgFile, data, 0o600); err != nil {
-		return err
-	}
-	return nil
+	return writeFile(orgFile, data, 0o600)
 }
