@@ -544,7 +544,7 @@ func (m *MCP) toolCallToSelection(
 		Field: fieldDef.Name,
 	}
 	targetObjType := target.ObjectType()
-	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
+	field, ok := targetObjType.FieldSpec(fieldDef.Name, dagql.View(engine.Version))
 	if !ok {
 		return sel, fmt.Errorf("field %q not found in object type %q",
 			fieldDef.Name,

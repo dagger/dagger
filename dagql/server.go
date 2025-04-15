@@ -51,7 +51,7 @@ type Server struct {
 	installHooks []InstallHook
 
 	// View is the view that is applied to all queries on this server
-	View string
+	View View
 
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
@@ -965,7 +965,7 @@ type Selector struct {
 	Field string
 	Args  []NamedInput
 	Nth   int
-	View  string
+	View  View
 }
 
 func (sel Selector) String() string {

@@ -2331,7 +2331,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 			// uses the correct schema version
 			dag := *coreMod.Dag
 
-			dag.View = engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion))
+			dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}

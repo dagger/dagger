@@ -83,13 +83,13 @@ func (class Class[T]) IDType() (IDType, bool) {
 	}
 }
 
-func (class Class[T]) Field(name string, view string) (Field[T], bool) {
+func (class Class[T]) Field(name string, view View) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	return class.fieldLocked(name, view)
 }
 
-func (class Class[T]) FieldSpec(name string, view string) (FieldSpec, bool) {
+func (class Class[T]) FieldSpec(name string, view View) (FieldSpec, bool) {
 	field, ok := class.Field(name, view)
 	if !ok {
 		return FieldSpec{}, false
@@ -97,7 +97,7 @@ func (class Class[T]) FieldSpec(name string, view string) (FieldSpec, bool) {
 	return field.Spec, true
 }
 
-func (class Class[T]) fieldLocked(name string, view string) (Field[T], bool) {
+func (class Class[T]) fieldLocked(name string, view View) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
 		return Field[T]{}, false
@@ -169,7 +169,7 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition(view string) *ast.Definition {
+func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	var val any = cls.inner
@@ -198,7 +198,7 @@ func (cls Class[T]) TypeDefinition(view string) *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := cls.Field(astField.Name, view)
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
@@ -254,7 +254,7 @@ func (cls Class[T]) Call(
 	ctx context.Context,
 	node Instance[T],
 	fieldName string,
-	view string,
+	view View,
 	args map[string]Input,
 ) (*CacheValWithCallbacks, error) {
 	field, ok := cls.Field(fieldName, view)
@@ -429,7 +429,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 	newID := r.Constructor.Append(
 		astType,
 		sel.Field,
-		view,
+		string(view),
 		field.Spec.Module,
 		sel.Nth,
 		"",
@@ -471,7 +471,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 			newID = r.Constructor.Append(
 				astType,
 				sel.Field,
-				view,
+				string(view),
 				field.Spec.Module,
 				sel.Nth,
 				"",
@@ -490,7 +490,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 // Call calls the field on the instance specified by the ID.
 func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed, *call.ID, error) {
 	fieldName := newID.Field()
-	view := newID.View()
+	view := View(newID.View())
 	field, ok := r.Class.Field(fieldName, view)
 	if !ok {
 		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
@@ -551,7 +551,7 @@ func (r Instance[T]) call(
 		}))
 	}
 	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
-		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), View(newID.View()), inputArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -625,7 +625,7 @@ func (r Instance[T]) call(
 }
 
 func (r Instance[T]) returnType(newID *call.ID) (Typed, error) {
-	field, ok := r.Class.Field(newID.Field(), newID.View())
+	field, ok := r.Class.Field(newID.Field(), View(newID.View()))
 	if !ok {
 		return nil, fmt.Errorf("ReturnType: %s has no such field: %q", r.Class.inner.Type().Name(), newID.Field())
 	}
@@ -680,13 +680,15 @@ func (p PostCallTyped) Unwrap() Typed {
 	return p.Typed
 }
 
-type View interface {
-	Contains(string) bool
+type View string
+
+type ViewFilter interface {
+	Contains(View) bool
 }
 
 // GlobalView is the default global view. Everyone can see it, and it behaves
 // identically everywhere.
-var GlobalView View = nil
+var GlobalView ViewFilter = nil
 
 // AllView is similar to the global view, however, instead of being an empty
 // view, it's still counted as a view.
@@ -696,15 +698,15 @@ var GlobalView View = nil
 // be overridden in different views.
 type AllView struct{}
 
-func (v AllView) Contains(s string) bool {
+func (AllView) Contains(view View) bool {
 	return true
 }
 
 // ExactView contains exactly one view.
 type ExactView string
 
-func (v ExactView) Contains(s string) bool {
-	return s == string(v)
+func (exact ExactView) Contains(view View) bool {
+	return string(exact) == string(view)
 }
 
 type (
@@ -950,7 +952,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	TypeDefinition(view string) *ast.Definition
+	TypeDefinition(view View) *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -1020,7 +1022,7 @@ type Field[T Typed] struct {
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
-	ViewFilter View
+	ViewFilter ViewFilter
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -1034,7 +1036,7 @@ func (field Field[T]) Sensitive() Field[T] {
 }
 
 // View sets a view for this field.
-func (field Field[T]) View(view View) Field[T] {
+func (field Field[T]) View(view ViewFilter) Field[T] {
 	field.ViewFilter = view
 	return field
 }
@@ -1173,7 +1175,7 @@ func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	return field.Spec.FieldDefinition()
 }
 
-func definition(kind ast.DefinitionKind, val Type, view string) *ast.Definition {
+func definition(kind ast.DefinitionKind, val Type, view View) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.TypeDefinition(view)

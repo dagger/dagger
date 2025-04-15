@@ -254,7 +254,7 @@ func (obj *ModuleObject) TypeDescription() string {
 	return formatGqlDescription(obj.TypeDef.Description)
 }
 
-func (obj *ModuleObject) TypeDefinition(views string) *ast.Definition {
+func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
