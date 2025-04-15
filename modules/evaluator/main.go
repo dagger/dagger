@@ -5,6 +5,7 @@ import (
 	"dagger/botsbuildingbots/internal/dagger"
 	"dagger/botsbuildingbots/internal/telemetry"
 	_ "embed"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"strings"
@@ -92,6 +93,28 @@ func (result *ModelResult) Check() error {
 
 type EvalsAcrossModels struct {
 	ModelResults []ModelResult
+}
+
+func (result *EvalsAcrossModels) CSV() (string, error) {
+	buf := new(strings.Builder)
+	csv := csv.NewWriter(buf)
+	csv.Write([]string{"model", "eval", "success_rate", "total_attempts"})
+	var errs error
+	for _, result := range result.ModelResults {
+		for _, eval := range result.EvalReports {
+			csv.Write([]string{
+				result.ModelName,
+				eval.Name,
+				fmt.Sprintf("%0.2f", eval.SuccessRate),
+				fmt.Sprintf("%d", eval.TotalAttempts),
+			})
+		}
+	}
+	csv.Flush()
+	if err := csv.Error(); err != nil {
+		return "", err
+	}
+	return buf.String(), errs
 }
 
 func (result *EvalsAcrossModels) Check() error {
