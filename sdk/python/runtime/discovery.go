@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
-	"slices"
 	"strings"
 	"sync"
 
@@ -67,14 +66,14 @@ type Discovery struct {
 	// Images is a map of container image names to their addresses.
 	Images map[string]*Image
 
+	// DefaultUvImage is the default image address for uv.
+	DefaultUvImage *Image
+
 	// FileSet is a set of file names from an initial Entries() call for quick lookups.
 	FileSet map[string]struct{}
 
 	// Files is a map of file names to their contents.
 	Files map[string]string
-
-	// CodegenCommand contains the arguments to the codegen executable.
-	CodegenCommand []string
 
 	// EnableCustomConfig is a flag to enable or disable the discovery of custom
 	// configuration, either from loading pyproject.toml or reacting to the
@@ -89,10 +88,9 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	proj := PyProject{}
 	proj.Tool.Dagger = cfg
 	return &Discovery{
-		Config:         &proj,
-		FileSet:        make(map[string]struct{}),
-		Files:          make(map[string]string),
-		CodegenCommand: []string{"dist/codegen"},
+		Config:  &proj,
+		FileSet: make(map[string]struct{}),
+		Files:   make(map[string]string),
 
 		// Custom config can only be disabled by an extension module.
 		EnableCustomConfig: true,
@@ -208,12 +206,24 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 	eg.Go(func() error {
 		// m.Source() depends on SubPath
 		<-doneSubPath
+
 		entries, _ := m.Source().Entries(gctx)
 		d.mu.Lock()
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
+		has_dist := d.HasFile("dist")
 		d.mu.Unlock()
+
+		if has_dist {
+			entries, _ = m.Source().Directory("dist").Entries(ctx)
+			d.mu.Lock()
+			for _, entry := range entries {
+				d.FileSet["dist/"+entry] = struct{}{}
+			}
+			d.mu.Unlock()
+		}
+
 		return nil
 	})
 
@@ -324,23 +334,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 	}
 
-	// When not using the bundled codegen executable we can revert to executing directly
-	eg.Go(func() error {
-		dist, _ := m.SdkSourceDir.Directory("dist").Entries(ctx)
-
-		if slices.Contains(dist, "codegen") {
-			return nil
-		}
-
-		d.mu.Lock()
-		d.CodegenCommand = []string{
-			"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-			"python", "-m", "codegen",
-		}
-		d.mu.Unlock()
-		return nil
-	})
-
 	eg.Go(func() error {
 		// We'll use a glob pattern in fileSet to check for the existence of
 		// python files later. The error is normal when the target directory
@@ -364,8 +357,8 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 
 // loadConfig loads the pyproject.toml file.
 func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
-	contents, ok := d.Files["pyproject.toml"]
-	if !ok {
+	contents, exists := d.Files["pyproject.toml"]
+	if !exists {
 		// For now, always vendor when creating a new pyproject.toml file until
 		// we have a released version in PyPI that can use client bindings
 		// outside the library.
@@ -388,6 +381,7 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	if err != nil {
 		return err
 	}
+	d.DefaultUvImage = uvImage
 
 	cfg := d.UserConfig()
 

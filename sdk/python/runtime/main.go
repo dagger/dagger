@@ -127,6 +127,7 @@ type PythonSdk struct {
 	// Relative path from the context directory to the source directory
 	SubPath string
 
+	// Relative path to vendor client library in
 	VendorPath string
 
 	// True if the module is new and we need to create files from the template
@@ -250,13 +251,7 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
 		WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpython-pip-"+baseTag)).
 		// Uv
-		WithDirectory(
-			"/usr/local/bin",
-			dag.Container().From(uvAddr).Rootfs(),
-			dagger.ContainerWithDirectoryOpts{
-				Include: []string{"uv*"},
-			},
-		).
+		With(m.uvBins(uvImage)).
 		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
 		WithEnvVariable("UV_LINK_MODE", "copy").
@@ -280,6 +275,22 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 	}
 
 	return m, nil
+}
+
+func (m *PythonSdk) uvBins(uvImage *Image) dagger.WithContainerFunc {
+	bins := dag.Container().From(uvImage.String()).Rootfs()
+
+	// Default uv version and using bundled SDK files, so get the uv binaries
+	// from the engine instead of fetching from container.
+	if m.Discovery.HasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultUvImage) {
+		bins = m.SdkSourceDir.Directory("dist")
+	}
+
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithDirectory("/usr/local/bin", bins, dagger.ContainerWithDirectoryOpts{
+			Include: []string{"uv*"}, // uv and uvx
+		})
+	}
 }
 
 // Add the template files to skaffold a new module
@@ -348,17 +359,30 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	if m.VendorPath != "" {
-		m.AddDirectory(m.VendorPath, m.SdkSourceDir.WithoutDirectory("dist"))
+		src := m.SdkSourceDir
+		if m.Discovery.HasFile("dist") {
+			src = src.WithoutDirectory("dist")
+		}
+		m.AddDirectory(m.VendorPath, src)
 	}
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
+		cmd := []string{"dist/codegen"}
+
+		// When not using the bundled codegen executable we can revert to executing directly
+		if !m.Discovery.HasFile("dist/codegen") {
+			cmd = []string{
+				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+				"python", "-m", "codegen",
+			}
+		}
 		genFile := m.Container.
 			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
 			WithMountedDirectory("", m.SdkSourceDir).
 			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec(append(m.Discovery.CodegenCommand, "generate", "-i", SchemaPath, "-o", "/gen.py")).
+			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
 		m.AddFile(UserGenPath, genFile)
