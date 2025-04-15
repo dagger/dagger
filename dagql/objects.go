@@ -83,21 +83,21 @@ func (class Class[T]) IDType() (IDType, bool) {
 	}
 }
 
-func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
+func (class Class[T]) Field(name string, view string) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
-	return class.fieldLocked(name, views...)
+	return class.fieldLocked(name, view)
 }
 
-func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
-	field, ok := class.Field(name, views...)
+func (class Class[T]) FieldSpec(name string, view string) (FieldSpec, bool) {
+	field, ok := class.Field(name, view)
 	if !ok {
 		return FieldSpec{}, false
 	}
 	return field.Spec, true
 }
 
-func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
+func (class Class[T]) fieldLocked(name string, view string) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
 		return Field[T]{}, false
@@ -109,10 +109,8 @@ func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool)
 		if field.ViewFilter == nil {
 			return *field, true
 		}
-		for _, view := range views {
-			if field.ViewFilter.Contains(view) {
-				return *field, true
-			}
+		if field.ViewFilter.Contains(view) {
+			return *field, true
 		}
 	}
 	return Field[T]{}, false
@@ -171,13 +169,13 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition(views ...string) *ast.Definition {
+func (cls Class[T]) TypeDefinition(view string) *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	var val any = cls.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition(views...)
+		def = isType.TypeDefinition(view)
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
@@ -188,7 +186,7 @@ func (cls Class[T]) TypeDefinition(views ...string) *ast.Definition {
 		def.Description = isType.TypeDescription()
 	}
 	for name := range cls.fields {
-		if field, ok := cls.fieldLocked(name, views...); ok {
+		if field, ok := cls.fieldLocked(name, view); ok {
 			def.Fields = append(def.Fields, field.FieldDefinition())
 		}
 	}
@@ -952,7 +950,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	TypeDefinition(views ...string) *ast.Definition
+	TypeDefinition(view string) *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -1175,10 +1173,10 @@ func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	return field.Spec.FieldDefinition()
 }
 
-func definition(kind ast.DefinitionKind, val Type, views ...string) *ast.Definition {
+func definition(kind ast.DefinitionKind, val Type, view string) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition(views...)
+		def = isType.TypeDefinition(view)
 	} else {
 		def = &ast.Definition{
 			Kind: kind,

@@ -452,7 +452,7 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 	return iface.TypeDef.Description
 }
 
-func (iface *InterfaceAnnotatedValue) TypeDefinition(views ...string) *ast.Definition {
+func (iface *InterfaceAnnotatedValue) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: iface.Type().Name(),

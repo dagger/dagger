@@ -41,6 +41,7 @@ Expected stderr:
 │ ✔ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
 │ ┃ PONG
 │ ✔ .stdout: String! X.Xs
+│ ┃ PONG
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

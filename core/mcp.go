@@ -452,7 +452,7 @@ func (m *MCP) selectionToToolResult(
 	sels := []dagql.Selector{fieldSel}
 
 	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
-		if sync, ok := retObjType.FieldSpec("sync"); ok {
+		if sync, ok := retObjType.FieldSpec("sync", srv.View); ok {
 			// If the Object supports "sync", auto-select it.
 			//
 			syncSel := dagql.Selector{
