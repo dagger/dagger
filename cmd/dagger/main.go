@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -265,7 +266,9 @@ func checkForUpdates(ctx context.Context, w io.Writer) {
 // checkCloudTokens triggers the Login flow if an invalid credentials file is detected.
 func checkCloudToken(ctx context.Context, w io.Writer) error {
 	_, err := auth.Token(ctx)
-	if v, ok := err.(*os.PathError); ok && v.Err == os.ErrNotExist {
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		fmt.Fprint(w, "invalid credentials file, signing in...\n")
 		return auth.Login(ctx, w)
 	}
 	return nil
