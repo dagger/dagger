@@ -795,12 +795,10 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 				ToolErrored: isError,
 			})
 		}
-		// FIXME: need to bring this back but only per-turn, not for the entire
-		// session
-		// if llm.mcp.returned {
-		// 	// we returned; exit the loop, since some models just keep going
-		// 	break
-		// }
+		if llm.mcp.Returned() {
+			// we returned; exit the loop, since some models just keep going
+			break
+		}
 	}
 	return nil
 }
