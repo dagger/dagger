@@ -131,6 +131,7 @@ type SessionResponse struct {
 	// Types that are valid to be assigned to Msg:
 	//	*SessionResponse_Stdin
 	//	*SessionResponse_Resize
+	//	*SessionResponse_Ready
 	Msg isSessionResponse_Msg `protobuf_oneof:"msg"`
 }
 
@@ -179,9 +180,13 @@ type SessionResponse_Stdin struct {
 type SessionResponse_Resize struct {
 	Resize *Resize `protobuf:"bytes,2,opt,name=resize,proto3,oneof" json:"resize,omitempty"`
 }
+type SessionResponse_Ready struct {
+	Ready *Ready `protobuf:"bytes,3,opt,name=ready,proto3,oneof" json:"ready,omitempty"`
+}
 
 func (*SessionResponse_Stdin) isSessionResponse_Msg()  {}
 func (*SessionResponse_Resize) isSessionResponse_Msg() {}
+func (*SessionResponse_Ready) isSessionResponse_Msg()  {}
 
 func (m *SessionResponse) GetMsg() isSessionResponse_Msg {
 	if m != nil {
@@ -204,11 +209,19 @@ func (m *SessionResponse) GetResize() *Resize {
 	return nil
 }
 
+func (m *SessionResponse) GetReady() *Ready {
+	if x, ok := m.GetMsg().(*SessionResponse_Ready); ok {
+		return x.Ready
+	}
+	return nil
+}
+
 // XXX_OneofWrappers is for the internal use of the proto package.
 func (*SessionResponse) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
 		(*SessionResponse_Stdin)(nil),
 		(*SessionResponse_Resize)(nil),
+		(*SessionResponse_Ready)(nil),
 	}
 }
 
@@ -263,35 +276,72 @@ func (m *Resize) GetHeight() int32 {
 	return 0
 }
 
+type Ready struct {
+}
+
+func (m *Ready) Reset()      { *m = Ready{} }
+func (*Ready) ProtoMessage() {}
+func (*Ready) Descriptor() ([]byte, []int) {
+	return fileDescriptor_ff8b8260c8ef16ad, []int{3}
+}
+func (m *Ready) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Ready) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Ready.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Ready) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Ready.Merge(m, src)
+}
+func (m *Ready) XXX_Size() int {
+	return m.Size()
+}
+func (m *Ready) XXX_DiscardUnknown() {
+	xxx_messageInfo_Ready.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Ready proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterType((*SessionRequest)(nil), "SessionRequest")
 	proto.RegisterType((*SessionResponse)(nil), "SessionResponse")
 	proto.RegisterType((*Resize)(nil), "Resize")
+	proto.RegisterType((*Ready)(nil), "Ready")
 }
 
 func init() { proto.RegisterFile("terminal.proto", fileDescriptor_ff8b8260c8ef16ad) }
 
 var fileDescriptor_ff8b8260c8ef16ad = []byte{
-	// 289 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x5c, 0x90, 0xb1, 0x4a, 0x03, 0x41,
-	0x14, 0x45, 0xe7, 0x19, 0x67, 0x23, 0x4f, 0x49, 0x64, 0x08, 0x61, 0xb1, 0x78, 0xc4, 0x54, 0xa9,
-	0x96, 0x10, 0xc1, 0x4a, 0x9b, 0x54, 0xa9, 0x27, 0x82, 0x60, 0x17, 0xc9, 0x90, 0x0c, 0x98, 0xdd,
-	0x38, 0x33, 0x01, 0xb1, 0xf2, 0x13, 0xfc, 0x0c, 0x3f, 0xc5, 0x72, 0xcb, 0x94, 0xee, 0x6c, 0x63,
-	0x99, 0x4f, 0x10, 0x67, 0xd7, 0xa0, 0x96, 0x87, 0x0b, 0xf7, 0x5c, 0x2e, 0xb6, 0x9c, 0x32, 0x2b,
-	0x9d, 0xce, 0x1e, 0x92, 0xb5, 0xc9, 0x5c, 0xd6, 0x9f, 0x61, 0x6b, 0xaa, 0xac, 0xd5, 0x59, 0x2a,
-	0xd5, 0xe3, 0x46, 0x59, 0x27, 0x62, 0x8c, 0xac, 0x9b, 0x67, 0x1b, 0x17, 0x43, 0x0f, 0x06, 0x27,
-	0x13, 0x26, 0x6b, 0xae, 0x13, 0x65, 0x4c, 0x7c, 0xf0, 0x2b, 0x51, 0xc6, 0x88, 0x0e, 0x1e, 0xaa,
-	0x27, 0xed, 0xe2, 0x46, 0x0f, 0x06, 0x7c, 0xc2, 0x64, 0xa0, 0x31, 0xc7, 0xc6, 0xca, 0x2e, 0xfa,
-	0x53, 0x6c, 0xef, 0x15, 0x76, 0x9d, 0xa5, 0x56, 0x89, 0x2e, 0x72, 0xeb, 0xe6, 0x3a, 0xdd, 0x2b,
-	0x2a, 0x14, 0xe7, 0x18, 0x19, 0x65, 0xf5, 0xb3, 0x0a, 0x86, 0xe3, 0x51, 0x33, 0x91, 0x01, 0xbf,
-	0x55, 0x55, 0xf0, 0x53, 0x7a, 0x89, 0x51, 0x15, 0x89, 0x0e, 0xf2, 0x5b, 0x3d, 0x77, 0xcb, 0xd0,
-	0xc5, 0x65, 0x05, 0xa2, 0x8b, 0xd1, 0x44, 0xe9, 0xc5, 0xd2, 0x85, 0x26, 0x2e, 0x6b, 0x1a, 0x5d,
-	0xe1, 0xd1, 0x4d, 0xfd, 0x80, 0x18, 0x62, 0xb3, 0x1e, 0x26, 0xda, 0xc9, 0xdf, 0x17, 0xce, 0x4e,
-	0x93, 0x7f, 0x9b, 0x07, 0x30, 0x84, 0xf1, 0x75, 0x5e, 0x10, 0xdb, 0x16, 0xc4, 0x76, 0x05, 0xc1,
-	0x8b, 0x27, 0x78, 0xf3, 0x04, 0xef, 0x9e, 0x20, 0xf7, 0x04, 0x1f, 0x9e, 0xe0, 0xd3, 0x13, 0xdb,
-	0x79, 0x82, 0xd7, 0x92, 0x58, 0x5e, 0x12, 0xdb, 0x96, 0xc4, 0xee, 0x9a, 0xb6, 0xaa, 0xba, 0x8f,
-	0xc2, 0xe7, 0x17, 0x5f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x87, 0x8c, 0x86, 0x72, 0x85, 0x01, 0x00,
-	0x00,
+	// 311 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x5c, 0x91, 0xb1, 0x4e, 0x02, 0x41,
+	0x10, 0x86, 0x77, 0xc5, 0xbd, 0x33, 0x83, 0x01, 0xb3, 0x21, 0xe4, 0x62, 0x31, 0x41, 0x2a, 0xaa,
+	0x0b, 0xc1, 0xc4, 0x4a, 0x1b, 0x2a, 0xea, 0xd5, 0xc4, 0xc4, 0x0e, 0x73, 0x13, 0xd8, 0x44, 0xee,
+	0x70, 0x77, 0x49, 0xd4, 0xca, 0x47, 0xf0, 0x31, 0x7c, 0x14, 0x4b, 0x4a, 0x4a, 0x59, 0x1a, 0x4b,
+	0x1e, 0xc1, 0xb0, 0x77, 0x12, 0xb5, 0xfc, 0xf6, 0xcf, 0xfe, 0x5f, 0x66, 0x06, 0x1a, 0x8e, 0xcc,
+	0x4c, 0xe7, 0xe3, 0x87, 0x74, 0x6e, 0x0a, 0x57, 0x74, 0xc7, 0xd0, 0xb8, 0x26, 0x6b, 0x75, 0x91,
+	0x2b, 0x7a, 0x5c, 0x90, 0x75, 0x32, 0x81, 0xc8, 0xba, 0xac, 0x58, 0xb8, 0x84, 0x77, 0x78, 0xef,
+	0x78, 0xc4, 0x54, 0xc5, 0x55, 0x42, 0xc6, 0x24, 0x07, 0xbf, 0x12, 0x32, 0x46, 0xb6, 0xe0, 0x90,
+	0x9e, 0xb4, 0x4b, 0x6a, 0x1d, 0xde, 0x13, 0x23, 0xa6, 0x02, 0x0d, 0x05, 0xd4, 0x66, 0x76, 0xd2,
+	0xb5, 0xd0, 0xdc, 0x2b, 0xec, 0xbc, 0xc8, 0x2d, 0xc9, 0x36, 0x08, 0xeb, 0x32, 0x9d, 0xef, 0x15,
+	0x25, 0xca, 0x33, 0x88, 0x0c, 0x59, 0xfd, 0x42, 0xc1, 0x50, 0x1f, 0xc4, 0xa9, 0x0a, 0xb8, 0x53,
+	0x95, 0x81, 0x44, 0x10, 0x86, 0xc6, 0xd9, 0x73, 0x70, 0xd5, 0x07, 0x51, 0xaa, 0x76, 0xb4, 0xab,
+	0x08, 0xcf, 0x3f, 0xd2, 0x0b, 0x88, 0xca, 0xaf, 0xb2, 0x05, 0xe2, 0x56, 0x67, 0x6e, 0x1a, 0x5c,
+	0x42, 0x95, 0x20, 0xdb, 0x10, 0x8d, 0x48, 0x4f, 0xa6, 0x2e, 0x98, 0x84, 0xaa, 0xa8, 0x1b, 0x83,
+	0x08, 0x85, 0x83, 0x4b, 0x38, 0xba, 0xa9, 0x56, 0x25, 0xfb, 0x10, 0x57, 0x13, 0xc8, 0x66, 0xfa,
+	0x77, 0x5d, 0xa7, 0x27, 0xe9, 0xbf, 0xe1, 0x7a, 0xbc, 0xcf, 0x87, 0x57, 0xcb, 0x35, 0xb2, 0xd5,
+	0x1a, 0xd9, 0x76, 0x8d, 0xfc, 0xd5, 0x23, 0x7f, 0xf7, 0xc8, 0x3f, 0x3c, 0xf2, 0xa5, 0x47, 0xfe,
+	0xe9, 0x91, 0x7f, 0x79, 0x64, 0x5b, 0x8f, 0xfc, 0x6d, 0x83, 0x6c, 0xb9, 0x41, 0xb6, 0xda, 0x20,
+	0xbb, 0x8b, 0x6d, 0x59, 0x75, 0x1f, 0x85, 0xe3, 0x9c, 0x7f, 0x07, 0x00, 0x00, 0xff, 0xff, 0x80,
+	0xa6, 0xb5, 0xed, 0xae, 0x01, 0x00, 0x00,
 }
 
 func (this *SessionRequest) Equal(that interface{}) bool {
@@ -474,6 +524,30 @@ func (this *SessionResponse_Resize) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SessionResponse_Ready) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SessionResponse_Ready)
+	if !ok {
+		that2, ok := that.(SessionResponse_Ready)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Ready.Equal(that1.Ready) {
+		return false
+	}
+	return true
+}
 func (this *Resize) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -497,6 +571,27 @@ func (this *Resize) Equal(that interface{}) bool {
 		return false
 	}
 	if this.Height != that1.Height {
+		return false
+	}
+	return true
+}
+func (this *Ready) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Ready)
+	if !ok {
+		that2, ok := that.(Ready)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
 		return false
 	}
 	return true
@@ -541,7 +636,7 @@ func (this *SessionResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
+	s := make([]string, 0, 7)
 	s = append(s, "&session.SessionResponse{")
 	if this.Msg != nil {
 		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
@@ -565,6 +660,14 @@ func (this *SessionResponse_Resize) GoString() string {
 		`Resize:` + fmt.Sprintf("%#v", this.Resize) + `}`}, ", ")
 	return s
 }
+func (this *SessionResponse_Ready) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&session.SessionResponse_Ready{` +
+		`Ready:` + fmt.Sprintf("%#v", this.Ready) + `}`}, ", ")
+	return s
+}
 func (this *Resize) GoString() string {
 	if this == nil {
 		return "nil"
@@ -573,6 +676,15 @@ func (this *Resize) GoString() string {
 	s = append(s, "&session.Resize{")
 	s = append(s, "Width: "+fmt.Sprintf("%#v", this.Width)+",\n")
 	s = append(s, "Height: "+fmt.Sprintf("%#v", this.Height)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *Ready) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&session.Ready{")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -842,6 +954,27 @@ func (m *SessionResponse_Resize) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	}
 	return len(dAtA) - i, nil
 }
+func (m *SessionResponse_Ready) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SessionResponse_Ready) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Ready != nil {
+		{
+			size, err := m.Ready.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintTerminal(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	return len(dAtA) - i, nil
+}
 func (m *Resize) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -872,6 +1005,29 @@ func (m *Resize) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x8
 	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Ready) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Ready) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Ready) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	return len(dAtA) - i, nil
 }
 
@@ -967,6 +1123,18 @@ func (m *SessionResponse_Resize) Size() (n int) {
 	}
 	return n
 }
+func (m *SessionResponse_Ready) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Ready != nil {
+		l = m.Ready.Size()
+		n += 1 + l + sovTerminal(uint64(l))
+	}
+	return n
+}
 func (m *Resize) Size() (n int) {
 	if m == nil {
 		return 0
@@ -979,6 +1147,15 @@ func (m *Resize) Size() (n int) {
 	if m.Height != 0 {
 		n += 1 + sovTerminal(uint64(m.Height))
 	}
+	return n
+}
+
+func (m *Ready) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
 	return n
 }
 
@@ -1058,6 +1235,16 @@ func (this *SessionResponse_Resize) String() string {
 	}, "")
 	return s
 }
+func (this *SessionResponse_Ready) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SessionResponse_Ready{`,
+		`Ready:` + strings.Replace(fmt.Sprintf("%v", this.Ready), "Ready", "Ready", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *Resize) String() string {
 	if this == nil {
 		return "nil"
@@ -1065,6 +1252,15 @@ func (this *Resize) String() string {
 	s := strings.Join([]string{`&Resize{`,
 		`Width:` + fmt.Sprintf("%v", this.Width) + `,`,
 		`Height:` + fmt.Sprintf("%v", this.Height) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Ready) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Ready{`,
 		`}`,
 	}, "")
 	return s
@@ -1310,6 +1506,41 @@ func (m *SessionResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.Msg = &SessionResponse_Resize{v}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ready", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTerminal
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTerminal
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTerminal
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &Ready{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &SessionResponse_Ready{v}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTerminal(dAtA[iNdEx:])
@@ -1398,6 +1629,56 @@ func (m *Resize) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTerminal(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTerminal
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Ready) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTerminal
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Ready: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Ready: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTerminal(dAtA[iNdEx:])

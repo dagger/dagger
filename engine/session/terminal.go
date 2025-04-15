@@ -56,6 +56,9 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 	ctx, cancel := context.WithCancelCause(srv.Context())
 	defer cancel(errors.New("terminal session finished"))
 
+	if err := s.sendReady(srv); err != nil {
+		return fmt.Errorf("sending ready: %w", err)
+	}
 	if err := s.sendSize(srv, stdout); err != nil {
 		return fmt.Errorf("sending initial size: %w", err)
 	}
@@ -117,6 +120,14 @@ func (s TerminalAttachable) sendSize(srv Terminal_SessionServer, stdout io.Write
 				Width:  int32(w),
 				Height: int32(h),
 			},
+		},
+	})
+}
+
+func (s TerminalAttachable) sendReady(srv Terminal_SessionServer) error {
+	return srv.Send(&SessionResponse{
+		Msg: &SessionResponse_Ready{
+			Ready: &Ready{},
 		},
 	})
 }
