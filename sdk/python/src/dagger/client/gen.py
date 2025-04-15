@@ -632,9 +632,6 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1381,9 +1378,6 @@ class Container(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1434,9 +1428,6 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1550,9 +1541,6 @@ class Container(Type):
             The args of the command.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -3034,9 +3022,6 @@ class Directory(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "

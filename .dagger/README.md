@@ -74,25 +74,12 @@ Connect to it from a dagger cli:
 
 In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema. See "Docs" and "SDKs" below for more granular generation functionality. This command also runs go generate for engine code.
 
-    dagger call generate export --path=.
+    dagger call generate -o .
 
 > [!NOTE]
 >
 > For `PHP` and `Elixir` SDKs it's important to manually delete the generated folder before running
 > this command
-
-
-## Docs
-
-Lint the docs:
-
-    dagger call docs lint
-
-Auto-generate docs components:
-
-    dagger call docs generate -o .
-
-    
 
 ## SDKs
 

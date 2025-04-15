@@ -1765,7 +1765,6 @@ pub struct ContainerAsServiceOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Provides Dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1872,7 +1871,6 @@ pub struct ContainerTerminalOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
     /// Provides Dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1889,7 +1887,6 @@ pub struct ContainerUpOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Provides Dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1913,7 +1910,6 @@ pub struct ContainerUpOpts<'a> {
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
     /// Provides Dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -4333,7 +4329,6 @@ pub struct DirectoryTerminalOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub container: Option<ContainerId>,
     /// Provides Dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.

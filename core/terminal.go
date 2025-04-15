@@ -25,8 +25,6 @@ type TerminalArgs struct {
 	Cmd []string `default:"[]"`
 
 	// Provide dagger access to the executed command
-	// Do not use this option unless you trust the command being executed.
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
 	// Grant the process all root capabilities
