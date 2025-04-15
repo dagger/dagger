@@ -13,6 +13,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -513,6 +514,26 @@ func (r Instance[T]) call(
 		callCacheKey = ""
 	}
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	if !strings.HasPrefix(r.Class.TypeName(), "_") {
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		slog.Debug("CALL",
+			"clientID", clientMD.ClientID,
+			"sessionID", clientMD.SessionID,
+			"field", r.Class.TypeName()+"."+newID.Field(),
+			"args", inputArgs,
+			"cacheKey", callCacheKey,
+		)
+	}
+
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error)) {
@@ -586,6 +607,21 @@ func (r Instance[T]) call(
 			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
 				return nil, nil, err
+			}
+
+			if !strings.HasPrefix(r.Class.TypeName(), "_") {
+				clientMD, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to get client metadata: %w", err)
+				}
+				slog.Debug("CALL ID CHANGE",
+					"clientID", clientMD.ClientID,
+					"sessionID", clientMD.SessionID,
+					"field", r.Class.TypeName()+"."+newID.Field(),
+					"args", inputArgs,
+					"origCacheKey", callCacheKey,
+					"newCacheKey", newID.Digest(),
+				)
 			}
 		}
 	}
