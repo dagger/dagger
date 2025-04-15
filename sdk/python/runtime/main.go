@@ -152,7 +152,10 @@ func (m *PythonSdk) Codegen(
 	}
 
 	ignorePaths := []string{".venv", "**/__pycache__"}
-	genPaths := []string{UserGenPath}
+	genPaths := []string{
+		// TODO: uncomment when we no longer vendor every time
+		// UserGenPath,
+	}
 
 	if m.VendorPath != "" {
 		ignorePaths = append(ignorePaths, m.VendorPath)
