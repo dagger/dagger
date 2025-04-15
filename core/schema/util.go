@@ -85,22 +85,26 @@ var AllVersion = dagql.AllView{}
 // equal to the filtered version.
 type AfterVersion string
 
-func (minVersion AfterVersion) Contains(version string) bool {
+var _ dagql.ViewFilter = AfterVersion("")
+
+func (minVersion AfterVersion) Contains(version dagql.View) bool {
 	if version == "" {
 		return true
 	}
-	return semver.Compare(version, string(minVersion)) >= 0
+	return semver.Compare(string(version), string(minVersion)) >= 0
 }
 
 // BeforeVersion is a view that checks if a target version is less than the
 // filtered version.
 type BeforeVersion string
 
-func (maxVersion BeforeVersion) Contains(version string) bool {
+var _ dagql.ViewFilter = BeforeVersion("")
+
+func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
 	if version == "" {
 		return false
 	}
-	return semver.Compare(version, string(maxVersion)) < 0
+	return semver.Compare(string(version), string(maxVersion)) < 0
 }
 
 func ptr[T any](v T) *T {

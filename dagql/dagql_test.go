@@ -1883,7 +1883,7 @@ func debugID(t *testing.T, msgf string, idStr string, args ...any) {
 
 func InstallViewer(srv *dagql.Server) {
 	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
-		return srv.View, nil
+		return string(srv.View), nil
 	}
 
 	dagql.Fields[Query]{
