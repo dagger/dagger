@@ -76,6 +76,7 @@ func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 // Models smart enough to follow instructions like 'do X three times.'
 var SmartModels = []string{
 	"gpt-4o",
+	"gpt-4.1",
 	"gemini-2.0-flash",
 	"claude-3-5-sonnet-latest",
 	"claude-3-7-sonnet-latest",
@@ -160,7 +161,7 @@ func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
 			entries, err := llm.Env().Output("out").AsDirectory().Entries(ctx)
 			require.NoError(t, err)
 			sort.Strings(entries)
-			require.Equal(t, []string{"a", "c"}, entries)
+			require.ElementsMatch(t, []string{"a", "c"}, entries)
 		})
 }
 
@@ -292,9 +293,11 @@ func (m *Evals) llm(opts ...dagger.LLMOpts) *dagger.LLM {
 }
 
 type Report struct {
-	Succeeded bool
-	Report    string
-	ToolsDoc  string
+	Succeeded    bool
+	Report       string
+	ToolsDoc     string
+	InputTokens  int
+	OutputTokens int
 }
 
 func withLLMReport(
@@ -356,11 +359,11 @@ func withLLMReport(
 			fmt.Fprintf(reportMD, "    %*d | %s\n", width, i+1, line)
 		}
 	}
-	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
+	report.InputTokens, err = llm.TokenUsage().InputTokens(ctx)
 	if err != nil {
 		fmt.Fprintln(reportMD, "Failed to get input tokens:", err)
 	}
-	outputTokens, err := llm.TokenUsage().OutputTokens(ctx)
+	report.OutputTokens, err = llm.TokenUsage().OutputTokens(ctx)
 	if err != nil {
 		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
 	}
@@ -368,8 +371,8 @@ func withLLMReport(
 
 	fmt.Fprintln(reportMD, "### Total Token Cost")
 	fmt.Fprintln(reportMD)
-	fmt.Fprintln(reportMD, "* Input Tokens:", inputTokens)
-	fmt.Fprintln(reportMD, "* Output Tokens:", outputTokens)
+	fmt.Fprintln(reportMD, "* Input Tokens:", report.InputTokens)
+	fmt.Fprintln(reportMD, "* Output Tokens:", report.OutputTokens)
 	fmt.Fprintln(reportMD)
 
 	fmt.Fprintln(reportMD, "### Evaluation Result")

@@ -68,6 +68,8 @@ type EvalResult struct {
 	Report        string
 	SuccessRate   float64
 	TotalAttempts int
+	InputTokens   int
+	OutputTokens  int
 }
 
 func (result *EvalResult) Check() error {
@@ -94,26 +96,37 @@ type EvalsAcrossModels struct {
 	ModelResults []ModelResult
 }
 
-func (result *EvalsAcrossModels) CSV() (string, error) {
+func (result *EvalsAcrossModels) CSV(
+	// Include a header.
+	// +default=false
+	header bool,
+) string {
 	buf := new(strings.Builder)
-	csv := csv.NewWriter(buf)
-	csv.Write([]string{"model", "eval", "success_rate", "total_attempts"})
-	var errs error
+	csvW := csv.NewWriter(buf)
+	if header {
+		csvW.Write([]string{
+			"model",
+			"eval",
+			"input_tokens",
+			"output_tokens",
+			"total_attempts",
+			"success_rate",
+		})
+	}
 	for _, result := range result.ModelResults {
 		for _, eval := range result.EvalReports {
-			csv.Write([]string{
+			csvW.Write([]string{
 				result.ModelName,
 				eval.Name,
-				fmt.Sprintf("%0.2f", eval.SuccessRate),
+				fmt.Sprintf("%d", eval.InputTokens),
+				fmt.Sprintf("%d", eval.OutputTokens),
 				fmt.Sprintf("%d", eval.TotalAttempts),
+				fmt.Sprintf("%0.2f", eval.SuccessRate),
 			})
 		}
 	}
-	csv.Flush()
-	if err := csv.Error(); err != nil {
-		return "", err
-	}
-	return buf.String(), errs
+	csvW.Flush()
+	return buf.String()
 }
 
 func (result *EvalsAcrossModels) Check() error {
@@ -203,6 +216,14 @@ func (m *Evaluator) EvalsAcrossModels(
 					if err != nil {
 						return err
 					}
+					result.InputTokens, err = attempts.InputTokens(ctx)
+					if err != nil {
+						return err
+					}
+					result.OutputTokens, err = attempts.OutputTokens(ctx)
+					if err != nil {
+						return err
+					}
 					if result.SuccessRate < MinSuccessRate {
 						return fmt.Errorf("success rate too low: %.f%% (%d attempts)",
 							result.SuccessRate*100,
@@ -288,9 +309,12 @@ func (m *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) {
 		SystemPrompt(ctx)
 }
 
-func (m *Evaluator) Evaluate(ctx context.Context, model, name string) (string, error) {
+func (m *Evaluator) Evaluate(ctx context.Context, model, name string,
+	// +default=0
+	attempts int) (string, error) {
 	eval := m.work().Evaluate(name, dagger.WorkspaceEvaluateOpts{
-		Model: model,
+		Model:    model,
+		Attempts: attempts,
 	})
 	report, err := eval.Report(ctx)
 	if err != nil {
