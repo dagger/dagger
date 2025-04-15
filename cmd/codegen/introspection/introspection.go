@@ -2,6 +2,7 @@ package introspection
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 )
 
@@ -27,8 +28,8 @@ type Schema struct {
 		Name string `json:"name,omitempty"`
 	} `json:"subscriptionType,omitempty"`
 
-	Types      Types `json:"types"`
-	Directives any   `json:"directives"`
+	Types      Types           `json:"types"`
+	Directives []*DirectiveDef `json:"directives"`
 }
 
 func (s *Schema) Query() *Type {
@@ -65,6 +66,13 @@ func (s *Schema) ScrubType(typeName string) {
 		filteredTypes = append(filteredTypes, t)
 	}
 	s.Types = filteredTypes
+}
+
+type DirectiveDef struct {
+	Name        string      `json:"name,omitempty"`
+	Description string      `json:"description,omitempty"`
+	Locations   []string    `json:"locations,omitempty"`
+	Args        InputValues `json:"args,omitempty"`
 }
 
 type TypeKind string
@@ -305,15 +313,23 @@ func (t Directives) Directive(name string) *Directive {
 	return nil
 }
 
+func (t Directives) IsExperimental() bool {
+	return t.Directive("experimental") != nil
+}
+
+func (t Directives) ExperimentalReason() string {
+	return fromJSON[string](*t.Directive("experimental").Arg("reason").Value)
+}
+
 type SourceMap struct {
 	Module   string
 	Filename string
-	Line     string
-	Column   string
+	Line     int
+	Column   int
 }
 
 func (sourceMap *SourceMap) Filelink() string {
-	return fmt.Sprintf("%s:%s:%s", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
+	return fmt.Sprintf("%s:%d:%d", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
 }
 
 func (t *Directives) SourceMap() *SourceMap {
@@ -322,10 +338,10 @@ func (t *Directives) SourceMap() *SourceMap {
 		return nil
 	}
 	return &SourceMap{
-		Module:   *d.Arg("module").Value,
-		Filename: *d.Arg("filename").Value,
-		Line:     *d.Arg("line").Value,
-		Column:   *d.Arg("column").Value,
+		Module:   fromJSON[string](*d.Arg("module").Value),
+		Filename: fromJSON[string](*d.Arg("filename").Value),
+		Line:     fromJSON[int](*d.Arg("line").Value),
+		Column:   fromJSON[int](*d.Arg("column").Value),
 	}
 }
 
@@ -346,4 +362,9 @@ func (t Directive) Arg(name string) *DirectiveArg {
 type DirectiveArg struct {
 	Name  string  `json:"name"`
 	Value *string `json:"value"`
+}
+
+func fromJSON[T any](raw string) (t T) {
+	_ = json.Unmarshal([]byte(raw), &t)
+	return t
 }

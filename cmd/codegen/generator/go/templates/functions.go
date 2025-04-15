@@ -68,6 +68,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		// go specific
 		"Comment":                 funcs.comment,
 		"FormatDeprecation":       funcs.formatDeprecation,
+		"FormatExperimental":      funcs.formatExperimental,
 		"FormatName":              formatName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
@@ -107,6 +108,14 @@ func (funcs goTemplateFuncs) comment(s string) string {
 // format the deprecation reason
 // Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
 func (funcs goTemplateFuncs) formatDeprecation(s string) string {
+	return funcs.formatHelper("Deprecated", s)
+}
+
+func (funcs goTemplateFuncs) formatExperimental(s string) string {
+	return funcs.formatHelper("Experimental", s)
+}
+
+func (funcs goTemplateFuncs) formatHelper(name string, s string) string {
 	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
 	matches := r.FindAllString(s, -1)
 	for _, match := range matches {
@@ -115,7 +124,7 @@ func (funcs goTemplateFuncs) formatDeprecation(s string) string {
 		replacement = formatName(replacement)
 		s = strings.ReplaceAll(s, match, replacement)
 	}
-	return funcs.comment("Deprecated: " + s)
+	return funcs.comment(name + ": " + s)
 }
 
 func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
