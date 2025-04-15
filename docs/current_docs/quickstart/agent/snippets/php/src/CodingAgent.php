@@ -27,11 +27,11 @@ class CodingAgent
             ->llm()
             ->withEnv($environment)
             ->withPrompt("
-            You are an expert Go programmer with an assignment to create a go program
-			Create files in the default directory in $builder
-			Always build the code to make sure it is valid
-			Do not stop until your assignment is completed and the code builds
-			Your assignment is: $assignment")
+                You are an expert Go programmer with an assignment to create a go program
+                Create files in the default directory in $builder
+                Always build the code to make sure it is valid
+                Do not stop until your assignment is completed and the code builds
+                Your assignment is: $assignment")
             ->env()
             ->output("completed")
             ->asContainer();
