@@ -902,7 +902,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.MCP(llm.Endpoint)
+	llm.mcp = env.Clone().MCP(llm.Endpoint)
 	return llm
 }
 

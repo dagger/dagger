@@ -58,6 +58,10 @@ func (env *Env) Clone() *Env {
 	cp.objsByID = cloneMap(cp.objsByID)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
+	for name, bnd := range cp.outputsByName {
+		// clone output bindings, since they mutate
+		cp.outputsByName[name] = bnd.Clone()
+	}
 	return &cp
 }
 
@@ -255,6 +259,11 @@ func (*Binding) Type() *ast.Type {
 		NamedType: "Binding",
 		NonNull:   true,
 	}
+}
+
+func (b *Binding) Clone() *Binding {
+	cp := *b
+	return &cp
 }
 
 // Return a string representation of the binding value
