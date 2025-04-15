@@ -14,7 +14,7 @@ import DaggerModuleInit from '../partials/_dagger_module_init.mdx';
 
 ### Multiple files
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 You can split your Dagger module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, `utils.go`):
@@ -354,7 +354,7 @@ Benefits of this pattern include:
 
 Dagger modules run in a runtime container that's bootstrapped by the Dagger Engine, with the necessary environment to run the Dagger module's code.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 The runtime container is currently hardcoded to run in Go 1.21  (although this may be configurable in future).
@@ -434,7 +434,7 @@ They are currently hardcoded to run in [maven:3.9.9-eclipse-temurin-17](https://
 
 The structure of a Dagger module mimics that of each language's conventional packaging mechanisms and tools.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 Dagger modules written for use with the Go SDK are automatically created as [Go modules](https://go.dev/ref/mod). At module creation time, a `go.mod` and `go.sum` file will automatically be created  that import the necessary dependencies. Dependencies can be installed and managed just as for any standard Go environment.

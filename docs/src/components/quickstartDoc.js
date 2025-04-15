@@ -27,7 +27,7 @@ const QuickstartDoc = ({children, embeds}) => {
       <div className={styles.quickstartDoc}>
         <div className={styles.stepContent}>{children}</div>
         <div className={styles.stepEmbed}>
-          <Tabs groupId="language">
+          <Tabs groupId="language" queryString="sdk">
             {Object.keys(embeds).map((x, index) => {
               return (
                 <TabItem key={x} value={x}>

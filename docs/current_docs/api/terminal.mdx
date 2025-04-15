@@ -32,7 +32,7 @@ dagger core container from --address=alpine terminal
 
 Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/debugging/go/terminal-container/main.go
@@ -60,7 +60,7 @@ Multiple terminals are supported in the same Dagger Function; they will open in 
 
 It's also possible to inspect a directory using the `Container.terminal()` method. Here is an example of a Dagger Function which opens an interactive terminal on a directory:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/debugging/go/terminal-directory-1/main.go
@@ -82,7 +82,7 @@ It's also possible to inspect a directory using the `Container.terminal()` metho
 
 Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the directory inside. This container can be customized using additional options. Here is a more complex example, which produces the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/debugging/go/terminal-directory-2/main.go

@@ -29,7 +29,7 @@ Some common scenarios for using services with Dagger Functions are:
 
 Here is an example of a Dagger Function that returns an HTTP service, which can then be accessed from the calling host:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 ```go file=./snippets/services-1/go/main.go
 ```
@@ -58,7 +58,7 @@ See it in action:
 
 This also works in the opposite direction: containers in Dagger Functions can communicate with services running on the host. Here's an example of how a pipeline running in a Dagger Function can access and query a MariaDB database service running on the host:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 ```go file=./snippets/services-2/go/main.go
 ```

@@ -18,7 +18,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 :::
 
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/mount-dir/go/main.go
@@ -52,7 +52,7 @@ An alternative option is to copy the target directory in the container. The diff
 Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-dir/go/main.go
@@ -260,7 +260,7 @@ When a host directory or file is copied or mounted to a container's filesystem, 
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-modify-dir/go/main.go
@@ -380,7 +380,7 @@ The following Dagger Function accepts a Git repository URL and a Git reference. 
 For examples of SSH-based cloning, including private or public Git repositories with an SSH reference format, select the `SSH` tabs below. This approach requires explicitly forwarding the host `SSH_AUTH_SOCK` to the Dagger Function. Learn more about this in Dagger's [security model](../features/security.mdx).
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/clone-git-repository/go/main.go
@@ -501,7 +501,7 @@ For examples of SSH-based cloning, including private or public Git repositories 
 
 The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/mount-file/go/main.go
@@ -528,7 +528,7 @@ An alternative option is to copy the target file to the container. The differenc
 Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-file/go/main.go
@@ -721,7 +721,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filtering) with [directory filters](../api/fs-filters.mdx).
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-filter-dir-post/go/main.go
@@ -820,7 +820,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 
 ### Request a file over HTTP/HTTPS and save it in a container
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/read-file-http/go/main.go
@@ -894,7 +894,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 
 The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-file-runtime/go/main.go
@@ -949,7 +949,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filtering) with [directory filters](../api/fs-filters.mdx).
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/copy-filter-dir-pre/go/main.go
@@ -1019,7 +1019,7 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
 
 The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module. If required, the default path can be overridden by specifying a different `Directory` value at call time.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/set-common-default-path/go/main.go
@@ -1094,7 +1094,7 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
 
 The following Dagger Function performs a multi-stage build.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/multi-stage-build/go/main.go
@@ -1147,7 +1147,7 @@ Perform a multi-stage build of the source code in the `golang/example/hello` rep
 
 The following Dagger Function performs a matrix build.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/matrix-build/go/main.go
@@ -1221,7 +1221,7 @@ Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. T
 
 The following Dagger Function builds a single image for different CPU architectures using native emulation.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/multi-arch/go/main.go
@@ -1273,7 +1273,7 @@ This Dagger Function uses the `containerd` utility module. To run it locally
 install the module first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/multi-arch-cc/go/main.go
@@ -1320,7 +1320,7 @@ Build and publish a multi-platform image with cross compliation:
 
 The following Dagger Function builds an image from a Dockerfile.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/dockerfile/go/main.go
@@ -1372,7 +1372,7 @@ Build and publish an image from an existing Dockerfile
 
 The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/dockerfile-context/go/main.go
@@ -1421,7 +1421,7 @@ Build an image from the source code in `https://github.com/dockersamples/python-
 
 The following Dagger Function adds [OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/main/annotations.md) to an image.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/oci-annotations/go/main.go
@@ -1468,7 +1468,7 @@ Build and publish an image with OCI annotations:
 
 The following Dagger Function adds [OpenContainer Initiative (OCI) labels](https://github.com/opencontainers/image-spec/blob/main/config.md) to an image.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/oci-labels/go/main.go
@@ -1520,7 +1520,7 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 * Changes in mounted cache volumes or secrets do not invalidate the Dagger layer cache.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/builds/cache/go/main.go
@@ -1575,7 +1575,7 @@ Print the date and time, invalidating the cache on each run. However, if the `CA
 
 The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from the host (via an environment variable, host file, or host command) or from an external secrets manager (1Password or Vault):
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/secret-variable/go/main.go
@@ -1720,7 +1720,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 
 The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/secret-file/go/main.go
@@ -1767,7 +1767,7 @@ Use a mounted secret file:
 
 The following code listing demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/secret-dockerfile/go/main.go
@@ -1827,7 +1827,7 @@ Build from a Dockerfile with a mounted secret from the host environment:
 
 The first Dagger Function below creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias like `www`.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/bind-services/go/main.go
@@ -1874,7 +1874,7 @@ Send a request from one Dagger Function to a bound HTTP service instantiated by 
 
 The Dagger Function below creates and returns an HTTP service. This service can be used from the host.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/expose-dagger-services-to-host/go/main.go
@@ -1957,7 +1957,7 @@ The following Dagger Function accepts a `Service` running on the host, binds it 
 This implies that a service is already listening on a port on the host, out-of-band of Dagger.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/expose-host-services-to-dagger/go/main.go
@@ -2004,7 +2004,7 @@ Send a query to the database service listening on host port 3306 and return the 
 
 The following Dagger Function creates a service and binds it to an application container for unit testing. In this example, the application being tested is Drupal. Drupal includes a large number of unit tests, including tests which depend on an active database service. This database service is created on-the-fly by the Dagger Function.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/test-against-db-service/go/main.go
@@ -2051,7 +2051,7 @@ Run Drupal's unit tests, instantiating a database service during the process:
 
 The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/start-stop-services/go/main.go
@@ -2098,7 +2098,7 @@ Start and stop a Redis service:
 
 The following Dagger Function runs two services, service A and service B, that depend on each other. The services are set up with custom hostnames, `svca` and `svcb`, allowing each service to communicate with the other by hostname.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/create-interdependent-services/go/main.go
@@ -2147,7 +2147,7 @@ Start two inter-dependent services:
 
 The following Dagger Function publishes a just-in-time container image to a private registry.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/publish-image/go/main.go
@@ -2214,7 +2214,7 @@ The following Dagger Function publishes a just-in-time container image to a priv
 
 The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/tag-publish-image/go/main.go
@@ -2285,7 +2285,7 @@ The following Dagger Functions return a just-in-time directory and file. These o
 When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/export-file-dir/go/main.go
@@ -2352,7 +2352,7 @@ When a host directory or file is copied or mounted to a container's filesystem, 
 
 The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/export-container/go/main.go
@@ -2401,7 +2401,7 @@ Export the container image returned by the Dagger Function as an OCI tarball to 
 
 The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/cache-dependencies/go/main.go
@@ -2458,7 +2458,7 @@ Build an application using cached dependencies:
 
 The following Dagger Function demonstrates how to set a single environment variable in a container.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/set-env-var/go/main.go
@@ -2487,7 +2487,7 @@ The following Dagger Function demonstrates how to set a single environment varia
 
 The following Dagger Function demonstrates how to set multiple environment variables in a container.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/set-env-vars/go/main.go
@@ -2554,7 +2554,7 @@ The following Dagger Function demonstrates how to set multiple environment varia
 
 The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/services/persist-service-state/go/main.go
@@ -2621,7 +2621,7 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
 
 The following Dagger Function demonstrates how to use native-language concurrency features ([errgroups](https://pkg.go.dev/golang.org/x/sync/errgroup) in Go, [task groups](https://anyio.readthedocs.io/en/stable/tasks.html) in Python), and [promises](https://basarat.gitbook.io/typescript/future-javascript/promise) in TypeScript to execute other Dagger Functions concurrently. If any of the concurrently-running functions fails, the remaining ones will be immediately cancelled.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/execute-concurrently/go/main.go
@@ -2671,7 +2671,7 @@ Execute a Dagger Function which performs different types of tests by executing o
 The following Dagger Function demonstrates how to handle errors in a pipeline.
 
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/handle-errors/go/main.go
@@ -2722,7 +2722,7 @@ The following Dagger Function demonstrates how to continue using a container aft
 The caveat with this approach is that forcing a zero exit code on a failure caches the failure. This may not be desired depending on the use case.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/continue-after-errors/go/main.go
@@ -2795,7 +2795,7 @@ Dagger provides two features that can help greatly when trying to debug a pipeli
 
 The following Dagger Function opens an interactive terminal session at different stages in a Dagger pipeline to debug a container build.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/debugging/go/terminal-container/main.go
@@ -2841,7 +2841,7 @@ Execute a Dagger Function to build a container, and open an interactive terminal
 
 The following Dagger Function clones Dagger's GitHub repository and opens an interactive terminal session to inspect it. Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the repository directory inside.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/debugging/go/terminal-directory-1/main.go
@@ -2863,7 +2863,7 @@ The following Dagger Function clones Dagger's GitHub repository and opens an int
 
 The container created to mount the directory can be customized using additional options. The following Dagger Function revised the previous example to demonstrate this, using an `ubuntu` container image and `bash` shell instead of the defaults.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=../api/snippets/debugging/go/terminal-directory-2/main.go

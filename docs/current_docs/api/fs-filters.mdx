@@ -63,7 +63,7 @@ To implement a pre-call filter in your Dagger Function, add an `ignore` paramete
 - The order of arguments is significant: the pattern `"**", "!**"` includes everything but `"!**", "**"` excludes everything.
 - Prefixing a path with `!` negates a previous ignore: the pattern `"!foo"` has no effect, since nothing is previously ignored, while the pattern `"**", "!foo"` excludes everything except `foo`.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Go source code files:
@@ -108,7 +108,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here are a few examples of useful patterns:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 ```go
 // exclude Go tests and test data
@@ -209,7 +209,7 @@ This is useful when working with directories that are modified "in place" by a D
 
 A good example of this is a multi-stage build. Imagine a Dagger Function that reads and builds an application from source, placing the compiled binaries in a new sub-directory (stage 1). Instead of then transferring everything to the final container image for distribution (stage 2), you could use a post-call filter to transfer only the compiled files.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 To implement a post-call filter in your Dagger Function, use the `DirectoryWithDirectoryOpts` or `ContainerWithDirectoryOpts` structs, which support `Include` and `Exclude` patterns for `Directory` objects. Here's an example:
@@ -254,7 +254,7 @@ To implement a post-call filter in your Dagger Function, use the `Container.With
 
 Here are a few examples of useful patterns:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 ```go
 // exclude all Markdown files
@@ -373,7 +373,7 @@ Both Dagger Cloud and the Dagger TUI provide detailed information on the pattern
 
 Another way to debug how directories are being filtered is to create a function that receives a `Directory` as input, and returns the same `Directory`:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 ```go
 func (m *MyModule) Debug(

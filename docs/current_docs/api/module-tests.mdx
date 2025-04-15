@@ -12,7 +12,7 @@ Like any other piece of software, Dagger Functions and modules should be thoroug
 The following examples rely on a module called `greeter` that provides a function to greet a person:
 
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go file=./snippets/modules/testing/go/main.go
@@ -38,7 +38,7 @@ Well-written tests often provide the best documentation for your software, and t
 
 Following these principles leads to writing tests for your Dagger modules using Dagger modules themselves. In practice, this means creating a test module in the same directory as your main module and writing your tests as Dagger Functions, as shown below:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```bash
@@ -132,7 +132,7 @@ In the Daggerverse, [example modules](https://docs.dagger.io/api/daggerverse#exa
 
 You can combine example modules with the test module pattern to turn those examples into executable tests. Often, this approach provides enough coverage to eliminate the need for a separate test module.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```bash
@@ -226,7 +226,7 @@ Another challenge arises when you have multiple test functions with parameters, 
 
 In such cases, it can be helpful to standardize your test function signature. Consider generating inputs from within the function, synchronizing any asynchronous tasks there, and returning a single value or an error. This approach keeps your tests consistent and easier to maintain.
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go
@@ -290,7 +290,7 @@ This is where the `all` function comes into the picture. It's basically a single
 
 Depending on the SDK you use, this may be as simple as calling each test function after the other:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go
@@ -342,7 +342,7 @@ export class Tests {
 
 Alternatively, if the SDK/language you use supports this, you can run tests in parallel:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 <TabItem value="Go">
 
 ```go
