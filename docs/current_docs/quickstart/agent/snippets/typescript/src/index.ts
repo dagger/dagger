@@ -18,18 +18,18 @@ export class CodingAgent {
       .withContainerInput(
         "builder",
         dag.container().from("golang").withWorkdir("/app"),
-        "a container to use for building go code",
+        "a container to use for building Go code",
       )
       .withContainerOutput(
         "completed",
-        "the completed assignment in the golang container",
+        "the completed assignment in the Golang container",
       )
 
     const work = dag
       .llm()
       .withEnv(environment)
       .withPrompt(
-        `You are an expert Go programmer with an assignment to create a go program
+        `You are an expert Go programmer with an assignment to create a Go program
         Create files in the default directory in $builder
         Always build the code to make sure it is valid
         Do not stop until your assignment is completed and the code builds

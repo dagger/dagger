@@ -1,5 +1,6 @@
 import dagger
 from dagger import dag, function, object_type
+from pylsp.plugins.signature import GOOGLE
 
 
 @object_type
@@ -16,10 +17,10 @@ class CodingAgent:
             .with_container_input(
                 "builder",
                 dag.container().from_("golang").with_workdir("/app"),
-                "a container to use for building go code",
+                "a container to use for building Go code",
             )
             .with_container_output(
-                "completed", "the completed assignment in the golang container"
+                "completed", "the completed assignment in the Golang container"
             )
         )
 
@@ -29,7 +30,7 @@ class CodingAgent:
             .with_prompt(
                 """
                 You are an expert Go programmer
-                with an assignment to create a go program
+                with an assignment to create a Go program
                 Create files in the default directory in $builder
                 Always build the code to make sure it is valid
                 Do not stop until your assignment is completed and the code builds
