@@ -86,7 +86,12 @@ func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
 	cp.selectedTools = cloneMap(cp.selectedTools)
+	cp.returned = false
 	return &cp
+}
+
+func (m *MCP) Returned() bool {
+	return m.returned
 }
 
 // Get an object saved at a given key
