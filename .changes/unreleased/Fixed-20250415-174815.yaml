@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'shell: fixed relative paths in `Directory` and `File` flags'
+time: 2025-04-15T17:48:15.01366Z
+custom:
+    Author: helderco
+    PR: "10169"
