@@ -3,6 +3,8 @@ from __future__ import annotations
 import enum
 import typing
 
+from typing_extensions import override
+
 if typing.TYPE_CHECKING:
     from dagger.client._core import Context
     from dagger.client._session import BaseConnection
@@ -58,7 +60,7 @@ class Type(Object):
 class Root(Type):
     """Top level query object type (a.k.a. Query)."""
 
-    @typing.override
+    @override
     def __init__(self, ctx: Context | None = None):
         if ctx is None:
             from ._core import Context
