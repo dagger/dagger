@@ -805,6 +805,8 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 	})
 }
 
+// TODO: variation where there's an object that only ever shows up as a private field
+// TODO: ^^ probably also slices of those objects too, etc.
 func (ModuleSuite) TestCrossSessionContextualDirWithPrivate(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 

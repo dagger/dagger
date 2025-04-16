@@ -13,10 +13,12 @@ import (
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
-func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
+func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named, isPrivate bool) (*parsedObjectType, error) {
 	spec := &parsedObjectType{
 		goType:     t,
 		moduleName: ps.moduleName,
+		pkg:        ps.pkg.Types,
+		isPrivate:  isPrivate,
 	}
 
 	if named == nil {
@@ -31,44 +33,49 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	// be skipping it. But first we want to verify the user isn't adding methods
 	// to it (in which case we error out).
 	objectIsDaggerGenerated := ps.isDaggerGenerated(named.Obj())
-
-	goFuncTypes := []*types.Func{}
-	methodSet := types.NewMethodSet(types.NewPointer(named))
-	for i := range methodSet.Len() {
-		methodObj := methodSet.At(i).Obj()
-
-		if ps.isDaggerGenerated(methodObj) {
-			// We don't care about pre-existing methods on core types or objects from dependency modules.
-			continue
-		}
-		if objectIsDaggerGenerated {
-			return nil, fmt.Errorf("cannot define methods on objects from outside this module")
-		}
-
-		goFuncType, ok := methodObj.(*types.Func)
-		if !ok {
-			return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
-		}
-
-		if !goFuncType.Exported() {
-			continue
-		}
-
-		goFuncTypes = append(goFuncTypes, goFuncType)
-	}
-	if objectIsDaggerGenerated {
+	if isPrivate && objectIsDaggerGenerated {
 		return nil, nil
 	}
-	sort.Slice(goFuncTypes, func(i, j int) bool {
-		return goFuncTypes[i].Pos() < goFuncTypes[j].Pos()
-	})
 
-	for _, goFuncType := range goFuncTypes {
-		funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse method %s: %w", goFuncType.Name(), err)
+	if !isPrivate {
+		goFuncTypes := []*types.Func{}
+		methodSet := types.NewMethodSet(types.NewPointer(named))
+		for i := range methodSet.Len() {
+			methodObj := methodSet.At(i).Obj()
+
+			if ps.isDaggerGenerated(methodObj) {
+				// We don't care about pre-existing methods on core types or objects from dependency modules.
+				continue
+			}
+			if objectIsDaggerGenerated {
+				return nil, fmt.Errorf("cannot define methods on objects from outside this module")
+			}
+
+			goFuncType, ok := methodObj.(*types.Func)
+			if !ok {
+				return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
+			}
+
+			if !goFuncType.Exported() {
+				continue
+			}
+
+			goFuncTypes = append(goFuncTypes, goFuncType)
 		}
-		spec.methods = append(spec.methods, funcTypeSpec)
+		if objectIsDaggerGenerated {
+			return nil, nil
+		}
+		sort.Slice(goFuncTypes, func(i, j int) bool {
+			return goFuncTypes[i].Pos() < goFuncTypes[j].Pos()
+		})
+
+		for _, goFuncType := range goFuncTypes {
+			funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse method %s: %w", goFuncType.Name(), err)
+			}
+			spec.methods = append(spec.methods, funcTypeSpec)
+		}
 	}
 
 	// get the comment above the struct (if any)
@@ -100,9 +107,15 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		}
 
 		fieldSpec := &fieldSpec{goType: field.Type()}
-		fieldSpec.typeSpec, err = ps.parseGoTypeReference(fieldSpec.goType, nil, false)
+		fieldSpec.typeSpec, err = ps.parseGoTypeReference(fieldSpec.goType, nil, false, isPrivate)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse field type: %w", err)
+			return nil, fmt.Errorf("failed to parse field %q type: %w", field.Name(), err)
+		}
+
+		// TODO: cleanup? or fine? could add an arg to parseGoTypeReference for allowing unhandled types
+		// TODO: cleanup? or fine? could add an arg to parseGoTypeReference for allowing unhandled types
+		if _, ok := fieldSpec.typeSpec.(*parsedUnhandledType); ok {
+			fieldSpec.isUnhandled = true
 		}
 
 		fieldSpec.goName = field.Name()
@@ -164,6 +177,9 @@ type parsedObjectType struct {
 	constructor *funcTypeSpec
 
 	goType *types.Struct
+	pkg    *types.Package
+
+	isPrivate bool
 }
 
 var _ NamedParsedType = &parsedObjectType{}
@@ -178,6 +194,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 	if spec.sourceMap != nil {
 		withObjectOptsCode = append(withObjectOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
+	}
+	if spec.isPrivate {
+		withObjectOptsCode = append(withObjectOptsCode, Id("Private").Op(":").Lit(true))
 	}
 	if len(withObjectOptsCode) > 0 {
 		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
@@ -194,10 +213,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	for _, field := range spec.fields {
-		if field.isPrivate {
+		if field.isUnhandled {
 			continue
 		}
-
 		fieldTypeDefCode, err := field.typeSpec.TypeDefCode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
@@ -212,6 +230,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		}
 		if field.sourceMap != nil {
 			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
+		}
+		if field.isPrivate {
+			withFieldOpts = append(withFieldOpts, Id("Private").Op(":").Lit(true))
 		}
 		if len(withFieldOpts) > 0 {
 			withFieldArgsCode = append(withFieldArgsCode,
@@ -242,13 +263,25 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 		subTypes = append(subTypes, method.GoSubTypes()...)
 	}
 	for _, field := range spec.fields {
-		if field.isPrivate {
+		if field.isUnhandled || field.isPrivate {
 			continue
 		}
 		subTypes = append(subTypes, field.typeSpec.GoSubTypes()...)
 	}
 	if spec.constructor != nil {
 		subTypes = append(subTypes, spec.constructor.GoSubTypes()...)
+	}
+	return subTypes
+}
+
+// TODO: doc if it stays
+func (spec *parsedObjectType) PrivateGoSubTypes() []types.Type {
+	var subTypes []types.Type
+	for _, field := range spec.fields {
+		if !field.isPrivate {
+			continue
+		}
+		subTypes = append(subTypes, field.typeSpec.GoSubTypes()...)
 	}
 	return subTypes
 }
@@ -464,6 +497,9 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 	case *parsedIfaceTypeReference:
 		s.Op("*").Id(formatIfaceImplName(typeName(typeSpec)))
 
+	case *parsedUnhandledType:
+		s.Id(types.TypeString(typeSpec.goType, types.RelativeTo(spec.pkg)))
+
 	default:
 		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)
 	}
@@ -480,7 +516,7 @@ The code for setting the fields of the real object from the concrete struct unma
 func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := field.typeSpec.(type) {
-	case *parsedPrimitiveType, *parsedObjectTypeReference:
+	case *parsedPrimitiveType, *parsedObjectTypeReference, *parsedUnhandledType:
 		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 
 	case *parsedSliceType:
@@ -518,6 +554,11 @@ type fieldSpec struct {
 	isPrivate bool
 	// goName is the name of the field in the Go struct. It may be different than name if the user changed the name of the field via a json tag
 	goName string
+	// TODO: doc if it stays
+	// TODO: doc if it stays
+	// TODO: doc if it stays
+	// TODO: doc if it stays
+	isUnhandled bool
 
 	goType types.Type
 }

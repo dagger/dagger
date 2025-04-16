@@ -45,10 +45,15 @@ func typeName(spec NamedParsedType) string {
 // only the type name and kind.
 // This is so that the typedef can be referenced as the type of an arg, return value or field
 // without needing to duplicate the full type definition every time it occurs.
-func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, isPtr bool) (ParsedType, error) {
+func (ps *parseState) parseGoTypeReference(
+	typ types.Type,
+	named *types.Named,
+	isPtr bool,
+	allowUnhandled bool,
+) (ParsedType, error) {
 	switch t := typ.(type) {
 	case *types.Alias:
-		typeSpec, err := ps.parseGoTypeReference(t.Rhs(), nil, isPtr)
+		typeSpec, err := ps.parseGoTypeReference(t.Rhs(), nil, isPtr, allowUnhandled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse alias type: %w", err)
 		}
@@ -56,21 +61,21 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
-		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t, isPtr)
+		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t, isPtr, allowUnhandled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse named type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Pointer:
-		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named, true)
+		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named, true, allowUnhandled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pointer type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Slice:
-		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil, isPtr)
+		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil, isPtr, allowUnhandled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse slice element type: %w", err)
 		}
@@ -112,11 +117,17 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 	case *types.Struct:
 		if named == nil {
-			return nil, fmt.Errorf("struct types must be named")
+			if !allowUnhandled {
+				return nil, fmt.Errorf("struct types must be named")
+			}
+			return &parsedUnhandledType{goType: t}, nil
 		}
 		typeName := named.Obj().Name()
 		if typeName == "" {
-			return nil, fmt.Errorf("struct types must be named")
+			if !allowUnhandled {
+				return nil, fmt.Errorf("struct types must be named")
+			}
+			return &parsedUnhandledType{goType: t}, nil
 		}
 		moduleName := ""
 		if !ps.isDaggerGenerated(named.Obj()) {
@@ -131,11 +142,17 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 	case *types.Interface:
 		if named == nil {
-			return nil, fmt.Errorf("interface types must be named")
+			if !allowUnhandled {
+				return nil, fmt.Errorf("interface types must be named")
+			}
+			return &parsedUnhandledType{goType: t}, nil
 		}
 		typeName := named.Obj().Name()
 		if typeName == "" {
-			return nil, fmt.Errorf("interface types must be named")
+			if !allowUnhandled {
+				return nil, fmt.Errorf("interface types must be named")
+			}
+			return &parsedUnhandledType{goType: t}, nil
 		}
 		moduleName := ""
 		if !ps.isDaggerGenerated(named.Obj()) {
@@ -148,7 +165,13 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported type for named type reference %T", t)
+		if !allowUnhandled {
+			return nil, fmt.Errorf("unsupported type for named type reference %T", t)
+		}
+
+		return &parsedUnhandledType{
+			goType: t,
+		}, nil
 	}
 }
 
@@ -307,6 +330,26 @@ func (spec *parsedIfaceTypeReference) Name() string {
 
 func (spec *parsedIfaceTypeReference) ModuleName() string {
 	return spec.moduleName
+}
+
+// TODO: doc if it stays
+// TODO: doc if it stays
+type parsedUnhandledType struct {
+	goType types.Type
+}
+
+var _ ParsedType = &parsedUnhandledType{}
+
+func (spec *parsedUnhandledType) TypeDefCode() (*Statement, error) {
+	return nil, nil
+}
+
+func (spec *parsedUnhandledType) GoType() types.Type {
+	return spec.goType
+}
+
+func (spec *parsedUnhandledType) GoSubTypes() []types.Type {
+	return nil
 }
 
 type sourceMap struct {

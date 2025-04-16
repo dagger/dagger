@@ -166,6 +166,9 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	// add any extensions to objects for the interfaces they implement (if any)
 	for _, objType := range objects {
 		obj := objType.typeDef
+		if obj.Private {
+			continue
+		}
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
 			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)

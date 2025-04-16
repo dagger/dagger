@@ -265,6 +265,9 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	if obj.Module.InstanceID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
+	if obj.TypeDef.Private {
+		return nil
+	}
 
 	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
 		Typed: obj,
@@ -383,6 +386,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 	for _, field := range obj.TypeDef.Fields {
+		if field.Private {
+			continue
+		}
 		fields = append(fields, objField(obj.Module, field))
 	}
 	return

@@ -427,6 +427,12 @@ func renderFile(
 
 	formatted, err := format.Source(source)
 	if err != nil {
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		os.WriteFile("/broken.gen.go", source, 0600)
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
 	}
 	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)

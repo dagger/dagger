@@ -153,6 +153,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	added := map[string]struct{}{}
 
 	implementationCode := Empty()
+	var privateTps []types.Type
 	for len(tps) != 0 {
 		var nextTps []types.Type
 		for _, tp := range tps {
@@ -183,7 +184,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 			switch underlyingObj := named.Underlying().(type) {
 			case *types.Struct:
 				strct := underlyingObj
-				objTypeSpec, err := ps.parseGoStruct(strct, named)
+				objTypeSpec, err := ps.parseGoStruct(strct, named, false)
 				if err != nil {
 					return "", err
 				}
@@ -214,6 +215,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
 				nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
+				privateTps = append(privateTps, objTypeSpec.PrivateGoSubTypes()...)
 
 			case *types.Interface:
 				iface := underlyingObj
@@ -276,6 +278,76 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		}
 
 		tps, nextTps = nextTps, nil
+	}
+
+	for len(privateTps) != 0 {
+		var nextTps []types.Type
+		for _, tp := range privateTps {
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			fmt.Println("PRIVATE TYPE", tp.String())
+
+			// TODO: dedupe copypasta w/ above
+			tp = dealias(tp)
+			named, isNamed := tp.(*types.Named)
+			if !isNamed {
+				continue
+			}
+			obj := named.Obj()
+			basePkg := funcs.modulePkg.Types.Path()
+			if obj.Pkg().Path() != basePkg && !ps.isDaggerGenerated(obj) {
+				// the type must be created in the target package (if not a
+				// generated type)
+				return "", fmt.Errorf("cannot code-generate for foreign type %s", obj.Name())
+			}
+			if !obj.Exported() {
+				// the type must be exported
+				return "", fmt.Errorf("cannot code-generate unexported type %s", obj.Name())
+			}
+
+			// check if this showed up as not-private elsewhere already or was handled as private in this
+			// loop already, skip it if so
+			if _, ok := added[obj.Pkg().Path()+"/"+obj.Name()]; ok {
+				continue
+			}
+
+			strct, ok := named.Underlying().(*types.Struct)
+			if !ok {
+				continue
+			}
+
+			objTypeSpec, err := ps.parseGoStruct(strct, named, true)
+			if err != nil {
+				return "", err
+			}
+			if objTypeSpec == nil {
+				// not including in module schema, skip it
+				continue
+			}
+
+			// Add the object to the module
+			objTypeDefCode, err := objTypeSpec.TypeDefCode()
+			if err != nil {
+				return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+			}
+			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+			added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
+
+			implCode, err := objTypeSpec.ImplementationCode()
+			if err != nil {
+				return "", fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
+			}
+			implementationCode.Add(implCode).Line()
+
+			// all subtypes are considered private now (and if they aren't, then they will already
+			// have been handled in the earlier loop)
+			nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
+			nextTps = append(nextTps, objTypeSpec.PrivateGoSubTypes()...)
+		}
+
+		privateTps, nextTps = nextTps, nil
 	}
 
 	return strings.Join([]string{

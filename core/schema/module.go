@@ -82,6 +82,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
+		dagql.Func("objects", s.moduleObjectDefs).
+			Doc(`Objects served by this module.`),
+
 		dagql.NodeFunc("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -158,7 +161,8 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name of the field in the object`).
 			ArgDoc("typeDef", `The type of the field`).
 			ArgDoc("description", `A doc string for the field, if any`).
-			ArgDoc("sourceMap", `The source map for the field definition.`),
+			ArgDoc("sourceMap", `The source map for the field definition.`).
+			ArgDoc("private", `If true, the field will not be exposed in the public API of the module.`),
 
 		dagql.Func("withFunction", s.typeDefWithFunction).
 			Doc(`Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.`),
@@ -181,7 +185,10 @@ func (s *moduleSchema) Install() {
 			ArgDoc("sourceMap", `The source map for the enum value definition.`),
 	}.Install(s.dag)
 
-	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.ObjectTypeDef]{
+		dagql.Func("fields", s.objectTypeDefFields).
+			Doc(`Static fields defined on this object, if any`),
+	}.Install(s.dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
@@ -231,6 +238,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	Name        string
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Private     bool `default:"false"`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
@@ -239,7 +247,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObject(args.Name, args.Description, sourceMap), nil
+	return def.WithObject(args.Name, args.Description, sourceMap, args.Private), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
@@ -262,6 +270,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	TypeDef     core.TypeDefID
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Private     bool `default:"false"`
 }) (*core.TypeDef, error) {
 	fieldType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
@@ -271,7 +280,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObjectField(args.Name, fieldType.Self, args.Description, sourceMap)
+	return def.WithObjectField(args.Name, fieldType.Self, args.Description, sourceMap, args.Private)
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
@@ -327,6 +336,28 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 		return nil, err
 	}
 	return def.WithEnumValue(args.Value, args.Description, sourceMap)
+}
+
+func (s *moduleSchema) moduleObjectDefs(ctx context.Context, mod *core.Module, args struct{}) ([]*core.TypeDef, error) {
+	var retDefs []*core.TypeDef
+	for _, def := range mod.ObjectDefs {
+		if def.AsObject.Valid && def.AsObject.Value.Private {
+			continue
+		}
+		retDefs = append(retDefs, def)
+	}
+	return retDefs, nil
+}
+
+func (s *moduleSchema) objectTypeDefFields(ctx context.Context, obj *core.ObjectTypeDef, args struct{}) ([]*core.FieldTypeDef, error) {
+	var retFields []*core.FieldTypeDef
+	for _, field := range obj.Fields {
+		if field.Private {
+			continue
+		}
+		retFields = append(retFields, field)
+	}
+	return retFields, nil
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {

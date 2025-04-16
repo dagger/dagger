@@ -44,7 +44,7 @@ type Module struct {
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's objects
-	ObjectDefs []*TypeDef `field:"true" name:"objects" doc:"Objects served by this module."`
+	ObjectDefs []*TypeDef
 
 	// The module's interfaces
 	InterfaceDefs []*TypeDef `field:"true" name:"interfaces" doc:"Interfaces served by this module."`

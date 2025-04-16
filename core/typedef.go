@@ -439,9 +439,9 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObject(name, desc string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithObject(name, desc string, sourceMap *SourceMap, private bool) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc).WithSourceMap(sourceMap))
+	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc, private).WithSourceMap(sourceMap))
 	return typeDef
 }
 
@@ -457,7 +457,7 @@ func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap, private bool) (*TypeDef, error) {
 	if !typeDef.AsObject.Valid {
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
@@ -468,6 +468,7 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 		Description:  desc,
 		SourceMap:    sourceMap,
 		TypeDef:      fieldType,
+		Private:      private,
 	})
 	return typeDef, nil
 }
@@ -585,7 +586,7 @@ type ObjectTypeDef struct {
 	Name        string                    `field:"true" doc:"The name of the object."`
 	Description string                    `field:"true" doc:"The doc string for the object, if any."`
 	SourceMap   *SourceMap                `field:"true" doc:"The location of this object declaration."`
-	Fields      []*FieldTypeDef           `field:"true" doc:"Static fields defined on this object, if any."`
+	Fields      []*FieldTypeDef           `field:"false"`
 	Functions   []*Function               `field:"true" doc:"Functions defined on this object, if any."`
 	Constructor dagql.Nullable[*Function] `field:"true" doc:"The function used to construct new instances of this object, if any"`
 
@@ -597,6 +598,9 @@ type ObjectTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+
+	// TODO: doc if it stays
+	Private bool
 }
 
 func (*ObjectTypeDef) Type() *ast.Type {
@@ -610,11 +614,12 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
-func NewObjectTypeDef(name, description string) *ObjectTypeDef {
+func NewObjectTypeDef(name, description string, private bool) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
+		Private:      private,
 	}
 }
 
@@ -723,6 +728,9 @@ type FieldTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+
+	// TODO: doc if it stays
+	Private bool
 }
 
 func (*FieldTypeDef) Type() *ast.Type {
