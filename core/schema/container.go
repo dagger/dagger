@@ -429,14 +429,25 @@ func (s *containerSchema) Install() {
 					`Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].`,
 					`To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]`,
 					`Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").`),
-				dagql.Arg("useEntrypoint").Doc(
-					`Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.`),
+				dagql.Arg("useEntrypoint").
+					View(AllVersion).
+					Doc(`Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.`),
+				dagql.Arg("useEntrypoint").
+					View(BeforeVersion("v0.12.0")).
+					Default(dagql.Boolean(true)).
+					Doc(`Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.`),
+				dagql.Arg("skipEntrypoint").
+					View(BeforeVersion("v0.13.0")).
+					Doc("For true this can be removed. For false, use `useEntrypoint` instead."),
 				dagql.Arg("stdin").Doc(
 					`Content to write to the command's standard input. Example: "Hello world")`),
 				dagql.Arg("redirectStdout").Doc(
 					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
 				dagql.Arg("redirectStderr").Doc(
 					`Like redirectStdout, but for standard error`),
+				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
+				dagql.Arg("experimentalPrivilegedNesting").Doc(
+					`Provides Dagger access to the executed command.`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
@@ -451,84 +462,22 @@ func (s *containerSchema) Install() {
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
 			),
-		dagql.Func("withExec", s.withExec).
-			View(BeforeVersion("v0.13.0")).
-			Doc(`Retrieves this container after executing the specified command inside it.`).
-			Args(
-				dagql.Arg("args").Doc(
-					`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
-					`If empty, the container's default command is used.`),
-				dagql.Arg("useEntrypoint").Doc(
-					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("skipEntrypoint").Doc("For true this can be removed. For false, use `useEntrypoint` instead."),
-				dagql.Arg("stdin").Doc(
-					`Content to write to the command's standard input before closing (e.g.,
-					"Hello world").`),
-				dagql.Arg("redirectStdout").Doc(
-					`Redirect the command's standard output to a file in the container (e.g.,
-				"/tmp/stdout").`),
-				dagql.Arg("redirectStderr").Doc(
-					`Redirect the command's standard error to a file in the container (e.g.,
-				"/tmp/stderr").`),
-				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("insecureRootCapabilities").Doc(
-					`Execute the command with all root capabilities. This is similar to
-					running a command with "sudo" or executing "docker run" with the
-					"--privileged" flag. Containerization does not provide any security
-					guarantees when using this option. It should only be used when
-					absolutely necessary and only with trusted commands.`),
-			),
 
-		dagql.Func("withExec", s.withExecLegacy).
-			View(BeforeVersion("v0.12.0")).
-			Doc(`Retrieves this container after executing the specified command inside it.`).
-			Args(
-				dagql.Arg("args").Doc(
-					`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
-					`If empty, the container's default command is used.`),
-				dagql.Arg("skipEntrypoint").Doc(
-					`If the container has an entrypoint, ignore it for args rather than using it to wrap them.`),
-				dagql.Arg("stdin").Doc(
-					`Content to write to the command's standard input before closing (e.g.,
-					"Hello world").`),
-				dagql.Arg("redirectStdout").Doc(
-					`Redirect the command's standard output to a file in the container (e.g.,
-				"/tmp/stdout").`),
-				dagql.Arg("redirectStderr").Doc(
-					`Redirect the command's standard error to a file in the container (e.g.,
-				"/tmp/stderr").`),
-				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
-				dagql.Arg("insecureRootCapabilities").Doc(
-					`Execute the command with all root capabilities. This is similar to
-					running a command with "sudo" or executing "docker run" with the
-					"--privileged" flag. Containerization does not provide any security
-					guarantees when using this option. It should only be used when
-					absolutely necessary and only with trusted commands.`),
-			),
-
-		dagql.Func("stdout", s.stdout).
+		dagql.Func("stdout", s.stdout(false)).
 			View(AllVersion).
 			Doc(`The buffered standard output stream of the last executed command`,
 				`Returns an error if no command was executed`),
+		dagql.Func("stdout", s.stdout(true)).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
 
-		dagql.Func("stderr", s.stderr).
+		dagql.Func("stderr", s.stderr(false)).
 			View(AllVersion).
 			Doc(`The buffered standard error stream of the last executed command`,
 				`Returns an error if no command was executed`),
-
-		dagql.Func("stdout", s.stdoutLegacy).
+		dagql.Func("stderr", s.stderr(true)).
 			View(BeforeVersion("v0.12.0")).
-			Doc(`The output stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
-
-		dagql.Func("stderr", s.stderrLegacy).
-			View(BeforeVersion("v0.12.0")).
-			Doc(`The error stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+			Extend(),
 
 		dagql.Func("exitCode", s.exitCode).
 			Doc(`The exit code of the last executed command`,
@@ -690,7 +639,6 @@ func (s *containerSchema) Install() {
 		dagql.Func("withFocus", s.withFocus).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Indicate that subsequent operations should be featured more prominently in the UI.`),
-
 		dagql.Func("withoutFocus", s.withoutFocus).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
@@ -911,15 +859,13 @@ type containerExecArgs struct {
 
 	// If the container has an entrypoint, ignore it for this exec rather than
 	// calling it with args
-	SkipEntrypoint *bool `default:"true"`
+	SkipEntrypoint *bool `default:"false"`
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
 	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
-		if !args.ContainerExecOpts.UseEntrypoint && !*args.SkipEntrypoint {
-			args.ContainerExecOpts.UseEntrypoint = true
-		}
+		args.UseEntrypoint = !*args.SkipEntrypoint
 	}
 
 	expandedArgs := make([]string, len(args.Args))
@@ -936,89 +882,50 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 	return parent.WithExec(ctx, args.ContainerExecOpts)
 }
 
-type containerExecArgsLegacy struct {
-	// Command to run instead of the container's default command
-	Args []string
-
-	// If the container has an entrypoint, ignore it for this exec rather than
-	// calling it with args
-	SkipEntrypoint bool `default:"false"`
-
-	// Content to write to the command's standard input before closing
-	Stdin string `default:""`
-
-	// Redirect the command's standard output to a file in the container
-	RedirectStdout string `default:""`
-
-	// Redirect the command's standard error to a file in the container
-	RedirectStderr string `default:""`
-
-	// Exit codes this exec is allowed to exit with
-	Expect core.ReturnTypes `default:"SUCCESS"`
-
-	// Provide the executed command access back to the Dagger API
-	ExperimentalPrivilegedNesting bool `default:"false"`
-
-	// Grant the process all root capabilities
-	InsecureRootCapabilities bool `default:"false"`
-
-	// (Internal-only) If this is a nested exec, exec metadata to use for it
-	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
-}
-
-func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Container, args containerExecArgsLegacy) (*core.Container, error) {
-	opts := core.ContainerExecOpts{
-		Args:                          args.Args,
-		UseEntrypoint:                 !args.SkipEntrypoint,
-		Stdin:                         args.Stdin,
-		RedirectStdout:                args.RedirectStdout,
-		RedirectStderr:                args.RedirectStderr,
-		Expect:                        args.Expect,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		NestedExecMetadata:            args.NestedExecMetadata,
+func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
+	if useEntrypoint {
+		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+			out, err := parent.Stdout(ctx)
+			if errors.Is(err, core.ErrNoCommand) {
+				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
+					UseEntrypoint: true,
+				})
+				if err != nil {
+					return "", err
+				}
+				return ctr.Stdout(ctx)
+			}
+			return out, err
+		}
 	}
-	return parent.WithExec(ctx, opts)
+	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+		return parent.Stdout(ctx)
+	}
 }
 
-func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.Stdout(ctx)
-}
-
-func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.Stderr(ctx)
+func (s *containerSchema) stderr(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
+	if useEntrypoint {
+		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+			out, err := parent.Stderr(ctx)
+			if errors.Is(err, core.ErrNoCommand) {
+				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
+					UseEntrypoint: true,
+				})
+				if err != nil {
+					return "", err
+				}
+				return ctr.Stderr(ctx)
+			}
+			return out, err
+		}
+	}
+	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+		return parent.Stderr(ctx)
+	}
 }
 
 func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
 	return parent.ExitCode(ctx)
-}
-
-func (s *containerSchema) stdoutLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	out, err := parent.Stdout(ctx)
-	if errors.Is(err, core.ErrNoCommand) {
-		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return "", err
-		}
-		return ctr.Stdout(ctx)
-	}
-	return out, err
-}
-
-func (s *containerSchema) stderrLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	out, err := parent.Stderr(ctx)
-	if errors.Is(err, core.ErrNoCommand) {
-		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return "", err
-		}
-		return ctr.Stderr(ctx)
-	}
-	return out, err
 }
 
 type containerGpuArgs struct {
