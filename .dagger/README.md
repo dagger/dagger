@@ -81,6 +81,16 @@ In core/schema, changes utilizing the dagql package modify the engine's GraphQL 
 > For `PHP` and `Elixir` SDKs it's important to manually delete the generated folder before running
 > this command
 
+## Docs
+
+Lint the docs:
+
+    dagger -m docs call lint
+
+Auto-generate docs components:
+
+    dagger -m docs call generate -o .
+
 ## SDKs
 
 ### List available SDKs
