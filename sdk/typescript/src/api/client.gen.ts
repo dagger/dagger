@@ -2567,7 +2567,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return a new container snapshot, with a file added to its filesystem
+   * Return a new container snapshot, with a file added to its filesystem with text content
    * @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
    * @param contents Contents of the new file. Example: "Hello world!"
    * @param opts.permissions Permissions of the new file. Example: 0600

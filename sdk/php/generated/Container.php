@@ -809,7 +809,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new container snapshot, with a file added to its filesystem
+     * Return a new container snapshot, with a file added to its filesystem with text content
      */
     public function withNewFile(
         string $path,
