@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -21,6 +21,24 @@ import (
 func mcpDefaultArray[T any](v []T) mcp.PropertyOption {
 	return func(schema map[string]any) {
 		schema["default"] = v
+	}
+}
+
+func errTypeMismatch(typ string, defaultVal any, argName, toolName string) error {
+	return fmt.Errorf("arg %q of tool %q has a \"type\" field (%q) that is incompatible with the type of the \"default\" field (%T)", argName, toolName, typ, defaultVal)
+}
+
+func toFloat64(n any) (float64, bool) {
+	v := reflect.ValueOf(n)
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(v.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return v.Float(), true
+	default:
+		return 0, false
 	}
 }
 
@@ -59,14 +77,7 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			}
 		}
 
-		var defaultVal *string
-		if v, ok := argSchema["default"]; ok {
-			defVal, ok := v.(string)
-			if !ok {
-				return nil, fmt.Errorf("only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", argName, tool.Name, v)
-			}
-			defaultVal = &defVal
-		}
+		defaultVal := argSchema["default"]
 		if slices.Contains(required, argName) {
 			propOpts = append(propOpts, mcp.Required())
 		}
@@ -82,35 +93,27 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			mcpArg = mcp.WithArray
 			propOpts = append(propOpts, mcp.Items(items))
 			if defaultVal != nil {
-				if *defaultVal != "[]" && *defaultVal != "" {
-					return nil, fmt.Errorf("not implemented: default value of array arg %q of tool %q can only be an empty array, received: %s", argName, tool.Name, *defaultVal)
+				s, _ := defaultVal.(string)
+				if s != "" && s != "[]" {
+					return nil, fmt.Errorf("not implemented: default value of array arg %q of tool %q can only be the string \"[]\", received: %v", argName, tool.Name, defaultVal)
 				}
 				propOpts = append(propOpts, mcpDefaultArray([]any{}))
 			}
 		case "boolean":
 			mcpArg = mcp.WithBoolean
 			if defaultVal != nil {
-				b, err := strconv.ParseBool(*defaultVal)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse default value of boolean arg %q of tool %q: %w", argName, tool.Name, err)
+				b, ok := defaultVal.(bool)
+				if !ok {
+					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
 				}
 				propOpts = append(propOpts, mcp.DefaultBool(b))
 			}
-		case "integer":
+		case "integer", "number":
 			mcpArg = mcp.WithNumber
 			if defaultVal != nil {
-				i, err := strconv.ParseInt(*defaultVal, 10, 64)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse default value of integer arg %q of tool %q: %w", argName, tool.Name, err)
-				}
-				propOpts = append(propOpts, mcp.DefaultNumber(float64(i)))
-			}
-		case "number":
-			mcpArg = mcp.WithNumber
-			if defaultVal != nil {
-				f, err := strconv.ParseFloat(*defaultVal, 64)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse default value of number arg %q of tool %q: %w", argName, tool.Name, err)
+				f, ok := toFloat64(defaultVal)
+				if !ok {
+					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
 				}
 				propOpts = append(propOpts, mcp.DefaultNumber(f))
 			}
@@ -118,7 +121,11 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
 			mcpArg = mcp.WithString
 			if defaultVal != nil {
-				propOpts = append(propOpts, mcp.DefaultString(*defaultVal))
+				s, ok := defaultVal.(string)
+				if !ok {
+					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
+				}
+				propOpts = append(propOpts, mcp.DefaultString(s))
 			}
 		default:
 			return nil, fmt.Errorf("arg %q of tool %q is of unsupported type %q", argName, tool.Name, typ)
