@@ -216,6 +216,7 @@ func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
 	_ dagql.Object,
 	_ map[string]dagql.Input,
+	_ dagql.View,
 	cacheCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
 	// Function calls on a module should be cached based on the module's content hash, not

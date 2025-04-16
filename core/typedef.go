@@ -78,6 +78,9 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 		Description: formatGqlDescription(fn.Description),
 		Type:        fn.ReturnType.ToTyped(),
 	}
+	if fn.SourceMap != nil {
+		spec.Directives = append(spec.Directives, fn.SourceMap.TypeDirective())
+	}
 	for _, arg := range fn.Args {
 		input := arg.TypeDef.ToInput()
 		var defaultVal dagql.Input
@@ -94,12 +97,18 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
 			}
 		}
-		spec.Args = append(spec.Args, dagql.InputSpec{
+
+		argSpec := dagql.InputSpec{
 			Name:        arg.Name,
 			Description: formatGqlDescription(arg.Description),
 			Type:        input,
 			Default:     defaultVal,
-		})
+		}
+		if arg.SourceMap != nil {
+			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.TypeDirective())
+		}
+
+		spec.Args.Add(argSpec)
 	}
 	return spec, nil
 }
@@ -921,7 +930,7 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 		Name: typeDef.Name,
 	}
 	for _, field := range typeDef.Fields {
-		spec.Fields = append(spec.Fields, dagql.InputSpec{
+		spec.Fields.Add(dagql.InputSpec{
 			Name:        field.Name,
 			Description: field.Description,
 			Type:        field.TypeDef.ToInput(),

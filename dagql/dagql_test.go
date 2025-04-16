@@ -1891,6 +1891,11 @@ func InstallViewer(srv *dagql.Server) {
 	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
 		return string(srv.View), nil
 	}
+	getViewArg := func(_ context.Context, _ Query, args struct {
+		Arg string
+	}) (string, error) {
+		return string(srv.View) + args.Arg, nil
+	}
 
 	dagql.Fields[Query]{
 		dagql.Func("global", getView).
@@ -1899,6 +1904,14 @@ func InstallViewer(srv *dagql.Server) {
 		dagql.Func("all", getView).
 			View(dagql.AllView{}).
 			Doc("available on all views"),
+
+		dagql.Func("args", getViewArg).
+			View(dagql.AllView{}).
+			Doc("available on all views").
+			Args(
+				dagql.Arg("arg").View(dagql.ExactView("firstView")).Doc("available on first view"),
+				dagql.Arg("arg").View(dagql.ExactView("secondView")).Doc("available on second view"),
+			),
 
 		dagql.Func("shared", getView).
 			View(dagql.ExactView("firstView")).
@@ -1929,32 +1942,44 @@ func TestViews(t *testing.T) {
 		srv.View = ""
 
 		var res struct {
-			All string
+			All  string
+			Args string
 		}
 		req(t, gql, `query {
 			all
+			args
 		}`, &res)
 		assert.Equal(t, "", res.All)
 
 		reqFail(t, gql, `query {
 			shared
 		}`, "Cannot query field")
+
+		reqFail(t, gql, `query {
+			args(arg: "foo")
+		}`, `Unknown argument \"arg\"`)
 	})
 
 	t.Run("in unknown view", func(t *testing.T) {
 		srv.View = "unknownView"
 
 		var res struct {
-			All string
+			All  string
+			Args string
 		}
 		req(t, gql, `query {
 			all
+			args
 		}`, &res)
 		assert.Equal(t, "unknownView", res.All)
 
 		reqFail(t, gql, `query {
 			shared
 		}`, "Cannot query field")
+
+		reqFail(t, gql, `query {
+			args(arg: "foo")
+		}`, `Unknown argument \"arg\"`)
 	})
 
 	t.Run("in first view", func(t *testing.T) {
@@ -1963,15 +1988,18 @@ func TestViews(t *testing.T) {
 		var res struct {
 			All            string
 			Shared         string
+			Args           string
 			FirstExclusive string
 		}
 		req(t, gql, `query {
 			all
 			shared
+			args(arg: "foo")
 			firstExclusive
 		}`, &res)
 		assert.Equal(t, "firstView", res.All)
 		assert.Equal(t, "firstView", res.Shared)
+		assert.Equal(t, "firstViewfoo", res.Args)
 		assert.Equal(t, "firstView", res.FirstExclusive)
 
 		reqFail(t, gql, `query {
@@ -1985,15 +2013,18 @@ func TestViews(t *testing.T) {
 		var res struct {
 			All             string
 			Shared          string
+			Args            string
 			SecondExclusive string
 		}
 		req(t, gql, `query {
 			all
 			shared
+			args(arg: "foo")
 			secondExclusive
 		}`, &res)
 		assert.Equal(t, "secondView", res.All)
 		assert.Equal(t, "secondView", res.Shared)
+		assert.Equal(t, "secondViewfoo", res.Args)
 		assert.Equal(t, "secondView", res.SecondExclusive)
 
 		reqFail(t, gql, `query {
@@ -2520,29 +2551,29 @@ func InstallTestTypes(srv *dagql.Server) {
 
 	testObjClass.Install(
 		dagql.Field[*TestObject]{
-			Spec: dagql.FieldSpec{
+			Spec: &dagql.FieldSpec{
 				Name: "value",
 				Type: dagql.Int(0),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				return dagql.Int(self.Self.Value), nil
 			},
 		},
 		dagql.Field[*TestObject]{
-			Spec: dagql.FieldSpec{
+			Spec: &dagql.FieldSpec{
 				Name: "text",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				return dagql.String(self.Self.Text), nil
 			},
 		},
 		dagql.Field[*TestObject]{
-			Spec: dagql.FieldSpec{
+			Spec: &dagql.FieldSpec{
 				Name: "nullableField",
 				Type: dagql.Null[dagql.String](),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				if self.Self.NullableField == nil {
 					return dagql.Null[dagql.String](), nil
 				}
@@ -2559,20 +2590,20 @@ func InstallTestTypes(srv *dagql.Server) {
 
 	nestedObjClass.Install(
 		dagql.Field[*NestedObject]{
-			Spec: dagql.FieldSpec{
+			Spec: &dagql.FieldSpec{
 				Name: "name",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				return dagql.String(self.Self.Name), nil
 			},
 		},
 		dagql.Field[*NestedObject]{
-			Spec: dagql.FieldSpec{
+			Spec: &dagql.FieldSpec{
 				Name: "inner",
 				Type: &TestObject{},
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				return self.Self.Inner, nil
 			},
 		},

@@ -135,7 +135,7 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
-func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Context, any) (any, error) {
+func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)) func(context.Context, any) (any, error) {
 	return func(ctx context.Context, args any) (any, error) {
 		vals, ok := args.(map[string]any)
 		if !ok {
@@ -147,7 +147,7 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 			return nil, err
 		}
 		inputs := map[string]dagql.Input{}
-		for _, spec := range specs {
+		for _, spec := range specs.Inputs(srv.View) {
 			var input dagql.Input
 			if arg, provided := vals[spec.Name]; provided {
 				input, err = spec.Type.Decoder().DecodeInput(arg)
@@ -161,7 +161,7 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 			}
 			inputs[spec.Name] = input
 		}
-		if err := specs.Decode(inputs, &t); err != nil {
+		if err := specs.Decode(inputs, &t, srv.View); err != nil {
 			return nil, err
 		}
 		return fn(ctx, t)
@@ -361,7 +361,7 @@ func (m *MCP) call(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
-	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
+	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, argsMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -460,6 +460,7 @@ func (m *MCP) selectionToToolResult(
 }
 
 func (m *MCP) toolCallToSelection(
+	srv *dagql.Server,
 	target dagql.Object,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
@@ -473,7 +474,7 @@ func (m *MCP) toolCallToSelection(
 	if !ok {
 		return sel, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
 	}
-	for _, arg := range field.Args {
+	for _, arg := range field.Args.Inputs(srv.View) {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
@@ -710,7 +711,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				"required":             []string{"id"}, // , "functions"},
 				"additionalProperties": false,
 			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
+			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				ID string `name:"id"`
 				// Functions []string
 			}) (any, error) {
