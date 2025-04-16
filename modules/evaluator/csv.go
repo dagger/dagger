@@ -83,8 +83,8 @@ func (m *Evaluator) Compare(
 	var sb strings.Builder
 	w := io.MultiWriter(&sb, stdio.Stdout)
 	fmt.Fprintf(w, "# Comparison Report\n\n")
-	fmt.Fprintf(w, "| Model | Eval | Success Rate | Total Attempts | Input Tokens/Attempt | Output Tokens/Attempt |\n")
-	fmt.Fprintf(w, "|-------|------|-------------|----------------|---------------------|----------------------|\n")
+	fmt.Fprintf(w, "| Model | Eval | Success Rate | Input / Output Tokens |\n")
+	fmt.Fprintf(w, "|-------|------|-------------|---------------------|\n")
 
 	// Compare data for each model+eval pair
 	for _, modelEval := range slices.Sorted(maps.Keys(afterAggregates)) {
@@ -131,7 +131,7 @@ func (m *Evaluator) Compare(
 		)
 
 		// Add row to table
-		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(w, "| `%s` | %s | %s <br />(%s attempts) | %s <br />%s |\n",
 			model, eval,
 			successRateComparison,
 			attemptsComparison,
