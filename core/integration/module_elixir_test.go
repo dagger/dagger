@@ -182,6 +182,17 @@ func (ElixirSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ElixirSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := elixirModule(t, c, "self-object").
+		With(daggerCall("foo", "message")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "bar", out)
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
