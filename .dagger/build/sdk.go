@@ -66,13 +66,13 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			},
 		}).
 		// bundle the uv binaries
-		WithDirectory("/dist", uv.Rootfs(), dagger.DirectoryWithDirectoryOpts{
+		WithDirectory("dist", uv.Rootfs(), dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"uv*"},
 		})
 
 	// bundle the codegen script and its dependencies into a single executable
 	rootfs = rootfs.WithFile(
-		"/dist/codegen",
+		"dist/codegen",
 		base.
 			WithMountedDirectory("/dist", uv.Rootfs()).
 			WithMountedDirectory("/src", rootfs.Directory("codegen")).
