@@ -3,18 +3,18 @@
     "role": "user",
     "content": "greet me",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
     "role": "assistant",
     "content": "Hello! How can I assist you today?",
     "token_usage": {
-      "InputTokens": 296,
-      "OutputTokens": 11,
-      "TotalTokens": 307
+      "input_tokens": 763,
+      "output_tokens": 11,
+      "total_tokens": 774
     }
   }
 ]
