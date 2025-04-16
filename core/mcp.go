@@ -391,14 +391,14 @@ func (m *MCP) call(ctx context.Context,
 	ctx, span := Tracer(ctx).Start(ctx,
 		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
 		telemetry.ActorEmoji("🤖"),
-		// telemetry.Passthrough(),
+		telemetry.Passthrough(),
 		telemetry.Reveal())
 
 	defer telemetry.End(span, func() error {
 		if rerr != nil && !validated {
 			// only reveal for "plumbing" errors, not errors from the field, since
 			// those will already be shown
-			// span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
+			span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
 		}
 		return rerr
 	})
