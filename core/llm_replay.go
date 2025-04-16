@@ -16,7 +16,7 @@ func newHistoryReplay(messages []ModelMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
-func (r *LLMReplayer) IsRetryable(err error) bool {
+func (*LLMReplayer) IsRetryable(err error) bool {
 	return false
 }
 
