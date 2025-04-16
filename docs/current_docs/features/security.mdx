@@ -19,7 +19,7 @@ Dagger’s security model treats the top-level module (i.e., the main function o
 
 ## Secrets
 
-Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secre can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
+Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secrets can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
 :::important
 Dagger has built-in safeguards to ensure that secrets are used without exposing them in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. This ensures that sensitive data does not leak - for example, in the event of a crash.
