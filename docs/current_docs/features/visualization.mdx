@@ -7,34 +7,45 @@ description: "Visualize pipelines in real-time"
 
 Dagger works by building up a DAG of operations and evaluating them, often in parallel. By nature, this is a difficult thing to display. It's easy to show the output of one operation at a time, but as soon as you have parallelism, you'll get jumbled output that's hard to understand.
 
-This quickly creates the need to visualize the pipeline, to understand what's going on. Dagger includes two features for this purpose.
+This quickly creates the need to visualize the pipeline to understand and measure your pipelines. Dagger includes two features for this purpose - a [Terminal UI](#terminal-ui) and traces with [Dagger Cloud](#traces) .
 
-## Terminal UI (TUI)
+## Terminal UI
 
-The Dagger CLI includes a real-time visualization feature called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
+The [Dagger CLI](../reference/cli/) includes a real-time visualization feature called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
 
-The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback. Here's an example of it in action:
+### Rapid Iteration
+
+The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback.
+
+Here's an example of it in action:
 
 ![Dagger TUI](/img/current_docs/features/tui.gif)
 
 The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A parent-child relationship means that the child call is being made by the parent call.
+
 - A red X or green check indicates whether the call succeeded or failed.
 - A call's duration is rendered after its name.
 
+### Errors
 Error logs appear at the top, directly below the progress report. In most cases, this tells you exactly what went wrong and where without any extra sleuthing.
 
-The TUI also provides real-time telemetry to give you a complete view of your pipeline's performance. It allows you to monitor:
-- State and duration: Get visual cues for cached and pending states, and see exactly how long each step of your pipeline takes (including accounting for lazy effects installed by a Dagger Function).
-- CPU resource usage: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
-- Network activity: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your pipelines.
-- Memory usage: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
+### Telemetry
 
+The TUI also provides real-time telemetry to give you a complete view of your pipeline's performance. It allows you to monitor:
+
+- **State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your pipeline takes (including accounting for lazy effects installed by a Dagger Function).
+- **CPU resource usage**: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
+- **Network activity**: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your pipelines.
+- **Memory usage**: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
+
+:::info
 The CLI has tiered verbosity: `-v`, `-vv`, `-vvv` (just like `curl`):
 - `-v` keeps spans visible after they complete, rather than disappearing after a brief pause;
 - `-vv` reveals internal and encapsulated spans;
 - `-vvv` reveals sub-100ms spans.
 
 For additional debugging information, add the `--debug` flag to the `dagger call` command.
+:::
 
 The TUI is driven by [OpenTelemetry](https://opentelemetry.io/) and is essentially a live-streaming OpenTelemetry trace visualizer. It represents Dagger API calls as OpenTelemetry spans with special metadata. If user code integrates with OpenTelemetry, related spans will appear in the TUI as first-class citizens.
 
@@ -44,7 +55,11 @@ Dagger automatically detects OpenTelemetry resource attributes. By utilizing the
 
 ## Traces
 
-Dagger Cloud provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
+[Dagger Cloud](https://dagger.cloud) provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
+
+:::info
+Dagger Cloud is a hosted service helps visualize your pipelines in a friendly way. You can create a free account by visiting [dagger.cloud](https://dagger.cloud).
+:::
 
 - Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened.
 - Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your pipeline and the associated telemetry.
@@ -55,10 +70,9 @@ Here's an example of it in action:
 
 ![Dagger Trace](/img/current_docs/features/trace.webp)
 
+### OpenTelemetry
 
-:::info
 Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
-:::
 
 Dagger is aware of the context it runs in. The Dagger Cloud dashboard classifies Traces depending on whether you triggered a run from your local development host or from your CI environment. You can select the appropriate view from the dashboard. Here's an example showing Traces generated in both CI and local environments:
 
@@ -81,11 +95,13 @@ You can drill down into the details of a specific group by clicking it. This dir
 
 ![Trace details](/img/current_docs/features/trace-details.png)
 
+### Timeline View
+
 With the timeline view you can:
 
-- See exactly how long each Dagger Function in your pipeline takes. This helps identify bottlenecks and optimize your workflows for faster execution.
-- See all Traces in a single unified view allowing you to easily drill down into individual Traces to understand their execution.
-- Quickly pinpoint failed steps in the timeline and jump to their details immediately.
+- **Duration**: See exactly how long each Dagger Function in your pipeline takes. This helps identify bottlenecks and optimize your workflows for faster execution.
+- **Unified View**: See all Traces in a single unified view allowing you to easily drill down into individual Traces to understand their execution.
+- **View Failures**: Quickly pinpoint failed steps in the timeline and jump to their details immediately.
 
 You can click any of the Traces in the list to see detailed logs for each Trace. The flame graph at the top of the Trace shows the operations performed by the Dagger Function, with a visual cue of how much time each operation represents of the total duration, as shown below:
 
@@ -103,4 +119,5 @@ If there are any errors, they are now highlighted in a separate section in the T
 
 ## Learn more
 
+- [Create a Dagger Cloud account](https://dagger.cloud)
 - [Configure Traces for your Dagger pipelines](../configuration/cloud.mdx)
