@@ -11,21 +11,25 @@ func (m *CodingAgent) GoProgram(
 	// The programming assignment, e.g. "write me a curl clone"
 	assignment string,
 ) *dagger.Container {
-	workspace := dag.ToyWorkspace()
 	environment := dag.Env().
-		WithToyWorkspaceInput("before", workspace, "tools to complete the assignment").
 		WithStringInput("assignment", assignment, "the assignment to complete").
-		WithToyWorkspaceOutput("after", "the completed assignment")
+		WithContainerInput("builder",
+			dag.Container().From("golang").WithWorkdir("/app"),
+			"a container to use for building Go code").
+		WithContainerOutput("completed", "the completed assignment in the Golang container")
 
-	return dag.LLM().
+	work := dag.LLM().
 		WithEnv(environment).
 		WithPrompt(`
-			You are an expert go programmer. You have access to a workspace.
-			Use the default directory in the workspace.
-			Do not stop until the code builds.
-			Your assignment is: $assignment`).
+			You are an expert Go programmer with an assignment to create a Go program
+			Create files in the default directory in $builder
+			Always build the code to make sure it is valid
+			Do not stop until your assignment is completed and the code builds
+			Your assignment is: $assignment
+			`)
+
+	return work.
 		Env().
-		Output("after").
-		AsToyWorkspace().
-		Container()
+		Output("completed").
+		AsContainer()
 }

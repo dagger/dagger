@@ -19,22 +19,21 @@ class CodingAgent
     #[Doc('Write a Go program')]
     public function goProgram(string $assignment): Container
     {
-        $workspace = dag()->toyWorkspace();
         $environment = dag()->env()
-            ->withToyWorkspaceInput("before", $workspace, "tools to complete the assignment")
-            ->withStringInput("assignment", $assignment, "the assignment to complete")
-            ->withToyWorkspaceOutput("after", "the completed assignment");
+            ->withStringInput('assignment', $assignment, 'the assignment to complete')
+            ->withContainerInput('builder', dag()->container()->from('golang')->withWorkdir('/app'), 'a container to use for building Go code')
+            ->withContainerOutput('completed', 'the completed assignment in the Golang container');
         return dag()
             ->llm()
             ->withEnv($environment)
-            ->withPrompt("
-            You are an expert go programmer. You have access to a workspace.
-			Use the default directory in the workspace.
-			Do not stop until the code builds.
-			Your assignment is: $assignment")
+            ->withPrompt('
+                You are an expert Go programmer with an assignment to create a Go program
+                Create files in the default directory in $builder
+                Always build the code to make sure it is valid
+                Do not stop until your assignment is completed and the code builds
+                Your assignment is: $assignment')
             ->env()
-            ->output("after")
-            ->asToyWorkspace()
-            ->container();
+            ->output('completed')
+            ->asContainer();
     }
 }
