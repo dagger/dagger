@@ -263,7 +263,7 @@ func checkForUpdates(ctx context.Context, w io.Writer) {
 	})
 }
 
-// checkCloudTokens triggers the Login flow if an invalid credentials file is detected.
+// checkCloudToken triggers the Login flow if an invalid credentials file is detected.
 func checkCloudToken(ctx context.Context, w io.Writer) error {
 	_, err := auth.Token(ctx)
 	var se *json.SyntaxError

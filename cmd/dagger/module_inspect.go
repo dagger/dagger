@@ -271,7 +271,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	return def, nil
 }
 
-// loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
+// loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.End(loadSpan, func() error { return rerr })
