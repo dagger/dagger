@@ -1,8 +1,8 @@
 {
   "name": "caller",
-  "engineVersion": "v0.18.2-010101000000-dev-abaed1d55268",
+  "engineVersion": "v0.18.4-250415212740-f47c672df3e3",
   "sdk": {
-    "source": "go"
+    "source": "python"
   },
   "dependencies": [
     {
@@ -13,5 +13,6 @@
       "name": "test",
       "source": "test"
     }
-  ]
+  ],
+  "source": ".dagger"
 }
