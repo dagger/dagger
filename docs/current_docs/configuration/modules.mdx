@@ -73,7 +73,7 @@ You can also set a specific version with a suffix (e.g., `bun@1.0.11`).
   }
 ```
 
-Alternatively, executing `bun init` or `bun install` will create a `bun.lock` or `bun.lockb` file, which Dagger will [automatically detect](#automatic-detection) and configure Bun for use:
+If `dagger.runtime` is not set, you must execute `bun init` or `bun install` to create a `bun.lock` or `bun.lockb` file, which Dagger will then [automatically detect](#automatic-detection) and configure Bun for use:
 
 ```shell
 bun init
@@ -89,15 +89,7 @@ Bun runtime support is still experimental. Unexpected results may occur in some 
 :::
 </TabItem>
 <TabItem value="Deno">
-Set the field to `deno` to use the Deno runtime.
-
-```json
-  "dagger": {
-    "runtime": "deno"
-  }
-```
-
-Alternatively, executing `deno init` will create a `deno.json` file, which Dagger will [automatically detect](#automatic-detection) and configure Deno for use:
+Execute `deno init` to create a `deno.json` file, which Dagger will [automatically detect](#automatic-detection) and configure Deno for use:
 
 ```shell
 deno init
