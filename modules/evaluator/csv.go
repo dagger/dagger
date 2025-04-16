@@ -54,15 +54,15 @@ func (m *Evaluator) Compare(
 	ctx context.Context,
 	before *dagger.File,
 	after *dagger.File,
-) error {
+) (string, error) {
 	// Parse the before and after CSV files to extract data
 	beforeData, err := parseCSVData(ctx, before)
 	if err != nil {
-		return err
+		return "", err
 	}
 	afterData, err := parseCSVData(ctx, after)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Calculate aggregates for before and after
@@ -145,7 +145,8 @@ func (m *Evaluator) Compare(
 			WithStringInput("table", sb.String(), "The report table.")).
 		WithPrompt("Analyze the report.").
 		Sync(ctx)
-	return err
+
+	return sb.String(), err
 }
 
 // Helper function to parse CSV data
