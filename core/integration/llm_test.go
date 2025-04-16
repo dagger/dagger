@@ -371,7 +371,7 @@ func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "-M", modelFlag}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`$agent | tools`),
+				Stdin:                         `$agent | tools`,
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
@@ -385,7 +385,7 @@ func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "-m", dependerModuleRef, modelFlag}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`$agent | tools`),
+				Stdin:                         `$agent | tools`,
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
