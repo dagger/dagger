@@ -88,7 +88,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except PHP source code files:
 
@@ -163,7 +163,7 @@ Ignore([".git", "**/.gitignore"])
 @argument({ ignore: [".git", "**/.gitignore"] })
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 // exclude PHPUnit tests and test data
 #[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
@@ -234,7 +234,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -308,7 +308,7 @@ const dirOpts = { include: ["*.zip"] }
 const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 // exclude all Markdown files
 $dirOpts = ['exclude' => ['*.md*']];
@@ -407,7 +407,7 @@ debug(
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
     #[DaggerFunction]
     public function debug(

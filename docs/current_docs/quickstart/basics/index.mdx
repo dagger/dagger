@@ -131,7 +131,7 @@ async publish(): Promise<string> {
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 #[DaggerFunction]
 public function publish(): string
@@ -244,7 +244,7 @@ class Basics {
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php
 #[DaggerObject]
@@ -400,7 +400,7 @@ async publish(image = "alpine:latest"): Promise<string> {
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 #[DaggerFunction]
 public function build(string $image = 'alpine:latest'): Container
@@ -486,7 +486,7 @@ check(): string {
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 #[DaggerFunction]
 public function check(): string
@@ -569,7 +569,7 @@ env(): Container {
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 #[DaggerFunction]
 public function env(): Container
