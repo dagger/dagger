@@ -219,7 +219,7 @@ type Container {
     behavior.
     """
     noInit: Boolean = false
-  ): Container! @deprecated(reason: "Use Directory.dockerBuild instead")
+  ): Container!
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
