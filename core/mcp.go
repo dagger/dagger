@@ -156,7 +156,7 @@ func (m *MCP) tools(srv *dagql.Server) ([]LLMTool, error) {
 	tools := []LLMTool{}
 	typeNames := m.env.Types()
 	if m.env.Root() != nil {
-		typeNames = append(typeNames, m.env.Root().Type().Name())
+		typeNames = append(typeNames, schema.Query.Name)
 	}
 	for _, typeName := range typeNames {
 		typeTools, err := m.typeTools(srv, schema, typeName)
@@ -305,12 +305,12 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			// references a banned type
 			continue
 		}
-		schema, err := m.fieldArgsToJSONSchema(schema, typeName, field)
+		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeName, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeName == "Query" {
+		if typeName == schema.Query.Name {
 			toolName = field.Name
 		} else {
 			toolName = typeDef.Name + "_" + field.Name
@@ -319,9 +319,9 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			Name:        toolName,
 			Returns:     field.Type.String(),
 			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
-			Schema:      schema,
+			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, typeName, field, args)
+				return m.call(ctx, srv, schema, typeName, field, args)
 			},
 		})
 	}
@@ -365,6 +365,7 @@ func displayArgs(args any) string {
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
+	schema *ast.Schema,
 	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
@@ -400,7 +401,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
 	var target dagql.Object
-	if selfType == "Query" && m.env.Root() != nil {
+	if m.env.Root() != nil && selfType == schema.Query.Name {
 		target = m.env.Root()
 	} else {
 		self, ok := argsMap[selfType]
@@ -1066,7 +1067,7 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	}
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
-	if typeName != "Query" {
+	if typeName != schema.Query.Name {
 		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCounts[typeName])
 		schema := map[string]any{
 			"type":        "string",
