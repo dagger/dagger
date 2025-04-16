@@ -24,15 +24,20 @@ import (
 )
 
 func main() {
+	var err error
 	switch os.Args[0] {
 	case "/.init":
-		mainInit()
+		err = mainInit()
 	case "/proc/self/exe":
-		mainSession()
+		err = mainSession()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
-func mainInit() {
+func mainInit() error {
 	sigCh := make(chan os.Signal, 16)
 	// Handle every signal other than a few exceptions noted at the end.
 	// Importantly, by handling all these signals, the child process will start with
@@ -85,7 +90,7 @@ func mainInit() {
 
 	sid, err := unix.Getsid(0)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	pid := unix.Getpid()
 	weAreSessionLeader := sid == pid
@@ -97,13 +102,13 @@ func mainInit() {
 		ignoreFirstCONT = true
 		_, err = unix.IoctlRetInt(0, unix.TIOCNOTTY)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 
 	if _, ok := os.LookupEnv("DAGGER_SESSION_TOKEN"); ok {
 		if err := startSessionSubprocess(); err != nil {
-			panic(err)
+			return err
 		}
 	}
 
@@ -126,7 +131,7 @@ func mainInit() {
 			err = nil
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 	child, err := os.StartProcess(fullPath, os.Args[1:], &os.ProcAttr{
@@ -134,7 +139,7 @@ func mainInit() {
 		Sys:   &sysProcAttr,
 	})
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// handle signals until our child exits
@@ -191,6 +196,8 @@ func mainInit() {
 			unix.Kill(pid, syscall.SIGSTOP)
 		}
 	}
+
+	return nil
 }
 
 func startSessionSubprocess() error {
@@ -235,7 +242,7 @@ func startSessionSubprocess() error {
 	}
 }
 
-func mainSession() {
+func mainSession() error {
 	ctx := context.Background()
 
 	// this is closed when the session server is about to run, letting the parent process know that
@@ -254,21 +261,23 @@ func mainSession() {
 	// filesync
 	filesyncer, err := client.NewFilesyncer()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 
 	connF := os.NewFile(3, "session-conn")
 	conn, err := net.FileConn(connF)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	sessionSrv := client.NewBuildkitSessionServer(ctx, conn, attachables...)
 	defer sessionSrv.Stop()
 
 	if err := pipeW.Close(); err != nil {
-		panic(err)
+		return err
 	}
 	sessionSrv.Run(ctx)
+
+	return nil
 }
