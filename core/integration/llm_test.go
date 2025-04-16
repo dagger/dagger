@@ -43,6 +43,13 @@ type LLMTestCaseFlag struct {
 	Optional bool
 }
 
+var (
+	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
+	directCallModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+	// llm-dir-module-depender depends on directCall module via a relative path
+	dependerModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
+)
+
 func (flag LLMTestCaseFlag) ToCall() []string {
 	return []string{"--" + flag.Key, flag.Value}
 }
@@ -161,11 +168,6 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-
-	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
-	directCallModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
-	// llm-dir-module-depender depends on directCall module via a relative path
-	dependerModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
 
 	recording := "llmtest/allow-llm.golden"
 	if golden.FlagUpdate() {
@@ -356,6 +358,22 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			})
 		}
 	})
+}
+
+func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modelFlag := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString([]byte("[]")))
+
+	out, err := daggerCliBase(t, c).
+		WithExec([]string{"dagger", "-m", dependerModuleRef, modelFlag}, dagger.ContainerWithExecOpts{
+			Stdin:                         fmt.Sprintf(`$agent | tools`),
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## llmDirModuleDepender")
+	require.Contains(t, out, "## llmTestModule")
 }
 
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
