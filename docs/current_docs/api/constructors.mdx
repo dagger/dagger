@@ -132,7 +132,7 @@ A few important notes:
 
 For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values),
 use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
-[dataclasses.field(default_factory=...)](https://docs.python.org/3/library/dataclasses.html#dataclasses.field):
+[`dataclasses.field(default_factory=...)`](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) or `dagger.field(default=...)`:
 
 ```python file=./snippets/constructors/python/factory/main.py
 ```
