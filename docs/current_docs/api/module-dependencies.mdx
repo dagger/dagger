@@ -32,8 +32,8 @@ The entrypoint to accessing dependent modules from your own module's code is `da
 
 Here is an example of accessing the installed `hello` module from your own module's code:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go
 func (m *MyModule) Greeting(ctx context.Context) (string, error) {
@@ -42,7 +42,7 @@ func (m *MyModule) Greeting(ctx context.Context) (string, error) {
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python
 @function
@@ -51,7 +51,7 @@ async def greeting(self) -> str:
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 @func()
@@ -61,7 +61,7 @@ async greeting(): Promise<string> {
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php
 #[DaggerFunction]
@@ -72,7 +72,7 @@ public function greeting(): string
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java
 @Function
@@ -94,24 +94,24 @@ dagger install github.com/kpenfound/dagger-modules/golang@v0.2.0
 
 Next, create a new Dagger Function:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/dependencies/chaining/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/dependencies/chaining/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/dependencies/chaining/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/dependencies/chaining/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/dependencies/chaining/java/MyModule.java
 ```
 </TabItem>

@@ -20,14 +20,14 @@
 - By default, provide code snippets for all available SDK languages, with each code snippet in a separate tab. The order of tabs should always be `Go`, `Python` and `TypeScript`. Here is an example:
 
   ```html
-  <Tabs groupId="language">
-  <TabItem value="Go">
+  <Tabs groupId="language" queryString="sdk">
+  <TabItem value="go" label="Go">
   ...
   </TabItem>
-  <TabItem value="Python">
+  <TabItem value="python" label="Python">
   ...
   </TabItem>
-  <TabItem value="TypeScript">
+  <TabItem value="typescript" label="TypeScript">
   ...
   </TabItem>
   </Tabs>

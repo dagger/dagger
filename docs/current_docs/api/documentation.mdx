@@ -9,8 +9,8 @@ import TabItem from '@theme/TabItem';
 
 Dagger modules and Dagger Functions should be documented so that descriptions are shown in the API and the CLI - for example, when calling `dagger functions`, `dagger call ... --help`, or `.help`.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 The following code snippet shows how to add documentation for:
 
@@ -22,7 +22,7 @@ The following code snippet shows how to add documentation for:
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 The following code snippet shows how to use Python's [documentation string conventions](https://peps.python.org/pep-0008/#documentation-strings) for adding descriptions to:
 - The whole [module](https://docs.python.org/3/tutorial/modules.html) or [package](https://docs.python.org/3/tutorial/modules.html#packages)
@@ -41,7 +41,7 @@ For function arguments, [annotate](https://peps.python.org/pep-0727/#specificati
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 The following code snippet shows how to add documentation for:
 - The whole module
@@ -52,7 +52,7 @@ The following code snippet shows how to add documentation for:
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 The following code snippet shows how to add documentation for:
 
@@ -64,7 +64,7 @@ The following code snippet shows how to add documentation for:
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 The following code snippet shows how to add documentation for:
 
@@ -116,32 +116,32 @@ ARGUMENTS
 
 The following code snippet shows how to add documentation for an object and its fields in your Dagger module:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=./snippets/documentation/go/object.go
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/documentation/python/object.py
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/documentation/typescript/object.ts
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php file=./snippets/documentation/php/object/src/MyModule.php
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java file=./snippets/documentation/java/object/MyModule.java
 ```

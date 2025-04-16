@@ -26,12 +26,12 @@ When passing values to Dagger Functions within Dagger Shell, required arguments 
 
 Here is an example of a Dagger Function that accepts a string argument:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-string/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-string/python/main.py
 ```
 
@@ -69,11 +69,11 @@ def hello(self):
 [void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-string/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-string/php/src/MyModule.php
 ```
 
@@ -84,7 +84,7 @@ typing information at runtime to correctly report to the API.
 [typing]: https://www.php.net/manual/en/language.types.type-system.php
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -150,24 +150,24 @@ dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREE
 
 Here is an example of a Dagger Function that accepts a Boolean argument:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-boolean/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-boolean/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-boolean/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-boolean/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `boolean` type or the boxed `java.lang.Boolean` type.
 :::
@@ -213,29 +213,29 @@ When passing optional boolean flags:
 
 Here is an example of a Dagger function that accepts an integer argument:
 
-<Tabs groupId="language">
+<Tabs groupId="language" queryString="sdk">
 
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-return-values-integer/go/main.go
 ```
 </TabItem>
 
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-return-values-integer/python/main.py
 ```
 </TabItem>
 
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
 ```
 </TabItem>
 
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-return-values-integer/php/src/MyModule.php
 ```
 </TabItem>
 
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `int` type or the boxed `java.lang.Integer` type.
 :::
@@ -275,18 +275,18 @@ The result will look like this:
 
 Here is an example of a Dagger function that accepts a floating-point number as argument:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-return-values-float/go/main.go
 ```
 </TabItem>
 
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-return-values-float/python/main.py
 ```
 </TabItem>
 
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 :::note
 There's no `float` type keyword in TypeScript because the type keyword `number` already supports floating point numbers.
@@ -299,13 +299,13 @@ The imported `float` type is a `number` underneath, so you can use it as you wou
 ```
 </TabItem>
 
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php file=./snippets/functions/arguments-return-values-float/php/src/MyModule.php
 ```
 </TabItem>
 
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `float` type or the boxed `java.lang.Float` type.
 :::
@@ -346,20 +346,20 @@ The result will look like this:
 
 To pass an array argument to a Dagger Function, use a comma-separated list of values.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-array/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-array/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-array/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 :::note
 Lists must have their subtype specified by adding the `#[ListOfType]` attribute to the relevant function argument.
 
@@ -369,7 +369,7 @@ The PHP SDK needs the typing information at runtime to correctly report to the A
 ```php file=./snippets/functions/arguments-array/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can also use the `java.util.List` interface to represent a list of values.
 For instance instead of the `String[] names` argument in the example, you can have `List<String> names`.
@@ -414,24 +414,24 @@ Dagger Functions do not have access to the filesystem of the host you invoke the
 
 Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-directory/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-directory/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-directory/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-directory/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -560,24 +560,24 @@ File arguments work in the same way as [directory arguments](#directory-argument
 
 Here's an example of a Dagger Function that accepts a `File` as argument, reads it, and returns its contents:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-file/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-file/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-file/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-file/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -637,24 +637,24 @@ Just like directories, you can pass a container to a Dagger Function from the co
 
 Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function returns operating system information for the container.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-container/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-container/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-container/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-container/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -713,32 +713,32 @@ Dagger allows you to utilize confidential information, such as passwords, API ke
 
 Secrets can be passed to Dagger Functions as arguments using the `Secret` core type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=../cookbook/snippets/secret-variable/go/main.go
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=../cookbook/snippets/secret-variable/python/main.py
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../cookbook/snippets/secret-variable/typescript/index.ts
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php file=../cookbook/snippets/secret-variable/php/src/MyModule.php
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java file=../cookbook/snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
@@ -940,20 +940,20 @@ Function arguments can be marked as optional. In this case, the Dagger CLI will 
 
 Here's an example of a Dagger Function with an optional argument:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-optional/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-optional/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 :::note
 The definition of optional varies between Dagger and PHP.
 
@@ -966,7 +966,7 @@ To specify a function argument as optional, simply make it nullable. When using 
 ```php file=./snippets/functions/arguments-optional/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 Because of the usage of `Optional`, primitive types can not be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
 
@@ -1036,24 +1036,24 @@ Function arguments can define a default value if no value is supplied for them.
 
 Here's an example of a Dagger Function with a default value for a string argument:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-default-string/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/arguments-default-string/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/arguments-default-string/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 The default value provided must be a valid JSON string representation of the type.
 

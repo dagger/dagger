@@ -13,8 +13,8 @@ The information on this page is only applicable to Go and TypeScript SDKs. Inter
 
 ## Declaration
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 The Go SDK supports interfaces, which allow you to define Go-style interface
 definitions so that your module can accept arbitrary values from other modules
@@ -39,7 +39,7 @@ to the GraphQL field argument names.
 
 </TabItem>
 
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 The TypeScript SDK supports interfaces, which allow you to define a set of functions
 that an object must implement to be considered a valid instance of that interface.
@@ -68,14 +68,14 @@ signature style:
 
 Here is an example of a module `Example` that implements the `Fooer` interface:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=./snippets/interfaces/implementations/go/main.go
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```ts file=./snippets/interfaces/implementations/typescript/index.ts
 ```
@@ -96,14 +96,14 @@ so it can be passed as argument.
 Here is an example of a module that uses the `Example` module defined above and
 passes it as argument to the `foo` function of the `MyModule` object:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=./snippets/interfaces/usages/go/main.go
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```ts file=./snippets/interfaces/usages/typescript/index.ts
 ```

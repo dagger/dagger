@@ -22,14 +22,14 @@ Dagger modules have only one constructors. Constructors of [custom types](./cust
 
 Here is an example module with a custom constructor:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=./snippets/constructors/go/simple/main.go
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/constructors/python/simple/main.py
 ```
@@ -51,13 +51,13 @@ This factory class method must be named `create`.
 ```python file=./snippets/constructors/python/async/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/constructors/typescript/simple/index.ts
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php file=./snippets/constructors/php/simple/src/MyModule.php
 ```
@@ -67,7 +67,7 @@ In the PHP SDK the constructor must be the [magic method `__construct`](https://
 As with any method, only public methods with the `#[DaggerFunction]` attribute will be registered with Dagger.
 :::
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java file=./snippets/constructors/java/simple/MyModule.java
 ```
@@ -114,14 +114,14 @@ Constructors can be passed both simple and complex types (such as `Container`, `
 
 Here is an example of a Dagger module with a default constructor argument of type `Container`:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```go file=./snippets/constructors/go/default-object/main.go
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/constructors/python/default-object/main.py
 ```
@@ -134,7 +134,7 @@ use a [factory function](https://docs.python.org/3/library/dataclasses.html#defa
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/constructors/typescript/default-object/index.ts
 ```
@@ -149,13 +149,13 @@ When assigning default values to complex types in TypeScript, it is necessary to
 :::
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```php file=./snippets/constructors/php/default-object/src/MyModule.php
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java file=./snippets/constructors/java/default-object/MyModule.java
 ```

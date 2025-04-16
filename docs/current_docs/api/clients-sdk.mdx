@@ -27,32 +27,32 @@ Once a module is initialized, `dagger develop --sdk=...` sets up or updates all 
 
 Here is an example of initializing a Dagger module:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=python
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=typescript
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=java
@@ -66,8 +66,8 @@ Running `dagger develop` regenerates the module's code based on dependencies, th
 
 The default template from `dagger develop` creates the following structure:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 ```
 .
@@ -94,7 +94,7 @@ In this structure:
     - `telemetry` has utilities for sending Dagger Engine telemetry.
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```
 .
@@ -120,7 +120,7 @@ In this structure:
 This structure hosts a Python import package, with a name derived from the project name (in `pyproject.toml`), inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This convention prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```
 .
@@ -142,7 +142,7 @@ In this structure:
 - `sdk/` contains the TypeScript SDK.
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 ```
 .
@@ -165,7 +165,7 @@ In this structure:
 - `sdk/` contains the PHP SDK.
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```
 .
 ├── LICENSE
@@ -201,14 +201,14 @@ While you can use the utilities defined in the automatically-generated code abov
 
 You can now write Dagger Functions using the selected Dagger SDK. Here is an example, which calls a remote API method and returns the result:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/functions-complex/go/main.go
 ```
 
 This Dagger Function includes the context as input and error as return in its signature.
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python file=./snippets/functions/functions-complex/python/main.py
 ```
 
@@ -225,15 +225,15 @@ the main object needs to be named `MyModule`.
 [@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
 [@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/functions-complex/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php file=./snippets/functions/functions-complex/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/functions-complex/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -300,8 +300,8 @@ An alternative approach is to develop a custom application using a Dagger SDK. T
 - calling and combining Dagger API methods from your application to achieve the required result
 - executing your application using `dagger run`
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 :::note
 The Dagger Go SDK requires [Go 1.22 or later](https://go.dev/doc/install).
@@ -374,7 +374,7 @@ build
             └── hello
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 :::note
 The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html).
@@ -435,7 +435,7 @@ All tasks have finished
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 :::note
 The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](../configuration/modules.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
 :::
@@ -493,7 +493,7 @@ build-node-20
     └── media
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 :::note
 The Dagger PHP SDK requires [PHP 8.2 or later](https://www.php.net/downloads.php).

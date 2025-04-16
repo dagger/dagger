@@ -63,8 +63,8 @@ To implement a pre-call filter in your Dagger Function, add an `ignore` paramete
 - The order of arguments is significant: the pattern `"**", "!**"` includes everything but `"!**", "**"` excludes everything.
 - Prefixing a path with `!` negates a previous ignore: the pattern `"!foo"` has no effect, since nothing is previously ignored, while the pattern `"**", "!foo"` excludes everything except `foo`.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Go source code files:
 
@@ -72,7 +72,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Python source code files:
 
@@ -80,7 +80,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except TypeScript source code files:
 
@@ -88,7 +88,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except PHP source code files:
 
@@ -96,7 +96,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
 
@@ -108,8 +108,8 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here are a few examples of useful patterns:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go
 // exclude Go tests and test data
 +ignore=["**_test.go", "**/testdata/**"]
@@ -127,7 +127,7 @@ Here are a few examples of useful patterns:
 +ignore=[".git", "**/.gitignore"]
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 # exclude Pytest tests and test data
 Ignore(["tests/", ".pytest_cache"])
@@ -145,7 +145,7 @@ Ignore(["**/node_modules"])
 Ignore([".git", "**/.gitignore"])
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 // exclude Mocha tests
 @argument({ ignore: ["**.spec.ts"] })
@@ -163,7 +163,7 @@ Ignore([".git", "**/.gitignore"])
 @argument({ ignore: [".git", "**/.gitignore"] })
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 // exclude PHPUnit tests and test data
 #[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
@@ -181,7 +181,7 @@ Ignore([".git", "**/.gitignore"])
 #[Ignore('.git/', '**/.gitignore')]
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 // exclude Java tests and test data
 @Ignore({"src/test"})
@@ -209,8 +209,8 @@ This is useful when working with directories that are modified "in place" by a D
 
 A good example of this is a multi-stage build. Imagine a Dagger Function that reads and builds an application from source, placing the compiled binaries in a new sub-directory (stage 1). Instead of then transferring everything to the final container image for distribution (stage 2), you could use a post-call filter to transfer only the compiled files.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 To implement a post-call filter in your Dagger Function, use the `DirectoryWithDirectoryOpts` or `ContainerWithDirectoryOpts` structs, which support `Include` and `Exclude` patterns for `Directory` objects. Here's an example:
 
@@ -218,7 +218,7 @@ To implement a post-call filter in your Dagger Function, use the `DirectoryWithD
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -226,7 +226,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -234,7 +234,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -242,7 +242,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
 
@@ -254,8 +254,8 @@ To implement a post-call filter in your Dagger Function, use the `Container.With
 
 Here are a few examples of useful patterns:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go
 // exclude all Markdown files
 dirOpts := dagger.ContainerWithDirectoryOpts{
@@ -278,7 +278,7 @@ dirOpts := dagger.DirectoryWithDirectoryOpts{
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 # exclude all Markdown files
 dir_opts = {"exclude": ["*.md*"]}
@@ -293,7 +293,7 @@ dir_opts = {"include": ["*.zip"]}
 dir_opts = {"exclude": ["*.git"]}
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 // exclude all Markdown files
 const dirOpts = { exclude: ["*.md*"] }
@@ -308,7 +308,7 @@ const dirOpts = { include: ["*.zip"] }
 const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
 // exclude all Markdown files
 $dirOpts = ['exclude' => ['*.md*']];
@@ -323,7 +323,7 @@ $dirOpts = ['include' => ['*.zip']];
 $dirOpts = ['exclude' => ['*.git']];
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 // exclude all Markdown files
 var dirOpts = new Container.WithDirectoryArguments()
@@ -373,8 +373,8 @@ Both Dagger Cloud and the Dagger TUI provide detailed information on the pattern
 
 Another way to debug how directories are being filtered is to create a function that receives a `Directory` as input, and returns the same `Directory`:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```go
 func (m *MyModule) Debug(
   ctx context.Context,
@@ -385,7 +385,7 @@ func (m *MyModule) Debug(
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 async def foo(
@@ -397,7 +397,7 @@ async def foo(
     return source
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 debug(
@@ -407,7 +407,7 @@ debug(
 }
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```php
     #[DaggerFunction]
     public function debug(
@@ -418,7 +418,7 @@ debug(
     }
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 @Function
 public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {

@@ -14,29 +14,29 @@ Default paths are only available for `Directory` and `File` arguments. They are 
 
 Here's an example:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 The default path is set by adding a `defaultPath` pragma on the corresponding Dagger Function `source` argument.
 
 ```go file=./snippets/default-paths/go/main.go
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 The default path is set by adding a `DefaultPath` annotation on the corresponding Dagger Function `source` argument.
 
 ```python file=./snippets/default-paths/python/main.py
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 The default path is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function `source` argument.
 
 ```typescript file=./snippets/default-paths/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 The default path is set by adding a `#[DefaultPath]` Attribute on the corresponding Dagger Function `source` argument.
 

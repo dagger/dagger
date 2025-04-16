@@ -56,30 +56,30 @@ After successfully creating your organization, all future Dagger workflows can b
 
 In an empty directory, create a new Dagger module. This module will host your agent functions.
 
-You can write your module in Go, Python, Typescript, PHP, or Java. Choose the SDK you are most comfortable with and run the command below to generate a new Dagger module:
+You can write your module in Go, Python, TypeScript, PHP, or Java. Choose the SDK you are most comfortable with and run the command below to generate a new Dagger module:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 ```shell
 dagger init --sdk=go --name=coding-agent
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```shell
 dagger init --sdk=python --name=coding-agent
 ```
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="typescript" label="TypeScript">
 ```shell
 dagger init --sdk=typescript --name=coding-agent
 ```
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 ```shell
 dagger init --sdk=php --name=coding-agent
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```shell
 dagger init --sdk=java --name=coding-agent
 ```
@@ -101,8 +101,8 @@ You should see information about two auto-generated Dagger Functions: `container
 
 Replace the generated Dagger module files as described below.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
 Edit the agent (`main.go`) and replace the generated code with this code:
 
@@ -110,7 +110,7 @@ Edit the agent (`main.go`) and replace the generated code with this code:
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 Edit the agent (`src/coding_agent/main.py`) and replace the generated code with this code:
 
@@ -118,7 +118,7 @@ Edit the agent (`src/coding_agent/main.py`) and replace the generated code with 
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="typescript" label="TypeScript">
 
 Edit the agent (`src/index.ts`) and replace the generated code with this code:
 
@@ -126,7 +126,7 @@ Edit the agent (`src/index.ts`) and replace the generated code with this code:
 ```
 
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 
 Edit the agent (`src/CodingAgent.php`) and replace the generated code with this code:
 
@@ -134,7 +134,7 @@ Edit the agent (`src/CodingAgent.php`) and replace the generated code with this 
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 Edit the agent (`src/main/java/io/dagger/modules/codingagent/CodingAgent.java`) and replace the generated code with this code:
 

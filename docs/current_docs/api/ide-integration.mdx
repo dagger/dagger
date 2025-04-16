@@ -14,8 +14,8 @@ Dagger uses GraphQL as its low-level language-agnostic API query language, and e
 
 The `dagger develop` command bootstraps a Dagger module template in the selected programming language and sets up or updates all the resources needed to develop a module. After running this command, follow the steps below to have your IDE recognize the Dagger module.
 
-<Tabs groupId="language">
-<TabItem value="Go">
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 To get your IDE to recognize a Dagger Go module, [configure your `go.work` file](./custom-functions.mdx#go-workspaces) to include the path to your module.
 
 When you generate a Dagger module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
@@ -50,7 +50,7 @@ The Go SDK automatically attaches source-maps to the module code. These are a re
 
 Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 To get your IDE to recognize a Dagger Python module and any added Dagger module dependencies in the generated client, all dependencies must be installed in an activated [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) (for example, in `.venv`, next to `pyproject.toml`). This can either be done manually or transparently by a package manager.
 
 For example, to open the Visual Studio Code from the terminal, with functioning autocompletions (assuming the [Python extensions](https://github.com/microsoft/vscode-python) are installed):
@@ -198,7 +198,7 @@ It can also create and manage the project environment, but may not support `uv.l
 </Tabs>
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 When opening the generated `dagger/src/index.ts` in an IDE, most IDEs will automatically recognize the `@dagger.io/dagger` package, so long as the `tsconfig.json` file has a path configured on it.
 
@@ -219,7 +219,7 @@ The TypeScript SDK automatically attaches source-maps to the module code. These 
 
 Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
 </TabItem>
-<TabItem value="PHP">
+<TabItem value="php" label="PHP">
 To get your IDE to recognize a Dagger PHP module, ensure your `composer.json` has a path configured to the generated `dagger/dagger` package. This is located in the `sdk` directory of your module.
 
 For Dagger modules initialized using `dagger init`, the default template is already configured this way:
@@ -272,7 +272,7 @@ Then open Emacs in any file within the scope of your module's `composer.json` fi
 </TabItem>
 </Tabs>
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 When you generate a Dagger Java module, a `pom.xml` file is created in the module directory. For example, for a module name
 `your-module`, the example source code is created under `src/main/java/io/dagger/modules/yourmodule/YourModule.java`.
 
