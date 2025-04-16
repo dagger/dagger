@@ -29,7 +29,7 @@ func (s llmSchema) Install() {
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
 		dagql.Func("historyJSON", s.historyJSON).
-			View(AfterVersion("v0.18.4")).
+			View(AllVersion).
 			Doc("return the raw llm message history as json"),
 		dagql.Func("historyJSON", s.historyJSONString).
 			View(BeforeVersion("v0.18.4")).

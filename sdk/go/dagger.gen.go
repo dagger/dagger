@@ -1923,7 +1923,7 @@ type ContainerWithNewFileOpts struct {
 	Expand bool
 }
 
-// Return a new container snapshot, with a file added to its filesystem
+// Return a new container snapshot, with a file added to its filesystem with text content
 func (r *Container) WithNewFile(path string, contents string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {

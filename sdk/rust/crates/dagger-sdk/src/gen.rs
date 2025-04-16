@@ -3543,7 +3543,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem
+    /// Return a new container snapshot, with a file added to its filesystem with text content
     ///
     /// # Arguments
     ///
@@ -3560,7 +3560,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem
+    /// Return a new container snapshot, with a file added to its filesystem with text content
     ///
     /// # Arguments
     ///

@@ -2084,6 +2084,7 @@ class Container(Type):
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a file added to its filesystem
+        with text content
 
         Parameters
         ----------

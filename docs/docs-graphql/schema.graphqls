@@ -937,7 +937,9 @@ type Container {
     expand: Boolean = false
   ): Container!
 
-  """Return a new container snapshot, with a file added to its filesystem"""
+  """
+  Return a new container snapshot, with a file added to its filesystem with text content
+  """
   withNewFile(
     """
     Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"

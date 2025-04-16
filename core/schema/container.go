@@ -335,7 +335,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withNewFile", s.withNewFile).
 			View(AllVersion).
-			Doc(`Return a new container snapshot, with a file added to its filesystem`).
+			Doc(`Return a new container snapshot, with a file added to its filesystem with text content`).
 			ArgDoc("path", `Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"`).
 			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
 			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
