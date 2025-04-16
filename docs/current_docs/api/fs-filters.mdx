@@ -96,7 +96,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
 
@@ -181,7 +181,7 @@ Ignore([".git", "**/.gitignore"])
 #[Ignore('.git/', '**/.gitignore')]
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 // exclude Java tests and test data
 @Ignore({"src/test"})
@@ -242,7 +242,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
 
@@ -323,7 +323,7 @@ $dirOpts = ['include' => ['*.zip']];
 $dirOpts = ['exclude' => ['*.git']];
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 // exclude all Markdown files
 var dirOpts = new Container.WithDirectoryArguments()
@@ -418,7 +418,7 @@ debug(
     }
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java
 @Function
 public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {

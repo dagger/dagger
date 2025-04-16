@@ -84,7 +84,7 @@ typing information at runtime to correctly report to the API.
 [typing]: https://www.php.net/manual/en/language.types.type-system.php
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -167,7 +167,7 @@ Here is an example of a Dagger Function that accepts a Boolean argument:
 ```php file=./snippets/functions/arguments-boolean/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `boolean` type or the boxed `java.lang.Boolean` type.
 :::
@@ -235,7 +235,7 @@ Here is an example of a Dagger function that accepts an integer argument:
 ```
 </TabItem>
 
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `int` type or the boxed `java.lang.Integer` type.
 :::
@@ -305,7 +305,7 @@ The imported `float` type is a `number` underneath, so you can use it as you wou
 ```
 </TabItem>
 
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can either use the primitive `float` type or the boxed `java.lang.Float` type.
 :::
@@ -369,7 +369,7 @@ The PHP SDK needs the typing information at runtime to correctly report to the A
 ```php file=./snippets/functions/arguments-array/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 You can also use the `java.util.List` interface to represent a list of values.
 For instance instead of the `String[] names` argument in the example, you can have `List<String> names`.
@@ -431,7 +431,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument. T
 ```php file=./snippets/functions/arguments-directory/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-directory/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -577,7 +577,7 @@ Here's an example of a Dagger Function that accepts a `File` as argument, reads 
 ```php file=./snippets/functions/arguments-file/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -654,7 +654,7 @@ Here is an example of a Dagger Function that accepts a container image reference
 ```php file=./snippets/functions/arguments-container/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 ```java file=./snippets/functions/arguments-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
@@ -738,7 +738,7 @@ Secrets can be passed to Dagger Functions as arguments using the `Secret` core t
 ```
 
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 
 ```java file=../cookbook/snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
@@ -966,7 +966,7 @@ To specify a function argument as optional, simply make it nullable. When using 
 ```php file=./snippets/functions/arguments-optional/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 Because of the usage of `Optional`, primitive types can not be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
 
@@ -1053,7 +1053,7 @@ Here's an example of a Dagger Function with a default value for a string argumen
 ```php file=./snippets/functions/arguments-default-string/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="Java">
+<TabItem value="java" label="Java">
 :::note
 The default value provided must be a valid JSON string representation of the type.
 
