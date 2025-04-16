@@ -910,7 +910,7 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 		if failed {
 			reveal[tree] = struct{}{}
 		}
-		if (failed || tree.Span.IsUnset()) && !tree.Span.Encapsulate {
+		if failed || tree.Span.IsUnset() {
 			for _, child := range tree.Children {
 				collect(child)
 			}
