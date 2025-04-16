@@ -72,7 +72,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Python source code files:
 
@@ -127,7 +127,7 @@ Here are a few examples of useful patterns:
 +ignore=[".git", "**/.gitignore"]
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 # exclude Pytest tests and test data
 Ignore(["tests/", ".pytest_cache"])
@@ -218,7 +218,7 @@ To implement a post-call filter in your Dagger Function, use the `DirectoryWithD
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -278,7 +278,7 @@ dirOpts := dagger.DirectoryWithDirectoryOpts{
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 # exclude all Markdown files
 dir_opts = {"exclude": ["*.md*"]}
@@ -385,7 +385,7 @@ func (m *MyModule) Debug(
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 async def foo(

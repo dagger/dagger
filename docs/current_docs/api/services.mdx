@@ -42,7 +42,7 @@ Here is an example of a Dagger Function that returns an HTTP service. This servi
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/bind-services/python/main.py
 ```
@@ -172,7 +172,7 @@ Here is an example of how a container running in a Dagger Function can access an
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/expose-host-services-to-dagger/python/main.py
 ```
@@ -248,7 +248,7 @@ For example, you can now run two services that depend on each other, each using 
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/create-interdependent-services/python/main.py
 ```
@@ -308,7 +308,7 @@ Dagger cancels each service run after a 10 second grace period to avoid frequent
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/persist-service-state/python/main.py
 ```
@@ -381,7 +381,7 @@ The following example explicitly starts the Redis service and stops it at the en
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/start-stop-services/python/main.py
 ```
@@ -420,7 +420,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/test-against-db-service/python/main.py
 ```
@@ -508,7 +508,7 @@ Here's what happens on the last line:
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/service-lifecycle-1/python/main.py
 ```
@@ -587,7 +587,7 @@ Here's a more detailed client-server example of running commands against a Redis
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/service-lifecycle-2/python/main.py
 ```
@@ -624,7 +624,7 @@ It would be better to chain both commands together, which ensures that the servi
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python file=./snippets/services/service-lifecycle-3/python/main.py
 ```

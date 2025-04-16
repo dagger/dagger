@@ -60,7 +60,7 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 The Dagger module's code in Python can be split into multiple files by making a [package](https://docs.python.org/3/tutorial/modules.html#packages) and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
 
 For example given this directory structure:
@@ -360,7 +360,7 @@ Dagger modules run in a runtime container that's bootstrapped by the Dagger Engi
 The runtime container is currently hardcoded to run in Go 1.21  (although this may be configurable in future).
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 The runtime container is based on the [python:3.12-slim](https://hub.docker.com/_/python/tags?name=3.12-slim) base image by default, but it can be overridden by setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires), or pinned with a `.python-version` file next to your `pyproject.toml`:
 
@@ -461,7 +461,7 @@ use (
 [Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076) for more information.
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 Dagger modules in Python are built to be installed, like libraries. At module creation time, a `pyproject.toml` and `uv.lock` file will automatically be created that depend on the locally generated client library (in `./sdk`). This dependency is configured to be editable so that changes in the code don't require a re-install.
 

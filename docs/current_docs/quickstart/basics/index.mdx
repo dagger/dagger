@@ -105,7 +105,7 @@ func (m *Basics) Publish(ctx context.Context) (string, error) {
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 async def publish(self) -> str:
@@ -190,7 +190,7 @@ func (m *Basics) BuildAndPublish(ctx context.Context) (string, error) {
 ```
 
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 
 ```python
 @object_type
@@ -364,7 +364,7 @@ func (m *Basics) Publish(
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 def build(self, image: str = "alpine:latest") -> dagger.Container:
@@ -469,7 +469,7 @@ func (m *Basics) Check(ctx context.Context) (string, error) {
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 def check(self) -> str:
@@ -542,7 +542,7 @@ func (m *Basics) Env(ctx context.Context) *dagger.Container {
 }
 ```
 </TabItem>
-<TabItem value="Python">
+<TabItem value="python" label="Python">
 ```python
 @function
 def env(self) -> dagger.Container:
