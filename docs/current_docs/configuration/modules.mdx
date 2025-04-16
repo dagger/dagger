@@ -57,6 +57,11 @@ You can also set a specific version with a suffix (e.g., `node@20.15.0`).
 ```
 </TabItem>
 <TabItem value="Bun">
+
+:::warning
+Bun runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+
 Set the field to `bun` to use the Bun runtime.
 
 ```json
@@ -84,12 +89,13 @@ dagger init --sdk=typescript --name=example --source=.
 :::important
 The module's `source` field must reference the same directory as the `bun.lock` or `bun.lockb` file.
 :::
-
-:::warning
-Bun runtime support is still experimental. Unexpected results may occur in some cases.
-:::
 </TabItem>
 <TabItem value="Deno">
+
+:::warning
+Deno runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+
 If a `deno.json` file is present, Dagger will [automatically detect](#automatic-detection) and configure Deno for use. You can generate this file with `deno init`, as in the example below:
 
 ```shell
@@ -99,10 +105,6 @@ dagger init --sdk=typescript --name=example --source=.
 
 :::important
 The module's `source` field must reference the same directory as the `deno.json` file.
-:::
-
-:::warning
-Deno runtime support is still experimental. Unexpected results may occur in some cases.
 :::
 </TabItem>
 </Tabs>
