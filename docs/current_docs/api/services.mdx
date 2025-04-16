@@ -48,7 +48,7 @@ Here is an example of a Dagger Function that returns an HTTP service. This servi
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/bind-services/typescript/index.ts
 ```
@@ -178,7 +178,7 @@ Here is an example of how a container running in a Dagger Function can access an
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/expose-host-services-to-dagger/typescript/index.ts
 ```
@@ -254,7 +254,7 @@ For example, you can now run two services that depend on each other, each using 
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/create-interdependent-services/typescript/index.ts
 ```
@@ -314,7 +314,7 @@ Dagger cancels each service run after a 10 second grace period to avoid frequent
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/persist-service-state/typescript/index.ts
 ```
@@ -387,7 +387,7 @@ The following example explicitly starts the Redis service and stops it at the en
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/start-stop-services/typescript/index.ts
 ```
@@ -426,7 +426,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/test-against-db-service/typescript/index.ts
 ```
@@ -522,7 +522,7 @@ Here's what happens on the last line:
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/service-lifecycle-1/typescript/index.ts
 ```
@@ -593,7 +593,7 @@ Here's a more detailed client-server example of running commands against a Redis
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/service-lifecycle-2/typescript/index.ts
 ```
@@ -630,7 +630,7 @@ It would be better to chain both commands together, which ensures that the servi
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/services/service-lifecycle-3/typescript/index.ts
 ```

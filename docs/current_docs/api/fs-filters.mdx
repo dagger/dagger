@@ -80,7 +80,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except TypeScript source code files:
 
@@ -145,7 +145,7 @@ Ignore(["**/node_modules"])
 Ignore([".git", "**/.gitignore"])
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 // exclude Mocha tests
 @argument({ ignore: ["**.spec.ts"] })
@@ -226,7 +226,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
@@ -293,7 +293,7 @@ dir_opts = {"include": ["*.zip"]}
 dir_opts = {"exclude": ["*.git"]}
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 // exclude all Markdown files
 const dirOpts = { exclude: ["*.md*"] }
@@ -397,7 +397,7 @@ async def foo(
     return source
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 debug(

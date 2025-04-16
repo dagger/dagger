@@ -27,7 +27,7 @@
   <TabItem value="Python">
   ...
   </TabItem>
-  <TabItem value="TypeScript">
+  <TabItem value="typescript" label="TypeScript">
   ...
   </TabItem>
   </Tabs>

@@ -40,7 +40,7 @@ dagger init --name=my-module
 dagger develop --sdk=python
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=typescript
@@ -120,7 +120,7 @@ In this structure:
 This structure hosts a Python import package, with a name derived from the project name (in `pyproject.toml`), inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This convention prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```
 .
@@ -225,7 +225,7 @@ the main object needs to be named `MyModule`.
 [@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
 [@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=./snippets/functions/functions-complex/typescript/index.ts
 ```
 </TabItem>
@@ -435,7 +435,7 @@ All tasks have finished
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 :::note
 The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](../configuration/modules.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
 :::

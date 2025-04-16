@@ -203,7 +203,7 @@ Then the import in `__init__.py` is no longer needed since Dagger knows to impor
 :::
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 Due to TypeScript limitations, it is not possible to split your main class module (`index.ts`) into multiple files. However, it is possible to create sub-classes in different files and access them from your main class module:
 
@@ -387,7 +387,7 @@ This can be useful to add a few requirements to the module's execution environme
 :::
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 The runtime container is currently hardcoded to run in Node.js 22.11.0, but it can be overridden by [setting an alternative base image](../configuration/modules.mdx#alternative-base-images).
 
@@ -491,7 +491,7 @@ It will have to be manually kept in sync, though.
 :::
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 Dagger modules in Typescript are built to be installed, like libraries. The runtime container installs the module code with:
 
 ```shell

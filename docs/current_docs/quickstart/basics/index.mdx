@@ -118,7 +118,7 @@ async def publish(self) -> str:
     )
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 async publish(): Promise<string> {
@@ -212,7 +212,7 @@ class Basics:
 ```
 
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 @object()
@@ -381,7 +381,7 @@ async def publish(self, image: str = "alpine:latest") -> str:
     )
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 build(image = "alpine:latest"): Container {
@@ -477,7 +477,7 @@ def check(self) -> str:
     return dag.trivy().scan_container(ctr)
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 check(): string {
@@ -556,7 +556,7 @@ def env(self) -> dagger.Container:
     )
 ```
 </TabItem>
-<TabItem value="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript
 @func()
 env(): Container {
