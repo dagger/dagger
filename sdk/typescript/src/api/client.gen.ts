@@ -1066,7 +1066,7 @@ export type ModuleServeOpts = {
   /**
    * expose the dependencies of this module to the client
    */
-  serveDependencies?: boolean
+  includeDependencies?: boolean
 }
 
 /**
@@ -6423,7 +6423,7 @@ export class Module_ extends BaseClient {
    * Serve a module's API in the current session.
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-   * @param opts.serveDependencies expose the dependencies of this module to the client
+   * @param opts.includeDependencies expose the dependencies of this module to the client
    */
   serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {

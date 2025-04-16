@@ -7334,7 +7334,7 @@ pub struct Module {
 pub struct ModuleServeOpts {
     /// expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
-    pub serve_dependencies: Option<bool>,
+    pub include_dependencies: Option<bool>,
 }
 impl Module {
     /// The dependencies of the module.
@@ -7433,8 +7433,8 @@ impl Module {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("serve");
-        if let Some(serve_dependencies) = opts.serve_dependencies {
-            query = query.arg("serveDependencies", serve_dependencies);
+        if let Some(include_dependencies) = opts.include_dependencies {
+            query = query.arg("includeDependencies", include_dependencies);
         }
         query.execute(self.graphql_client.clone()).await
     }

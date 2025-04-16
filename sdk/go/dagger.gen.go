@@ -6783,7 +6783,7 @@ func (r *Module) SDK() *SDKConfig {
 // ModuleServeOpts contains options for Module.Serve
 type ModuleServeOpts struct {
 	// expose the dependencies of this module to the client
-	ServeDependencies bool
+	IncludeDependencies bool
 }
 
 // Serve a module's API in the current session.
@@ -6795,9 +6795,9 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	}
 	q := r.query.Select("serve")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `serveDependencies` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ServeDependencies) {
-			q = q.Arg("serveDependencies", opts[i].ServeDependencies)
+		// `includeDependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
+			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
 		}
 	}
 

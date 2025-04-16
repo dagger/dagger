@@ -2770,7 +2770,7 @@ type Module {
   """
   serve(
     """expose the dependencies of this module to the client"""
-    serveDependencies: Boolean
+    includeDependencies: Boolean
   ): Void
 
   """The source for the module."""

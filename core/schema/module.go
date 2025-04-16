@@ -86,7 +86,7 @@ func (s *moduleSchema) Install() {
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
-			ArgDoc("serveDependencies", "expose the dependencies of this module to the client"),
+			ArgDoc("includeDependencies", "expose the dependencies of this module to the client"),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -446,10 +446,10 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*core.Module], args struct {
-	ServeDependencies dagql.Optional[dagql.Boolean]
+	IncludeDependencies dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
-	serveDependencies := args.ServeDependencies.Valid && args.ServeDependencies.Value.Bool()
-	return dagql.Null[core.Void](), modMeta.Self.Query.ServeModule(ctx, modMeta.Self, serveDependencies)
+	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
+	return dagql.Null[core.Void](), modMeta.Self.Query.ServeModule(ctx, modMeta.Self, includeDependencies)
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {

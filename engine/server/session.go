@@ -1255,7 +1255,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client
-func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, serveDependencies bool) error {
+func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
@@ -1268,7 +1268,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, serveDepen
 	if err != nil {
 		return err
 	}
-	if serveDependencies {
+	if includeDependencies {
 		for _, depMod := range mod.Deps.Mods {
 			err = srv.serveModule(client, depMod)
 			if err != nil {
