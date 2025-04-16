@@ -800,8 +800,8 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				ctx, span := Tracer(ctx).Start(ctx, "think",
 					telemetry.Reveal(),
 					trace.WithAttributes(
-						attribute.String(telemetry.UIMessageAttr, "thought"),
-						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+						attribute.String(telemetry.UIMessageAttr, "received"),
+						attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 					),
 				)
 				defer telemetry.End(span, func() error { return rerr })
