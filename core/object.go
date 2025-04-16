@@ -19,6 +19,9 @@ import (
 // ref: https://graphql.org/learn/execution/#trivial-resolvers
 const trivialFieldDirectiveName = "trivialResolveField"
 
+// indicates an ast field is deprecated
+const deprecatedDirectiveName = "deprecated"
+
 type ModuleObjectType struct {
 	typeDef *ObjectTypeDef
 	mod     *Module

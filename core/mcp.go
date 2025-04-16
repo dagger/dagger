@@ -313,6 +313,10 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			// with implementations
 			continue
 		}
+		if field.Directives.ForName(deprecatedDirectiveName) != nil {
+			// don't expose deprecated APIs
+			continue
+		}
 		if references(field, TypesHiddenFromEnvExtensions...) {
 			// references a banned type
 			continue
