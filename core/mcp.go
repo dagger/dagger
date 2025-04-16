@@ -44,8 +44,6 @@ type LLMTool struct {
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
 	env *Env
-	// Whether the LLM needs instructions on how to use the tool scheme
-	needsSystemPrompt bool
 	// Only show these functions, if non-empty
 	selectedTools map[string]bool
 	// The last value returned by a function.
@@ -54,18 +52,11 @@ type MCP struct {
 	returned bool
 }
 
-func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
-	m := &MCP{
+func newMCP(env *Env) *MCP {
+	return &MCP{
 		env:           env,
 		selectedTools: map[string]bool{},
 	}
-	// if env.Root() != nil {
-	// 	m.Select(env.Root())
-	// }
-	if endpoint != nil {
-		m.needsSystemPrompt = (endpoint.Provider == Google)
-	}
-	return m
 }
 
 //go:embed llm_dagger_prompt.md
@@ -73,13 +64,6 @@ var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
 	return defaultSystemPrompt
-}
-
-func (m *MCP) WithEnvironment(env *Env) *MCP {
-	m = m.Clone()
-	m.env = env
-	// We keep the current selection even if underlying environment is swapped out
-	return m
 }
 
 func (m *MCP) Clone() *MCP {
@@ -422,7 +406,7 @@ func (m *MCP) call(ctx context.Context,
 		self, ok := argsMap[selfType]
 		if !ok {
 			// default to the newest object of this type
-			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCount[selfType])
+			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCounts[selfType])
 		}
 		recv, ok := self.(string)
 		if !ok {
@@ -682,7 +666,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 }
 
 func (m *MCP) allIDs(typeName string) []string {
-	total := m.env.typeCount[typeName]
+	total := m.env.typeCounts[typeName]
 	ids := make([]string, 0, total)
 	for i := total; i > 0; i-- {
 		ids = append(ids, fmt.Sprintf("%s#%d", typeName, i))
@@ -843,8 +827,8 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
 				}
 				var objects []string
-				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCount)) {
-					count := m.env.typeCount[typeName]
+				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
+					count := m.env.typeCounts[typeName]
 					for i := 1; i <= count; i++ {
 						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
 						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
@@ -1083,7 +1067,7 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	if typeName != "Query" {
-		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCount[typeName])
+		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCounts[typeName])
 		schema := map[string]any{
 			"type":        "string",
 			"description": fmt.Sprintf("The %s to operate against. Default: %s", typeName, latest),

@@ -20,7 +20,7 @@ type Env struct {
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*Binding
 	// Auto incrementing number per-type
-	typeCount map[string]int
+	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
 	// An optional root object
@@ -41,14 +41,14 @@ func NewEnv() *Env {
 		inputsByName:  map[string]*Binding{},
 		outputsByName: map[string]*Binding{},
 		objsByID:      map[string]*Binding{},
-		typeCount:     map[string]int{},
+		typeCounts:    map[string]int{},
 		idByHash:      map[digest.Digest]string{},
 	}
 }
 
 // Expose this environment for LLM consumption via MCP.
-func (env *Env) MCP(endpoint *LLMEndpoint) *MCP {
-	return newMCP(env, endpoint)
+func (env *Env) MCP() *MCP {
+	return newMCP(env)
 }
 
 func (env *Env) Clone() *Env {
@@ -56,7 +56,7 @@ func (env *Env) Clone() *Env {
 	cp.inputsByName = cloneMap(cp.inputsByName)
 	cp.outputsByName = cloneMap(cp.outputsByName)
 	cp.objsByID = cloneMap(cp.objsByID)
-	cp.typeCount = cloneMap(cp.typeCount)
+	cp.typeCounts = cloneMap(cp.typeCounts)
 	cp.idByHash = cloneMap(cp.idByHash)
 	for name, bnd := range cp.outputsByName {
 		// clone output bindings, since they mutate
@@ -156,8 +156,8 @@ func (env *Env) Ingest(obj dagql.Object, desc string) string {
 	typeName := id.Type().NamedType()
 	llmID, ok := env.idByHash[hash]
 	if !ok {
-		env.typeCount[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCount[typeName])
+		env.typeCounts[typeName]++
+		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCounts[typeName])
 		if desc == "" {
 			desc = env.describe(obj.ID())
 		}
@@ -237,8 +237,8 @@ func (env *Env) displayLit(lit call.Literal) string {
 }
 
 func (env *Env) Types() []string {
-	types := make([]string, 0, len(env.typeCount))
-	for typ := range env.typeCount {
+	types := make([]string, 0, len(env.typeCounts))
+	for typ := range env.typeCounts {
 		types = append(types, typ)
 	}
 	return types

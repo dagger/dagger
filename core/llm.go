@@ -443,7 +443,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(endpoint),
+		mcp:         NewEnv().MCP(),
 		once:        &sync.Once{},
 	}, nil
 }
@@ -901,7 +901,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.Clone().MCP(llm.Endpoint)
+	llm.mcp = env.Clone().MCP()
 	return llm
 }
 
