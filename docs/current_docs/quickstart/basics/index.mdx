@@ -94,7 +94,7 @@ As your workflows become more complex, you'll start wishing you could make them 
 Here's the previous example, rewritten as a Dagger Function:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go
 func (m *Basics) Publish(ctx context.Context) (string, error) {
 	return dag.Container().
@@ -170,7 +170,7 @@ When you create a custom Dagger Function and tell Dagger about it (by installing
 Function chaining works the same way, whether you're writing Dagger Function code using a Dagger SDK or using Dagger Shell. The following are equivalent:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 
 ```go
 // Returns a base container
@@ -342,7 +342,7 @@ Dagger Functions are just like regular functions: they accept [arguments](../../
 Here's a revision of the previous example which splits it into two smaller functions: one to build the container, and one to publish it. The builder function accepts the container image string as an argument and returns a `Container` type. The publisher function accepts a `Container` type as argument and returns the image identifier as a string.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go
 func (m *Basics) Build(
 	// +default "alpine:latest"
@@ -460,7 +460,7 @@ Here's an example of installing and using two modules from the Daggerverse: a Wo
 Here's what it looks like in code:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go
 func (m *Basics) Check(ctx context.Context) (string, error) {
 	ctr := dag.Wolfi().Container()
@@ -530,7 +530,7 @@ One of Dagger's most powerful features is its ability to [cache data across work
 Taken together, these two types of caching significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go
 func (m *Basics) Env(ctx context.Context) *dagger.Container {
 	aptCache := dag.CacheVolume("apt-cache")

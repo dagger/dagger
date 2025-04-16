@@ -14,7 +14,7 @@ Dagger Functions are the fundamental unit of computing in Dagger. Dagger Functio
 Here's an example of a Dagger Function that builds and containerizes a Go application:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/programmable-pipelines-1/go/main.go
 ```
 </TabItem>
@@ -51,7 +51,7 @@ Here's an example of calling the same Dagger Function again, but this time chain
 Here's the same Dagger Function again, modified to return the compiled binary as a just-in-time file. The file is then exported to the host via an additional, chained function call:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/programmable-pipelines-2/go/main.go
 ```
 </TabItem>

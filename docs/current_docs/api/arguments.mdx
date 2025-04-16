@@ -27,7 +27,7 @@ When passing values to Dagger Functions within Dagger Shell, required arguments 
 Here is an example of a Dagger Function that accepts a string argument:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-string/go/main.go
 ```
 </TabItem>
@@ -151,7 +151,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREE
 Here is an example of a Dagger Function that accepts a Boolean argument:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-boolean/go/main.go
 ```
 </TabItem>
@@ -215,7 +215,7 @@ Here is an example of a Dagger function that accepts an integer argument:
 
 <Tabs groupId="language" queryString="sdk">
 
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-return-values-integer/go/main.go
 ```
 </TabItem>
@@ -276,7 +276,7 @@ The result will look like this:
 Here is an example of a Dagger function that accepts a floating-point number as argument:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-return-values-float/go/main.go
 ```
 </TabItem>
@@ -347,7 +347,7 @@ The result will look like this:
 To pass an array argument to a Dagger Function, use a comma-separated list of values.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-array/go/main.go
 ```
 </TabItem>
@@ -415,7 +415,7 @@ Dagger Functions do not have access to the filesystem of the host you invoke the
 Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-directory/go/main.go
 ```
 </TabItem>
@@ -561,7 +561,7 @@ File arguments work in the same way as [directory arguments](#directory-argument
 Here's an example of a Dagger Function that accepts a `File` as argument, reads it, and returns its contents:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-file/go/main.go
 ```
 </TabItem>
@@ -638,7 +638,7 @@ Just like directories, you can pass a container to a Dagger Function from the co
 Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function returns operating system information for the container.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-container/go/main.go
 ```
 </TabItem>
@@ -714,7 +714,7 @@ Dagger allows you to utilize confidential information, such as passwords, API ke
 Secrets can be passed to Dagger Functions as arguments using the `Secret` core type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 
 ```go file=../cookbook/snippets/secret-variable/go/main.go
 ```
@@ -941,7 +941,7 @@ Function arguments can be marked as optional. In this case, the Dagger CLI will 
 Here's an example of a Dagger Function with an optional argument:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-optional/go/main.go
 ```
 </TabItem>
@@ -1037,7 +1037,7 @@ Function arguments can define a default value if no value is supplied for them.
 Here's an example of a Dagger Function with a default value for a string argument:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/arguments-default-string/go/main.go
 ```
 </TabItem>

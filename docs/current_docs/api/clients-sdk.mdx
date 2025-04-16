@@ -28,7 +28,7 @@ Once a module is initialized, `dagger develop --sdk=...` sets up or updates all 
 Here is an example of initializing a Dagger module:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=go
@@ -67,7 +67,7 @@ Running `dagger develop` regenerates the module's code based on dependencies, th
 The default template from `dagger develop` creates the following structure:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 
 ```
 .
@@ -202,7 +202,7 @@ While you can use the utilities defined in the automatically-generated code abov
 You can now write Dagger Functions using the selected Dagger SDK. Here is an example, which calls a remote API method and returns the result:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/functions/functions-complex/go/main.go
 ```
 
@@ -301,7 +301,7 @@ An alternative approach is to develop a custom application using a Dagger SDK. T
 - executing your application using `dagger run`
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 
 :::note
 The Dagger Go SDK requires [Go 1.22 or later](https://go.dev/doc/install).

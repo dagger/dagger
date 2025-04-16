@@ -33,7 +33,7 @@ The entrypoint to accessing dependent modules from your own module's code is `da
 Here is an example of accessing the installed `hello` module from your own module's code:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 
 ```go
 func (m *MyModule) Greeting(ctx context.Context) (string, error) {
@@ -95,7 +95,7 @@ dagger install github.com/kpenfound/dagger-modules/golang@v0.2.0
 Next, create a new Dagger Function:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="Go">
+<TabItem value="go" label="Go">
 ```go file=./snippets/dependencies/chaining/go/main.go
 ```
 </TabItem>

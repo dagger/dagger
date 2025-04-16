@@ -21,7 +21,7 @@
 
   ```html
   <Tabs groupId="language" queryString="sdk">
-  <TabItem value="Go">
+  <TabItem value="go" label="Go">
   ...
   </TabItem>
   <TabItem value="Python">
