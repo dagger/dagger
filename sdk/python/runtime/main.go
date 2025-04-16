@@ -49,7 +49,7 @@ type UserConfig struct {
 func New(
 	// Directory with the Python SDK source code.
 	// +defaultPath=".."
-	// +ignore=["**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md"]
+	// +ignore=["**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md", "!dist/*"]
 	sdkSourceDir *dagger.Directory,
 ) (*PythonSdk, error) {
 	// Shouldn't happen due to defaultPath, but just in case.
@@ -60,7 +60,7 @@ func New(
 		Discovery: NewDiscovery(UserConfig{
 			UseUv: true,
 		}),
-		SdkSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
+		SdkSourceDir: sdkSourceDir,
 		Container:    dag.Container(),
 	}, nil
 }
@@ -285,7 +285,7 @@ func (m *PythonSdk) uvBins(uvImage *Image) dagger.WithContainerFunc {
 
 	// Default uv version and using bundled SDK files, so get the uv binaries
 	// from the engine instead of fetching from container.
-	if m.Discovery.HasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultUvImage) {
+	if m.Discovery.SdkHasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultUvImage) {
 		bins = m.SdkSourceDir.Directory("dist")
 	}
 
@@ -363,7 +363,7 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	if m.VendorPath != "" {
 		src := m.SdkSourceDir
-		if m.Discovery.HasFile("dist") {
+		if m.Discovery.SdkHasFile("dist/") {
 			src = src.WithoutDirectory("dist")
 		}
 		m.AddDirectory(m.VendorPath, src)
@@ -375,7 +375,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 		cmd := []string{"dist/codegen"}
 
 		// When not using the bundled codegen executable we can revert to executing directly
-		if !m.Discovery.HasFile("dist/codegen") {
+		if !m.Discovery.SdkHasFile("dist/codegen") {
 			cmd = []string{
 				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
 				"python", "-m", "codegen",

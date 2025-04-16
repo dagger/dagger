@@ -69,6 +69,9 @@ type Discovery struct {
 	// DefaultUvImage is the default image address for uv.
 	DefaultUvImage *Image
 
+	// FileSet is a set of file names in the SDK source directory.
+	SdkFileSet map[string]struct{}
+
 	// FileSet is a set of file names from an initial Entries() call for quick lookups.
 	FileSet map[string]struct{}
 
@@ -88,9 +91,10 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	proj := PyProject{}
 	proj.Tool.Dagger = cfg
 	return &Discovery{
-		Config:  &proj,
-		FileSet: make(map[string]struct{}),
-		Files:   make(map[string]string),
+		Config:     &proj,
+		SdkFileSet: make(map[string]struct{}),
+		FileSet:    make(map[string]struct{}),
+		Files:      make(map[string]string),
 
 		// Custom config can only be disabled by an extension module.
 		EnableCustomConfig: true,
@@ -126,6 +130,12 @@ func (d *Discovery) UvConfig() *UvConfig {
 // HasFile returns true if the file exists in the original module's source directory.
 func (d *Discovery) HasFile(name string) bool {
 	_, ok := d.FileSet[name]
+	return ok
+}
+
+// SdkHasFile returns true if the file exists in the SDK's source directory.
+func (d *Discovery) SdkHasFile(name string) bool {
+	_, ok := d.SdkFileSet[name]
 	return ok
 }
 
@@ -212,17 +222,7 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
-		hasDist := d.HasFile("dist")
 		d.mu.Unlock()
-
-		if hasDist {
-			entries, _ = m.Source().Directory("dist").Entries(ctx)
-			d.mu.Lock()
-			for _, entry := range entries {
-				d.FileSet["dist/"+entry] = struct{}{}
-			}
-			d.mu.Unlock()
-		}
 
 		return nil
 	})
@@ -352,11 +352,44 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
+	eg.Go(func() error {
+		entries, _ := m.SdkSourceDir.Entries(gctx)
+		d.mu.Lock()
+		for _, entry := range entries {
+			d.SdkFileSet[entry] = struct{}{}
+		}
+		hasDist := d.SdkHasFile("dist/")
+		d.mu.Unlock()
+
+		if hasDist {
+			entries, _ = m.SdkSourceDir.Glob(gctx, "dist/*")
+			d.mu.Lock()
+			for _, entry := range entries {
+				d.SdkFileSet[entry] = struct{}{}
+			}
+			d.mu.Unlock()
+		}
+
+		return nil
+	})
+
 	return eg.Wait()
 }
 
 // loadConfig loads the pyproject.toml file.
 func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
+	// Get image addresses from the Dockerfile to combine with possible
+	// overrides in pyproject.toml.
+	baseImage, err := d.GetImage(BaseImageName)
+	if err != nil {
+		return err
+	}
+	uvImage, err := d.GetImage(UvImageName)
+	if err != nil {
+		return err
+	}
+	d.DefaultUvImage = uvImage
+
 	contents, exists := d.Files["pyproject.toml"]
 	if !exists {
 		// For now, always vendor when creating a new pyproject.toml file until
@@ -370,18 +403,6 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	if err := toml.Unmarshal([]byte(contents), d.Config); err != nil {
 		return err
 	}
-
-	// Get image addresses from the Dockerfile to combine with possible
-	// overrides in pyproject.toml.
-	baseImage, err := d.GetImage(BaseImageName)
-	if err != nil {
-		return err
-	}
-	uvImage, err := d.GetImage(UvImageName)
-	if err != nil {
-		return err
-	}
-	d.DefaultUvImage = uvImage
 
 	cfg := d.UserConfig()
 
