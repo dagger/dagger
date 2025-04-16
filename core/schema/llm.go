@@ -29,6 +29,10 @@ func (s llmSchema) Install() {
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
 		dagql.Func("historyJSON", s.historyJSON).
+			View(AfterVersion("v0.18.4")).
+			Doc("return the raw llm message history as json"),
+		dagql.Func("historyJSON", s.historyJSONString).
+			View(BeforeVersion("v0.18.4")).
 			Doc("return the raw llm message history as json"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
@@ -170,6 +174,14 @@ func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]s
 
 func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {
 	return llm.HistoryJSON(ctx, s.srv)
+}
+
+func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+	js, err := llm.HistoryJSON(ctx, s.srv)
+	if err != nil {
+		return "", err
+	}
+	return js.String(), nil
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {

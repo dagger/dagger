@@ -97,9 +97,9 @@ type LLMResponse struct {
 }
 
 type LLMTokenUsage struct {
-	InputTokens  int64 `field:"true"`
-	OutputTokens int64 `field:"true"`
-	TotalTokens  int64 `field:"true"`
+	InputTokens  int64 `field:"true" json:"input_tokens"`
+	OutputTokens int64 `field:"true" json:"output_tokens"`
+	TotalTokens  int64 `field:"true" json:"total_tokens"`
 }
 
 func (*LLMTokenUsage) Type() *ast.Type {
@@ -584,7 +584,6 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
-	var hasSystemPrompt bool
 	for _, env := range llm.messages {
 		if env.Role == "system" {
 			return llm.messages
@@ -594,7 +593,7 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	messages := llm.messages
 
 	// inject default system prompt if none are found
-	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
@@ -763,7 +762,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 				}
 			}
 			// Handle persistent error after all retries failed.
-			return fmt.Errorf("failed to send query after retries: %w", err)
+			return fmt.Errorf("not retrying: %w", err)
 		}
 
 		// Add the model reply to the history
