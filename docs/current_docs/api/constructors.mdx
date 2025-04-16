@@ -133,7 +133,7 @@ A few important notes:
 - The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor which can be used, for example, to initialize field values that depend on other field values.
 - Setting a default value like `None` in an attribute is the same as setting `dataclasses.field(default=None)`. `dataclasses.field()` is only required to specify other non-default values, like `init` or to set the default using a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions).
 - There are two important differences between `dataclasses.field()` and `dagger.field()`
-  - `dagger.field()` exposes the attribute as a Dagger Function in the API. However, `dagger.field() doesn't expose everything in `dataclasses.field()`.
+  - `dagger.field()` exposes the attribute as a Dagger Function in the API. However, `dagger.field()` doesn't expose everything in `dataclasses.field()`.
   - With `dataclass.field()`, you can specify separate `default` and `default_factory` arguments for either a simple value or a default using a callable respectively. However, with `dagger.field()`, the same `default` argument supports both cases.
 
 For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values), use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
