@@ -1113,6 +1113,6 @@ func (spec InputObjectSpec) TypeDefinition(view View) *ast.Definition {
 		Kind:        ast.InputObject,
 		Name:        spec.Name,
 		Description: spec.Description,
-		Fields:      spec.Fields.FieldDefinitions(),
+		Fields:      spec.Fields.FieldDefinitions(view),
 	}
 }

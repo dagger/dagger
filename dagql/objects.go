@@ -57,12 +57,12 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 	if !opts.NoIDs {
 		class.Install(
 			Field[T]{
-				Spec: FieldSpec{
+				Spec: &FieldSpec{
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
 				},
-				Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
+				Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
 					return NewDynamicID[T](self.ID(), opts.Typed), nil
 				},
 			},
@@ -95,7 +95,7 @@ func (class Class[T]) FieldSpec(name string, view View) (FieldSpec, bool) {
 	if !ok {
 		return FieldSpec{}, false
 	}
-	return field.Spec, true
+	return *field.Spec, true
 }
 
 func (class Class[T]) fieldLocked(name string, view View) (Field[T], bool) {
@@ -107,10 +107,10 @@ func (class Class[T]) fieldLocked(name string, view View) (Field[T], bool) {
 		// iterate backwards to allow last-defined field to have precedence
 		field := fields[i]
 
-		if field.ViewFilter == nil {
+		if field.Spec.ViewFilter == nil {
 			return *field, true
 		}
-		if field.ViewFilter.Contains(view) {
+		if field.Spec.ViewFilter.Contains(view) {
 			return *field, true
 		}
 	}
@@ -126,17 +126,20 @@ func (class Class[T]) Install(fields ...Field[T]) {
 			if len(fields) == 0 {
 				panic(fmt.Sprintf("field %q cannot be extended, as it has not been defined", field.Spec.Name))
 			}
-			oldSpec := field.Spec
+			oldSpec := *field.Spec
+			newSpec := *fields[len(fields)-1].Spec
 
-			field.Spec = fields[len(fields)-1].Spec
-			field.Spec.Type = oldSpec.Type // a little hacky, but preserve the return type
+			field.Spec = &newSpec
+			// a little hacky, but preserve a couple values
+			field.Spec.Type = oldSpec.Type
+			field.Spec.ViewFilter = oldSpec.ViewFilter
 		}
 
 		for _, other := range class.fields[field.Spec.Name] {
-			if field.ViewFilter == nil && other.ViewFilter != nil {
+			if field.Spec.ViewFilter == nil && other.Spec.ViewFilter != nil {
 				panic(fmt.Sprintf("field %q cannot be added to the global view, it already has a view", field.Spec.Name))
 			}
-			if field.ViewFilter != nil && other.ViewFilter == nil {
+			if field.Spec.ViewFilter != nil && other.Spec.ViewFilter == nil {
 				panic(fmt.Sprintf("field %q cannot be added with a view, it's already in the global view", field.Spec.Name))
 			}
 		}
@@ -155,8 +158,8 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	f := &Field[T]{
-		Spec: spec,
-		Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
+		Spec: &spec,
+		Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
 			return fun(ctx, self, args)
 		},
 	}
@@ -188,7 +191,7 @@ func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
 	}
 	for name := range cls.fields {
 		if field, ok := cls.fieldLocked(name, view); ok {
-			def.Fields = append(def.Fields, field.FieldDefinition())
+			def.Fields = append(def.Fields, field.FieldDefinition(view))
 		}
 	}
 	// TODO preserve order
@@ -206,7 +209,7 @@ func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Fie
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
-		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
+		argSpec, ok := field.Spec.Args.Input(arg.Name, view)
 		if !ok {
 			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", cls.TypeName(), field.Spec.Name, arg.Name)
 		}
@@ -224,7 +227,7 @@ func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Fie
 			Value: input,
 		}
 	}
-	if field.ViewFilter == nil {
+	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
 		// selector (since they're global from all perspectives)
 		view = ""
@@ -263,7 +266,7 @@ func (cls Class[T]) Call(
 		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
 
-	val, err := field.Func(ctx, node, args)
+	val, err := field.Func(ctx, node, args, view)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +384,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 	if !ok {
 		return nil, nil, false, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
-	if field.ViewFilter == nil {
+	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
 		// selector (since they're global from all perspectives)
 		view = ""
@@ -389,7 +392,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 	idArgs := make([]*call.Argument, 0, len(sel.Args))
 	inputArgs := make(map[string]Input, len(sel.Args))
-	for _, argSpec := range field.Spec.Args {
+	for _, argSpec := range field.Spec.Args.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
 		var namedInput NamedInput
@@ -443,7 +446,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, CacheConfig{
+		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {
@@ -499,7 +502,7 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 
 	idArgs := newID.Args()
 	inputArgs := make(map[string]Input, len(idArgs))
-	for _, argSpec := range field.Spec.Args {
+	for _, argSpec := range field.Spec.Args.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
 		var inputLit call.Literal
@@ -776,20 +779,21 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
 	}
 
+	spec := &FieldSpec{
+		Name: name,
+		Args: inputs,
+		Type: ret,
+	}
 	field := Field[T]{
-		Spec: FieldSpec{
-			Name: name,
-			Args: inputs,
-			Type: ret,
-		},
-		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input) (Typed, error) {
+		Spec: spec,
+		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input, view View) (Typed, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
 				return nil, argsErr
 			}
 			var args A
-			if err := inputs.Decode(argVals, &args); err != nil {
+			if err := spec.Args.Decode(argVals, &args, view); err != nil {
 				return nil, err
 			}
 			res, err := fn(ctx, self, args)
@@ -801,14 +805,14 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self Object, argVals map[string]Input, baseCfg CacheConfig) (*CacheConfig, error) {
+		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self Object, argVals map[string]Input, view View, baseCfg CacheConfig) (*CacheConfig, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
 				return nil, argsErr
 			}
 			var args A
-			if err := inputs.Decode(argVals, &args); err != nil {
+			if err := spec.Args.Decode(argVals, &args, view); err != nil {
 				return nil, err
 			}
 			inst, ok := self.(Instance[T])
@@ -844,16 +848,20 @@ type FieldSpec struct {
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
 
+	// ViewFilter is filter that specifies under which views this field is
+	// accessible. If not view is present, the default is the "global" view.
+	ViewFilter ViewFilter
+
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
 	extend bool
 }
 
-func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
+func (spec FieldSpec) FieldDefinition(view View) *ast.FieldDefinition {
 	def := &ast.FieldDefinition{
 		Name:        spec.Name,
 		Description: spec.Description,
-		Arguments:   spec.Args.ArgumentDefinitions(),
+		Arguments:   spec.Args.ArgumentDefinitions(view),
 		Type:        spec.Type.Type(),
 	}
 	if len(spec.Directives) > 0 {
@@ -887,6 +895,10 @@ type InputSpec struct {
 	Sensitive bool
 	// Directives is the list of GraphQL directives attached to this input.
 	Directives []*ast.Directive
+
+	// ViewFilter is filter that specifies under which views this field is
+	// accessible. If not view is present, the default is the "global" view.
+	ViewFilter ViewFilter
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -912,6 +924,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 		spec.Directives = slices.Clone(spec.Directives)
 		spec.Directives = append(spec.Directives, other.Directives...)
 	}
+	if other.ViewFilter != nil {
+		spec.ViewFilter = other.ViewFilter
+	}
 }
 
 type Argument struct {
@@ -936,6 +951,16 @@ func (arg Argument) Sensitive() Argument {
 	return arg
 }
 
+func (arg Argument) Default(input Input) Argument {
+	arg.Spec.Default = input
+	return arg
+}
+
+func (arg Argument) View(view ViewFilter) Argument {
+	arg.Spec.ViewFilter = view
+	return arg
+}
+
 func (arg Argument) Deprecated(paras ...string) Argument {
 	if len(paras) == 0 && arg.Spec.Description != "" {
 		arg.Spec.DeprecatedReason = arg.Spec.Description
@@ -956,44 +981,86 @@ func (arg Argument) Experimental(paras ...string) Argument {
 	return arg
 }
 
-type InputSpecs []InputSpec
+type InputSpecs struct {
+	// raw is the list of input specs.
+	// It should not be accessed directly (hence private), but should instead
+	// be accessed through a specific dagql view.
+	raw []InputSpec
+}
 
-func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
-	for _, spec := range specs {
-		if spec.Name == name {
+func NewInputSpecs(specs ...InputSpec) InputSpecs {
+	return InputSpecs{
+		raw: specs,
+	}
+}
+
+func (specs *InputSpecs) Add(target ...InputSpec) {
+	specs.raw = append(specs.raw, target...)
+}
+
+func (specs InputSpecs) Input(name string, view View) (InputSpec, bool) {
+	for i := len(specs.raw) - 1; i >= 0; i-- {
+		// iterate backwards to allow last-defined spec to have precedence
+		spec := specs.raw[i]
+
+		if spec.Name != name {
+			continue
+		}
+		if spec.ViewFilter == nil || spec.ViewFilter.Contains(view) {
 			return spec, true
 		}
 	}
 	return InputSpec{}, false
 }
 
-func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
-	defs := make([]*ast.ArgumentDefinition, len(specs))
-	for i, spec := range specs {
+func (specs InputSpecs) Inputs(view View) (args []InputSpec) {
+	seen := make(map[string]bool, len(specs.raw))
+	for i := len(specs.raw) - 1; i >= 0; i-- {
+		// iterate backwards to allow last-defined spec to have precedence
+		spec := specs.raw[i]
+
+		if seen[spec.Name] {
+			continue
+		}
+		if spec.ViewFilter != nil && !spec.ViewFilter.Contains(view) {
+			continue
+		}
+		seen[spec.Name] = true
+		args = append(args, spec)
+	}
+	slices.Reverse(args)
+	return args
+}
+
+func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition {
+	args := specs.Inputs(view)
+	defs := make([]*ast.ArgumentDefinition, 0, len(args))
+
+	for _, arg := range args {
 		schemaArg := &ast.ArgumentDefinition{
-			Name:        spec.Name,
-			Description: spec.Description,
-			Type:        spec.Type.Type(),
+			Name:        arg.Name,
+			Description: arg.Description,
+			Type:        arg.Type.Type(),
 		}
-		if spec.Default != nil {
-			schemaArg.DefaultValue = spec.Default.ToLiteral().ToAST()
+		if arg.Default != nil {
+			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
 		}
-		if len(spec.Directives) > 0 {
-			schemaArg.Directives = append([]*ast.Directive{}, spec.Directives...)
+		if len(arg.Directives) > 0 {
+			schemaArg.Directives = slices.Clone(arg.Directives)
 		}
-		if spec.DeprecatedReason != "" {
-			schemaArg.Directives = append(schemaArg.Directives, deprecated(spec.DeprecatedReason))
+		if arg.DeprecatedReason != "" {
+			schemaArg.Directives = append(schemaArg.Directives, deprecated(arg.DeprecatedReason))
 		}
-		if spec.ExperimentalReason != "" {
-			schemaArg.Directives = append(schemaArg.Directives, experimental(spec.ExperimentalReason))
+		if arg.ExperimentalReason != "" {
+			schemaArg.Directives = append(schemaArg.Directives, experimental(arg.ExperimentalReason))
 		}
-		defs[i] = schemaArg
+		defs = append(defs, schemaArg)
 	}
 	return defs
 }
 
-func (specs InputSpecs) FieldDefinitions() (defs []*ast.FieldDefinition) {
-	for _, argDef := range specs.ArgumentDefinitions() {
+func (specs InputSpecs) FieldDefinitions(view View) (defs []*ast.FieldDefinition) {
+	for _, argDef := range specs.ArgumentDefinitions(view) {
 		fieldDef := argDefToFieldDef(argDef)
 		defs = append(defs, fieldDef)
 	}
@@ -1039,14 +1106,14 @@ func (fields Fields[T]) Install(server *Server) {
 	for _, field := range objectFields {
 		name := field.Name
 		fields = append(fields, Field[T]{
-			Spec: FieldSpec{
+			Spec: &FieldSpec{
 				Name:               name,
 				Type:               field.Value,
 				Description:        field.Field.Tag.Get("doc"),
 				DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 				ExperimentalReason: field.Field.Tag.Get("experimental"),
 			},
-			Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
+			Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
 				t, found, err := getField(self.Self, false, name)
 				if err != nil {
 					return nil, err
@@ -1071,7 +1138,7 @@ type CacheSpec struct {
 	DoNotCache string
 }
 
-type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, CacheConfig) (*CacheConfig, error)
+type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, View, CacheConfig) (*CacheConfig, error)
 
 type GetCacheConfigFunc[T Typed, A any] func(context.Context, Instance[T], A, CacheConfig) (*CacheConfig, error)
 
@@ -1084,13 +1151,9 @@ type CacheConfig struct {
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec      FieldSpec
-	Func      func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	Spec      *FieldSpec
 	CacheSpec CacheSpec
-
-	// ViewFilter is filter that specifies under which views this field is
-	// accessible. If not view is present, the default is the "global" view.
-	ViewFilter ViewFilter
+	Func      func(context.Context, Instance[T], map[string]Input, View) (Typed, error)
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -1105,7 +1168,7 @@ func (field Field[T]) Sensitive() Field[T] {
 
 // View sets a view for this field.
 func (field Field[T]) View(view ViewFilter) Field[T] {
-	field.ViewFilter = view
+	field.Spec.ViewFilter = view
 	return field
 }
 
@@ -1129,8 +1192,8 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 }
 
 func (field Field[T]) Args(args ...Argument) Field[T] {
-	original := make(map[string]InputSpec, len(field.Spec.Args))
-	for _, arg := range field.Spec.Args {
+	original := make(map[string]InputSpec, len(field.Spec.Args.raw))
+	for _, arg := range field.Spec.Args.raw {
 		if arg.Name == "" {
 			panic("argument name cannot be empty")
 		}
@@ -1146,8 +1209,7 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 		arg.merge(&patch.Spec)
 		newArgs = append(newArgs, arg)
 	}
-	field.Spec.Args = newArgs
-
+	field.Spec.Args = InputSpecs{newArgs}
 	return field
 }
 
@@ -1178,12 +1240,11 @@ func (field Field[T]) Experimental(paras ...string) Field[T] {
 }
 
 // FieldDefinition returns the schema definition of the field.
-func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
-	spec := field.Spec
-	if spec.Type == nil {
-		panic(fmt.Errorf("field %q has no type", spec.Name))
+func (field Field[T]) FieldDefinition(view View) *ast.FieldDefinition {
+	if field.Spec.Type == nil {
+		panic(fmt.Errorf("field %q has no type", field.Spec.Name))
 	}
-	return field.Spec.FieldDefinition()
+	return field.Spec.FieldDefinition(view)
 }
 
 func definition(kind ast.DefinitionKind, val Type, view View) *ast.Definition {
@@ -1211,7 +1272,7 @@ type reflectField[T any] struct {
 func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
-		return nil, err
+		return InputSpecs{}, err
 	}
 	specs := make([]InputSpec, len(fields))
 	for i, field := range fields {
@@ -1223,7 +1284,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			var err error
 			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
-				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
+				return InputSpecs{}, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
 			}
 			if input.Type().NonNull {
 				input = DynamicOptional{
@@ -1248,7 +1309,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 		}
 		specs[i] = spec
 	}
-	return specs, nil
+	return InputSpecs{specs}, nil
 }
 
 func deprecationDescription(reason string) string {
@@ -1367,7 +1428,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 	return nil, false, nil
 }
 
-func (specs InputSpecs) Decode(inputs map[string]Input, dest any) error {
+func (specs InputSpecs) Decode(inputs map[string]Input, dest any, view View) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {
@@ -1382,7 +1443,7 @@ func (specs InputSpecs) Decode(inputs map[string]Input, dest any) error {
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			if err := specs.Decode(inputs, val.Interface()); err != nil {
+			if err := specs.Decode(inputs, val.Interface(), view); err != nil {
 				return err
 			}
 			fieldV.Set(val.Elem())
@@ -1395,9 +1456,9 @@ func (specs InputSpecs) Decode(inputs map[string]Input, dest any) error {
 		if name == "-" {
 			continue
 		}
-		spec, found := specs.Lookup(name)
+		spec, found := specs.Input(name, view)
 		if !found {
-			return fmt.Errorf("missing input spec for %q", name)
+			continue
 		}
 		val, isProvided := inputs[spec.Name]
 		isNullable := !spec.Type.Type().NonNull
