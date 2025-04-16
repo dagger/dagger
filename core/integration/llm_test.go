@@ -361,11 +361,14 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 }
 
 func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	// these subtests should be able to share a client, but atm they'll end up with a single agent var for 2 different module inits
+	// c := connect(ctx, t)
 
 	modelFlag := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString([]byte("[]")))
 
 	t.Run("stdlib and host apis are exposed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		out, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "-M", modelFlag}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`$agent | tools`),
@@ -378,6 +381,8 @@ func (LLMSuite) TestAgentBinding(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("module and dependency tools are exposed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		out, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "-m", dependerModuleRef, modelFlag}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`$agent | tools`),
