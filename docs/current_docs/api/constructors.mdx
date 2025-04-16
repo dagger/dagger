@@ -126,7 +126,8 @@ You can use other [`@dataclasses.dataclass`](https://docs.python.org/3/library/d
 A few important notes:
 
 - Class attributes become constructor arguments by default, unless specified as `field(init=False)`.
-- The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor. So by setting `init=False` on the container argument, it changes from being a constructor argument to a regular argument that is still required.
+- Attributes are both fields and constructor arguments by default. So by setting `init=False` on the container argument, it's no longer added as a constructor argument but is still a required field that must be initialized if there's no default value.
+- The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor which can be used, for example, to initialize field values that depend on other field values.
 - Setting a default value like `None` in an attribute is the same as setting `dataclasses.field(default=None)`. `dataclasses.field()` is only required to specify other non-default values, like `init` or to set the default using a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions).
 - The difference between `dataclasses.field()` and `dagger.field()` is that the latter exposes the attribute as a Dagger function in the API.
 
