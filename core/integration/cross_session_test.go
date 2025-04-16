@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -822,4 +823,161 @@ func (LLMSuite) TestCrossSessionLLM(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-4.1", out)
+}
+
+func (ModuleSuite) TestCrossSessionContextualDirWithPrivate(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+type Test struct {
+	Obj *Obj
+}
+func New(
+	// +defaultPath="/crap"
+	dir *dagger.Directory,
+) *Test {
+	return &Test{Obj: &Obj{Dir: dir}}
+}
+func (*Test) Nop(ctx context.Context) (string, error) {
+	return "nop", nil
+}
+func (*Test) Nop2(ctx context.Context) (string, error) {
+	return "nop2", nil
+}
+type Obj struct {
+	// +private
+	Dir *dagger.Directory
+}
+func (o *Obj) Ents(ctx context.Context) ([]string, error) {
+	return o.Dir.Entries(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod1.Serve(ctx)
+	require.NoError(t, err)
+
+	c2 := connect(ctx, t)
+	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod2.Serve(ctx)
+	require.NoError(t, err)
+
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Nop string
+		}
+	}](c1, t, `{test{nop}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "nop", res1.Test.Nop)
+
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Nop2 string
+		}
+	}](c2, t, `{test{nop2}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "nop2", res2.Test.Nop2)
+
+	require.NoError(t, c1.Close())
+	time.Sleep(1 * time.Second)
+
+	res3, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Obj struct {
+				Ents []string
+			}
+		}
+	}](c2, t, `{test{obj{ents}}}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res3.Test.Obj.Ents)
+}
+
+func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=src", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
+	rand1 := identity.NewID()
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand1), 0644))
+
+	err = os.WriteFile(filepath.Join(modDir, "src", "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Obj *Obj
+}
+
+func New(
+	// +defaultPath="/crap"
+	dir *dagger.Directory,
+) *Test {
+	return &Test{Obj: &Obj{Dir: dir}}
+}
+
+type Obj struct {
+	Dir *dagger.Directory
+}
+
+func (o *Obj) Foo(ctx context.Context) (string, error) {
+	return o.Dir.File("foo.txt").Contents(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod1.Serve(ctx)
+	require.NoError(t, err)
+
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Obj struct {
+				Foo string
+			}
+		}
+	}](c1, t, `{test{obj{foo}}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, rand1, res1.Test.Obj.Foo)
+
+	rand2 := identity.NewID()
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(rand2), 0644))
+
+	c2 := connect(ctx, t)
+	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod2.Serve(ctx)
+	require.NoError(t, err)
+
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Obj struct {
+				Foo string
+			}
+		}
+	}](c2, t, `{test{obj{foo}}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, rand2, res2.Test.Obj.Foo)
 }

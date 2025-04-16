@@ -632,7 +632,7 @@ func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*
 	var id *call.ID
 	for i, sel := range sels {
 		var err error
-		res, id, err = self.ReturnType(ctx, sel)
+		res, id, err = self.ReturnType(ctx, s, sel)
 		if err != nil {
 			return nil, fmt.Errorf("select: %w", err)
 		}
@@ -704,6 +704,20 @@ func CurrentID(ctx context.Context) *call.ID {
 		return nil
 	}
 	return val.(*call.ID)
+}
+
+type srvCtx struct{}
+
+func srvToContext(ctx context.Context, srv *Server) context.Context {
+	return context.WithValue(ctx, srvCtx{}, srv)
+}
+
+func CurrentDagqlServer(ctx context.Context) *Server {
+	val := ctx.Value(srvCtx{})
+	if val == nil {
+		return nil
+	}
+	return val.(*Server)
 }
 
 // NewInstanceForCurrentID creates a new Instance that's set to the current ID from

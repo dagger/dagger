@@ -374,7 +374,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			})
 		},
 		dagql.CacheSpec{
-			GetCacheConfig: mod.CacheConfigForCall,
+			GetCacheConfig: fn.CacheConfigForCall,
 		},
 	)
 
@@ -490,7 +490,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			return modFun.Call(ctx, opts)
 		},
 		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: mod.CacheConfigForCall,
+			GetCacheConfig: modFun.CacheConfigForCall,
 		},
 	}, nil
 }

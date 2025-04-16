@@ -223,6 +223,80 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 	return callInputs, nil
 }
 
+func (fn *ModuleFunction) CacheConfigForCall(
+	ctx context.Context,
+	_ dagql.Object,
+	args map[string]dagql.Input,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// Function calls on a module should be cached based on the module's content hash, not
+	// the module ID digest (which has a per-client cache key in order to deal with
+	// local dir and git repo loading)
+	id := dagql.CurrentID(ctx)
+	srv := dagql.CurrentDagqlServer(ctx)
+	curIDNoMod := id.Receiver().Append(
+		id.Type().ToAST(),
+		id.Field(),
+		id.View(),
+		nil,
+		int(id.Nth()),
+		"",
+		id.Args()...,
+	)
+
+	dgstInputs := []string{
+		curIDNoMod.Digest().String(),
+		fn.mod.Source.Self.Digest,
+		fn.mod.NameField, // the module source content digest only includes the original name
+	}
+
+	var ctxArgs []*FunctionArg
+	for _, argMetadata := range fn.metadata.Args {
+		if argMetadata.DefaultPath == "" {
+			// not a contextual argument
+			continue
+		}
+		if args[argMetadata.Name] != nil {
+			// was explicitly set by the user, no need to load default contextual value
+			continue
+		}
+		ctxArgs = append(ctxArgs, argMetadata)
+	}
+	if len(ctxArgs) > 0 {
+		ctxArgVals := make([]*FunctionCallArgValue, len(ctxArgs))
+		eg, ctx := errgroup.WithContext(ctx)
+		for i, arg := range ctxArgs {
+			eg.Go(func() error {
+				ctxVal, err := fn.loadContextualArg(ctx, srv, arg, nil, nil)
+				if err != nil {
+					return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+				}
+
+				ctxArgVals[i] = &FunctionCallArgValue{
+					Name:  arg.OriginalName,
+					Value: ctxVal,
+				}
+
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+
+		// TODO: SHOULD PUT IN THE ACTUAL ID DIGEST, NOT THE DIGEST OF THE ID STR
+		// TODO: SHOULD PUT IN THE ACTUAL ID DIGEST, NOT THE DIGEST OF THE ID STR
+		// TODO: SHOULD PUT IN THE ACTUAL ID DIGEST, NOT THE DIGEST OF THE ID STR
+		for _, arg := range ctxArgVals {
+			// TODO: iffy, possibly very odd corner cases, double check
+			dgstInputs = append(dgstInputs, arg.Name, string(arg.Value))
+		}
+	}
+
+	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
+	return &cacheCfg, nil
+}
+
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
@@ -548,9 +622,11 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
+		if execMD != nil {
+			execMDMu.Lock()
+			execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+			execMDMu.Unlock()
+		}
 
 		dirID, err := dir.ID().Encode()
 		if err != nil {
@@ -571,9 +647,11 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
+		if execMD != nil {
+			execMDMu.Lock()
+			execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+			execMDMu.Unlock()
+		}
 
 		var fileID FileID
 
