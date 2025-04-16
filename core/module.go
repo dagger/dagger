@@ -212,6 +212,9 @@ func (mod *Module) View() (string, bool) {
 	return "", false
 }
 
+// TODO: consolidate this w/ the new the new cacheconfig on modfunc
+// TODO: consolidate this w/ the new the new cacheconfig on modfunc
+// TODO: consolidate this w/ the new the new cacheconfig on modfunc
 func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
 	_ dagql.Object,
@@ -236,6 +239,7 @@ func (mod *Module) CacheConfigForCall(
 		mod.Source.Self.Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
+
 	return &cacheCfg, nil
 }
 
