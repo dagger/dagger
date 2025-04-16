@@ -744,6 +744,9 @@ func (c *Client) OpenTerminal(
 
 	term, err := terminalClient.Session(ctx)
 	if err != nil {
+		// NOTE: confusingly, this starting a stream doesn't actually wait for
+		// the response, so the above call can succeed even if the client
+		// terminal startup fails immediately
 		return nil, fmt.Errorf("failed to open terminal: %w", err)
 	}
 
@@ -783,8 +786,28 @@ func (c *Client) OpenTerminal(
 		}
 	})
 
+	resizeCh := make(chan bkgw.WinSize, 1)
+
+	// make sure we can handle *one* message before we start
+	// we need to do this, so we don't end up returning an invalid terminal
+	res, err := term.Recv()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	switch msg := res.GetMsg().(type) {
+	case *session.SessionResponse_Ready:
+	case *session.SessionResponse_Resize:
+		// FIXME: only here to handle the first message from olde clients that
+		// don't sent a ready message
+		resizeCh <- bkgw.WinSize{
+			Rows: uint32(msg.Resize.Height),
+			Cols: uint32(msg.Resize.Width),
+		}
+	default:
+	}
+
 	errCh := make(chan error, 1)
-	resizeCh := make(chan bkgw.WinSize)
 	go func() {
 		defer stdinW.Close()
 		defer close(errCh)

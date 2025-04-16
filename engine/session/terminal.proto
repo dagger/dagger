@@ -18,6 +18,7 @@ message SessionResponse {
 	oneof msg {
 		bytes stdin = 1;
 		Resize resize = 2;
+		Ready ready = 3;
 	}
 }
 
@@ -25,3 +26,6 @@ message Resize {
 	int32 Width = 1;
 	int32 Height = 2;
 }
+
+message Ready {}
+

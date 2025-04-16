@@ -381,7 +381,7 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 
 	// Start a debug container if the exec failed
 	if err := debugContainer(ctx, execOp.Exec, execErr, opErr, client); err != nil {
-		bklog.G(ctx).Debugf("debug terminal error: %v", err)
+		return err
 	}
 
 	return &ExecError{
