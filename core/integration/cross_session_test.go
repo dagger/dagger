@@ -804,3 +804,22 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		require.NoError(t, err)
 	})
 }
+
+func (LLMSuite) TestCrossSessionLLM(ctx context.Context, t *testctx.T) {
+	// verify that llm settings read from clients don't cache across sessions
+	c1 := connect(ctx, t)
+	out, err := goGitBase(t, c1).
+		WithEnvVariable("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest").
+		With(daggerExec("core", "llm", "model")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "claude-3-5-sonnet-latest", out)
+
+	c2 := connect(ctx, t)
+	out, err = goGitBase(t, c2).
+		WithEnvVariable("OPENAI_MODEL", "gpt-4.1").
+		With(daggerExec("core", "llm", "model")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-4.1", out)
+}
