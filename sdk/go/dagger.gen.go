@@ -715,8 +715,6 @@ type ContainerBuildOpts struct {
 }
 
 // Initializes this container from a Dockerfile build.
-//
-// Deprecated: Use Directory.dockerBuild instead
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	assertNotNil("context", context)
 	q := r.query.Select("build")

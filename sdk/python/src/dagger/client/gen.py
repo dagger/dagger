@@ -735,9 +735,6 @@ class Container(Type):
     ) -> Self:
         """Initializes this container from a Dockerfile build.
 
-        .. deprecated::
-            Use Directory.dockerBuild instead
-
         Parameters
         ----------
         context:
@@ -764,11 +761,6 @@ class Container(Type):
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
         """
-        warnings.warn(
-            'Method "build" is deprecated: Use Directory.dockerBuild instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
