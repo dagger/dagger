@@ -46,17 +46,6 @@ engine:
       # Options: Delete, Retain
       whenScaled: Retain
 
-    # Use PersistentVolumeClaim for data volume
-    persistentVolumeClaim:
-      enabled: false
-      # PVC specifications
-      storageClassName: ""
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-
     # Controls how pods are created during initial scale up,
     # when replacing pods, and when scaling down.
     # Options: OrderedReady, Parallel (default: OrderedReady)
@@ -150,13 +139,28 @@ engine:
   hostPath:
     # Use hostPath for data volume
     dataVolume:
-      # When disabled, PVC will be used if configured above
+      # When disabled, PVC will be used if configured below
       enabled: true
 
     # Use hostPath for run volume
     runVolume:
       # When disabled, no run volume will be mounted
       enabled: true
+
+  ### Persistent Volume Claim configuration
+  #
+  persistentVolumeClaim:
+    # Use PersistentVolumeClaim for data volume
+    enabled: false
+
+    # PVC specification
+    volumeClaimTemplate:
+      # storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
 
   ### Additional volumes to mount in the Dagger Engine container
   #
