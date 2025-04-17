@@ -70,6 +70,9 @@ type LLM struct {
 	// History of messages
 	messages []ModelMessage
 
+	// Whether to disable the default system prompt
+	disableDefaultSystemPrompt bool
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 }
@@ -564,6 +567,13 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	return llm
 }
 
+// Disable the default system prompt
+func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
+	llm = llm.Clone()
+	llm.disableDefaultSystemPrompt = true
+	return llm
+}
+
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
@@ -584,7 +594,9 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
-	// inject default system prompt if none are found
+	if llm.disableDefaultSystemPrompt {
+		return llm.messages
+	}
 	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
 		return append([]ModelMessage{
 			{
