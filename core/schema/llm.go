@@ -56,6 +56,8 @@ func (s llmSchema) Install() {
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
 			ArgDoc("prompt", "The system prompt to send"),
+		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
+			Doc("Disable the default system prompt"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
 			var zero dagql.ID[*core.LLM]
 			var inst dagql.Instance[*core.LLM]
@@ -130,6 +132,10 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	Prompt string
 }) (*core.LLM, error) {
 	return llm.WithSystemPrompt(args.Prompt), nil
+}
+
+func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.WithoutDefaultSystemPrompt(), nil
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
