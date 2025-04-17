@@ -915,10 +915,24 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
 					}
 				}
+				var selectedTools []LLMTool
 				for tool := range toolCounts {
+					var foundTool LLMTool
+					for _, t := range tools {
+						if t.Name == tool {
+							foundTool = t
+							break
+						}
+					}
+					if foundTool.Name == "" {
+						return "", fmt.Errorf("tool %q not found", tool)
+					}
 					m.selectedTools[tool] = true
+					selectedTools = append(selectedTools, foundTool)
 				}
-				return "ok", nil
+				return toolStructuredResponse(map[string]any{
+					"tools": selectedTools,
+				})
 			}),
 		})
 	}
