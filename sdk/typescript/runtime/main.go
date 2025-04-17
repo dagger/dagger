@@ -15,14 +15,11 @@ func New(
 ) *TypescriptSdk {
 	return &TypescriptSdk{
 		SDKSourceDir: sdkSourceDir,
-		moduleConfig: &moduleConfig{},
 	}
 }
 
 type TypescriptSdk struct {
 	SDKSourceDir *dagger.Directory
-
-	moduleConfig *moduleConfig
 }
 
 const (
@@ -51,43 +48,19 @@ func (t *TypescriptSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	err := t.analyzeModuleConfig(ctx, modSource)
+	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	ctr := t.runtimeBaseContainer().
-		With(t.withConfiguredRuntimeEnvironment).
-		With(t.withGeneratedSDK(introspectionJSON)).
-		With(t.withSetupPackageManager).
-		With(t.withInstalledDependencies).
-		With(t.withUserSourceCode)
-
-	// Mount the entrypoint file
-	ctr = ctr.WithMountedFile(
-		t.moduleConfig.entrypointPath(),
-		entrypointFile(),
-	)
-
-	switch t.moduleConfig.runtime {
-	case Bun:
-		return ctr.
-			WithEntrypoint([]string{"bun", t.moduleConfig.entrypointPath()}), nil
-	case Deno:
-		return ctr.
-			WithEntrypoint([]string{
-				"deno", "run", "-A", t.moduleConfig.entrypointPath(),
-			}), nil
-	case Node:
-		return ctr.
-			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
-			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
-			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
-			// not useful to display to the user.
-			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", t.moduleConfig.tsConfigPath(), t.moduleConfig.entrypointPath()}), nil
-	default:
-		return nil, fmt.Errorf("unknown runtime: %s", t.moduleConfig.runtime)
-	}
+	return runtimeBaseContainer(cfg, t.SDKSourceDir).
+		withConfiguredRuntimeEnvironment().
+		withGeneratedSDK(introspectionJSON).
+		withSetupPackageManager().
+		withInstalledDependencies().
+		withUserSourceCode().
+		withEntrypoint().
+		Container(), nil
 }
 
 // Codegen implements the `Codegen` method from the SDK module interface.
@@ -99,25 +72,25 @@ func (t *TypescriptSdk) Codegen(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	err := t.analyzeModuleConfig(ctx, modSource)
+	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	ctr := t.runtimeBaseContainer().
-		With(t.withConfiguredRuntimeEnvironment).
-		With(t.withGeneratedSDK(introspectionJSON)).
-		With(t.withSetupPackageManager).
-		With(t.withGeneratedLockFile).
-		With(t.withUserSourceCode)
+	runtimeBaseCtr := runtimeBaseContainer(cfg, t.SDKSourceDir).
+		withConfiguredRuntimeEnvironment().
+		withGeneratedSDK(introspectionJSON).
+		withSetupPackageManager().
+		withGeneratedLockFile().
+		withUserSourceCode()
 
-	sourcesFiles, err := ctr.Directory(".").Glob(ctx, "src/**/*.ts")
+	sourcesFiles, err := runtimeBaseCtr.Container().Directory(".").Glob(ctx, "src/**/*.ts")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user source files: %w", err)
 	}
 
 	if len(sourcesFiles) == 0 {
-		ctr = ctr.With(t.withInitTemplate)
+		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate()
 	}
 
 	// Extract codegen directory
@@ -125,7 +98,7 @@ func (t *TypescriptSdk) Codegen(
 		Directory().
 		WithDirectory(
 			"/",
-			ctr.Directory(ModSourceDirPath),
+			runtimeBaseCtr.ModuleDirectory(),
 			dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules", "**/.pnpm-store"}},
 		)
 
@@ -146,6 +119,7 @@ func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
 	return []string{
 		"./package.json",
 		"./tsconfig.json",
+		"./deno.json",
 	}
 }
 
