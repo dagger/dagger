@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -443,11 +444,38 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
+		// TODO: should these just return an updated ID instead?
 		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
+		}
+
+		if len(cacheCfg.UpdatedArgs) > 0 {
+			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
+			for argName, argInput := range cacheCfg.UpdatedArgs {
+				// n^2 is okay here since the number of args is small
+				var found bool
+				for i, idArg := range idArgs {
+					if idArg.Name() == argName {
+						idArgs[i] = call.NewArgument(
+							argName,
+							argInput.ToLiteral(),
+							false,
+						)
+						found = true
+						break
+					}
+				}
+				if !found {
+					idArgs = append(idArgs, call.NewArgument(
+						argName,
+						argInput.ToLiteral(),
+						false,
+					))
+				}
+			}
 		}
 
 		if cacheCfg.Digest != origDgst {
@@ -979,7 +1007,8 @@ type GetCacheConfigFunc[T Typed, A any] func(context.Context, Instance[T], A, Ca
 // CacheConfig is the configuration for caching a field. Currently just custom digest
 // but intended to support more in time (TTL, etc).
 type CacheConfig struct {
-	Digest digest.Digest
+	Digest      digest.Digest
+	UpdatedArgs map[string]Input
 }
 
 // Field defines a field of an Object type.
