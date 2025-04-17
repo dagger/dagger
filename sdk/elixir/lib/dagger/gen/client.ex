@@ -27,7 +27,7 @@ defmodule Dagger.Client do
   @doc """
   Creates a scratch container, with no image or metadata.
 
-  To pull an image, follow up with the "from" function.
+  To pull an image, follow up with the \"from\" function.
   """
   @spec container(t(), [{:platform, Dagger.Platform.t() | nil}]) :: Dagger.Container.t()
   def container(%__MODULE__{} = client, optional_args \\ []) do
