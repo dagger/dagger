@@ -64,7 +64,7 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 }) (*core.Env, error) {
 	env := core.NewEnv()
 	if args.Privileged {
-		env = env.WithRoot(s.srv.Root())
+		env = env.WithRoot(s.srv.Root()).Writable()
 	}
 	return env, nil
 }

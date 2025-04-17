@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -27,6 +28,8 @@ type Env struct {
 	// Can be used to give the environment ambient access to the
 	// dagger core API, possibly extended by a module
 	root dagql.Object
+	// The env supports declaring new outputs.
+	writable bool
 }
 
 func (*Env) Type() *ast.Type {
@@ -79,6 +82,28 @@ func (env *Env) Root() dagql.Object {
 	return env.root
 }
 
+// Return a writable copy of the environment
+func (env *Env) Writable() *Env {
+	env = env.Clone()
+	env.writable = true
+	return env
+}
+
+// Declare an output binding in the environment, which must be writable.
+func (env *Env) DeclareOutput(name string, typ dagql.Type, description string) error {
+	if env.writable {
+		env.outputsByName[name] = &Binding{
+			Key:          name,
+			Value:        nil,
+			ExpectedType: typ.TypeName(),
+			Description:  description,
+			env:          env,
+		}
+		return nil
+	}
+	return errors.New("environment is not writable")
+}
+
 // Add an input (read-only) binding to the environment
 func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()
@@ -94,7 +119,7 @@ func (env *Env) WithOutput(key string, expectedType dagql.Type, description stri
 	env.outputsByName[key] = &Binding{
 		Key:          key,
 		Value:        nil,
-		expectedType: expectedType,
+		ExpectedType: expectedType.TypeName(),
 		Description:  description,
 		env:          env,
 	}
@@ -163,10 +188,11 @@ func (env *Env) Ingest(obj dagql.Object, desc string) string {
 		}
 		env.idByHash[hash] = llmID
 		env.objsByID[llmID] = &Binding{
-			Key:         llmID,
-			Value:       obj,
-			Description: desc,
-			env:         env,
+			Key:          llmID,
+			Value:        obj,
+			Description:  desc,
+			ExpectedType: obj.Type().Name(),
+			env:          env,
 		}
 	}
 	return llmID
@@ -251,7 +277,7 @@ type Binding struct {
 	env         *Env // TODO: wire this up
 	// The expected type
 	// Used when defining an output
-	expectedType dagql.Type
+	ExpectedType string
 }
 
 func (*Binding) Type() *ast.Type {
@@ -294,10 +320,7 @@ func (b *Binding) AsList() (dagql.Enumerable, bool) {
 }
 
 func (b *Binding) TypeName() string {
-	if b.Value == nil {
-		return Void{}.TypeName()
-	}
-	return b.Value.Type().Name()
+	return b.ExpectedType
 }
 
 // Return the stable object ID for this binding, or an empty string if it's not an object
