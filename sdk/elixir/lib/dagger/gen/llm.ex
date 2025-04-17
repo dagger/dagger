@@ -211,6 +211,18 @@ defmodule Dagger.LLM do
       client: llm.client
     }
   end
+
+  @doc "Disable the default system prompt"
+  @spec without_default_system_prompt(t()) :: Dagger.LLM.t()
+  def without_default_system_prompt(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withoutDefaultSystemPrompt")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.LLM do

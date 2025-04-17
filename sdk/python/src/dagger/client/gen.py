@@ -6675,6 +6675,12 @@ class LLM(Type):
         _ctx = self._select("withSystemPrompt", _args)
         return LLM(_ctx)
 
+    def without_default_system_prompt(self) -> Self:
+        """Disable the default system prompt"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDefaultSystemPrompt", _args)
+        return LLM(_ctx)
+
     def with_(self, cb: Callable[["LLM"], "LLM"]) -> "LLM":
         """Call the provided callable with current LLM.
 

@@ -6321,6 +6321,15 @@ func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	}
 }
 
+// Disable the default system prompt
+func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
+	q := r.query.Select("withoutDefaultSystemPrompt")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 

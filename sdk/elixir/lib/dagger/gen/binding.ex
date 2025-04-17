@@ -12,7 +12,7 @@ defmodule Dagger.Binding do
   @type t() :: %__MODULE__{}
 
   @doc "Retrieve the binding value, as type CacheVolume"
-  @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()
+  @spec as_cache_volume(t()) :: Dagger.CacheVolume.t() | nil
   def as_cache_volume(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asCacheVolume")
@@ -24,7 +24,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Container"
-  @spec as_container(t()) :: Dagger.Container.t()
+  @spec as_container(t()) :: Dagger.Container.t() | nil
   def as_container(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asContainer")
@@ -36,7 +36,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Directory"
-  @spec as_directory(t()) :: Dagger.Directory.t()
+  @spec as_directory(t()) :: Dagger.Directory.t() | nil
   def as_directory(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asDirectory")
@@ -48,7 +48,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Env"
-  @spec as_env(t()) :: Dagger.Env.t()
+  @spec as_env(t()) :: Dagger.Env.t() | nil
   def as_env(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asEnv")
@@ -60,7 +60,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type File"
-  @spec as_file(t()) :: Dagger.File.t()
+  @spec as_file(t()) :: Dagger.File.t() | nil
   def as_file(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asFile")
@@ -72,7 +72,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type GitRef"
-  @spec as_git_ref(t()) :: Dagger.GitRef.t()
+  @spec as_git_ref(t()) :: Dagger.GitRef.t() | nil
   def as_git_ref(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asGitRef")
@@ -84,7 +84,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type GitRepository"
-  @spec as_git_repository(t()) :: Dagger.GitRepository.t()
+  @spec as_git_repository(t()) :: Dagger.GitRepository.t() | nil
   def as_git_repository(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asGitRepository")
@@ -96,7 +96,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type LLM"
-  @spec as_llm(t()) :: Dagger.LLM.t()
+  @spec as_llm(t()) :: Dagger.LLM.t() | nil
   def as_llm(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asLLM")
@@ -108,7 +108,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Module"
-  @spec as_module(t()) :: Dagger.Module.t()
+  @spec as_module(t()) :: Dagger.Module.t() | nil
   def as_module(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asModule")
@@ -120,7 +120,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type ModuleConfigClient"
-  @spec as_module_config_client(t()) :: Dagger.ModuleConfigClient.t()
+  @spec as_module_config_client(t()) :: Dagger.ModuleConfigClient.t() | nil
   def as_module_config_client(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asModuleConfigClient")
@@ -132,7 +132,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type ModuleSource"
-  @spec as_module_source(t()) :: Dagger.ModuleSource.t()
+  @spec as_module_source(t()) :: Dagger.ModuleSource.t() | nil
   def as_module_source(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asModuleSource")
@@ -144,7 +144,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Secret"
-  @spec as_secret(t()) :: Dagger.Secret.t()
+  @spec as_secret(t()) :: Dagger.Secret.t() | nil
   def as_secret(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asSecret")
@@ -156,7 +156,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Service"
-  @spec as_service(t()) :: Dagger.Service.t()
+  @spec as_service(t()) :: Dagger.Service.t() | nil
   def as_service(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asService")
@@ -168,7 +168,7 @@ defmodule Dagger.Binding do
   end
 
   @doc "Retrieve the binding value, as type Socket"
-  @spec as_socket(t()) :: Dagger.Socket.t()
+  @spec as_socket(t()) :: Dagger.Socket.t() | nil
   def as_socket(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("asSocket")

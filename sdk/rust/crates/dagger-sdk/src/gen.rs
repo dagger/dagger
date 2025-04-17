@@ -7279,6 +7279,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Disable the default system prompt
+    pub fn without_default_system_prompt(&self) -> Llm {
+        let query = self.selection.select("withoutDefaultSystemPrompt");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct LlmTokenUsage {
