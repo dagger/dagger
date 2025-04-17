@@ -17,6 +17,7 @@ import (
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/gitutil"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
@@ -192,7 +193,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 	var ctxArgs []*FunctionArg
 	for _, arg := range fn.metadata.Args {
 		// Skip contextual arguments if already set.
-		if hasArg[arg.OriginalName] || arg.DefaultPath == "" {
+		if hasArg[arg.OriginalName] || (arg.DefaultPath == "" && arg.DefaultGit == "") {
 			continue
 		}
 		ctxArgs = append(ctxArgs, arg)
@@ -533,76 +534,154 @@ func (fn *ModuleFunction) loadContextualArg(
 	execMDMu *sync.Mutex,
 ) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
-		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
+		return nil, fmt.Errorf("contextual argument %q must be an object", arg.OriginalName)
 	}
-
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
 	}
 
-	switch arg.TypeDef.AsObject.Value.Name {
-	case "Directory":
-		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
+	switch {
+	case arg.DefaultPath != "":
+		switch arg.TypeDef.AsObject.Value.Name {
+		case "Directory":
+			dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
+			}
+			execMDMu.Lock()
+			execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+			execMDMu.Unlock()
 
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
-		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
+			dirID, err := dir.ID().Encode()
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode dir ID: %w", err)
+			}
 
-		dirID, err := dir.ID().Encode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode dir ID: %w", err)
-		}
+			return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
 
-		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
+		case "File":
+			// We first load the directory from the context path, then we load the file from the path relative to the directory.
+			dirPath := filepath.Dir(arg.DefaultPath)
+			filePath := filepath.Base(arg.DefaultPath)
 
-	case "File":
-		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPath)
+			// Load the directory containing the file.
+			dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
+			}
+			execMDMu.Lock()
+			execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+			execMDMu.Unlock()
 
-		// We first load the directory from the context path, then we load the file from the path relative to the directory.
-		dirPath := filepath.Dir(arg.DefaultPath)
-		filePath := filepath.Base(arg.DefaultPath)
+			var fileID FileID
 
-		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
-		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
-
-		var fileID FileID
-
-		// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
-		// we use select instead.
-		err = dag.Select(ctx, dir, &fileID,
-			dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(filePath)},
+			// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
+			// we use select instead.
+			err = dag.Select(ctx, dir, &fileID,
+				dagql.Selector{
+					Field: "file",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(filePath)},
+					},
 				},
-			},
-			dagql.Selector{
-				Field: "id",
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
+				dagql.Selector{
+					Field: "id",
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
+			}
+
+			encodedFileID, err := fileID.Encode()
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode file ID: %w", err)
+			}
+
+			return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
+
+		default:
+			return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+		}
+	case arg.DefaultGit != "":
+		gitURL, err := gitutil.ParseURL(arg.DefaultGit)
+		isLocal := err != nil
+
+		var git dagql.Instance[*GitRepository]
+		if isLocal {
+			// XXX: could we load this directly from the module source if we're in git?
+
+			dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultGit, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git %q: %w", arg.DefaultGit, err)
+			}
+			execMDMu.Lock()
+			execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+			execMDMu.Unlock()
+
+			err = dag.Select(ctx, dir, &git,
+				dagql.Selector{
+					Field: "asGit",
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
+			}
+		} else {
+			err := dag.Select(ctx, dag.Root(), &git,
+				dagql.Selector{
+					Field: "git",
+					Args: []dagql.NamedInput{
+						{Name: "url", Value: dagql.String(arg.DefaultGit)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
+			}
 		}
 
-		encodedFileID, err := fileID.Encode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode file ID: %w", err)
+		switch arg.TypeDef.AsObject.Value.Name {
+		case "GitRepository":
+			gitID, err := git.ID().Encode()
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode git ID: %w", err)
+			}
+
+			return JSON(fmt.Sprintf(`"%s"`, gitID)), nil
+
+		case "GitRef":
+			// XXX: dedupe against flags.go parsing
+			// XXX: allow local dir to have a fragment!
+			ref := "HEAD" // default ref
+			if gitURL != nil && gitURL.Fragment.Ref != "" {
+				ref = gitURL.Fragment.Ref
+			}
+
+			var gitRef dagql.Instance[*GitRef]
+			err := dag.Select(ctx, git, &gitRef,
+				dagql.Selector{
+					Field: "ref",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(ref)},
+					},
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git ref %q: %w", ref, err)
+			}
+
+			gitRefID, err := gitRef.ID().Encode()
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode git ID: %w", err)
+			}
+
+			return JSON(fmt.Sprintf(`"%s"`, gitRefID)), nil
+
+		default:
+			return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 		}
-
-		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
-
 	default:
-		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 }
 
