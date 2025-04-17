@@ -279,7 +279,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	var mod *moduleDef
 	var err error
-	if fc.DisableModuleLoad {
+	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
