@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -211,7 +213,7 @@ func startSessionSubprocess() error {
 
 	// start the session subprocess
 	cmd := exec.Command("/proc/self/exe")
-	cmd.ExtraFiles = []*os.File{os.NewFile(3, "session-conn"), w}
+	cmd.ExtraFiles = []*os.File{w}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
@@ -246,7 +248,21 @@ func mainSession() error {
 	ctx := context.Background()
 
 	// this is closed when the session server is about to run, letting the parent process know that
-	pipeW := os.NewFile(4, "session-pipe-w")
+	pipeW := os.NewFile(3, "session-pipe-w")
+
+	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
+	if !ok {
+		return fmt.Errorf("DAGGER_SESSION_PORT not set")
+	}
+	_, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("DAGGER_SESSION_PORT invalid: %w", err)
+	}
+
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", "127.0.0.1:"+portStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to session server: %w", err)
+	}
 
 	attachables := []bksession.Attachable{
 		// secrets
@@ -265,13 +281,10 @@ func mainSession() error {
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 
-	connF := os.NewFile(3, "session-conn")
-	conn, err := net.FileConn(connF)
+	sessionSrv, err := client.ConnectBuildkitSession(ctx, conn, http.Header{}, attachables...)
 	if err != nil {
 		return err
 	}
-
-	sessionSrv := client.NewBuildkitSessionServer(ctx, conn, attachables...)
 	defer sessionSrv.Stop()
 
 	if err := pipeW.Close(); err != nil {
