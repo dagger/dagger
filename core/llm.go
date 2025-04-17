@@ -940,9 +940,10 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 		return res, nil
 	}
 	res.Value = &Binding{
-		Key:   name,
-		Value: llm.mcp.LastResult(),
-		env:   llm.mcp.env,
+		Key:          name,
+		Value:        llm.mcp.LastResult(),
+		ExpectedType: llm.mcp.LastResult().Type().Name(),
+		env:          llm.mcp.env,
 	}
 	res.Valid = true
 	return res, nil
