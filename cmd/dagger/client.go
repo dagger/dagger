@@ -46,6 +46,7 @@ var clientCmd = &cobra.Command{
 
 var clientInstallCmd = &cobra.Command{
 	Use:     "install [options] [path]",
+	Aliases: []string{"use"},
 	Short:   "Generate a new Dagger client from the Dagger module",
 	Example: "dagger client install --generator=go ./dagger",
 	RunE: func(cmd *cobra.Command, args []string) error {
