@@ -444,7 +444,6 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		// TODO: should these just return an updated ID instead?
 		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, CacheConfig{
 			Digest: origDgst,
 		})
@@ -455,15 +454,10 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 		if len(cacheCfg.UpdatedArgs) > 0 {
 			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
 			for argName, argInput := range cacheCfg.UpdatedArgs {
-				// n^2 is okay here since the number of args is small
 				var found bool
 				for i, idArg := range idArgs {
 					if idArg.Name() == argName {
-						idArgs[i] = call.NewArgument(
-							argName,
-							argInput.ToLiteral(),
-							false,
-						)
+						idArgs[i] = idArg.WithValue(argInput.ToLiteral())
 						found = true
 						break
 					}
@@ -476,6 +470,15 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 					))
 				}
 			}
+			newID = r.Constructor.Append(
+				astType,
+				sel.Field,
+				view,
+				field.Spec.Module,
+				sel.Nth,
+				"",
+				idArgs...,
+			)
 		}
 
 		if cacheCfg.Digest != origDgst {

@@ -171,6 +171,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
+	CacheConfigForCall(context.Context, dagql.Object, map[string]dagql.Input, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -522,4 +523,13 @@ func (f *CallableField) ReturnType() (ModType, error) {
 
 func (f *CallableField) ArgType(argName string) (ModType, error) {
 	return nil, fmt.Errorf("field cannot have argument %q", argName)
+}
+
+func (f *CallableField) CacheConfigForCall(
+	ctx context.Context,
+	parent dagql.Object,
+	args map[string]dagql.Input,
+	inputCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	return f.Module.CacheConfigForCall(ctx, parent, args, inputCfg)
 }
