@@ -609,38 +609,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 
 	result, err := tool.Call(ctx, toolCall.Function.Arguments)
 	if err != nil {
-		errResponse := err.Error()
-		// propagate error values to the model
-		var extErr dagql.ExtendedError
-		if errors.As(err, &extErr) {
-			// TODO: return a structured error object instead?
-			var exts []string
-			for k, v := range extErr.Extensions() {
-				var ext strings.Builder
-				fmt.Fprintf(&ext, "<%s>\n", k)
-
-				switch v := v.(type) {
-				case string:
-					ext.WriteString(v)
-				default:
-					jsonBytes, err := json.Marshal(v)
-					if err != nil {
-						fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
-					} else {
-						ext.Write(jsonBytes)
-					}
-				}
-
-				fmt.Fprintf(&ext, "\n</%s>", k)
-
-				exts = append(exts, ext.String())
-			}
-			if len(exts) > 0 {
-				sort.Strings(exts)
-				errResponse += "\n\n" + strings.Join(exts, "\n\n")
-			}
-		}
-		return errResponse, true
+		return toolErrorMessage(err), true
 	}
 
 	switch v := result.(type) {
@@ -653,6 +622,41 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		}
 		return string(jsonBytes), false
 	}
+}
+
+func toolErrorMessage(err error) string {
+	errResponse := err.Error()
+	// propagate error values to the model
+	var extErr dagql.ExtendedError
+	if errors.As(err, &extErr) {
+		// TODO: return a structured error object instead?
+		var exts []string
+		for k, v := range extErr.Extensions() {
+			var ext strings.Builder
+			fmt.Fprintf(&ext, "<%s>\n", k)
+
+			switch v := v.(type) {
+			case string:
+				ext.WriteString(v)
+			default:
+				jsonBytes, err := json.Marshal(v)
+				if err != nil {
+					fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
+				} else {
+					ext.Write(jsonBytes)
+				}
+			}
+
+			fmt.Fprintf(&ext, "\n</%s>", k)
+
+			exts = append(exts, ext.String())
+		}
+		if len(exts) > 0 {
+			sort.Strings(exts)
+			errResponse += "\n\n" + strings.Join(exts, "\n\n")
+		}
+	}
+	return errResponse
 }
 
 func (m *MCP) allIDs(typeName string) []string {
