@@ -45,7 +45,7 @@ func NewDirectoryDagOp(ctx context.Context, srv *dagql.Server, id *call.ID, inpu
 		return nil, fmt.Errorf("server root was %T", srv.Root())
 	}
 
-	return NewDirectorySt(ctx, query.Self, st, path, Platform{}, nil)
+	return NewDirectorySt(ctx, query.Self, st, path, query.Self.Platform(), nil)
 }
 
 // NewFileDagOp takes a target ID for a File, and returns a File for it,
@@ -68,13 +68,15 @@ func NewFileDagOp(ctx context.Context, srv *dagql.Server, id *call.ID, inputs []
 		return nil, fmt.Errorf("server root was %T", srv.Root())
 	}
 
-	return NewFileSt(ctx, query.Self, st, path, Platform{}, nil)
+	return NewFileSt(ctx, query.Self, st, path, query.Self.Platform(), nil)
 }
 
 func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
 	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
-		buildkit.WithPassthrough())
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(),
+	)
 }
 
 type FSDagOp struct {
@@ -149,10 +151,15 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 }
 
-func (op FSDagOp) CreateRef(ctx context.Context, parent bkcache.ImmutableRef, opts ...bkcache.RefOption) (bkcache.MutableRef, error) {
-	return op.opt.Cache.New(ctx, parent, op.g, opts...)
+func (op FSDagOp) Cache() bkcache.Accessor {
+	return op.opt.Cache
 }
 
+func (op FSDagOp) Group() bksession.Group {
+	return op.g
+}
+
+// Mount is a utility for easily mounting a ref
 func (op FSDagOp) Mount(ctx context.Context, ref bkcache.Ref, f func(string) error) error {
 	mount, err := ref.Mount(ctx, false, op.g)
 	if err != nil {
