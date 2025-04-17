@@ -91,90 +91,88 @@ type moduleConfig struct {
 // It also populates the moduleConfig.entries map with the list of files present in the module source.
 //
 // It's a utility function that should be called before calling any other exposed function in this module.
-func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (err error) {
-	if t.moduleConfig == nil {
-		t.moduleConfig = &moduleConfig{
-			entries:           make(map[string]bool),
-			contextDirectory:  modSource.ContextDirectory(),
-			runtime:           Node,
-			packageJSONConfig: nil,
-			sdkLibOrigin:      Bundle,
-		}
+func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (cfg *moduleConfig, err error) {
+	cfg = &moduleConfig{
+		entries:           make(map[string]bool),
+		contextDirectory:  modSource.ContextDirectory(),
+		runtime:           Node,
+		packageJSONConfig: nil,
+		sdkLibOrigin:      Bundle,
 	}
 
-	t.moduleConfig.name, err = modSource.ModuleOriginalName(ctx)
+	cfg.name, err = modSource.ModuleOriginalName(ctx)
 	if err != nil {
-		return fmt.Errorf("could not load module config name: %w", err)
+		return nil, fmt.Errorf("could not load module config name: %w", err)
 	}
 
-	t.moduleConfig.subPath, err = modSource.SourceSubpath(ctx)
+	cfg.subPath, err = modSource.SourceSubpath(ctx)
 	if err != nil {
-		return fmt.Errorf("could not load module config source subpath: %w", err)
+		return nil, fmt.Errorf("could not load module config source subpath: %w", err)
 	}
 
 	// If a first init, there will be no directory, so we ignore the error here.
 	// We also only include package.json & lockfiles to benefit from caching.
-	t.moduleConfig.source = modSource.ContextDirectory().Directory(t.moduleConfig.subPath)
-	configEntries, err := dag.Directory().WithDirectory(".", t.moduleConfig.source, dagger.DirectoryWithDirectoryOpts{
-		Include: t.moduleConfigFiles("."),
+	cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
+	configEntries, err := dag.Directory().WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
+		Include: moduleConfigFiles("."),
 	}).Entries(ctx)
 	if err == nil {
 		for _, entry := range configEntries {
-			t.moduleConfig.entries[entry] = true
+			cfg.entries[entry] = true
 		}
 	}
 
-	if t.moduleConfig.hasFile("package.json") {
+	if cfg.hasFile("package.json") {
 		var packageJSONConfig packageJSONConfig
 
-		content, err := t.moduleConfig.source.File("package.json").Contents(ctx)
+		content, err := cfg.source.File("package.json").Contents(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to read package.json: %w", err)
+			return nil, fmt.Errorf("failed to read package.json: %w", err)
 		}
 
 		if err := json.Unmarshal([]byte(content), &packageJSONConfig); err != nil {
-			return fmt.Errorf("failed to unmarshal package.json: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal package.json: %w", err)
 		}
 
-		t.moduleConfig.packageJSONConfig = &packageJSONConfig
+		cfg.packageJSONConfig = &packageJSONConfig
 	}
 
-	if t.moduleConfig.hasFile("deno.json") {
+	if cfg.hasFile("deno.json") {
 		var denoJSONConfig denoJSONConfig
 
-		content, err := t.moduleConfig.source.File("deno.json").Contents(ctx)
+		content, err := cfg.source.File("deno.json").Contents(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to read deno.json: %w", err)
+			return nil, fmt.Errorf("failed to read deno.json: %w", err)
 		}
 
 		if err := json.Unmarshal([]byte(content), &denoJSONConfig); err != nil {
-			return fmt.Errorf("failed to unmarshal deno.json: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal deno.json: %w", err)
 		}
 
-		t.moduleConfig.denoJSONConfig = &denoJSONConfig
+		cfg.denoJSONConfig = &denoJSONConfig
 	}
 
-	t.moduleConfig.runtime, t.moduleConfig.runtimeVersion, err = t.detectRuntime()
+	cfg.runtime, cfg.runtimeVersion, err = cfg.detectRuntime()
 	if err != nil {
-		return fmt.Errorf("failed to detect module runtime: %w", err)
+		return nil, fmt.Errorf("failed to detect module runtime: %w", err)
 	}
 
-	t.moduleConfig.packageManager, t.moduleConfig.packageManagerVersion, err = t.detectPackageManager()
+	cfg.packageManager, cfg.packageManagerVersion, err = cfg.detectPackageManager()
 	if err != nil {
-		return fmt.Errorf("failed to detect package manager: %w", err)
+		return nil, fmt.Errorf("failed to detect package manager: %w", err)
 	}
 
-	t.moduleConfig.image, err = t.detectBaseImageRef()
+	cfg.image, err = cfg.detectBaseImageRef()
 	if err != nil {
-		return fmt.Errorf("failed to detect base image ref: %w", err)
+		return nil, fmt.Errorf("failed to detect base image ref: %w", err)
 	}
 
-	t.moduleConfig.sdkLibOrigin, err = t.detectSDKLibOrigin()
+	cfg.sdkLibOrigin, err = cfg.detectSDKLibOrigin()
 	if err != nil {
-		return fmt.Errorf("failed to detect sdk lib origin: %w", err)
+		return nil, fmt.Errorf("failed to detect sdk lib origin: %w", err)
 	}
 
-	return nil
+	return cfg, nil
 }
 
 // detectSDKLibOrigin return the SDK library config based on the user's module config.
@@ -185,18 +183,18 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 // - if deno.json has `workspaces` with `./sdk` in it -> Return Local
 // - else -> Return Bundle
 // Return Bundle by default since it's more performant.
-func (t *TypescriptSdk) detectSDKLibOrigin() (SDKLibOrigin, error) {
-	runtime := t.moduleConfig.runtime
+func (c *moduleConfig) detectSDKLibOrigin() (SDKLibOrigin, error) {
+	runtime := c.runtime
 
 	switch runtime {
 	case Node, Bun:
-		if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dependencies["@dagger.io/dagger"] == "./sdk" {
+		if c.packageJSONConfig != nil && c.packageJSONConfig.Dependencies["@dagger.io/dagger"] == "./sdk" {
 			return Local, nil
 		}
 
 		return Bundle, nil
 	case Deno:
-		if t.moduleConfig.denoJSONConfig != nil && slices.Contains(t.moduleConfig.denoJSONConfig.Workspaces, "./sdk") {
+		if c.denoJSONConfig != nil && slices.Contains(c.denoJSONConfig.Workspaces, "./sdk") {
 			return Local, nil
 		}
 
@@ -215,12 +213,12 @@ func (t *TypescriptSdk) detectSDKLibOrigin() (SDKLibOrigin, error) {
 // it's version.
 //
 // Note: This function must be called after `detectRuntime`.
-func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
-	runtime := t.moduleConfig.runtime
-	version := t.moduleConfig.runtimeVersion
+func (c *moduleConfig) detectBaseImageRef() (string, error) {
+	runtime := c.runtime
+	version := c.runtimeVersion
 
-	if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dagger != nil {
-		value := t.moduleConfig.packageJSONConfig.Dagger.BaseImage
+	if c.packageJSONConfig != nil && c.packageJSONConfig.Dagger != nil {
+		value := c.packageJSONConfig.Dagger.BaseImage
 		if value != "" {
 			return value, nil
 		}
@@ -240,8 +238,8 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 
 		return tsdistconsts.DefaultNodeImageRef, nil
 	case Deno:
-		if t.moduleConfig.denoJSONConfig != nil && t.moduleConfig.denoJSONConfig.Dagger != nil {
-			value := t.moduleConfig.denoJSONConfig.Dagger.BaseImage
+		if c.denoJSONConfig != nil && c.denoJSONConfig.Dagger != nil {
+			value := c.denoJSONConfig.Dagger.BaseImage
 			if value != "" {
 				return value, nil
 			}
@@ -260,10 +258,10 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 // If none of the above is present, node will be used.
 //
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
-func (t *TypescriptSdk) detectRuntime() (SupportedTSRuntime, string, error) {
+func (c *moduleConfig) detectRuntime() (SupportedTSRuntime, string, error) {
 	// If we find a package.json, we check if the runtime is specified in `dagger.runtime` field.
-	if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dagger != nil {
-		value := t.moduleConfig.packageJSONConfig.Dagger.Runtime
+	if c.packageJSONConfig != nil && c.packageJSONConfig.Dagger != nil {
+		value := c.packageJSONConfig.Dagger.Runtime
 		if value != "" {
 			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
 			// If version isn't specified, version will be an empty string and only the runtime will be used in Base.
@@ -279,18 +277,18 @@ func (t *TypescriptSdk) detectRuntime() (SupportedTSRuntime, string, error) {
 	}
 
 	// Try to detect runtime from lock files
-	if t.moduleConfig.hasFile("bun.lockb") || t.moduleConfig.hasFile("bun.lock") {
+	if c.hasFile("bun.lockb") || c.hasFile("bun.lock") {
 		return Bun, "", nil
 	}
 
-	if t.moduleConfig.hasFile("package-lock.json") ||
-		t.moduleConfig.hasFile("yarn.lock") ||
-		t.moduleConfig.hasFile("pnpm-lock.yaml") {
+	if c.hasFile("package-lock.json") ||
+		c.hasFile("yarn.lock") ||
+		c.hasFile("pnpm-lock.yaml") {
 		return Node, "", nil
 	}
 
-	if t.moduleConfig.hasFile("deno.json") ||
-		t.moduleConfig.hasFile("deno.lock") {
+	if c.hasFile("deno.json") ||
+		c.hasFile("deno.lock") {
 		return Deno, "", nil
 	}
 
@@ -306,20 +304,20 @@ func (t *TypescriptSdk) detectRuntime() (SupportedTSRuntime, string, error) {
 //
 // Except if the package.json has an invalid value in field "packageManager", this
 // function should never return an error.
-func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string, error) {
+func (c *moduleConfig) detectPackageManager() (SupportedPackageManager, string, error) {
 	// If the runtime is Bun, we should use BunManager
-	if t.moduleConfig.runtime == Bun {
+	if c.runtime == Bun {
 		return BunManager, "", nil
 	}
 
 	// If the runtime is deno, we should use the DenoManager
-	if t.moduleConfig.runtime == Deno {
+	if c.runtime == Deno {
 		return DenoManager, "", nil
 	}
 
 	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
-	if t.moduleConfig.packageJSONConfig != nil {
-		value := t.moduleConfig.packageJSONConfig.PackageManager
+	if c.packageJSONConfig != nil {
+		value := c.packageJSONConfig.PackageManager
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
@@ -338,19 +336,19 @@ func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string,
 	}
 
 	// Bun can additionally output a yarn.lock file, so we need to check for Bun before Yarn.
-	if t.moduleConfig.hasFile("bun.lockb") || t.moduleConfig.hasFile("bun.lock") {
+	if c.hasFile("bun.lockb") || c.hasFile("bun.lock") {
 		return BunManager, "", nil
 	}
 
-	if t.moduleConfig.hasFile("package-lock.json") {
+	if c.hasFile("package-lock.json") {
 		return Npm, NpmDefaultVersion, nil
 	}
 
-	if t.moduleConfig.hasFile("yarn.lock") {
+	if c.hasFile("yarn.lock") {
 		return Yarn, YarnDefaultVersion, nil
 	}
 
-	if t.moduleConfig.hasFile("pnpm-lock.yaml") {
+	if c.hasFile("pnpm-lock.yaml") {
 		return Pnpm, PnpmDefaultVersion, nil
 	}
 
@@ -386,7 +384,7 @@ func (c *moduleConfig) tsConfigPath() string {
 }
 
 // Returns a list of files to include for module configs.
-func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
+func moduleConfigFiles(path string) []string {
 	modConfigFiles := []string{
 		"package.json",
 		"tsconfig.json",

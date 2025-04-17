@@ -10,27 +10,45 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+type moduleRuntimeContainer struct {
+	sdkSourceDir *dagger.Directory
+	cfg          *moduleConfig
+	ctr          *dagger.Container
+}
+
+func (m *moduleRuntimeContainer) Container() *dagger.Container {
+	return m.ctr
+}
+
+func (m *moduleRuntimeContainer) ModuleDirectory() *dagger.Directory {
+	return m.ctr.Directory(ModSourceDirPath)
+}
+
 // Base returns a Node, Bun or Deno base container with utilities and cache
 // setup.
-func (t *TypescriptSdk) runtimeBaseContainer() *dagger.Container {
-	ctr := dag.Container().From(t.moduleConfig.image)
+func runtimeBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *moduleRuntimeContainer {
+	modRuntimeCtr := &moduleRuntimeContainer{
+		sdkSourceDir: sdkSourceDir,
+		cfg:          cfg,
+		ctr:          dag.Container().From(cfg.image),
+	}
 
-	runtime := t.moduleConfig.runtime
-	version := t.moduleConfig.runtimeVersion
+	runtime := cfg.runtime
+	version := cfg.runtimeVersion
 
 	switch runtime {
 	case Bun:
-		return ctr.
+		modRuntimeCtr.ctr = modRuntimeCtr.ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
 				Sharing: dagger.CacheSharingModePrivate,
 			})
 	case Deno:
-		return ctr.
+		modRuntimeCtr.ctr = modRuntimeCtr.ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.deno/cache", dag.CacheVolume(fmt.Sprintf("mod-deno-cache-%s", tsdistconsts.DefaultDenoVersion)))
 	case Node:
-		return ctr.
+		modRuntimeCtr.ctr = modRuntimeCtr.ctr.
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
@@ -41,16 +59,14 @@ func (t *TypescriptSdk) runtimeBaseContainer() *dagger.Container {
 			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("pnpm-cache-%s-%s", runtime, version))).
 			// install tsx from its bundled location in the engine image
-			WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
+			WithMountedDirectory("/usr/local/lib/node_modules/tsx", modRuntimeCtr.sdkSourceDir.Directory("/tsx_module")).
 			WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"})
-	default:
-		// This cannot happen since runtime always default to Node or error
-		// during analyseModuleConfig
-		return ctr
 	}
+
+	return modRuntimeCtr
 }
 
-// Configure the user's module based on the detected runtime.
+// Configure the user's module based on the detected runtime and user's config files.
 //
 // For Bun and Node:
 // - If no `package.json` is present, it will create a default one with a `tsconfig.json`
@@ -60,54 +76,57 @@ func (t *TypescriptSdk) runtimeBaseContainer() *dagger.Container {
 //
 // For Deno:
 // - It will update the `deno.json` with correct setup using the `bin/__deno_config_updator.ts` script.
-func (t *TypescriptSdk) withConfiguredRuntimeEnvironment(ctr *dagger.Container) *dagger.Container {
-	runtime := t.moduleConfig.runtime
+func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRuntimeContainer {
+	runtime := m.cfg.runtime
 
-	ctr = ctr.WithDirectory(
-		ModSourceDirPath,
-		t.moduleConfig.contextDirectory,
-		dagger.ContainerWithDirectoryOpts{
-			Include: t.moduleConfigFiles(t.moduleConfig.subPath),
-		},
-	).
-		WithWorkdir(t.moduleConfig.modulePath())
+	m.ctr = m.ctr.
+		WithDirectory(
+			ModSourceDirPath,
+			m.cfg.contextDirectory,
+			dagger.ContainerWithDirectoryOpts{
+				Include: moduleConfigFiles(m.cfg.subPath),
+			},
+		).
+		WithWorkdir(m.cfg.modulePath())
 
 	switch runtime {
 	case Bun:
-		if t.moduleConfig.packageJSONConfig == nil {
-			return ctr.
+		if m.cfg.packageJSONConfig == nil {
+			m.ctr = m.ctr.
 				WithDirectory(".",
 					templateDirectory(),
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
+
+			break
 		}
 
-		return ctr.
+		m.ctr = m.ctr.
 			WithMountedFile("/opt/module/bin/__tsconfig.updator.ts", tsConfigUpdatorFile()).
-			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)}).
-			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
+			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin)}).
+			WithFile("package.json", m.configurePackageJSON(m.ctr.File("package.json")))
 	case Node:
-		if t.moduleConfig.packageJSONConfig == nil {
-			return ctr.
+		if m.cfg.packageJSONConfig == nil {
+			m.ctr = m.ctr.
 				WithDirectory(".",
 					templateDirectory(),
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
+
+			break
 		}
 
-		return ctr.
+		m.ctr = m.ctr.
 			WithMountedFile("/opt/module/bin/__tsconfig.updator.ts", tsConfigUpdatorFile()).
-			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)}).
-			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
+			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin)}).
+			WithFile("package.json", m.configurePackageJSON(m.ctr.File("package.json")))
 	case Deno:
-		return ctr.
+		m.ctr = m.ctr.
 			WithMountedFile("/opt/module/bin/__deno_config_updator.ts", denoConfigUpdatorFile()).
-			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)})
-	default:
-		// This should never happens, but if it does case we simply return the container
-		// as it is.
-		return ctr
+			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin)})
 	}
+
+	return m
 }
 
 // Update the user's package.json with required dependencies to use the
@@ -116,7 +135,7 @@ func (t *TypescriptSdk) withConfiguredRuntimeEnvironment(ctr *dagger.Container) 
 // bun (https://github.com/oven-sh/bun/issues/9840).
 // This fucntion can be removed once supported by bun so we
 // can gain some performance.
-func (t *TypescriptSdk) configurePackageJSON(file *dagger.File) *dagger.File {
+func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger.File {
 	ctr := dag.
 		Container().
 		From(tsdistconsts.DefaultNodeImageRef).
@@ -124,8 +143,8 @@ func (t *TypescriptSdk) configurePackageJSON(file *dagger.File) *dagger.File {
 		WithWorkdir("/src").
 		WithExec([]string{"npm", "pkg", "set", "type=module"})
 
-	if t.moduleConfig.packageJSONConfig != nil {
-		_, ok := t.moduleConfig.packageJSONConfig.Dependencies["typescript"]
+	if m.cfg.packageJSONConfig != nil {
+		_, ok := m.cfg.packageJSONConfig.Dependencies["typescript"]
 		if !ok {
 			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
 		}
@@ -147,111 +166,102 @@ func (t *TypescriptSdk) configurePackageJSON(file *dagger.File) *dagger.File {
 // - Install npm required version using npm
 // Bun & Deno:
 // - No setup needed, the package manager is already setup when the image is pulled.
-func (t *TypescriptSdk) withSetupPackageManager(ctr *dagger.Container) *dagger.Container {
-	packageManager := t.moduleConfig.packageManager
-	version := t.moduleConfig.packageManagerVersion
+func (m *moduleRuntimeContainer) withSetupPackageManager() *moduleRuntimeContainer {
+	packageManager := m.cfg.packageManager
+	version := m.cfg.packageManagerVersion
 
 	switch packageManager {
 	case Yarn:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"corepack", "enable"}).
 			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)})
 	case Pnpm:
-		ctr = ctr.WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)})
+		m.ctr = m.ctr.WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)})
 
-		if !t.moduleConfig.hasFile("pnpm-workspace.yaml") && t.moduleConfig.sdkLibOrigin == Local {
-			ctr = ctr.
+		if !m.cfg.hasFile("pnpm-workspace.yaml") && m.cfg.sdkLibOrigin == Local {
+			m.ctr = m.ctr.
 				WithNewFile("pnpm-workspace.yaml", `packages:
   - './sdk'
 			`)
 		}
-
-		return ctr
 	case Npm:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)})
-	case BunManager, DenoManager:
-		return ctr
-	default:
-		// This should never happens, but if it does case we simply return the container
-		// as it is.
-		return ctr
 	}
+
+	return m
 }
 
 // Generate a lock file for the matching package manager.
-func (t *TypescriptSdk) withGeneratedLockFile(ctr *dagger.Container) *dagger.Container {
-	packageManager := t.moduleConfig.packageManager
+func (m *moduleRuntimeContainer) withGeneratedLockFile() *moduleRuntimeContainer {
+	packageManager := m.cfg.packageManager
 
 	switch packageManager {
 	case Yarn:
 		// Install dependencies and extract the lockfile
-		file := ctr.
+		file := m.ctr.
 			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}).File("yarn.lock")
 
 		// We use node-modules linker for yarn >= v3 because it's not working with pnp.
-		if semver.Compare(fmt.Sprintf("v%s", t.moduleConfig.packageManagerVersion), "v3.0.0") >= 0 {
-			ctr = ctr.WithNewFile(".yarnrc.yml", `nodeLinker: node-modules`)
+		if semver.Compare(fmt.Sprintf("v%s", m.cfg.packageManagerVersion), "v3.0.0") >= 0 {
+			m.ctr = m.ctr.WithNewFile(".yarnrc.yml", `nodeLinker: node-modules`)
 		}
 
 		// Sadly, yarn < v3 doesn't support generating a lockfile without installing the dependencies.
 		// So we use npm to generate the lockfile and then import it into yarn.
-		return ctr.WithFile("yarn.lock", file)
+		m.ctr = m.ctr.WithFile("yarn.lock", file)
 	case Pnpm:
-		return ctr.WithExec([]string{"pnpm", "install", "--lockfile-only"})
+		m.ctr = m.ctr.WithExec([]string{"pnpm", "install", "--lockfile-only"})
 	case Npm:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"npm", "install", "--package-lock-only"})
 	case BunManager:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"})
-	case DenoManager:
-		return ctr
-	default:
-		// This should never happens, but if it does case we simply return the container
-		// as it is.
-		return ctr
 	}
+
+	return m
 }
 
 // Installs the dependencies using the detected package manager.
-func (t *TypescriptSdk) withInstalledDependencies(ctr *dagger.Container) *dagger.Container {
-	switch t.moduleConfig.packageManager {
+func (m *moduleRuntimeContainer) withInstalledDependencies() *moduleRuntimeContainer {
+	switch m.cfg.packageManager {
 	case Yarn:
-		if semver.Compare(fmt.Sprintf("v%s", t.moduleConfig.packageManagerVersion), "v3.0.0") <= 0 {
-			return ctr.
+		if semver.Compare(fmt.Sprintf("v%s", m.cfg.packageManagerVersion), "v3.0.0") <= 0 {
+			m.ctr = m.ctr.
 				WithExec([]string{"yarn", "install", "--frozen-lockfile"})
+			break
 		}
 
-		return ctr.WithExec([]string{"yarn", "install", "--immutable"})
+		m.ctr = m.ctr.WithExec([]string{"yarn", "install", "--immutable"})
 	case Pnpm:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"pnpm", "install", "--frozen-lockfile", "--shamefully-hoist=true"})
 	case Npm:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"npm", "ci"})
 	case BunManager:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"})
 	case DenoManager:
-		return ctr.
+		m.ctr = m.ctr.
 			WithExec([]string{"deno", "install"})
-	default:
-		// This should never happens, but if it does case we simply return the container
-		// as it is.
-		return ctr
 	}
+
+	return m
 }
 
-func (t *TypescriptSdk) withUserSourceCode(ctr *dagger.Container) *dagger.Container {
-	return ctr.WithDirectory(
+func (m *moduleRuntimeContainer) withUserSourceCode() *moduleRuntimeContainer {
+	m.ctr = m.ctr.WithDirectory(
 		ModSourceDirPath,
-		t.moduleConfig.contextDirectory,
+		m.cfg.contextDirectory,
 		dagger.ContainerWithDirectoryOpts{
 			// Include the rest of the user's module except config files to not override previous steps & SDKs.
-			Exclude: append(t.moduleConfigFiles(t.moduleConfig.subPath), filepath.Join(t.moduleConfig.subPath, "sdk")),
+			Exclude: append(moduleConfigFiles(m.cfg.subPath), filepath.Join(m.cfg.subPath, "sdk")),
 		},
 	)
+
+	return m
 }
 
 // Returns the container with the generated SDK.
@@ -262,52 +272,52 @@ func (t *TypescriptSdk) withUserSourceCode(ctr *dagger.Container) *dagger.Contai
 // If lib origin is local:
 // - Copy the complete Typescript SDK directory
 // - Generate the client.gen.ts file using the introspection file.
-func (t *TypescriptSdk) withGeneratedSDK(introspectionJSON *dagger.File) func(ctr *dagger.Container) *dagger.Container {
-	return func(ctr *dagger.Container) *dagger.Container {
-		var sdkDir *dagger.Directory
+func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File) *moduleRuntimeContainer {
+	var sdkDir *dagger.Directory
 
-		switch t.moduleConfig.sdkLibOrigin {
-		case Bundle:
-			sdkDir = t.SDKSourceDir.
-				Directory("/bundled_lib").
-				WithDirectory("/", bundledStaticDirectoryForModule()).
-				WithFile("client.gen.ts", t.generateClient(ctr, introspectionJSON))
-		case Local:
-			sdkDir = t.SDKSourceDir.
-				WithoutDirectory("codegen").
-				WithoutDirectory("runtime").
-				WithoutDirectory("tsx_module").
-				WithoutDirectory("bundled_Lib").
-				WithoutDirectory("src/provisioning").
-				WithFile("src/api/client.gen.ts", t.generateClient(ctr, introspectionJSON))
-		default:
-			// This should never happens since detectSdkLibOrigin default to Bundle.
-			sdkDir = dag.Directory()
-		}
-
-		return ctr.
-			WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdkDir)
+	switch m.cfg.sdkLibOrigin {
+	case Bundle:
+		sdkDir = m.sdkSourceDir.
+			Directory("/bundled_lib").
+			WithDirectory("/", bundledStaticDirectoryForModule()).
+			WithFile("client.gen.ts", m.generateClient(introspectionJSON))
+	case Local:
+		sdkDir = m.sdkSourceDir.
+			WithoutDirectory("codegen").
+			WithoutDirectory("runtime").
+			WithoutDirectory("tsx_module").
+			WithoutDirectory("bundled_Lib").
+			WithoutDirectory("src/provisioning").
+			WithFile("src/api/client.gen.ts", m.generateClient(introspectionJSON))
+	default:
+		// This should never happens since detectSdkLibOrigin default to Bundle.
+		sdkDir = dag.Directory()
 	}
+
+	m.ctr = m.ctr.
+		WithDirectory(filepath.Join(m.cfg.modulePath(), GenDir), sdkDir)
+
+	return m
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.File {
+func (m *moduleRuntimeContainer) generateClient(introspectionJSON *dagger.File) *dagger.File {
 	codegenArgs := []string{
 		codegenBinPath,
 		"--lang", "typescript",
 		"--output", ModSourceDirPath,
-		"--module-name", t.moduleConfig.name,
-		"--module-source-path", t.moduleConfig.modulePath(),
+		"--module-name", m.cfg.name,
+		"--module-source-path", m.cfg.modulePath(),
 		"--introspection-json-path", schemaPath,
 	}
 
-	if t.moduleConfig.sdkLibOrigin == Bundle {
+	if m.cfg.sdkLibOrigin == Bundle {
 		codegenArgs = append(codegenArgs, "--bundle")
 	}
 
-	return ctr.
+	return m.ctr.
 		// Add dagger codegen binary.
-		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		WithMountedFile(codegenBinPath, m.sdkSourceDir.File("/codegen")).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
@@ -315,18 +325,48 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 			ExperimentalPrivilegedNesting: true,
 		}).
 		// Return the generated code directory.
-		Directory(t.moduleConfig.sdkPath()).
+		Directory(m.cfg.sdkPath()).
 		File("/src/api/client.gen.ts")
 }
 
 // Add the default template typescript file to the user's module
-func (t *TypescriptSdk) withInitTemplate(ctr *dagger.Container) *dagger.Container {
-	name := t.moduleConfig.name
+func (m *moduleRuntimeContainer) withInitTemplate() *moduleRuntimeContainer {
+	name := m.cfg.name
 
-	return ctr.WithDirectory(
+	m.ctr = m.ctr.WithDirectory(
 		"src",
 		templateDirectory().Directory("src"),
 		dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
 	).
 		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+
+	return m
+}
+
+// Add the entrypoint to the container runtime so it can be called by the engine.
+func (m *moduleRuntimeContainer) withEntrypoint() *moduleRuntimeContainer {
+	m.ctr = m.ctr.WithMountedFile(
+		m.cfg.entrypointPath(),
+		entrypointFile(),
+	)
+
+	switch m.cfg.runtime {
+	case Bun:
+		m.ctr = m.ctr.
+			WithEntrypoint([]string{"bun", m.cfg.entrypointPath()})
+	case Deno:
+		m.ctr = m.ctr.
+			WithEntrypoint([]string{
+				"deno", "run", "-A", m.cfg.entrypointPath(),
+			})
+	case Node:
+		m.ctr = m.ctr.
+			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
+			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
+			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
+			// not useful to display to the user.
+			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", m.cfg.tsConfigPath(), m.cfg.entrypointPath()})
+	}
+
+	return m
 }
