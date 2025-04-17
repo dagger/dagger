@@ -136,7 +136,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 // It first load the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
-func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, execMD *buildkit.ExecutionMetadata) ([]*FunctionCallArgValue, error) {
+func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
 
@@ -193,30 +193,16 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
-	_ dagql.Object,
+	parent dagql.Object,
 	args map[string]dagql.Input,
-	cacheCfg dagql.CacheConfig,
+	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
-	// Function calls on a module should be cached based on the module's content hash, not
-	// the module ID digest (which has a per-client cache key in order to deal with
-	// local dir and git repo loading)
-	id := dagql.CurrentID(ctx)
-	srv := dagql.CurrentDagqlServer(ctx)
-	curIDNoMod := id.Receiver().Append(
-		id.Type().ToAST(),
-		id.Field(),
-		id.View(),
-		nil,
-		int(id.Nth()),
-		"",
-		id.Args()...,
-	)
-
-	dgstInputs := []string{
-		curIDNoMod.Digest().String(),
-		fn.mod.Source.Self.Digest,
-		fn.mod.NameField, // the module source content digest only includes the original name
+	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, inputCfg)
+	if err != nil {
+		return nil, err
 	}
+
+	dgstInputs := []string{cacheCfg.Digest.String()}
 
 	var ctxArgs []*FunctionArg
 	for _, argMetadata := range fn.metadata.Args {
@@ -239,6 +225,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 		ctxArgVals := make([]*argInput, len(ctxArgs))
 		eg, ctx := errgroup.WithContext(ctx)
+		srv := dagql.CurrentDagqlServer(ctx)
 		for i, arg := range ctxArgs {
 			eg.Go(func() error {
 				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
@@ -262,13 +249,12 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 
 		for _, arg := range ctxArgVals {
-			// TODO: iffy ordering, possibly very odd corner cases, double check
 			dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
 		}
 	}
 
 	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
-	return &cacheCfg, nil
+	return cacheCfg, nil
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
@@ -301,7 +287,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 
-	callInputs, err := fn.setCallInputs(ctx, opts, &execMD)
+	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set call inputs: %w", err)
 	}

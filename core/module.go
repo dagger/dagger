@@ -212,9 +212,6 @@ func (mod *Module) View() (string, bool) {
 	return "", false
 }
 
-// TODO: consolidate this w/ the new the new cacheconfig on modfunc
-// TODO: consolidate this w/ the new the new cacheconfig on modfunc
-// TODO: consolidate this w/ the new the new cacheconfig on modfunc
 func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
 	_ dagql.Object,

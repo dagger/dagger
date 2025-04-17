@@ -981,3 +981,81 @@ func (o *Obj) Foo(ctx context.Context) (string, error) {
 	require.NoError(t, err)
 	require.Equal(t, rand2, res2.Test.Obj.Foo)
 }
+
+func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=src", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+
+	err = os.WriteFile(filepath.Join(modDir, "src", "main.go"), []byte(`package main
+import (
+	"strconv"
+	"time"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Rand(
+	// +defaultPath="/crap"
+	dir *dagger.Directory,
+) string {
+	return strconv.Itoa(int(time.Now().UnixNano()))
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	mod1, err := c1.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod1.Serve(ctx)
+	require.NoError(t, err)
+
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Rand string
+		}
+	}](c1, t, `{test{rand}}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res1.Test.Rand)
+
+	c2 := connect(ctx, t)
+	mod2, err := c2.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod2.Serve(ctx)
+	require.NoError(t, err)
+
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Rand string
+		}
+	}](c2, t, `{test{rand}}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res2.Test.Rand)
+
+	require.Equal(t, res1.Test.Rand, res2.Test.Rand)
+
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "crap", "foo.txt"), []byte(identity.NewID()), 0644))
+
+	c3 := connect(ctx, t)
+	mod3, err := c3.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+	err = mod3.Serve(ctx)
+	require.NoError(t, err)
+
+	res3, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Rand string
+		}
+	}](c3, t, `{test{rand}}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res3.Test.Rand)
+
+	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
+}
