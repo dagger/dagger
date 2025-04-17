@@ -598,24 +598,13 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 	}
 
 	if tool == nil {
-		errRes := map[string]any{
+		res, err := toolStructuredResponse(map[string]any{
 			"error": fmt.Sprintf("Tool '%s' is not available.", toolCall.Function.Name),
-			// "hint":  fmt.Sprintf("Use listAvailableTools() to get a list of available tools."),
-		}
-		// if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
-		// 	if m.Current() == nil {
-		// 		errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select%s` first.", typeName)
-		// 	} else if m.Current().Type().Name() == typeName {
-		// 		errRes["hint"] = "The current object type does not provide this function."
-		// 	} else {
-		// 		errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select%s` first.", m.Current().Type().Name(), typeName)
-		// 	}
-		// }
-		payload, err := json.Marshal(errRes)
+		})
 		if err != nil {
 			return fmt.Sprintf("marshal error: %v", err), false
 		}
-		return string(payload), true
+		return res, true
 	}
 
 	result, err := tool.Call(ctx, toolCall.Function.Arguments)
@@ -675,8 +664,6 @@ func (m *MCP) allIDs(typeName string) []string {
 	return ids
 }
 
-// FIXME: by only showing this when objects are available, the model will be
-// missing half of its prompt
 func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	if len(m.env.outputsByName) == 0 {
 		// no outputs desired
