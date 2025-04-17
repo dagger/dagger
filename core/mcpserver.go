@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -17,28 +16,10 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 )
 
-// mcpDefaultArray is a stop-gap until mcp.DefaultArray exists upstream.
-func mcpDefaultArray[T any](v []T) mcp.PropertyOption {
+// mcpDefaultAny lets us skip the typed defaults
+func mcpDefaultAny(v any) mcp.PropertyOption {
 	return func(schema map[string]any) {
 		schema["default"] = v
-	}
-}
-
-func errTypeMismatch(typ string, defaultVal any, argName, toolName string) error {
-	return fmt.Errorf("arg %q of tool %q has a \"type\" field (%q) that is incompatible with the type of the \"default\" field (%T)", argName, toolName, typ, defaultVal)
-}
-
-func toFloat64(n any) (float64, bool) {
-	v := reflect.ValueOf(n)
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(v.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(v.Uint()), true
-	case reflect.Float32, reflect.Float64:
-		return v.Float(), true
-	default:
-		return 0, false
 	}
 }
 
@@ -77,7 +58,9 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			}
 		}
 
-		defaultVal := argSchema["default"]
+		if v, ok := argSchema["default"]; ok {
+			propOpts = append(propOpts, mcpDefaultAny(v))
+		}
 		if slices.Contains(required, argName) {
 			propOpts = append(propOpts, mcp.Required())
 		}
@@ -92,41 +75,15 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			// TODO: verify items has a valid schema: {"type": string} ? At least OpenAI requires it.
 			mcpArg = mcp.WithArray
 			propOpts = append(propOpts, mcp.Items(items))
-			if defaultVal != nil {
-				s, _ := defaultVal.(string)
-				if s != "" && s != "[]" {
-					return nil, fmt.Errorf("not implemented: default value of array arg %q of tool %q can only be the string \"[]\", received: %v", argName, tool.Name, defaultVal)
-				}
-				propOpts = append(propOpts, mcpDefaultArray([]any{}))
-			}
 		case "boolean":
 			mcpArg = mcp.WithBoolean
-			if defaultVal != nil {
-				b, ok := defaultVal.(bool)
-				if !ok {
-					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
-				}
-				propOpts = append(propOpts, mcp.DefaultBool(b))
-			}
-		case "integer", "number":
+		case "integer":
 			mcpArg = mcp.WithNumber
-			if defaultVal != nil {
-				f, ok := toFloat64(defaultVal)
-				if !ok {
-					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
-				}
-				propOpts = append(propOpts, mcp.DefaultNumber(f))
-			}
+		case "number":
+			mcpArg = mcp.WithNumber
 		case "string":
 			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
 			mcpArg = mcp.WithString
-			if defaultVal != nil {
-				s, ok := defaultVal.(string)
-				if !ok {
-					return nil, errTypeMismatch(typ, defaultVal, argName, tool.Name)
-				}
-				propOpts = append(propOpts, mcp.DefaultString(s))
-			}
 		default:
 			return nil, fmt.Errorf("arg %q of tool %q is of unsupported type %q", argName, tool.Name, typ)
 		}
