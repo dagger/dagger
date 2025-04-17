@@ -22,6 +22,10 @@ Before beginning, ensure that:
 - you have [Git](https://git-scm.com/downloads) and a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), but you can also use Podman, nerdctl, or other Docker-like systems.
 - you have a GitHub account (optional, only if configuring Dagger Cloud)
 
+:::tip
+Dagger SDKs generate native code-bindings for all dependencies from the Dagger API. If you're using an IDE, this gives you automatic type-checking, code completion and other key features when developing Dagger Functions. [Setting up your IDE](../../api/ide-integration.mdx) to work with Dagger is a highly recommended step.
+:::
+
 ## Get the example application
 
 The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Clone its repository and set it as the current working directory:
