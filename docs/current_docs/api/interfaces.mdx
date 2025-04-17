@@ -4,12 +4,7 @@ slug: /api/interfaces
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
 # Interfaces
-
-:::important
-The information on this page is only applicable to Go and TypeScript SDKs. Interfaces are not currently supported in the Python SDK.
-:::
 
 ## Declaration
 
@@ -21,7 +16,7 @@ definitions so that your module can accept arbitrary values from other modules
 without being tightly coupled to the concrete type underneath.
 
 To use an interface, define a Go interface that embeds `DaggerObject` and use
-it in a function argument:
+it in a function argument.
 
 Here is an example of the definition of an interface `Fooer` with a single function `foo`:
 
@@ -39,6 +34,29 @@ to the GraphQL field argument names.
 
 </TabItem>
 
+<TabItem value="python" label="Python">
+
+The Python SDK supports interfaces, which allow you to define protocol based
+subtypes so that your module can accept arbitrary values from other modules
+without being tightly coupled to the concrete type underneath.
+
+To use an interface, define a Python protocol that decorates `@dagger.interface`
+and use it in a function argument.
+
+Here is an example of the definition of an interface `Fooer` with a single function `foo`:
+
+```python file=./snippets/interfaces/declarations/python/main.py
+```
+
+Functions defined in interface definitions must match the client-side API
+signature style. If they don't return a chainable object, they must be coroutines
+(`async`).
+
+Note that function arguments need to be properly named, since they directly translate
+to the GraphQL field argument names.
+
+</TabItem>
+
 <TabItem value="typescript" label="TypeScript">
 
 The TypeScript SDK supports interfaces, which allow you to define a set of functions
@@ -47,7 +65,7 @@ That way, your module can accept arbitrary values from other modules without bei
 tightly coupled to the concrete type underneath.
 
 To use an interface, use the TypeScript `interface` keyword and use it
-as a function argument:
+as a function argument.
 
 Here is an example of the definition of an interface `Fooer` with a single function `foo`:
 
@@ -56,6 +74,7 @@ Here is an example of the definition of an interface `Fooer` with a single funct
 
 Functions defined in interface definitions must match the client-side API
 signature style:
+
 - Always define `async` functions in interfaces (wrap the return type in a `Promise<T>`).
 - Declare it as a method signature (e.g., `foo(): Promise<string>`) or a property signature (e.g., `foo: () => Promise<string>`).
 - Parameters must be properly named since they directly translate to the GraphQL field argument names.
@@ -75,6 +94,12 @@ Here is an example of a module `Example` that implements the `Fooer` interface:
 ```
 
 </TabItem>
+<TabItem value="python" label="Python">
+
+```go file=./snippets/interfaces/implementations/python/main.py
+```
+
+</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```ts file=./snippets/interfaces/implementations/typescript/index.ts
@@ -89,7 +114,7 @@ Any object module that implements the interface method can be passed as an argum
 that uses the interface.
 
 Dagger automatically detects if an object coming from the module itself or one of its dependencies implements
-an interface defined in the module or its dependencies. 
+an interface defined in the module or its dependencies.
 If so, it will add new conversion functions to the object that implement the interface
 so it can be passed as argument.
 
@@ -100,6 +125,12 @@ passes it as argument to the `foo` function of the `MyModule` object:
 <TabItem value="go" label="Go">
 
 ```go file=./snippets/interfaces/usages/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/interfaces/usages/python/main.py
 ```
 
 </TabItem>
