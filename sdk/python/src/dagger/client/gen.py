@@ -8304,7 +8304,12 @@ class Client(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
-    def env(self, *, privileged: bool | None = False) -> Env:
+    def env(
+        self,
+        *,
+        privileged: bool | None = False,
+        writable: bool | None = False,
+    ) -> Env:
         """Initialize a new environment
 
         .. caution::
@@ -8315,9 +8320,12 @@ class Client(Root):
         privileged:
             Give the environment the same privileges as the caller: core API
             including host access, current module, and dependencies
+        writable:
+            Allow new outputs to be declared and saved in the environment
         """
         _args = [
             Arg("privileged", privileged, False),
+            Arg("writable", writable, False),
         ]
         _ctx = self._select("env", _args)
         return Env(_ctx)

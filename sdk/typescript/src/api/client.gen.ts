@@ -1161,6 +1161,11 @@ export type ClientEnvOpts = {
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    */
   privileged?: boolean
+
+  /**
+   * Allow new outputs to be declared and saved in the environment
+   */
+  writable?: boolean
 }
 
 export type ClientGitOpts = {
@@ -7521,6 +7526,7 @@ export class Client extends BaseClient {
   /**
    * Initialize a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
+   * @param opts.writable Allow new outputs to be declared and saved in the environment
    * @experimental
    */
   env = (opts?: ClientEnvOpts): Env => {
