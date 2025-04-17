@@ -150,6 +150,10 @@ func (s *moduleSourceSchema) Install() {
 			ArgDoc("generator", `The generator to use`).
 			ArgDoc("outputDir", `The output directory for the generated client.`).
 			ArgDoc("dev", `Generate in developer mode`),
+
+		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
+			Doc(`Remove a client from the module source.`).
+			ArgDoc("path", `The path of the client to remove.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
@@ -2338,6 +2342,33 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	}
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
+
+	src.Digest = src.CalcDigest().String()
+
+	return src, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutClient(
+	_ context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Path string
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+
+	var configClients []*modules.ModuleConfigClient
+	for _, client := range src.ConfigClients {
+		if filepath.Clean(client.Directory) != filepath.Clean(args.Path) {
+			configClients = append(configClients, client)
+		}
+	}
+
+	if len(configClients) == len(src.ConfigClients) {
+		return nil, fmt.Errorf("no client found at path %s", args.Path)
+	}
+
+	src.ConfigClients = configClients
 
 	src.Digest = src.CalcDigest().String()
 

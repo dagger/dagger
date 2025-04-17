@@ -7484,6 +7484,16 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 	}
 }
 
+// Remove a client from the module source.
+func (r *ModuleSource) WithoutClient(path string) *ModuleSource {
+	q := r.query.Select("withoutClient")
+	q = q.Arg("path", path)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Remove the provided dependencies from the module source's dependency list.
 func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withoutDependencies")
