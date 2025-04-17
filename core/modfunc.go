@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -231,6 +232,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 	if len(ctxArgs) > 0 {
 		cacheCfg.UpdatedArgs = make(map[string]dagql.Input)
+		var mu sync.Mutex
 		type argInput struct {
 			name string
 			val  dagql.IDType
@@ -248,7 +250,9 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					name: arg.OriginalName,
 					val:  ctxVal,
 				}
+				mu.Lock()
 				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
+				mu.Unlock()
 
 				return nil
 			})
