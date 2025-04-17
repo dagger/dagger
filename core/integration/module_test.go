@@ -5424,12 +5424,12 @@ func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 	return daggerNonNestedExec(args...)
 }
 
-func daggerClientAdd(generator string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--dev")
+func daggerClientInstall(generator string) dagger.WithContainerFunc {
+	return daggerExec("client", "install", "--generator="+generator, "--dev")
 }
 
-func daggerClientAddAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--dev", outputDirPath)
+func daggerClientInstallAt(generator string, outputDirPath string) dagger.WithContainerFunc {
+	return daggerExec("client", "install", "--generator="+generator, "--dev", outputDirPath)
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {

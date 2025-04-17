@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix re-use of LLM config from other concurrently running dagger sessions.
+time: 2025-04-16T10:53:41.815817556-07:00
+custom:
+  Author: sipsma
+  PR: "10184"

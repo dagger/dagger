@@ -107,7 +107,7 @@ main()`)
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -232,7 +232,7 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -375,7 +375,7 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "./dep")).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -506,7 +506,7 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -622,7 +622,7 @@ main()
 					With(daggerNonNestedExec("init")).
 					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				modCfgContents, err := moduleSrc.
@@ -762,7 +762,7 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
-					With(daggerClientAdd(tc.generator)).
+					With(daggerClientInstall(tc.generator)).
 					With(tc.postSetup)
 
 				modCfgContents, err := moduleSrc.
@@ -907,7 +907,7 @@ main()`)
 						With(nonNestedDevEngine(c)).
 						With(daggerNonNestedExec("init")).
 						With(ts.setup).
-						With(daggerClientAddAt(ts.generator, ts.outputDir)).
+						With(daggerClientInstallAt(ts.generator, ts.outputDir)).
 						With(ts.postSetup)
 
 					t.Run(fmt.Sprintf("dagger run %s", strings.Join(ts.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -1008,7 +1008,7 @@ main()`)
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
 					With(tc.setup).
-					With(daggerClientAddAt(tc.generator, tc.outputDir)).
+					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
@@ -1097,7 +1097,7 @@ export class Generator {
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerExec("client", "add", "--generator=./generator"))
+				With(daggerExec("client", "install", "--generator=./generator"))
 
 			out, err := moduleSrc.File("hello.txt").Contents(ctx)
 			require.NoError(t, err)
@@ -1136,7 +1136,7 @@ func main() {
 
   fmt.Println("result:", res)
 }`).
-			With(daggerClientAdd("go"))
+			With(daggerClientInstall("go"))
 
 		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
 			out, err := moduleSrc.With(daggerNonNestedRun("go", "run", ".")).
@@ -1153,5 +1153,89 @@ func main() {
 			require.NoError(t, err)
 			require.Contains(t, out, "result: hello\n")
 		})
+	})
+}
+
+func (ClientGeneratorTest) TestClientCommands(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	mainGoFile := `package main
+import (
+  "context"
+  "fmt"
+
+  dagger "test.com/test/dagger"
+	dagger2 "test.com/test/dagger2"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := dagger.Connect(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+  res, err := dag.Hello().Hello(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+	dag2, err := dagger2.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res2, err := dag2.Hello().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+  fmt.Println("result dag1:", res)
+	fmt.Println("result dag2:", res2)
+}`
+
+	moduleSrc := c.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("init")).
+		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+		WithExec([]string{"go", "mod", "init", "test.com/test"}).
+		// We cannot directly import both clients because path will not be
+		// recognized during post client operation like go mod tidy.
+		WithNewFile("main.go", `package main`).
+		With(daggerClientInstallAt("go", "./dagger")).
+		With(daggerClientInstallAt("go", "./dagger2")).
+		WithNewFile("main.go", mainGoFile)
+
+	t.Run("execute two differents clients in one session", func(ctx context.Context, t *testctx.T) {
+		out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "result dag1: hello, world!\nresult dag2: hello, world!\n", out)
+	})
+
+	t.Run("list clients", func(ctx context.Context, t *testctx.T) {
+		out, err := moduleSrc.WithExec([]string{"dagger", "client", "list", "--json"}).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger"},{"Generator":"go","Directory":"./dagger2"}]`, out)
+	})
+
+	t.Run("uninstall client", func(ctx context.Context, t *testctx.T) {
+		ctr := moduleSrc.WithExec([]string{"dagger", "client", "uninstall", "./dagger"})
+
+		out, err := ctr.Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "Client at ./dagger removed from config.\n")
+
+		out, err = ctr.WithExec([]string{"dagger", "client", "list", "--json"}).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger2"}]`, out)
 	})
 }
