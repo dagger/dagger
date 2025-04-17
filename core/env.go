@@ -458,19 +458,28 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 		dagql.FieldSpec{
 			Name:        "as" + typeName,
 			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typeName),
-			Type:        targetType.Typed(),
-			Args:        dagql.InputSpecs{},
+			Type: dagql.DynamicNullable{
+				Elem: targetType.Typed(),
+			},
+			Args: dagql.InputSpecs{},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			binding := self.(dagql.Instance[*Binding]).Self
 			val := binding.Value
 			if val == nil {
-				return nil, fmt.Errorf("binding %q undefined", binding.Key)
+				return dagql.DynamicNullable{
+					Elem:  targetType.Typed(),
+					Valid: false,
+				}, nil
 			}
 			if val.Type().Name() != typeName {
 				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.Type())
 			}
-			return val, nil
+			return dagql.DynamicNullable{
+				Elem:  targetType.Typed(),
+				Value: val,
+				Valid: true,
+			}, nil
 		},
 		dagql.CacheSpec{
 			DoNotCache: "Bindings are mutable",
