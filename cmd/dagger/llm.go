@@ -97,6 +97,7 @@ func (s *LLMSession) reset() {
 	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 		WithEnv(s.dag.Env(dagger.EnvOpts{
 			Privileged: true,
+			Writable:   true,
 		})).
 		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`)
 }

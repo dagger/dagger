@@ -19,6 +19,7 @@ func (s environmentSchema) Install() {
 		dagql.Func("env", s.environment).
 			Experimental("Environments are not yet stabilized").
 			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
+			ArgDoc("writable", "Allow new outputs to be declared and saved in the environment").
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
@@ -61,10 +62,14 @@ func (s environmentSchema) Install() {
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct {
 	Privileged bool `default:"false"`
+	Writable   bool `default:"false"`
 }) (*core.Env, error) {
 	env := core.NewEnv()
 	if args.Privileged {
-		env = env.WithRoot(s.srv.Root()).Writable()
+		env = env.WithRoot(s.srv.Root())
+	}
+	if args.Writable {
+		env = env.Writable()
 	}
 	return env, nil
 }
