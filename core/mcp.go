@@ -931,7 +931,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 					selectedTools = append(selectedTools, foundTool)
 				}
 				return toolStructuredResponse(map[string]any{
-					"tools": selectedTools,
+					"addedTools": selectedTools,
 				})
 			}),
 		})
