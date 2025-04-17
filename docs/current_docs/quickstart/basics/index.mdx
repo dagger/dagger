@@ -5,6 +5,7 @@ title: "Basics"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import PartialIde from '../../partials/_ide.mdx';
 
 # Quickstart
 
@@ -108,6 +109,11 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
 ## Write custom functions
 
 As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../../api/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../../features/modules.mdx).
+
+:::tip IDE INTEGRATION
+<PartialIde />
+:::
+
 
 Here's the previous example, rewritten as a Dagger Function:
 
