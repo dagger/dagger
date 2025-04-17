@@ -80,6 +80,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?string $defaultPath = '',
         ?array $ignore = null,
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $defaultGit = '',
     ): Function_ {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
@@ -98,6 +99,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        if (null !== $defaultGit) {
+        $innerQueryBuilder->setArgument('defaultGit', $defaultGit);
         }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

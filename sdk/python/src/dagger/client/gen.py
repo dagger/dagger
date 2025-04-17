@@ -5567,6 +5567,7 @@ class Function(Type):
         default_path: str | None = "",
         ignore: list[str] | None = None,
         source_map: "SourceMap | None" = None,
+        default_git: str | None = "",
     ) -> Self:
         """Returns the function with the provided argument
 
@@ -5588,6 +5589,7 @@ class Function(Type):
             Patterns to ignore when loading the contextual argument value.
         source_map:
             The source map for the argument definition.
+        default_git:
         """
         _args = [
             Arg("name", name),
@@ -5597,6 +5599,7 @@ class Function(Type):
             Arg("defaultPath", default_path, ""),
             Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
+            Arg("defaultGit", default_git, ""),
         ]
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
@@ -5642,6 +5645,29 @@ class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
     function call time."""
+
+    async def default_git(self) -> str:
+        """Only applies to arguments of type GitRef or GitRepository. If the
+        argument is not set, load it from the given git ref or repository in
+        the context directory
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultGit", _args)
+        return await _ctx.execute(str)
 
     async def default_path(self) -> str:
         """Only applies to arguments of type File or Directory. If the argument

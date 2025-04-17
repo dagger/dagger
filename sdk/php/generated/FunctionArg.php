@@ -16,6 +16,15 @@ namespace Dagger;
 class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+     */
+    public function defaultGit(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultGit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultGit');
+    }
+
+    /**
      * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
      */
     public function defaultPath(): string

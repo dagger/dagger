@@ -5254,6 +5254,8 @@ type FunctionWithArgOpts struct {
 	Ignore []string
 	// The source map for the argument definition.
 	SourceMap *SourceMap
+
+	DefaultGit string
 }
 
 // Returns the function with the provided argument
@@ -5280,6 +5282,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
+		}
+		// `defaultGit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultGit) {
+			q = q.Arg("defaultGit", opts[i].DefaultGit)
 		}
 	}
 	q = q.Arg("name", name)
@@ -5317,6 +5323,7 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 type FunctionArg struct {
 	query *querybuilder.Selection
 
+	defaultGit   *string
 	defaultPath  *string
 	defaultValue *JSON
 	description  *string
@@ -5328,6 +5335,19 @@ func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
 	}
+}
+
+// Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+func (r *FunctionArg) DefaultGit(ctx context.Context) (string, error) {
+	if r.defaultGit != nil {
+		return *r.defaultGit, nil
+	}
+	q := r.query.Select("defaultGit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
