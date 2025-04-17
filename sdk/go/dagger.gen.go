@@ -7962,6 +7962,8 @@ func (r *Client) Engine() *Engine {
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
 	Privileged bool
+	// Allow new outputs to be declared and saved in the environment
+	Writable bool
 }
 
 // Initialize a new environment
@@ -7973,6 +7975,10 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 		// `privileged` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Privileged) {
 			q = q.Arg("privileged", opts[i].Privileged)
+		}
+		// `writable` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Writable) {
+			q = q.Arg("writable", opts[i].Writable)
 		}
 	}
 

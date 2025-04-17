@@ -8046,6 +8046,9 @@ pub struct QueryEnvOpts {
     /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     #[builder(setter(into, strip_option), default)]
     pub privileged: Option<bool>,
+    /// Allow new outputs to be declared and saved in the environment
+    #[builder(setter(into, strip_option), default)]
+    pub writable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
@@ -8234,6 +8237,9 @@ impl Query {
         let mut query = self.selection.select("env");
         if let Some(privileged) = opts.privileged {
             query = query.arg("privileged", privileged);
+        }
+        if let Some(writable) = opts.writable {
+            query = query.arg("writable", writable);
         }
         Env {
             proc: self.proc.clone(),
