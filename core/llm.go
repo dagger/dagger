@@ -584,14 +584,6 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
-	for _, env := range llm.messages {
-		if env.Role == "system" {
-			return llm.messages
-		}
-	}
-
-	messages := llm.messages
-
 	// inject default system prompt if none are found
 	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
 		return append([]ModelMessage{
@@ -599,10 +591,9 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 				Role:    "system",
 				Content: prompt,
 			},
-		}, messages...)
+		}, llm.messages...)
 	}
-
-	return messages
+	return llm.messages
 }
 
 type ModelFinishedError struct {
