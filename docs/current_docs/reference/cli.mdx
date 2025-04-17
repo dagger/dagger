@@ -63,6 +63,7 @@ dagger call [options]
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -j, --json                Present result as JSON
   -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
   -o, --output string       Save the result to a local file or directory
 ```
 
@@ -109,6 +110,7 @@ dagger config -m github.com/dagger/hello-dagger
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --json                output in JSON format
   -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
 ```
 
 ### Options inherited from parent commands
@@ -197,6 +199,7 @@ dagger develop [options]
       --compat string[="skip"]   Engine API version to target (default "latest")
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod                   Don't load module during shell startup (mutually exclusive with --mod)
   -r, --recursive                Develop recursively into local dependencies
       --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
       --source string            Source directory used by the installed SDK. Defaults to module root
@@ -241,6 +244,7 @@ dagger functions [options] [function]...
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
 ```
 
 ### Options inherited from parent commands
@@ -337,6 +341,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
       --compat string       Engine API version to target (default "latest")
   -m, --mod string          Path to the module directory. Either local path or a remote git repo
   -n, --name string         Name to use for the dependency in the module. Defaults to the name of the module being installed.
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
 ```
 
 ### Options inherited from parent commands
@@ -450,6 +455,7 @@ EOF
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --doc string          Read query from file (defaults to reading from stdin)
   -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
       --var strings         List of query variables, in key=value format
       --var-json string     Query variables in JSON format (overrides --var)
 ```
@@ -552,7 +558,10 @@ dagger uninstall hello
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
 ```
 
 ### Options inherited from parent commands
@@ -594,7 +603,10 @@ dagger update [options] <module>
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -M, --no-mod              Don't load module during shell startup (mutually exclusive with --mod)
 ```
 
 ### Options inherited from parent commands
