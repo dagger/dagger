@@ -23,14 +23,14 @@ type GenaiClient struct {
 	endpoint *LLMEndpoint
 }
 
-const GEMINI_MALFORMED_FUNCTION_CALL = 10
-
 // Gemini frequently generates a malformed tool call:
 //
 //	10 = MALFORMED_FUNCTION_CALL
 //
 // No way to tell what's causing it since no other information is provided.
 var errGeminiMalformedFunctionCall = errors.New("malformed function call")
+
+const geminiMalformedFunctionCallFinishReason = 10
 
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
@@ -168,7 +168,7 @@ func (c *GenaiClient) processStreamResponse(
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
-			if candidate.FinishReason == GEMINI_MALFORMED_FUNCTION_CALL {
+			if candidate.FinishReason == geminiMalformedFunctionCallFinishReason {
 				return "", nil, tokenUsage, errGeminiMalformedFunctionCall
 			}
 			err = &ModelFinishedError{Reason: candidate.FinishReason.String()}
