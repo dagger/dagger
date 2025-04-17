@@ -190,6 +190,7 @@ class Module:
                         description=param.doc,
                         default_value=param.default_value,
                         default_path=param.default_path,
+                        default_git=param.default_git,
                         ignore=param.ignore,
                     )
 

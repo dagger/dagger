@@ -5565,6 +5565,7 @@ class Function(Type):
         description: str | None = "",
         default_value: JSON | None = None,
         default_path: str | None = "",
+        default_git: str | None = "",
         ignore: list[str] | None = None,
         source_map: "SourceMap | None" = None,
     ) -> Self:
@@ -5584,6 +5585,9 @@ class Function(Type):
         default_path:
             If the argument is a Directory or File type, default to load path
             from context directory, relative to root directory.
+        default_git:
+            If the argument is a GitRepository or GitRef type, default to load
+            git from context.
         ignore:
             Patterns to ignore when loading the contextual argument value.
         source_map:
@@ -5595,6 +5599,7 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
+            Arg("defaultGit", default_git, ""),
             Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
         ]
@@ -5642,6 +5647,29 @@ class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
     function call time."""
+
+    async def default_git(self) -> str:
+        """Only applies to arguments of type GitRef or GitRepository. If the
+        argument is not set, load it from the given git ref or repository in
+        the context directory
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultGit", _args)
+        return await _ctx.execute(str)
 
     async def default_path(self) -> str:
         """Only applies to arguments of type File or Directory. If the argument

@@ -6638,6 +6638,9 @@ pub struct Function {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
+    /// If the argument is a GitRepository or GitRef type, default to load git from context.
+    #[builder(setter(into, strip_option), default)]
+    pub default_git: Option<&'a str>,
     /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
     #[builder(setter(into, strip_option), default)]
     pub default_path: Option<&'a str>,
@@ -6751,6 +6754,9 @@ impl Function {
         if let Some(default_path) = opts.default_path {
             query = query.arg("defaultPath", default_path);
         }
+        if let Some(default_git) = opts.default_git {
+            query = query.arg("defaultGit", default_git);
+        }
         if let Some(ignore) = opts.ignore {
             query = query.arg("ignore", ignore);
         }
@@ -6805,6 +6811,11 @@ pub struct FunctionArg {
     pub graphql_client: DynGraphQLClient,
 }
 impl FunctionArg {
+    /// Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+    pub async fn default_git(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultGit");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
     pub async fn default_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("defaultPath");

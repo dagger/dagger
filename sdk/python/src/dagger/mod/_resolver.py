@@ -27,6 +27,7 @@ from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, Pyth
 from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
+    get_default_git,
     get_default_path,
     get_doc,
     get_ignore,
@@ -139,6 +140,7 @@ class Function(Generic[P, R]):
             doc=get_doc(param.annotation),
             ignore=get_ignore(param.annotation),
             default_path=get_default_path(param.annotation),
+            default_git=get_default_git(param.annotation),
             conv=self.converter,
         )
 

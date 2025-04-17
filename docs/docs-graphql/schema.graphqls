@@ -2399,6 +2399,11 @@ type Function {
     """
     defaultPath: String = ""
 
+    """
+    If the argument is a GitRepository or GitRef type, default to load git from context.
+    """
+    defaultGit: String = ""
+
     """Patterns to ignore when loading the contextual argument value."""
     ignore: [String!] = []
 
@@ -2425,6 +2430,12 @@ An argument accepted by a function.
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
 type FunctionArg {
+  """
+  Only applies to arguments of type GitRef or GitRepository. If the argument is
+  not set, load it from the given git ref or repository in the context directory
+  """
+  defaultGit: String!
+
   """
   Only applies to arguments of type File or Directory. If the argument is not
   set, load it from the given path in the context directory

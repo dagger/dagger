@@ -107,6 +107,7 @@ defmodule Dagger.Function do
           {:description, String.t() | nil},
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
+          {:default_git, String.t() | nil},
           {:ignore, [String.t()]},
           {:source_map, Dagger.SourceMapID.t() | nil}
         ]) :: Dagger.Function.t()
@@ -119,6 +120,7 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("defaultValue", optional_args[:default_value])
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
+      |> QB.maybe_put_arg("defaultGit", optional_args[:default_git])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 

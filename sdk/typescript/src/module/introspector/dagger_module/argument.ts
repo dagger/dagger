@@ -25,6 +25,7 @@ export class DaggerArgument extends Locatable {
   public isNullable: boolean
   public isOptional: boolean
   public defaultPath?: string
+  public defaultGit?: string
   public ignore?: string[]
   public defaultValue?: any
 
@@ -58,6 +59,7 @@ export class DaggerArgument extends Locatable {
     if (decoratorArguments) {
       this.ignore = decoratorArguments.ignore
       this.defaultPath = decoratorArguments.defaultPath
+      this.defaultGit = decoratorArguments.defaultGit
     }
 
     this.type = this.getType()
@@ -145,6 +147,7 @@ export class DaggerArgument extends Locatable {
       isOptional: this.isOptional,
       defaultValue: this.defaultValue,
       defaultPath: this.defaultPath,
+      defaultGit: this.defaultGit,
       ignore: this.ignore,
     }
   }
