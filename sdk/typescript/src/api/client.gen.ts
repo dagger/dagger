@@ -6096,6 +6096,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Disable the default system prompt
+   */
+  withoutDefaultSystemPrompt = (): LLM => {
+    const ctx = this._ctx.select("withoutDefaultSystemPrompt")
+    return new LLM(ctx)
+  }
+
+  /**
    * Call the provided function with current LLM.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
