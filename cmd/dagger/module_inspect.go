@@ -37,6 +37,9 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // By default, looks for a module in the current directory, or above.
 // Returns an error if the module is not found or invalid.
 func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	if moduleNoURL {
+		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+	}
 	modRef, _ := getExplicitModuleSourceRef()
 	if modRef == "" {
 		modRef = moduleURLDefault

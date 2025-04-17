@@ -21,10 +21,10 @@ dagger [options] [subcommand | file...]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-  -m, --mod string                   Path to the module directory. Either local path or a remote git repo
+  -m, --mod string                   Module reference to load, either a local path or a remote git repo (defaults to current directory)
       --model string                 LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')
   -E, --no-exit                      Leave the TUI running after completion
-  -M, --no-mod                       Don't load module during shell startup (mutually exclusive with --mod)
+  -M, --no-mod                       Don't automatically load a module (mutually exclusive with --mod)
       --progress string              Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
@@ -62,7 +62,8 @@ dagger call [options]
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -j, --json                Present result as JSON
-  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
   -o, --output string       Save the result to a local file or directory
 ```
 
@@ -108,7 +109,7 @@ dagger config -m github.com/dagger/hello-dagger
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --json                output in JSON format
-  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
@@ -196,7 +197,7 @@ dagger develop [options]
       --allow-llm strings        List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string[="skip"]   Engine API version to target (default "latest")
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
-  -m, --mod string               Path to the module directory. Either local path or a remote git repo
+  -m, --mod string               Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -r, --recursive                Develop recursively into local dependencies
       --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
       --source string            Source directory used by the installed SDK. Defaults to module root
@@ -240,7 +241,7 @@ dagger functions [options] [function]...
 
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
@@ -335,7 +336,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -n, --name string         Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
@@ -449,7 +450,8 @@ EOF
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --doc string          Read query from file (defaults to reading from stdin)
-  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
       --var strings         List of query variables, in key=value format
       --var-json string     Query variables in JSON format (overrides --var)
 ```
@@ -552,7 +554,9 @@ dagger uninstall hello
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
@@ -594,7 +598,9 @@ dagger update [options] <module>
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
