@@ -79,25 +79,25 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
      */
     public function dockerBuild(
-        ?Platform $platform = null,
         ?string $dockerfile = 'Dockerfile',
-        ?string $target = '',
+        ?Platform $platform = null,
         ?array $buildArgs = null,
+        ?string $target = '',
         ?array $secrets = null,
         ?bool $noInit = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
-        if (null !== $platform) {
-        $innerQueryBuilder->setArgument('platform', $platform);
-        }
         if (null !== $dockerfile) {
         $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
         }
-        if (null !== $target) {
-        $innerQueryBuilder->setArgument('target', $target);
+        if (null !== $platform) {
+        $innerQueryBuilder->setArgument('platform', $platform);
         }
         if (null !== $buildArgs) {
         $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
+        }
+        if (null !== $target) {
+        $innerQueryBuilder->setArgument('target', $target);
         }
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
@@ -199,12 +199,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      * Opens an interactive terminal in new container with this directory mounted inside.
      */
     public function terminal(
+        ContainerId|Container|null $container = null,
         ?array $cmd = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
-        ContainerId|Container|null $container = null,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $container) {
+        $innerQueryBuilder->setArgument('container', $container);
+        }
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
         }
@@ -213,9 +216,6 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        if (null !== $container) {
-        $innerQueryBuilder->setArgument('container', $container);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

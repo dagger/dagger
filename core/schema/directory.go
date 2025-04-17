@@ -34,20 +34,26 @@ func (s *directorySchema) Install() {
 			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc(`Creates a named sub-pipeline.`).
-			ArgDoc("name", "Name of the sub-pipeline.").
-			ArgDoc("description", "Description of the sub-pipeline.").
-			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
+			Args(
+				dagql.Arg("name").Doc("Name of the sub-pipeline."),
+				dagql.Arg("description").Doc("Description of the sub-pipeline."),
+				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
+			),
 		dagql.Func("name", s.name).
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
 		dagql.Func("entries", s.entries).
 			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
-			ArgDoc("path", `Location of the directory to look at (e.g., "/src").`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to look at (e.g., "/src").`),
+			),
 		dagql.Func("glob", s.glob).
 			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
-			ArgDoc("pattern", `Pattern to match (e.g., "*.md").`),
+			Args(
+				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
+			),
 		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the directory's digest.
@@ -56,93 +62,125 @@ func (s *directorySchema) Install() {
 			),
 		dagql.Func("file", s.file).
 			Doc(`Retrieve a file at the given path.`).
-			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
+			),
 		dagql.Func("withFile", s.withFile).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
-			ArgDoc("path", `Location of the copied file (e.g., "/file.txt").`).
-			ArgDoc("source", `Identifier of the file to copy.`).
-			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the copied file (e.g., "/file.txt").`),
+				dagql.Arg("source").Doc(`Identifier of the file to copy.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied file (e.g., 0600).`),
+			),
 		dagql.Func("withFiles", s.withFiles).
 			Doc(`Retrieves this directory plus the contents of the given files copied to the given path.`).
-			ArgDoc("path", `Location where copied files should be placed (e.g., "/src").`).
-			ArgDoc("sources", `Identifiers of the files to copy.`).
-			ArgDoc("permissions", `Permission given to the copied files (e.g., 0600).`),
+			Args(
+				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
+				dagql.Arg("sources").Doc(`Identifiers of the files to copy.`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied files (e.g., 0600).`),
+			),
 		dagql.Func("withNewFile", s.withNewFile).
 			Doc(`Return a snapshot with a new file added`).
-			ArgDoc("path", `Path of the new file. Example: "foo/bar.txt"`).
-			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
-			ArgDoc("permissions", `Permissions of the new file. Example: 0600`),
+			Args(
+				dagql.Arg("path").Doc(`Path of the new file. Example: "foo/bar.txt"`),
+				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
+				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
+			),
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Return a snapshot with a file removed`).
-			ArgDoc("path", `Path of the file to remove (e.g., "/file.txt").`),
+			Args(
+				dagql.Arg("path").Doc(`Path of the file to remove (e.g., "/file.txt").`),
+			),
 		dagql.Func("withoutFiles", s.withoutFiles).
 			Doc(`Return a snapshot with files removed`).
-			ArgDoc("paths", `Paths of the files to remove (e.g., ["/file.txt"]).`),
+			Args(
+				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
+			),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
-			ArgDoc("path", `Location of the directory to retrieve. Example: "/src"`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
+			),
 		dagql.Func("withDirectory", s.withDirectory).
 			Doc(`Return a snapshot with a directory added`).
-			ArgDoc("path", `Location of the written directory (e.g., "/src/").`).
-			ArgDoc("directory", `Identifier of the directory to copy.`).
-			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
-			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
+				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			),
 		dagql.Func("filter", s.filter).
 			Doc(`Return a snapshot with some paths included or excluded`).
-			ArgDoc("exclude", `If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`).
-			ArgDoc("include", `If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
+			Args(
+				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
+				dagql.Arg("include").Doc(`If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
+			),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
-			ArgDoc("path", `Location of the directory created (e.g., "/logs").`).
-			ArgDoc("permissions", `Permission granted to the created directory (e.g., 0777).`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory created (e.g., "/logs").`),
+				dagql.Arg("permissions").Doc(`Permission granted to the created directory (e.g., 0777).`),
+			),
 		dagql.Func("withoutDirectory", s.withoutDirectory).
 			Doc(`Return a snapshot with a subdirectory removed`).
-			ArgDoc("path", `Path of the subdirectory to remove. Example: ".github/workflows"`),
+			Args(
+				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
+			),
 		dagql.Func("diff", s.diff).
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
-			ArgDoc("other", `The directory to compare against`),
+			Args(
+				dagql.Arg("other").Doc(`The directory to compare against`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
-			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
-			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
+				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
+			),
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
 			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
-			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
-			ArgDoc("platform", `The platform to build.`).
-			ArgDoc("buildArgs", `Build arguments to use in the build.`).
-			ArgDoc("target", `Target build stage to build.`).
-			ArgDoc("secrets", `Secrets to pass to the build.`,
-				`They will be mounted at /run/secrets/[secret-name].`).
-			ArgDoc("noInit",
-				`If set, skip the automatic init process injected into containers created by RUN statements.`,
-				`This should only be used if the user requires that their exec processes be the
+			Args(
+				dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
+				dagql.Arg("platform").Doc(`The platform to build.`),
+				dagql.Arg("buildArgs").Doc(`Build arguments to use in the build.`),
+				dagql.Arg("target").Doc(`Target build stage to build.`),
+				dagql.Arg("secrets").Doc(`Secrets to pass to the build.`,
+					`They will be mounted at /run/secrets/[secret-name].`),
+				dagql.Arg("noInit").Doc(
+					`If set, skip the automatic init process injected into containers created by RUN statements.`,
+					`This should only be used if the user requires that their exec processes be the
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+				),
 			),
 		dagql.Func("withTimestamps", s.withTimestamps).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
-			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
-				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+			Args(
+				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+			),
 		dagql.Func("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
 			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
-			ArgDoc("container", `If set, override the default container used for the terminal.`).
-			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`).
-			ArgDoc("insecureRootCapabilities",
-				`Execute the command with all root capabilities. This is similar to
+			Args(
+				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
+				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
+				dagql.Arg("experimentalPrivilegedNesting").Doc(
+					`Provides Dagger access to the executed command.`),
+				dagql.Arg("insecureRootCapabilities").Doc(
+					`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the
 			"--privileged" flag. Containerization does not provide any security
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
+			),
 	}.Install(s.srv)
 }
 

@@ -31,25 +31,33 @@ func (s *fileSchema) Install() {
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
 				It is guaranteed to be stable between invocations of the same Dagger engine.`,
 			).
-			ArgDoc("excludeMetadata", `If true, exclude metadata from the digest.`),
+			Args(
+				dagql.Arg("excludeMetadata").Doc(`If true, exclude metadata from the digest.`),
+			),
 		dagql.Func("withName", s.withName).
 			Doc(`Retrieves this file with its name set to the given name.`).
-			ArgDoc("name", `Name to set file to.`),
+			Args(
+				dagql.Arg("name").Doc(`Name to set file to.`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
-			ArgDoc("path", `Location of the written directory (e.g., "output.txt").`).
-			ArgDoc("allowParentDirPath",
-				`If allowParentDirPath is true, the path argument can be a directory
+			Args(
+				dagql.Arg("path").Doc(`Location of the written directory (e.g., "output.txt").`),
+				dagql.Arg("allowParentDirPath").Doc(
+					`If allowParentDirPath is true, the path argument can be a directory
 				path, in which case the file will be created in that directory.`),
+			),
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.Func("withTimestamps", s.withTimestamps).
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
-			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
-				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+			Args(
+				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
+					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+			),
 	}.Install(s.srv)
 }
 

@@ -146,46 +146,54 @@ func (s *hostSchema) Install() {
 		// a custom cache key function that uses a random value when that arg is true.
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CachePerClient).
 			Doc(`Accesses a directory on the host.`).
-			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
-			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
-			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+			),
 
 		dagql.FuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Accesses a file on the host.`).
-			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
+			),
 
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
 			Doc(`Accesses a Unix socket on the host.`).
-			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
+			Args(
+				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
+			),
 
 		dagql.Func("__internalSocket", s.internalSocket).
 			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
 
 		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
-			ArgDoc("service", `Service to send traffic from the tunnel.`).
-			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
-				`Frontend is the port accepting traffic on the host, backend is the service port.`).
-			ArgDoc("native",
-				`Map each service port to the same port on the host, as if the service were running natively.`,
-				`Note: enabling may result in port conflicts.`).
-			ArgDoc("ports",
-				`Configure explicit port forwarding rules for the tunnel.`,
-				`If a port's frontend is unspecified or 0, a random port will be chosen
-				by the host.`,
-				`If no ports are given, all of the service's ports are forwarded. If
-				native is true, each port maps to the same port on the host. If native
-				is false, each port maps to a random port chosen by the host.`,
-				`If ports are given and native is true, the ports are additive.`),
+			Args(
+				dagql.Arg("service").Doc(`Service to send traffic from the tunnel.`),
+				dagql.Arg("native").Doc(
+					`Map each service port to the same port on the host, as if the service were running natively.`,
+					`Note: enabling may result in port conflicts.`),
+				dagql.Arg("ports").Doc(
+					`Configure explicit port forwarding rules for the tunnel.`,
+					`If a port's frontend is unspecified or 0, a random port will be chosen
+					by the host.`,
+					`If no ports are given, all of the service's ports are forwarded. If
+					native is true, each port maps to the same port on the host. If native
+					is false, each port maps to a random port chosen by the host.`,
+					`If ports are given and native is true, the ports are additive.`),
+			),
 
 		dagql.FuncWithCacheKey("service", s.service, dagql.CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
-			ArgDoc("ports",
-				`Ports to expose via the service, forwarding through the host network.`,
-				`If a port's frontend is unspecified or 0, it defaults to the same as
+			Args(
+				dagql.Arg("ports").Doc(
+					`Ports to expose via the service, forwarding through the host network.`,
+					`If a port's frontend is unspecified or 0, it defaults to the same as
 				the backend port.`,
-				`An empty set of ports is not valid; an error will be returned.`).
-			ArgDoc("host", `Upstream host to forward traffic to.`),
+					`An empty set of ports is not valid; an error will be returned.`),
+				dagql.Arg("host").Doc(`Upstream host to forward traffic to.`),
+			),
 
 		// hidden from external clients via the __ prefix
 		dagql.Func("__internalService", s.internalService).
@@ -197,8 +205,10 @@ func (s *hostSchema) Install() {
 				`Sets a secret given a user-defined name and the file path on the host,
 				and returns the secret.`,
 				`The file is limited to a size of 512000 bytes.`).
-			ArgDoc("name", `The user defined name for this secret.`).
-			ArgDoc("path", `Location of the file to set as a secret.`),
+			Args(
+				dagql.Arg("name").Doc(`The user defined name for this secret.`),
+				dagql.Arg("path").Doc(`Location of the file to set as a secret.`),
+			),
 	}.Install(s.srv)
 }
 

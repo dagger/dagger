@@ -288,7 +288,7 @@
                     <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_git">git</a>(string $url, bool|null $keepGitDir = true, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
+                    <a href="#method_git">git</a>(string $url, bool|null $keepGitDir = true, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
         
                                             <p><p>Queries a Git repository.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1430,7 +1430,7 @@
                     <h3 id="method_git">
         <div class="location">at line 145</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
-    <strong>git</strong>(string $url, bool|null $keepGitDir = true, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
+    <strong>git</strong>(string $url, bool|null $keepGitDir = true, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
         </code>
     </h3>
     <div class="details">    
@@ -1455,11 +1455,6 @@
                 <td></td>
             </tr>
                     <tr>
-                <td><abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr></td>
-                <td>$experimentalServiceHost</td>
-                <td></td>
-            </tr>
-                    <tr>
                 <td>string|null</td>
                 <td>$sshKnownHosts</td>
                 <td></td>
@@ -1467,6 +1462,11 @@
                     <tr>
                 <td><abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr></td>
                 <td>$sshAuthSocket</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr></td>
+                <td>$experimentalServiceHost</td>
                 <td></td>
             </tr>
             </table>

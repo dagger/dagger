@@ -33,25 +33,22 @@ func (s *gitSchema) Install() {
 		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
-			ArgDoc("url",
-				`URL of the git repository.`,
-				"Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.",
-				`Suffix ".git" is optional.`).
-			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
-			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
-			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
-			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
-		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, dagql.CachePerClient).
-			View(BeforeVersion("v0.13.4")).
-			Doc(`Queries a Git repository.`).
-			ArgDoc("url",
-				`URL of the git repository.`,
-				"Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.",
-				`Suffix ".git" is optional.`).
-			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
-			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
-			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
-			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
+			Args(
+				dagql.Arg("url").Doc(
+					`URL of the git repository.`,
+					"Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.",
+					`Suffix ".git" is optional.`),
+				dagql.Arg("keepGitDir").
+					View(AllVersion).
+					Default(dagql.Opt(dagql.Boolean(true))).
+					Doc(`Set to true to keep .git directory.`).Deprecated(),
+				dagql.Arg("keepGitDir").
+					View(BeforeVersion("v0.13.4")).
+					Doc(`Set to true to keep .git directory.`).Deprecated(),
+				dagql.Arg("sshKnownHosts").Doc(`Set SSH known hosts`),
+				dagql.Arg("sshAuthSocket").Doc(`Set SSH auth socket`),
+				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the repo is fetched.`),
+			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRepository]{
@@ -59,39 +56,56 @@ func (s *gitSchema) Install() {
 			Doc(`Returns details for HEAD.`),
 		dagql.Func("ref", s.ref).
 			Doc(`Returns details of a ref.`).
-			ArgDoc("name", `Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
+			Args(
+				dagql.Arg("name").Doc(`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
+			),
 		dagql.Func("branch", s.branch).
 			Doc(`Returns details of a branch.`).
-			ArgDoc("name", `Branch's name (e.g., "main").`),
+			Args(
+				dagql.Arg("name").Doc(`Branch's name (e.g., "main").`),
+			),
 		dagql.Func("tag", s.tag).
 			Doc(`Returns details of a tag.`).
-			ArgDoc("name", `Tag's name (e.g., "v0.3.9").`),
+			Args(
+				dagql.Arg("name").Doc(`Tag's name (e.g., "v0.3.9").`),
+			),
 		dagql.NodeFunc("tags", s.tags).
 			Doc(`tags that match any of the given glob patterns.`).
-			ArgDoc("patterns", `Glob patterns (e.g., "refs/tags/v*").`),
+			Args(
+				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
+			),
 		dagql.Func("commit", s.commit).
 			Doc(`Returns details of a commit.`).
 			// TODO: id is normally a reserved word; we should probably rename this
-			ArgDoc("id", `Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+			Args(
+				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+			),
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
-			ArgDoc("token", `Secret used to populate the password during basic HTTP Authorization`),
+			Args(
+				dagql.Arg("token").Doc(`Secret used to populate the password during basic HTTP Authorization`),
+			),
 		dagql.Func("withAuthHeader", s.withAuthHeader).
 			Doc(`Header to authenticate the remote with.`).
-			ArgDoc("header", `Secret used to populate the Authorization HTTP header`),
+			Args(
+				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
+			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("tree", s.tree).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
-			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
-		dagql.NodeFunc("tree", s.treeLegacy).
-			View(BeforeVersion("v0.12.0")).
-			Doc(`The filesystem tree at this ref.`).
-			ArgDoc("discardGitDir", `Set to true to discard .git directory.`).
-			ArgDeprecated("sshKnownHosts", "This option should be passed to `git` instead.").
-			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
+			Args(
+				dagql.Arg("discardGitDir").
+					Doc(`Set to true to discard .git directory.`),
+				dagql.Arg("sshKnownHosts").
+					View(BeforeVersion("v0.12.0")).
+					Doc("This option should be passed to `git` instead.").Deprecated(),
+				dagql.Arg("sshAuthSocket").
+					View(BeforeVersion("v0.12.0")).
+					Doc("This option should be passed to `git` instead.").Deprecated(),
+			),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
 	}.Install(s.srv)
@@ -99,7 +113,7 @@ func (s *gitSchema) Install() {
 
 type gitArgs struct {
 	URL                     string
-	KeepGitDir              dagql.Optional[dagql.Boolean] `default:"true"`
+	KeepGitDir              dagql.Optional[dagql.Boolean] `default:"false"`
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 
 	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
@@ -364,25 +378,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	return inst, nil
 }
 
-type gitArgsLegacy struct {
-	URL                     string
-	KeepGitDir              bool `default:"false"`
-	ExperimentalServiceHost dagql.Optional[core.ServiceID]
-
-	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
-	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
-}
-
-func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgsLegacy) (dagql.Instance[*core.GitRepository], error) {
-	return s.git(ctx, parent, gitArgs{
-		URL:                     args.URL,
-		KeepGitDir:              dagql.Opt(dagql.NewBoolean(args.KeepGitDir)),
-		ExperimentalServiceHost: args.ExperimentalServiceHost,
-		SSHKnownHosts:           args.SSHKnownHosts,
-		SSHAuthSocket:           args.SSHAuthSocket,
-	})
-}
-
 func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {
 	return parent.Head(ctx)
 }
@@ -476,88 +471,14 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 
 type treeArgs struct {
 	DiscardGitDir bool `default:"false"`
-}
-
-func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
-	if parent.Self.UseDagOp() && !core.DagOpInContext[core.FSDagOp](ctx) {
-		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
-	}
-
-	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return inst, fmt.Errorf("failed to get root query")
-	}
-	bk, err := query.Self.Buildkit(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
-	if err != nil {
-		return inst, err
-	}
-	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
-	if err != nil {
-		return inst, err
-	}
-
-	var dgstInputs []string
-
-	// use the commit for the base of the content hash
-	var commit string
-	err = s.srv.Select(ctx, parent, &commit, dagql.Selector{Field: "commit"})
-	if err != nil {
-		return inst, err
-	}
-	dgstInputs = append(dgstInputs, commit)
-
-	remoteRepo, isRemoteRepo := parent.Self.Repo.Backend.(*core.RemoteGitRepository)
-	if isRemoteRepo {
-		usedAuth := remoteRepo.AuthToken.Self != nil ||
-			remoteRepo.AuthHeader.Self != nil ||
-			remoteRepo.SSHAuthSocket != nil
-		if usedAuth {
-			// do a full hash of the actual files/dirs in the private git repo so
-			// that the cache key of the returned value can't be known unless the
-			// full contents are already known
-			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get content hash: %w", err)
-			}
-			dgstInputs = append(dgstInputs, dgst.String(),
-				// also include what auth methods are used, currently we can't
-				// handle a cache hit where the result has a different auth
-				// method than the caller used (i.e. a git repo is pulled w/
-				// a token but hits cache for a dir where a ssh sock was used)
-				strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
-				strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
-				strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
-			)
-		}
-	}
-
-	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
-	if includedGitDir && remoteRepo != nil {
-		// the contents of the directory have references to relevant remote git
-		// state, so we include the remote URL in the hash
-		dgstInputs = append(dgstInputs, remoteRepo.URL)
-	}
-
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
-
-	return inst, nil
-}
-
-type treeArgsLegacy struct {
-	DiscardGitDir bool `default:"false"`
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgsLegacy) (inst dagql.Instance[*core.Directory], _ error) {
+func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
 	if parent.Self.UseDagOp() && !core.DagOpInContext[core.FSDagOp](ctx) {
-		return DagOpDirectory(ctx, s.srv, parent, args, s.treeLegacy, nil)
+		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
 	}
 
 	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
@@ -607,30 +528,36 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.
 	}
 	dgstInputs = append(dgstInputs, commit)
 
-	usedAuth := false
-	remoteURL := ""
-	if remoteRepo, ok := parent.Self.Repo.Backend.(*core.RemoteGitRepository); ok {
-		remoteURL = remoteRepo.URL
-		usedAuth = remoteRepo.AuthToken.Self != nil ||
+	remoteRepo, isRemoteRepo := res.Self.Repo.Backend.(*core.RemoteGitRepository)
+	if isRemoteRepo {
+		usedAuth := remoteRepo.AuthToken.Self != nil ||
 			remoteRepo.AuthHeader.Self != nil ||
 			remoteRepo.SSHAuthSocket != nil
-	}
-	if usedAuth {
-		// do a full hash of the actual files/dirs in the private git repo so
-		// that the cache key of the returned value can't be known unless the
-		// full contents are already known
-		dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get content hash: %w", err)
+		if usedAuth {
+			// do a full hash of the actual files/dirs in the private git repo so
+			// that the cache key of the returned value can't be known unless the
+			// full contents are already known
+			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get content hash: %w", err)
+			}
+			dgstInputs = append(dgstInputs, dgst.String(),
+				// also include what auth methods are used, currently we can't
+				// handle a cache hit where the result has a different auth
+				// method than the caller used (i.e. a git repo is pulled w/
+				// a token but hits cache for a dir where a ssh sock was used)
+				strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
+				strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
+				strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
+			)
 		}
-		dgstInputs = append(dgstInputs, dgst.String())
 	}
 
 	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
-	if includedGitDir && remoteURL != "" {
+	if includedGitDir && remoteRepo != nil {
 		// the contents of the directory have references to relevant remote git
 		// state, so we include the remote URL in the hash
-		dgstInputs = append(dgstInputs, remoteURL)
+		dgstInputs = append(dgstInputs, remoteRepo.URL)
 	}
 
 	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))

@@ -18,7 +18,13 @@ var schemaCmd = &cobra.Command{
 	RunE: Schema,
 }
 
+var (
+	version string
+)
+
 func init() {
+	rootCmd.PersistentFlags().StringVar(&version, "version", "", "version of the schema to generate")
+
 	rootCmd.AddCommand(introspectCmd)
 	rootCmd.AddCommand(schemaCmd)
 }
