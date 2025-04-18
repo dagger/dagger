@@ -1730,6 +1730,11 @@ impl Binding {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns true if the binding is null
+    pub async fn is_null(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isNull");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The binding name
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");

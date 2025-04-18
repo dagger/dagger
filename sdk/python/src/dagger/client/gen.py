@@ -553,6 +553,25 @@ class Binding(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(BindingID)
 
+    async def is_null(self) -> bool:
+        """Returns true if the binding is null
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isNull", _args)
+        return await _ctx.execute(bool)
+
     async def name(self) -> str:
         """The binding name
 

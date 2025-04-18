@@ -164,6 +164,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns true if the binding is null
+     */
+    public function isNull(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isNull');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isNull');
+    }
+
+    /**
      * The binding name
      */
     public function name(): string
