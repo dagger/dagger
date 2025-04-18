@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 )
@@ -476,7 +477,7 @@ func (llm *LLM) Clone() *LLM {
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.mcp.Tools(srv)
+	tools, err := llm.mcp.Tools(ctx, srv)
 	if err != nil {
 		return "", err
 	}
@@ -558,6 +559,13 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 		Role:    "system",
 		Content: prompt,
 	})
+	return llm
+}
+
+// Add a stdio MCP service to the llm's tool set
+func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, mcpSvcId *call.ID) *LLM {
+	llm = llm.Clone()
+	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{container: ctr, mcpSvcID: mcpSvcId})
 	return llm
 }
 
@@ -702,7 +710,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools(dag)
+		tools, err := llm.mcp.Tools(ctx, dag)
 		if err != nil {
 			return err
 		}

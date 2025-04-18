@@ -163,7 +163,7 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 			text = string(b)
 		}
 
-		if err := s.setTools(); err != nil {
+		if err := s.setTools(ctx); err != nil {
 			return nil, err
 		}
 
@@ -188,8 +188,8 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 	return mcpTools, nil
 }
 
-func (s mcpServer) setTools() error {
-	tools, err := s.env.Tools(s.dag)
+func (s mcpServer) setTools(ctx context.Context) error {
+	tools, err := s.env.Tools(ctx, s.dag)
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
 	}
@@ -205,7 +205,7 @@ func (s mcpServer) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := s.setTools(); err != nil {
+	if err := s.setTools(ctx); err != nil {
 		return err
 	}
 
