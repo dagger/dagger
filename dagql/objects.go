@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -356,15 +357,15 @@ func NoopDone(res Typed, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	inputArgs, newID, doNotCache, err := r.preselect(ctx, sel)
+	inputArgs, newID, doNotCache, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, nil, err
 	}
 	return r.call(ctx, s, newID, inputArgs, doNotCache)
 }
 
-func (r Instance[T]) ReturnType(ctx context.Context, sel Selector) (Typed, *call.ID, error) {
-	_, newID, _, err := r.preselect(ctx, sel)
+func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
+	_, newID, _, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -375,7 +376,7 @@ func (r Instance[T]) ReturnType(ctx context.Context, sel Selector) (Typed, *call
 	return returnType, newID, nil
 }
 
-func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]Input, *call.ID, bool, error) {
+func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (map[string]Input, *call.ID, bool, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
@@ -441,12 +442,43 @@ func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]In
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
-		idCtx := idToContext(ctx, newID)
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(idCtx, r, inputArgs, CacheConfig{
+		cacheCfgCtx := idToContext(ctx, newID)
+		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
+		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
+		}
+
+		if len(cacheCfg.UpdatedArgs) > 0 {
+			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
+			for argName, argInput := range cacheCfg.UpdatedArgs {
+				var found bool
+				for i, idArg := range idArgs {
+					if idArg.Name() == argName {
+						idArgs[i] = idArg.WithValue(argInput.ToLiteral())
+						found = true
+						break
+					}
+				}
+				if !found {
+					idArgs = append(idArgs, call.NewArgument(
+						argName,
+						argInput.ToLiteral(),
+						false,
+					))
+				}
+			}
+			newID = r.Constructor.Append(
+				astType,
+				sel.Field,
+				view,
+				field.Spec.Module,
+				sel.Nth,
+				"",
+				idArgs...,
+			)
 		}
 
 		if cacheCfg.Digest != origDgst {
@@ -508,6 +540,7 @@ func (r Instance[T]) call(
 	doNotCache bool,
 ) (Typed, *call.ID, error) {
 	ctx = idToContext(ctx, newID)
+	ctx = srvToContext(ctx, s)
 	callCacheKey := newID.Digest()
 	if doNotCache {
 		callCacheKey = ""
@@ -977,7 +1010,8 @@ type GetCacheConfigFunc[T Typed, A any] func(context.Context, Instance[T], A, Ca
 // CacheConfig is the configuration for caching a field. Currently just custom digest
 // but intended to support more in time (TTL, etc).
 type CacheConfig struct {
-	Digest digest.Digest
+	Digest      digest.Digest
+	UpdatedArgs map[string]Input
 }
 
 // Field defines a field of an Object type.

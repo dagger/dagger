@@ -103,7 +103,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	ReturnType(context.Context, Selector) (Typed, *call.ID, error)
+	ReturnType(context.Context, *Server, Selector) (Typed, *call.ID, error)
 }
 
 // A type that has a callback attached that needs to always run before returned to a caller

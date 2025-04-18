@@ -34,6 +34,10 @@ func (arg *Argument) Value() Literal {
 	return arg.value
 }
 
+func (arg *Argument) WithValue(value Literal) *Argument {
+	return NewArgument(arg.Name(), value, arg.isSensitive)
+}
+
 func (arg *Argument) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if arg == nil || arg.isSensitive {
 		return
