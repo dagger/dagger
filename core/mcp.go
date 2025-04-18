@@ -861,36 +861,19 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 			}),
 		})
 	}
+
 	if len(tools) > 0 {
-		var toolOptions []string
-		for _, tool := range tools {
-			if m.selectedTools[tool.Name] {
-				// already have it
-				continue
-			}
-			toolOptions = append(toolOptions, tool.Name)
-		}
-		itemSchema := map[string]any{
-			"type": "string",
-		}
-		if len(toolOptions) > 0 {
-			itemSchema["enum"] = toolOptions
-		}
 		builtins = append(builtins, LLMTool{
 			Name: "load_tools",
 			Description: (func() string {
 				desc := `Load tools for interacting with the available objects.`
 				desc += "\n\nAvailable tools:"
-				if len(toolOptions) == 0 {
-					desc += "\n- (none - all selected)"
-				} else {
-					for _, tool := range tools {
-						if m.selectedTools[tool.Name] {
-							// already have it
-							continue
-						}
-						desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+				for _, tool := range tools {
+					if m.selectedTools[tool.Name] {
+						// already have it
+						continue
 					}
+					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
 				}
 				var objects []string
 				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
@@ -913,7 +896,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				"properties": map[string]any{
 					"tools": map[string]any{
 						"type":        "array",
-						"items":       itemSchema,
+						"items":       map[string]any{"type": "string"},
 						"description": "The tools to select.",
 					},
 				},
