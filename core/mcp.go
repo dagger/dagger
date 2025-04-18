@@ -830,8 +830,8 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 			allTypes[name] = objectType
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "declareOutput",
-			Description: "Declare a new output to be saved.",
+			Name:        "declare_output",
+			Description: "Declare a new output that can have a value saved to it",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -877,9 +877,9 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 			itemSchema["enum"] = toolOptions
 		}
 		builtins = append(builtins, LLMTool{
-			Name: "selectTools",
+			Name: "load_tools",
 			Description: (func() string {
-				desc := `Select tools for interacting with the available objects.`
+				desc := `Load tools for interacting with the available objects.`
 				desc += "\n\nAvailable tools:"
 				if len(toolOptions) == 0 {
 					desc += "\n- (none - all selected)"
@@ -1040,7 +1040,7 @@ func (m *MCP) userProvidedValues() []LLMTool {
 	}
 	return []LLMTool{
 		{
-			Name:        "userProvidedValues",
+			Name:        "user_provided_values",
 			Description: desc,
 			Schema: map[string]any{
 				"type":                 "object",
