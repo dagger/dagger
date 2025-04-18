@@ -90,18 +90,17 @@ type execState struct {
 
 	cleanups *Cleanups
 
-	spec               *specs.Spec
-	networkNamespace   bknetwork.Namespace
-	rootfsPath         string
-	uid                uint32
-	gid                uint32
-	sgids              []uint32
-	resolvConfPath     string
-	hostsFilePath      string
-	exitCodePath       string
-	metaMount          *specs.Mount
-	origEnvMap         map[string]string
-	sessionClientConnF *os.File
+	spec             *specs.Spec
+	networkNamespace bknetwork.Namespace
+	rootfsPath       string
+	uid              uint32
+	gid              uint32
+	sgids            []uint32
+	resolvConfPath   string
+	hostsFilePath    string
+	exitCodePath     string
+	metaMount        *specs.Mount
+	origEnvMap       map[string]string
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -947,6 +946,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		} else {
 			w.execMD.SSHAuthSocketPath = sockPath
 		}
+	}
+
+	// include overridden client version if it's set in the exec's env vars
+	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
+		w.execMD.ClientVersionOverride = version
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
