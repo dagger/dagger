@@ -1,16 +1,17 @@
 {
   "name": "ext-python-sdk",
-  "sdk": "python",
-  "exclude": [
-    ".venv",
-    "sdk"
+  "engineVersion": "v0.18.3",
+  "sdk": {
+    "source": "python"
+  },
+  "include": [
+    "!.venv",
+    "!sdk"
   ],
   "dependencies": [
     {
       "name": "python-sdk",
       "source": "../../../../../../sdk/python/runtime"
     }
-  ],
-  "source": ".",
-  "engineVersion": "v0.13.6"
+  ]
 }
