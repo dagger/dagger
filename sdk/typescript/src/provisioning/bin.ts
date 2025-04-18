@@ -21,9 +21,9 @@ import {
 import { createGQLClient } from "../common/graphql/client.js"
 import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.js"
 
+let OVERRIDE_CLI_URL: string = ""
+let OVERRIDE_CHECKSUMS_URL: string = ""
 const CLI_HOST = "dl.dagger.io"
-let OVERRIDE_CLI_URL: string
-let OVERRIDE_CHECKSUMS_URL: string
 
 export type ExecaChildProcess = ResultPromise<{
   stdio: "pipe"
@@ -346,7 +346,7 @@ export class Bin implements EngineConn {
   }
 
   private cliArchiveName(): string {
-    if (OVERRIDE_CLI_URL) {
+    if (OVERRIDE_CLI_URL && OVERRIDE_CLI_URL != "") {
       return path.basename(new URL(OVERRIDE_CLI_URL).pathname)
     }
     let ext = "tar.gz"
@@ -357,14 +357,14 @@ export class Bin implements EngineConn {
   }
 
   private cliArchiveURL(): string {
-    if (OVERRIDE_CLI_URL) {
+    if (OVERRIDE_CLI_URL && OVERRIDE_CLI_URL != "") {
       return OVERRIDE_CLI_URL
     }
     return `https://${CLI_HOST}/dagger/releases/${this.cliVersion}/${this.cliArchiveName()}`
   }
 
   private cliChecksumURL(): string {
-    if (OVERRIDE_CHECKSUMS_URL) {
+    if (OVERRIDE_CHECKSUMS_URL && OVERRIDE_CHECKSUMS_URL != "") {
       return OVERRIDE_CHECKSUMS_URL
     }
     return `https://${CLI_HOST}/dagger/releases/${this.cliVersion}/checksums.txt`
