@@ -264,6 +264,13 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 		return err
 	}
 	for _, output := range outputs {
+		isNull, err := output.IsNull(ctx)
+		if err != nil {
+			return err
+		}
+		if isNull {
+			continue
+		}
 		name, err := output.Name(ctx)
 		if err != nil {
 			return err
@@ -291,10 +298,6 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 			Bind(&objID).
 			Execute(ctx); err != nil {
 			return err
-		}
-		if objID == "" {
-			// not defined
-			continue
 		}
 		if err := s.assignShell(ctx, name, &dynamicObject{objID, typeName}); err != nil {
 			return err
