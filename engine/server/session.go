@@ -917,7 +917,10 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
-	clientVersion := engine.Version
+	clientVersion := execMD.ClientVersionOverride
+	if clientVersion == "" {
+		clientVersion = engine.Version
+	}
 	allowedLLMModules := execMD.AllowedLLMModules
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion

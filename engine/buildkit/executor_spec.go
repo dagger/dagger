@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/mount"
@@ -91,18 +90,17 @@ type execState struct {
 
 	cleanups *Cleanups
 
-	spec               *specs.Spec
-	networkNamespace   bknetwork.Namespace
-	rootfsPath         string
-	uid                uint32
-	gid                uint32
-	sgids              []uint32
-	resolvConfPath     string
-	hostsFilePath      string
-	exitCodePath       string
-	metaMount          *specs.Mount
-	origEnvMap         map[string]string
-	sessionClientConnF *os.File
+	spec             *specs.Spec
+	networkNamespace bknetwork.Namespace
+	rootfsPath       string
+	uid              uint32
+	gid              uint32
+	sgids            []uint32
+	resolvConfPath   string
+	hostsFilePath    string
+	exitCodePath     string
+	metaMount        *specs.Mount
+	origEnvMap       map[string]string
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -950,18 +948,9 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		}
 	}
 
-	sessionClientConnF, sessionSrvConnF, err := newSocketpair()
-	if err != nil {
-		return fmt.Errorf("create session socket pair: %w", err)
-	}
-	// closing net.FileConn won't close the underlying fd, so do that here
-	state.cleanups.Add("close session client conn", sessionClientConnF.Close)
-	state.cleanups.Add("close session srv conn", sessionSrvConnF.Close)
-	state.sessionClientConnF = sessionClientConnF
-
-	sessionSrvConn, err := net.FileConn(sessionSrvConnF)
-	if err != nil {
-		return fmt.Errorf("convert session srv conn: %w", err)
+	// include overridden client version if it's set in the exec's env vars
+	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
+		w.execMD.ClientVersionOverride = version
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -969,18 +958,6 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		srvCancel(errors.New("container cleanup"))
 	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
-	srvPool.Go(func(ctx context.Context) error {
-		return w.bkSessionManager.HandleConn(ctx, sessionSrvConn, map[string][]string{
-			engine.SessionIDMetaKey:        {w.execMD.ClientID},
-			engine.SessionNameMetaKey:      {w.execMD.ClientID},
-			engine.SessionSharedKeyMetaKey: {""},
-			engine.SessionMethodNameMetaKey: {
-				// buildkit doesn't care about this, except one codepath where it insists on checking
-				// for FileSend/diffcopy, so include that here
-				"/moby.filesync.v1.FileSend/diffcopy",
-			},
-		})
-	})
 
 	httpListener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")
@@ -1023,25 +1000,6 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}))
 
 	return nil
-}
-
-func newSocketpair() (*os.File, *os.File, error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-	if err != nil {
-		return nil, nil, fmt.Errorf("socketpair: %w", err)
-	}
-
-	fd0 := fds[0]
-	fd1 := fds[1]
-
-	if err := syscall.SetNonblock(fd0, true); err != nil {
-		return nil, nil, fmt.Errorf("set nonblock fd0: %w", err)
-	}
-	if err := syscall.SetNonblock(fd1, true); err != nil {
-		return nil, nil, fmt.Errorf("set nonblock fd1: %w", err)
-	}
-
-	return os.NewFile(uintptr(fd0), "socketpair0"), os.NewFile(uintptr(fd1), "socketpair1"), nil
 }
 
 func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
@@ -1233,15 +1191,10 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	killer := newRunProcKiller(w.runc, state.id)
 
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
-		var extraFiles []*os.File
-		if state.sessionClientConnF != nil {
-			extraFiles = append(extraFiles, state.sessionClientConnF)
-		}
 		_, err := w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-			Started:    started,
-			IO:         io,
-			ExtraArgs:  []string{"--keep"},
-			ExtraFiles: extraFiles,
+			Started:   started,
+			IO:        io,
+			ExtraArgs: []string{"--keep"},
 		})
 		return err
 	}
