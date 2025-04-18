@@ -1,0 +1,6 @@
+kind: Added
+body: Enable strict and skipLibCheck settings in tsconfigs
+time: 2025-04-18T04:54:35.160195-05:00
+custom:
+    Author: "jahands"
+    PR: "10203"
