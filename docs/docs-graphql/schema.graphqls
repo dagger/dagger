@@ -11,46 +11,46 @@ directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int
 
 type Binding {
   """Retrieve the binding value, as type CacheVolume"""
-  asCacheVolume: CacheVolume
+  asCacheVolume: CacheVolume!
 
   """Retrieve the binding value, as type Container"""
-  asContainer: Container
+  asContainer: Container!
 
   """Retrieve the binding value, as type Directory"""
-  asDirectory: Directory
+  asDirectory: Directory!
 
   """Retrieve the binding value, as type Env"""
-  asEnv: Env
+  asEnv: Env!
 
   """Retrieve the binding value, as type File"""
-  asFile: File
+  asFile: File!
 
   """Retrieve the binding value, as type GitRef"""
-  asGitRef: GitRef
+  asGitRef: GitRef!
 
   """Retrieve the binding value, as type GitRepository"""
-  asGitRepository: GitRepository
+  asGitRepository: GitRepository!
 
   """Retrieve the binding value, as type LLM"""
-  asLLM: LLM
+  asLLM: LLM!
 
   """Retrieve the binding value, as type Module"""
-  asModule: Module
+  asModule: Module!
 
   """Retrieve the binding value, as type ModuleConfigClient"""
-  asModuleConfigClient: ModuleConfigClient
+  asModuleConfigClient: ModuleConfigClient!
 
   """Retrieve the binding value, as type ModuleSource"""
-  asModuleSource: ModuleSource
+  asModuleSource: ModuleSource!
 
   """Retrieve the binding value, as type Secret"""
-  asSecret: Secret
+  asSecret: Secret!
 
   """Retrieve the binding value, as type Service"""
-  asService: Service
+  asService: Service!
 
   """Retrieve the binding value, as type Socket"""
-  asSocket: Socket
+  asSocket: Socket!
 
   """The binding's string value"""
   asString: String
@@ -60,6 +60,9 @@ type Binding {
 
   """A unique identifier for this Binding."""
   id: BindingID!
+
+  """Returns true if the binding is null"""
+  isNull: Boolean!
 
   """The binding name"""
   name: String!

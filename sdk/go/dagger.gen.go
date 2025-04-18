@@ -279,6 +279,7 @@ type Binding struct {
 	asString *string
 	digest   *string
 	id       *BindingID
+	isNull   *bool
 	name     *string
 	typeName *string
 }
@@ -479,6 +480,19 @@ func (r *Binding) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns true if the binding is null
+func (r *Binding) IsNull(ctx context.Context) (bool, error) {
+	if r.isNull != nil {
+		return *r.isNull, nil
+	}
+	q := r.query.Select("isNull")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The binding name

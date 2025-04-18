@@ -1461,6 +1461,7 @@ export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
   private readonly _asString?: string = undefined
   private readonly _digest?: string = undefined
+  private readonly _isNull?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _typeName?: string = undefined
 
@@ -1472,6 +1473,7 @@ export class Binding extends BaseClient {
     _id?: BindingID,
     _asString?: string,
     _digest?: string,
+    _isNull?: boolean,
     _name?: string,
     _typeName?: string,
   ) {
@@ -1480,6 +1482,7 @@ export class Binding extends BaseClient {
     this._id = _id
     this._asString = _asString
     this._digest = _digest
+    this._isNull = _isNull
     this._name = _name
     this._typeName = _typeName
   }
@@ -1637,6 +1640,21 @@ export class Binding extends BaseClient {
     const ctx = this._ctx.select("digest")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns true if the binding is null
+   */
+  isNull = async (): Promise<boolean> => {
+    if (this._isNull) {
+      return this._isNull
+    }
+
+    const ctx = this._ctx.select("isNull")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
