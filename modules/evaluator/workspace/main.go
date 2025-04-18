@@ -111,11 +111,12 @@ func (*Workspace) defaultAttempts(provider string) int {
 }
 
 type AttemptsReport struct {
-	Report        string
-	SuccessRate   float64
-	TotalAttempts int
-	InputTokens   int
-	OutputTokens  int
+	Report            string
+	SuccessRate       float64
+	SucceededAttempts int
+	TotalAttempts     int
+	InputTokens       int
+	OutputTokens      int
 }
 
 // Run an evaluation and return its report.
@@ -146,8 +147,8 @@ func (w *Workspace) Evaluate(
 
 	reports := make([]string, attempts)
 	var inputTokens, outputTokens int32
+	var successCount int32
 	wg := new(sync.WaitGroup)
-	var successCount int
 	for attempt := range attempts {
 		wg.Add(1)
 		go func() (rerr error) {
@@ -161,16 +162,6 @@ func (w *Workspace) Evaluate(
 			defer stdio.Close()
 
 			eval := w.evaluate(model, attempt, evalFn)
-
-			succeeded, err := eval.Succeeded(ctx)
-			if err != nil {
-				return err
-			}
-			if succeeded {
-				successCount++
-			} else {
-				rerr = errors.New("evaluation failed")
-			}
 
 			evalReport, err := eval.Report(ctx)
 			if err != nil {
@@ -207,6 +198,15 @@ func (w *Workspace) Evaluate(
 
 			atomic.AddInt32(&inputTokens, int32(i))
 			atomic.AddInt32(&outputTokens, int32(o))
+
+			succeeded, err := eval.Succeeded(ctx)
+			if err != nil {
+				return err
+			}
+			if !succeeded {
+				return errors.New("evaluation failed")
+			}
+			atomic.AddInt32(&successCount, 1)
 			return nil
 		}()
 	}
@@ -228,11 +228,12 @@ func (w *Workspace) Evaluate(
 	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", successCount, attempts, successRate*100)
 
 	return &AttemptsReport{
-		Report:        finalReport.String(),
-		SuccessRate:   successRate,
-		TotalAttempts: attempts,
-		InputTokens:   int(atomic.LoadInt32(&inputTokens)),
-		OutputTokens:  int(atomic.LoadInt32(&outputTokens)),
+		Report:            finalReport.String(),
+		SuccessRate:       successRate,
+		SucceededAttempts: int(successCount),
+		TotalAttempts:     attempts,
+		InputTokens:       int(inputTokens),
+		OutputTokens:      int(outputTokens),
 	}, nil
 }
 
