@@ -8,52 +8,25 @@ import VideoPlayer from '../../src/components/VideoPlayer';
 
 # Interactive Shell
 
-Dagger Shell is the fastest way to interact with the Dagger API. Dagger Shell brings the power of workflows to fully typed API objects while maintaining a familiar Bash-like syntax. With autocomplete for core types, modules, and functions, it makes writing and exploring Dagger workflows smoother than ever.
+The Dagger CLI includes an interactive shell that translates the familiar Bash syntax to Dagger API requests.
+It's the simplest and fastest way to run Dagger workflows directly from the command-line.
 
-Dagger Shell enables you to compose workflows on the fly, by chaining together core Dagger primitives like `Container` and `Directory` with module-defined types and functions. It can be used inline, with scripts, or interactively. It is secure by design, as all commands execute in containers and you have complete control over what goes in or out from the host system.
+You can use it for builds, tests, ephemeral environments, deployments, or any other task you want to automate from the terminal.
+
+Dagger Shell commands run as sandboxed functions, accessing host resources (files, secrets, services) only when explicitly provided as arguments.
+This can make commands slightly more verbose, but also more repeatable, giving you confidence to iterate quickly without second-guessing.
 
 Here's an example of Dagger Shell in action:
 
-<Tabs groupId="shell">
-<TabItem value="System shell">
 ```shell
-dagger <<EOF
-container |
-  from alpine |
-  with-exec apk add curl |
-  with-exec -- curl -L https://dagger.io |
-  stdout
-EOF
-```
-</TabItem>
-<TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
 container | from alpine | with-exec apk add curl | with-exec -- curl -L https://dagger.io | stdout
 ```
-</TabItem>
-</Tabs>
 
 <VideoPlayer src="/img/current_docs/features/shell-curl.webm" alt="Dagger Shell" />
 
 Here's another, more complex example:
 
-<Tabs groupId="shell">
-<TabItem value="System shell">
 ```shell
-dagger <<EOF
-container |
-  from cgr.dev/chainguard/wolfi-base |
-  with-exec apk add go |
-  with-directory /src https://github.com/golang/example#master |
-  with-workdir /src/hello |
-  with-exec -- go build -o hello . |
-  file ./hello |
-  export ./hello-from-dagger
-EOF
-```
-</TabItem>
-<TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
 container |
   from cgr.dev/chainguard/wolfi-base |
   with-exec apk add go |
@@ -63,18 +36,29 @@ container |
   file ./hello |
   export ./hello-from-dagger
 ```
-</TabItem>
-</Tabs>
 
 <VideoPlayer src="/img/current_docs/features/shell-build.webm" alt="Shell build example" />
 
-:::note
-Dagger Shell allows you to execute Dagger Functions as native shell commands, using a Bash-compatible syntax. However, instead of calling a subprocess for execution, Dagger Shell directly interprets commands within the Dagger CLI and executes them in containers. This means that all your commands execute as API calls in a secure, sandboxed environment, rather than as processes with direct access to the host system.
-:::
+## Bash frontend, Dagger backend
 
-## Modes of execution
+Dagger Shell uses the Bash syntax as a frontend, but its behavior is quite different in the backend:
 
-Dagger Shell supports multiple ways to run commands:
+- Instead of executing UNIX commands, you execute Dagger Functions
+- Instead of passing text streams from command to command, you pass typed objects from function to function
+- Instead of available commands being the same everywhere in the pipeline, each command is executed in the context of the previous command's output object. For example, `foo | bar` really means `foo().bar()`
+- Instead of using the local host as an execution environment, you use containerized runtimes
+- Instead of being mixed with regular commands, shell builtins are prefixed with `.` (similar to SQLite)
+
+Besides these differences, all the features of the Bash *syntax* are available in Dagger Shell, including:
+
+- Shell variables: `container=$(container | from alpine)`
+- Shell functions: `container() { container | from alpine; }`
+- Job control: `frontend | test & backend | test & .wait`
+- Quoting: single quotes and double quotes have the same meaning as in bash
+
+## Input modes
+
+Dagger Shell supports multiple ways to input commands:
 
 <Tabs groupId="shell">
 <TabItem value="Inline execution">
@@ -84,13 +68,19 @@ dagger -c 'container | from alpine | terminal'
 </TabItem>
 <TabItem value="Standard input">
 ```shell title="First type 'dagger' for interactive mode."
-echo 'container | from alpine | terminal' | dagger
+dagger <<EOF
+container | from alpine | terminal
+EOF
 ```
 </TabItem>
 <TabItem value="Script">
 ```shell
-echo 'container | from alpine | with-exec cat /etc/os-release | stdout' > script.sh
-dagger script.sh
+#!/usr/bin/env dagger
+
+container |
+from alpine |
+with-exec cat /etc/os-release |
+stdout
 ```
 </TabItem>
 <TabItem value="Interactive REPL">
@@ -100,89 +90,73 @@ container | from alpine | terminal
 </TabItem>
 </Tabs>
 
-## Built-in help
-
-Dagger Shell provides extensive built-in help:
-
-```shell
-.help               # Shows available commands
-.help <module>      # Shows description, entrypoint arguments, and available functions
-.help <function>    # Shows description, arguments, and return type for function
-<function> | .help  # Shows details on the type returned by <function>, including available functions if an object
-```
-
-<VideoPlayer src="/img/current_docs/features/shell-help.webm" alt="Dagger Shell help" />
-
-## Navigation
-
-Dagger Shell presents a virtual filesystem to the user. When Dagger Shell starts, it sets the working directory to an initial context, which defaults to the enclosing Git repository or Dagger module. The user can navigate the virtual filesystem by changing the working directory.
-
-The initial context can be a local filesystem path or a remote filesystem. For example, `dagger -m github.com/dagger/dagger/docs@v0.13.0` changes the context to `github.com/dagger/dagger@v0.13.0` and the working directory to `/docs`.
-
-:::note
-To safeguard access to the host filesystem, the context root cannot be escaped.
-:::
-
 ## Modules
 
-If the working directory contains a Dagger module, that module is automatically loaded, and its Dagger Functions can be directly inspected (via `.help`) or invoked.
+Dagger Shell can load [Dagger Modules](/features/modules), inspect their types, and run their functions. You can do this by either *executing* modules as functions, or *entering* them as environments.
+
+### Modules as functions
+
+Dagger Shell accepts module addresses as executable functions. For example, the command `github.com/dagger/dagger/docs@v0.18.3 | .help` will:
+
+- Load the module `github.com/dagger/dagger/docs` at version `v0.18.3`
+- Execute the module's constructor function, which returns a new instance of the module's main type
+- Inspect the returned object and print available functions
+
+When executing a module, you are actually executing the module's constructor function. Therefore, the same rules apply:
+
+- Executing the module constructor does not change the shell's environment. When execution is complete, the current directory and available commands remain the same.
+- A module constructor may accept arguments. You can inspect them with `.help <MODULE>`, and pass them with `<MODULE> --foo --bar`
+- The returned object may be inspected with `<MODULE> | .help`
+- The returned object may be the start of a pipeline: `<MODULE> | foo | bar`
+- The returned object may be passed as an argument to another function: `foo --bar=$(<MODULE> | baz)`
+- The returned object may be saved to a variable: `foo=$(<MODULE>)`
+
+### Modules as environments
+
+Dagger Shell can enter a module, and use it as a new execution environment, using the builtin command `.cd`. You can think of it as a combination of `cd` and `ssh`.
+
+For example, the command `.cd github.com/dagger/dagger@docs@v0.18.3; .help` will:
+
+- Load the module `github.com/dagger/dagger/docs` at version `v0.18.3`
+- Execute the module's constructor function, which returns a new instance of the module's main type
+- Inspect the returned object's functions, and add them to the shell's execution context
+- Inspect the module's dependencies, and add their constructor to the shell's execution context
+- Change the filesystem location to the module's source directory
+- Execute `.help` in the new context
 
 <VideoPlayer src="/img/current_docs/features/shell-module.webm" alt="Dagger Shell module loading" />
 
-:::tip
-If only the core Dagger API is needed, the `-M` (`--no-mod`) flag can be provided. This reduces the startup time because the Dagger CLI doesn't try to find and load a current module.
-:::
+#### Constructor arguments
 
-## Paths
+`.cd` executes the module constructor without arguments. To pass arguments, you can execute the special command `.` from within the module. For example:
 
-Filesystem paths are handled differently depending on the initial context of the module loaded in Dagger Shell.
-
-- If the loaded module is local, or if no module is loaded, directories or files will come from the host system.
-- If the loaded module is remote, directories or files will come from that remote directory.
-  - In this latter case, to use files and directories from the host system, they must be referred to using the `host` function.
-
-Here's an example:
-
-<Tabs groupId="shell">
-<TabItem value="System shell">
-```shell
-dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 |
-  container |
-  with-file /README.md $(host | file ./README.md) |
-  with-exec cat /README.md |
-  stdout
-EOF
 ```
-</TabItem>
-<TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 |
-  container |
-  with-file /README.md $(host | file ./README.md) |
-  with-exec cat /README.md |
-  stdout
+# Enter the module
+.cd github.com/dagger/dagger/docs
+# Show arguments on the current module constructor
+.help .
+# Execute the constructor with arguments
+. --nginx-config=./nginx.conf | server | up
 ```
-</TabItem>
-</Tabs>
 
-<VideoPlayer src="/img/current_docs/features/shell-host-path.webm" alt="Dagger Shell host path" />
+If a module has a constructor with required arguments, at the moment it cannot be used as an environment.
 
 ## Variables
 
-Dagger Shell lets you save chained function calls in variables and reuse them as needed:
+Dagger Shell lets you save the result of any command to a variable, using the standard bash syntax.
+Values of any type can be saved to a variable, including objects.
 
 Here's an example:
 
 <Tabs groupId="shell">
 <TabItem value="System shell">
 ```shell
-dagger <<EOF
-repo=\$(git https://github.com/dagger/hello-dagger | head | tree)
-env=\$(container | from node:23 | with-directory /app \$repo | with-workdir /app)
-build=\$(\$env | with-exec npm install | with-exec npm run build | directory ./dist)
-container | from nginx | with-directory /usr/share/nginx/html \$build | terminal --cmd=/bin/bash
-EOF
+dagger <<'.'
+repo=$(git https://github.com/dagger/hello-dagger | head | tree)
+env=$(container | from node:23 | with-directory /app $repo | with-workdir /app)
+build=$($env | with-exec npm install | with-exec npm run build | directory ./dist)
+container | from nginx | with-directory /usr/share/nginx/html $build | terminal --cmd=/bin/bash
+.
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
@@ -196,15 +170,6 @@ container | from nginx | with-directory /usr/share/nginx/html $build | terminal 
 </Tabs>
 
 <VideoPlayer src="/img/current_docs/features/shell-variables.webm" alt="Dagger Shell variables" />
-
-## Differences from Bash
-
-While inspired by Bash, Dagger Shell introduces key differences:
-
-- API objects as first-class citizens: Instead of executing system processes, you work with structured API objects.
-- Pipe operator enhancements: Functions return objects, and piping allows direct access to object methods.
-- No host execution: Dagger Shell prevents running commands on the host for safety and consistency.
-- Hidden traditional Bash builtins: Dagger Shell prioritizes API interactions over system commands.
 
 ## Learn more
 
