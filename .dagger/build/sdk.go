@@ -74,18 +74,18 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	rootfs = rootfs.WithFile(
 		"dist/codegen",
 		base.
-			WithMountedDirectory("/dist", uv.Rootfs()).
+			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
 			WithMountedDirectory("/src", rootfs.Directory("codegen")).
 			WithWorkdir("/src").
 			WithExec([]string{
-				"/dist/uv", "export",
+				"uv", "export",
 				"--no-hashes",
 				"--no-editable",
 				"--package", "codegen",
 				"-o", "/requirements.txt",
 			}).
 			WithExec([]string{
-				"/dist/uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
+				"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
 				"--reproducible",
 				"--compressed",
 				"-e", "codegen.cli:main",

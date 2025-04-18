@@ -2,6 +2,8 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -19,23 +21,28 @@ const (
 	UvImageName   = "uv"
 )
 
+var baseImageNames = []string{BaseImageName, UvImageName}
+
 // Image represents a parsed docker image reference.
 type Image struct {
 	named reference.Named
 }
 
 // String returns the full reference.
-func (i *Image) String() string {
+func (i Image) String() string {
+	if i.named == nil {
+		return ""
+	}
 	return i.named.String()
 }
 
 // Familiar returns the familiar string representation for the given reference.
-func (i *Image) Familiar() string {
+func (i Image) Familiar() string {
 	return reference.FamiliarString(i.named)
 }
 
 // Tag returns the tag of the image reference.
-func (i *Image) Tag() string {
+func (i Image) Tag() string {
 	if tagged, ok := i.named.(reference.Tagged); ok {
 		return tagged.Tag()
 	}
@@ -43,48 +50,81 @@ func (i *Image) Tag() string {
 }
 
 // WithTag replaces the tag in the image reference.
-func (i *Image) WithTag(tag string) (*Image, error) {
+func (i Image) WithTag(tag string) (Image, error) {
+	if i.named == nil {
+		return Image{}, fmt.Errorf("empty image")
+	}
 	tagged, err := reference.WithTag(reference.TrimNamed(i.named), tag)
 	if err != nil {
-		return nil, err
+		return i, err
 	}
-	return &Image{named: tagged}, nil
+	return Image{named: tagged}, nil
 }
 
 // Equal returns true if the given image reference begins with the current one.
 //
 // Useful to reuse a digest if name and tag are the same.
-func (i *Image) Equal(full *Image) bool {
+func (i Image) Equal(full Image) bool {
 	return strings.HasPrefix(full.Familiar(), i.Familiar())
 }
 
-// parseImageRef parses a string into a named reference transforming a familiar
+func (i Image) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.String())
+}
+
+func (i *Image) UnmarshalJSON(data []byte) error {
+	var ref string
+	if err := json.Unmarshal(data, &ref); err != nil {
+		return err
+	}
+	if ref == "" {
+		i = &Image{}
+		return nil
+	}
+	img, err := NewImage(ref)
+	if err != nil {
+		return err
+	}
+	i.named = img.named
+	return nil
+}
+
+// NewImage parses a string into a named reference transforming a familiar
 // name from Docker UI to a fully qualified reference.
-func parseImageRef(ref string) (*Image, error) {
+func NewImage(ref string) (Image, error) {
 	named, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
-		return nil, err
+		return Image{}, err
 	}
-	return &Image{named: named}, nil
+	if named == nil {
+		return Image{}, fmt.Errorf("invalid image ref %q", ref)
+	}
+	return Image{named: named}, nil
 }
 
 // extractImages reads from the bundled Dockerfile to extract the default docker
 // image references.
-func extractImages() (map[string]*Image, error) {
+func extractImages() (map[string]Image, error) {
 	lines := strings.Split(dockerfile, "\n")
-	images := make(map[string]*Image)
+	images := make(map[string]Image)
 
 	for _, line := range lines {
 		if matches := fromLineRegex.FindStringSubmatch(strings.TrimSpace(line)); matches != nil {
 			ref := matches[1]
 			name := matches[2]
 
-			image, err := parseImageRef(ref)
+			image, err := NewImage(ref)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing %q image ref: %w", name, err)
 			}
 
 			images[name] = image
+		}
+	}
+
+	for _, name := range baseImageNames {
+		if _, found := images[name]; !found {
+			return nil, fmt.Errorf("unable to find %q image ref", name)
 		}
 	}
 

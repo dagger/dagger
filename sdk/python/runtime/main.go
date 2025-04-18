@@ -33,17 +33,16 @@ const (
 // use-uv = false
 // ```
 type UserConfig struct {
+	// BaseImage is the image reference to use for the base container.
+	BaseImage string `toml:"base-image"`
+
 	// UseUv is for choosing the faster uv tool instead of pip to install packages.
 	UseUv bool `toml:"use-uv"`
 
 	// UvVersion is the version of the uv tool to use.
 	//
 	// By default, it's pinned to a specific version in each dagger version.
-	// Can be useful to get a newer version to fix a bug or get a new feature.
 	UvVersion string `toml:"uv-version"`
-
-	// BaseImage is the image reference to use for the base container.
-	BaseImage string `toml:"base-image"`
 }
 
 func New(
@@ -56,12 +55,18 @@ func New(
 	if sdkSourceDir == nil {
 		return nil, fmt.Errorf("sdk source directory not provided")
 	}
+	d, err := NewDiscovery(UserConfig{
+		UseUv: true,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &PythonSdk{
-		Discovery: NewDiscovery(UserConfig{
-			UseUv: true,
-		}),
+		Discovery:    d,
 		SdkSourceDir: sdkSourceDir,
 		Container:    dag.Container(),
+		// TODO: remove the following when we no longer vendor every time
+		VendorPath: GenDir,
 	}, nil
 }
 
@@ -226,20 +231,14 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 //
 // Workdir is set to the module's source directory.
 func (m *PythonSdk) WithBase() (*PythonSdk, error) {
-	baseImage, err := m.Discovery.GetImage(BaseImageName)
-	if err != nil {
-		return nil, err
-	}
+	baseImage := m.getImage(BaseImageName)
 	baseAddr := baseImage.String()
 	baseTag := baseImage.Tag()
 
 	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
 	// Even if users don't use it, it's useful to create a faster virtual env
 	// and faster install for the codegen package.
-	uvImage, err := m.Discovery.GetImage(UvImageName)
-	if err != nil {
-		return nil, err
-	}
+	uvImage := m.getImage(UvImageName)
 	uvAddr := uvImage.String()
 	uvTag := uvImage.Tag()
 
@@ -280,12 +279,12 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 	return m, nil
 }
 
-func (m *PythonSdk) uvBins(uvImage *Image) dagger.WithContainerFunc {
-	bins := dag.Container().From(uvImage.String()).Rootfs()
+func (m *PythonSdk) uvBins(img Image) dagger.WithContainerFunc {
+	bins := dag.Container().From(img.String()).Rootfs()
 
 	// Default uv version and using bundled SDK files, so get the uv binaries
 	// from the engine instead of fetching from container.
-	if m.Discovery.SdkHasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultUvImage) {
+	if m.Discovery.SdkHasFile("dist/uv") && img.Equal(m.Discovery.DefaultImages[UvImageName]) {
 		bins = m.SdkSourceDir.Directory("dist")
 	}
 
@@ -383,6 +382,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 		}
 		genFile := m.Container.
 			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
+			WithWorkdir("/sdk").
 			WithMountedDirectory("", m.SdkSourceDir).
 			WithMountedFile(SchemaPath, introspectionJSON).
 			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
