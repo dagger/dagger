@@ -54,7 +54,7 @@
   status = 301
   
 [[redirects]]
-    from = "features/large-language-model/"
+    from = "/features/large-language-model/"
     to = "/features/llm"
     status = 301
 
