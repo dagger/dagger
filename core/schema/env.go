@@ -50,6 +50,8 @@ func (s environmentSchema) Install() {
 			Doc("The digest of the binding value"),
 		dagql.Func("asString", s.bindingAsString).
 			Doc("The binding's string value"),
+		dagql.Func("isNull", s.bindingIsNull).
+			Doc("Returns true if the binding is null"),
 	}.Install(s.srv)
 	hook := core.EnvHook{Server: s.srv}
 	envObjType, ok := s.srv.ObjectType(new(core.Env).Type().Name())
@@ -134,4 +136,8 @@ func (s environmentSchema) bindingAsString(ctx context.Context, b *core.Binding,
 		return dagql.NonNull[dagql.String](dagql.NewString(str)), nil
 	}
 	return dagql.Null[dagql.String](), nil
+}
+
+func (s environmentSchema) bindingIsNull(ctx context.Context, b *core.Binding, args struct{}) (bool, error) {
+	return b.Value == nil, nil
 }
