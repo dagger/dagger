@@ -13,9 +13,9 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_S3PJsL6gm4SCWukqKW6juTYD",
+        "id": "call_dZsWAcbVSOIaDD3mYRMInYaE",
         "function": {
-          "name": "selectTools",
+          "name": "load_tools",
           "arguments": {
             "tools": [
               "ToyWorkspace_read",
@@ -28,15 +28,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 868,
+      "input_tokens": 886,
       "output_tokens": 26,
-      "total_tokens": 894
+      "total_tokens": 912
     }
   },
   {
     "role": "user",
-    "content": "ok",
-    "tool_call_id": "call_S3PJsL6gm4SCWukqKW6juTYD",
+    "content": "{\"addedTools\":[{\"name\":\"ToyWorkspace_read\",\"description\":\"\\nRead a file\\n\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_write\",\"description\":\"\\nWrite a file\\n\\n\\nReturn type: ToyWorkspace!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"},\"content\":{\"type\":\"string\"}},\"required\":[\"ToyWorkspace\",\"content\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_build\",\"description\":\"\\nBuild the code at the current directory in the workspace\\n\\n\\nReturn type: Void\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}}]}",
+    "tool_call_id": "call_dZsWAcbVSOIaDD3mYRMInYaE",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -48,26 +48,26 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_AhkNTPUhD4BvEHScLMbH2S3T",
+        "id": "call_qvAbsbygTbp6CtD6jneMpWb6",
         "function": {
           "name": "ToyWorkspace_write",
           "arguments": {
-            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, world!\")\n}"
+            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, world!\")\n}\n"
           }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "input_tokens": 1049,
-      "output_tokens": 43,
-      "total_tokens": 1092
+      "input_tokens": 1304,
+      "output_tokens": 52,
+      "total_tokens": 1356
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"ToyWorkspace#2\"}",
-    "tool_call_id": "call_AhkNTPUhD4BvEHScLMbH2S3T",
+    "tool_call_id": "call_qvAbsbygTbp6CtD6jneMpWb6",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -79,7 +79,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_RnjtR80j2kKtdNZJvCtulUgZ",
+        "id": "call_NscFHpnvD9o5K7g2rC1n1qZn",
         "function": {
           "name": "ToyWorkspace_build",
           "arguments": {}
@@ -88,15 +88,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1177,
+      "input_tokens": 1435,
       "output_tokens": 21,
-      "total_tokens": 1198
+      "total_tokens": 1456
     }
   },
   {
     "role": "user",
     "content": "{\"result\":null}",
-    "tool_call_id": "call_RnjtR80j2kKtdNZJvCtulUgZ",
+    "tool_call_id": "call_NscFHpnvD9o5K7g2rC1n1qZn",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -108,7 +108,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_0iF80hQmUHT2QT7iOYHAw1M0",
+        "id": "call_BzspQtpu45UZGgwoiods8inm",
         "function": {
           "name": "save",
           "arguments": {
@@ -119,15 +119,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1203,
+      "input_tokens": 1461,
       "output_tokens": 17,
-      "total_tokens": 1220
+      "total_tokens": 1478
     }
   },
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_0iF80hQmUHT2QT7iOYHAw1M0",
+    "tool_call_id": "call_BzspQtpu45UZGgwoiods8inm",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
