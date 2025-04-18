@@ -106,6 +106,10 @@ type ExecutionMetadata struct {
 	// list of remote modules allowed to access LLM APIs
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
+
+	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
+	// to be at the specified version. Currently only used for integ testing.
+	ClientVersionOverride string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
