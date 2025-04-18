@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -313,7 +314,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 		if typeName == schema.Query.Name {
 			toolName = field.Name
 		} else {
-			toolName = typeDef.Name + "_" + field.Name
+			toolName = typeDef.Name + "_" + strcase.ToSnake(field.Name)
 		}
 		tools = append(tools, LLMTool{
 			Name:        toolName,
