@@ -53,6 +53,9 @@ spec:
       {{- if .Values.engine.priorityClassName }}
       priorityClassName: {{ .Values.engine.priorityClassName }}
       {{- end }}
+      {{- if .Values.engine.runtimeClassName }}
+      runtimeClassName: {{ .Values.engine.runtimeClassName }}
+      {{- end }}
       {{- with .Values.engine.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
