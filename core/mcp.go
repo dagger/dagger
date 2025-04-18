@@ -862,6 +862,14 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 	}
 
 	if len(tools) > 0 {
+		var toolNames []string
+		for _, tool := range tools {
+			if m.selectedTools[tool.Name] {
+				// already have it
+				continue
+			}
+			toolNames = append(toolNames, tool.Name)
+		}
 		builtins = append(builtins, LLMTool{
 			Name: "selectTools",
 			Description: (func() string {
@@ -894,8 +902,11 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				"type": "object",
 				"properties": map[string]any{
 					"tools": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+							"enum": toolNames,
+						},
 						"description": "The tools to select.",
 					},
 				},
