@@ -29,6 +29,9 @@ spec:
         name: {{ include "dagger.fullname" . }}-engine
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
+      {{- if .Values.engine.runtimeClassName }}
+      runtimeClassName: {{ .Values.engine.runtimeClassName }}
+      {{- end }}
       {{- with .Values.engine.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
