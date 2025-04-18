@@ -116,6 +116,9 @@ engine:
   ### Set priorityClassName to avoid eviction
   priorityClassName: ""
 
+  ### Set runtimeClassName to use a custom runtimeClass
+  runtimeClassName: ""
+
   readinessProbeSettings:
     initialDelaySeconds: 5
     timeoutSeconds: 14
