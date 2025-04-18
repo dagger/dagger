@@ -917,6 +917,10 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 					}
 				}
 				var selectedTools []LLMTool
+				var unknownTools []string
+				res := map[string]any{
+					"addedTools": selectedTools,
+				}
 				for tool := range toolCounts {
 					var foundTool LLMTool
 					for _, t := range tools {
@@ -926,14 +930,16 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 						}
 					}
 					if foundTool.Name == "" {
-						return "", fmt.Errorf("tool %q not found", tool)
+						unknownTools = append(unknownTools, tool)
+					} else {
+						m.selectedTools[tool] = true
+						selectedTools = append(selectedTools, foundTool)
 					}
-					m.selectedTools[tool] = true
-					selectedTools = append(selectedTools, foundTool)
 				}
-				return toolStructuredResponse(map[string]any{
-					"addedTools": selectedTools,
-				})
+				if len(unknownTools) > 0 {
+					res["unknownTools"] = unknownTools
+				}
+				return toolStructuredResponse(res)
 			}),
 		})
 	}
