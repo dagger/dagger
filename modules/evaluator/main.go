@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Evaluator struct {
@@ -92,6 +93,7 @@ func (result *ModelResult) Check() error {
 }
 
 type EvalsAcrossModels struct {
+	TraceID      string
 	ModelResults []ModelResult
 }
 
@@ -206,6 +208,8 @@ func (m *Evaluator) EvalsAcrossModels(
 		})
 	}
 	return &EvalsAcrossModels{
+		TraceID: trace.SpanContextFromContext(ctx).TraceID().String(),
+
 		ModelResults: p.Wait(),
 	}, nil
 }
