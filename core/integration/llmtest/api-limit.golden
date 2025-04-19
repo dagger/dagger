@@ -13,29 +13,26 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_evNqTAZq3h1Tkf13i8TsoScJ",
+        "id": "call_KAvmtzDqXe9UQbnf5qasMkWo",
         "function": {
-          "name": "load_tools",
+          "name": "think",
           "arguments": {
-            "tools": [
-              "Container_with_exec",
-              "Container_stdout"
-            ]
+            "thought": "To get the value of PATH in the Alpine Linux container, I need to execute the 'echo $PATH' command within the container and capture its output."
           }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "input_tokens": 1169,
-      "output_tokens": 21,
-      "total_tokens": 1190
+      "input_tokens": 992,
+      "output_tokens": 45,
+      "total_tokens": 1037
     }
   },
   {
     "role": "user",
-    "content": "{\"addedTools\":[{\"name\":\"Container_with_exec\",\"description\":\"Execute a command in the container, and return a new snapshot of the container state after execution.\\n\\nReturn type: Container!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"},\"args\":{\"description\":\"Command to execute. Must be valid exec() arguments, not a shell command. Example: [\\\"go\\\", \\\"run\\\", \\\"main.go\\\"].\\n\\nTo run a shell command, execute the shell and pass the shell command as argument. Example: [\\\"sh\\\", \\\"-c\\\", \\\"ls -l | grep foo\\\"]\\n\\nDefaults to the container's default arguments (see \\\"defaultArgs\\\" and \\\"withDefaultArgs\\\").\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"expand\":{\"default\":false,\"description\":\"Replace \\\"${VAR}\\\" or \\\"$VAR\\\" in the args according to the current environment variables defined in the container (e.g. \\\"/$VAR/foo\\\").\",\"type\":\"boolean\"},\"expect\":{\"default\":\"SUCCESS\",\"description\":\"Exit codes this command is allowed to exit with without error\",\"enum\":[\"SUCCESS\",\"FAILURE\",\"ANY\"],\"type\":\"string\"},\"experimentalPrivilegedNesting\":{\"default\":false,\"description\":\"Provides Dagger access to the executed command.\",\"type\":\"boolean\"},\"insecureRootCapabilities\":{\"default\":false,\"description\":\"Execute the command with all root capabilities. Like --privileged in Docker\\n\\nDANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.\",\"type\":\"boolean\"},\"noInit\":{\"default\":false,\"description\":\"Skip the automatic init process injected into containers by default.\\n\\nOnly use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.\",\"type\":\"boolean\"},\"redirectStderr\":{\"default\":\"\",\"description\":\"Like redirectStdout, but for standard error\",\"type\":\"string\"},\"redirectStdout\":{\"default\":\"\",\"description\":\"Redirect the command's standard output to a file in the container. Example: \\\"./stdout.txt\\\"\",\"type\":\"string\"},\"stdin\":{\"default\":\"\",\"description\":\"Content to write to the command's standard input. Example: \\\"Hello world\\\")\",\"type\":\"string\"},\"useEntrypoint\":{\"default\":false,\"description\":\"Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.\",\"type\":\"boolean\"}},\"required\":[\"Container\",\"args\"],\"type\":\"object\"}},{\"name\":\"Container_stdout\",\"description\":\"The buffered standard output stream of the last executed command\\n\\nReturns an error if no command was executed\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"}},\"required\":[\"Container\"],\"type\":\"object\"}}]}",
-    "tool_call_id": "call_evNqTAZq3h1Tkf13i8TsoScJ",
+    "content": "Finished thinking.",
+    "tool_call_id": "call_KAvmtzDqXe9UQbnf5qasMkWo",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -47,7 +44,41 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_1DdSYmCj8oMCLB7oCIYsEhPA",
+        "id": "call_SWxbGIF12nr72XQemoUkm1g7",
+        "function": {
+          "name": "select_tools",
+          "arguments": {
+            "tools": [
+              "Container_with_exec",
+              "Container_stdout"
+            ]
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 1046,
+      "output_tokens": 21,
+      "total_tokens": 1067
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"addedTools\":null}",
+    "tool_call_id": "call_SWxbGIF12nr72XQemoUkm1g7",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_mzmIjUDNxq6u9OIgGY3KhIXD",
         "function": {
           "name": "Container_with_exec",
           "arguments": {
@@ -62,15 +93,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2359,
+      "input_tokens": 1608,
       "output_tokens": 30,
-      "total_tokens": 2389
+      "total_tokens": 1638
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"Container#2\"}",
-    "tool_call_id": "call_1DdSYmCj8oMCLB7oCIYsEhPA",
+    "tool_call_id": "call_mzmIjUDNxq6u9OIgGY3KhIXD",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -82,7 +113,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_xkFSsPy7HBD6xbAva0gmSC8x",
+        "id": "call_95IZvM334SmTdV5WKej35AyL",
         "function": {
           "name": "Container_stdout",
           "arguments": {}
@@ -91,15 +122,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2433,
+      "input_tokens": 1682,
       "output_tokens": 17,
-      "total_tokens": 2450
+      "total_tokens": 1699
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\\n\"}",
-    "tool_call_id": "call_xkFSsPy7HBD6xbAva0gmSC8x",
+    "tool_call_id": "call_95IZvM334SmTdV5WKej35AyL",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -108,11 +139,11 @@
   },
   {
     "role": "assistant",
-    "content": "The value of PATH in this environment is:\n\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "content": "The value of PATH in the Alpine Linux container is:\n\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "token_usage": {
-      "input_tokens": 2477,
-      "output_tokens": 32,
-      "total_tokens": 2509
+      "input_tokens": 1726,
+      "output_tokens": 34,
+      "total_tokens": 1760
     }
   },
   {
@@ -129,7 +160,38 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_QszE3k9XuwndcKawwy9eQXFa",
+        "id": "call_2T9SjvFN4HijNj79I5qUzyc9",
+        "function": {
+          "name": "think",
+          "arguments": {
+            "thought": "To get the value of TERM, I will execute 'echo $TERM' in the Alpine container and capture its output, similar to how PATH was retrieved."
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 1773,
+      "output_tokens": 45,
+      "total_tokens": 1818
+    }
+  },
+  {
+    "role": "user",
+    "content": "Finished thinking.",
+    "tool_call_id": "call_2T9SjvFN4HijNj79I5qUzyc9",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_3iC5DFTWVwrIp8TdTfbErr7C",
         "function": {
           "name": "Container_with_exec",
           "arguments": {
@@ -144,15 +206,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2522,
+      "input_tokens": 1827,
       "output_tokens": 30,
-      "total_tokens": 2552
+      "total_tokens": 1857
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"Container#3\"}",
-    "tool_call_id": "call_QszE3k9XuwndcKawwy9eQXFa",
+    "tool_call_id": "call_3iC5DFTWVwrIp8TdTfbErr7C",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -164,7 +226,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_a4lRIo8nwc9MLTEtF1IMcR3t",
+        "id": "call_f7tB6o9aUZ0CgHdI9mj8LEc4",
         "function": {
           "name": "Container_stdout",
           "arguments": {}
@@ -173,15 +235,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2596,
+      "input_tokens": 1901,
       "output_tokens": 17,
-      "total_tokens": 2613
+      "total_tokens": 1918
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"\\n\"}",
-    "tool_call_id": "call_a4lRIo8nwc9MLTEtF1IMcR3t",
+    "tool_call_id": "call_f7tB6o9aUZ0CgHdI9mj8LEc4",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -190,11 +252,11 @@
   },
   {
     "role": "assistant",
-    "content": "The value of TERM in this environment is empty (it is not set by default).",
+    "content": "The value of TERM in the Alpine Linux container is empty (there is no value set for TERM).",
     "token_usage": {
-      "input_tokens": 2620,
-      "output_tokens": 19,
-      "total_tokens": 2639
+      "input_tokens": 1925,
+      "output_tokens": 22,
+      "total_tokens": 1947
     }
   }
 ]
