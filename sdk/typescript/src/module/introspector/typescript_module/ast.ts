@@ -32,6 +32,8 @@ export class AST {
     const program = ts.createProgram(files, {
       experimentalDecorators: true,
       moduleResolution: ts.ModuleResolutionKind.Node10,
+      strict: true,
+      skipLibCheck: true,
       target: ts.ScriptTarget.ES2022,
     })
     this.checker = program.getTypeChecker()
