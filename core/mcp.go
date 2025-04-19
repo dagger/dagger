@@ -1146,10 +1146,6 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 			schema["enum"] = ids
 		}
 		properties[typeName] = schema
-
-		// mark this required, as a hint. lots of models forget to pass it, so we
-		// tolerate that too, but our schema should suggest the right mental model.
-		required = append(required, typeName)
 	}
 	for _, arg := range field.Arguments {
 		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
