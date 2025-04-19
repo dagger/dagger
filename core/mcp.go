@@ -897,7 +897,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 					"tools": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "The tools to select.",
+						"description": "The array of tools to select.",
 					},
 				},
 				"required": []string{"tools"},
