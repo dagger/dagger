@@ -63,7 +63,6 @@ type ExecutionMetadata struct {
 
 	CallID              *call.ID
 	EncodedModuleID     string
-	ModuleName          string
 	EncodedFunctionCall json.RawMessage
 	CallerClientID      string
 

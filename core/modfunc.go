@@ -247,7 +247,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		ExecID:            identity.NewID(),
 		CachePerSession:   !opts.Cache,
 		Internal:          true,
-		ModuleName:        mod.NameField,
 		CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
