@@ -1,7 +1,7 @@
-Module
-======
+Modules
+=======
 
-Experimental Dagger modules support.
+Dagger Modules support.
 
 .. currentmodule:: dagger
 
@@ -12,6 +12,8 @@ Experimental Dagger modules support.
 .. autodecorator:: function
 
 .. autodecorator:: enum_type
+
+.. autodecorator:: interface
 
 .. autoclass:: DefaultPath
 

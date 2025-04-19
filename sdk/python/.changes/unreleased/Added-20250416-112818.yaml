@@ -1,0 +1,17 @@
+kind: Added
+body: |-
+    Support defining interfaces in Python modules
+
+    To define an interface, create a typing.Protocol class (PEP 0544), decorated with `@dagger.interface`:
+
+    ```python
+    @dagger.interface
+    class Duck(typing.Protocol):
+        @dagger.function
+        async def quack(self) -> str: ...
+    ```
+    Learn more about Dagger interfaces in https://docs.dagger.io/api/interfaces
+time: 2025-04-16T11:28:18.461825Z
+custom:
+    Author: helderco
+    PR: "8097"

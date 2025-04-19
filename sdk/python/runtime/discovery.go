@@ -26,9 +26,18 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
+	Sources struct {
+		Dagger UvSource `toml:"dagger-io"`
+	}
+
 	// Index is a list of uv index configurations.
 	// Ssee [uv v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23)
 	Index []UvIndexConfig `toml:"index"`
+}
+
+type UvSource struct {
+	Path     string `toml:"path"`
+	Editable bool   `toml:"editable"`
 }
 
 type UvIndexConfig struct {
@@ -42,6 +51,7 @@ type PyProject struct {
 	Project struct {
 		Name           string
 		RequiresPython string `toml:"requires-python"`
+		Dependencies   []string
 	}
 	Tool struct {
 		Uv     UvConfig
@@ -55,6 +65,12 @@ type Discovery struct {
 
 	// Images is a map of container image names to their addresses.
 	Images map[string]*Image
+
+	// DefaultUvImage is the default image address for uv.
+	DefaultUvImage *Image
+
+	// FileSet is a set of file names in the SDK source directory.
+	SdkFileSet map[string]struct{}
 
 	// FileSet is a set of file names from an initial Entries() call for quick lookups.
 	FileSet map[string]struct{}
@@ -75,9 +91,10 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	proj := PyProject{}
 	proj.Tool.Dagger = cfg
 	return &Discovery{
-		Config:  &proj,
-		FileSet: make(map[string]struct{}),
-		Files:   make(map[string]string),
+		Config:     &proj,
+		SdkFileSet: make(map[string]struct{}),
+		FileSet:    make(map[string]struct{}),
+		Files:      make(map[string]string),
 
 		// Custom config can only be disabled by an extension module.
 		EnableCustomConfig: true,
@@ -113,6 +130,12 @@ func (d *Discovery) UvConfig() *UvConfig {
 // HasFile returns true if the file exists in the original module's source directory.
 func (d *Discovery) HasFile(name string) bool {
 	_, ok := d.FileSet[name]
+	return ok
+}
+
+// SdkHasFile returns true if the file exists in the SDK's source directory.
+func (d *Discovery) SdkHasFile(name string) bool {
+	_, ok := d.SdkFileSet[name]
 	return ok
 }
 
@@ -193,12 +216,14 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 	eg.Go(func() error {
 		// m.Source() depends on SubPath
 		<-doneSubPath
+
 		entries, _ := m.Source().Entries(gctx)
 		d.mu.Lock()
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
 		d.mu.Unlock()
+
 		return nil
 	})
 
@@ -223,6 +248,21 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		m.MainObjectName = NormalizeObjectName(modName)
 		m.ProjectName = NormalizeProjectNameFromModule(modName)
 		m.PackageName = NormalizePackageName(m.ProjectName)
+		d.mu.Unlock()
+		return nil
+	})
+
+	eg.Go(func() error {
+		version, err := dag.Version(ctx)
+		if err != nil {
+			return fmt.Errorf("get engine version: %w", err)
+		}
+		// if it's a dev build, vendor the library
+		if strings.Contains(version, "-") {
+			return nil
+		}
+		d.mu.Lock()
+		m.EngineVersion = strings.TrimPrefix(version, "v")
 		d.mu.Unlock()
 		return nil
 	})
@@ -258,6 +298,12 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 
 // loadFiles loads the contents of certain module source files.
 func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
+	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
+	// adding sources (`dagger develop --sdk`).
+	if !m.IsInit && !d.HasFile("pyproject.toml") {
+		m.IsInit = true
+	}
+
 	// These paths should be in "exclude" in dagger.json.
 	// Let's remove them just in case, to avoid conflicts.
 	for _, exclude := range DirExcludes {
@@ -266,12 +312,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 				path.Join(m.SubPath, exclude),
 			)
 		}
-	}
-
-	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
-	// adding sources (`dagger develop --sdk`).
-	if !m.IsInit && !d.HasFile("pyproject.toml") {
-		m.IsInit = true
 	}
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -312,20 +352,32 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
+	eg.Go(func() error {
+		entries, _ := m.SdkSourceDir.Entries(gctx)
+		d.mu.Lock()
+		for _, entry := range entries {
+			d.SdkFileSet[entry] = struct{}{}
+		}
+		hasDist := d.SdkHasFile("dist/")
+		d.mu.Unlock()
+
+		if hasDist {
+			entries, _ = m.SdkSourceDir.Glob(gctx, "dist/*")
+			d.mu.Lock()
+			for _, entry := range entries {
+				d.SdkFileSet[entry] = struct{}{}
+			}
+			d.mu.Unlock()
+		}
+
+		return nil
+	})
+
 	return eg.Wait()
 }
 
 // loadConfig loads the pyproject.toml file.
 func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
-	contents, ok := d.Files["pyproject.toml"]
-	if !ok {
-		return nil
-	}
-
-	if err := toml.Unmarshal([]byte(contents), d.Config); err != nil {
-		return err
-	}
-
 	// Get image addresses from the Dockerfile to combine with possible
 	// overrides in pyproject.toml.
 	baseImage, err := d.GetImage(BaseImageName)
@@ -334,6 +386,21 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	}
 	uvImage, err := d.GetImage(UvImageName)
 	if err != nil {
+		return err
+	}
+	d.DefaultUvImage = uvImage
+
+	contents, exists := d.Files["pyproject.toml"]
+	if !exists {
+		// For now, always vendor when creating a new pyproject.toml file until
+		// we have a released version in PyPI that can use client bindings
+		// outside the library.
+		m.VendorPath = GenDir
+
+		return nil
+	}
+
+	if err := toml.Unmarshal([]byte(contents), d.Config); err != nil {
 		return err
 	}
 
@@ -368,6 +435,32 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	if d.Config.Project.Name != "" {
 		m.ProjectName = d.Config.Project.Name
 		m.PackageName = NormalizePackageName(m.ProjectName)
+	}
+
+	m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
+
+	switch {
+	case m.EngineVersion != "":
+		for _, dep := range d.Config.Project.Dependencies {
+			if strings.HasPrefix(strings.TrimSpace(dep), "dagger-io") {
+				if !strings.HasSuffix(dep, "=="+m.EngineVersion) {
+					m.AddNewFile("pyproject.toml", strings.Replace(
+						contents,
+						fmt.Sprintf("%q", dep),
+						fmt.Sprintf(`"dagger-io ==%s"`, m.EngineVersion),
+						1,
+					))
+				}
+				break
+			}
+		}
+
+	case m.EngineVersion == "" && m.VendorPath == "":
+		// Force vendoring on dev builds even if not already vendoring. This
+		// way users can opt-out when back to a stable build, but also not have
+		// to manually update pyproject.toml in order for it to work.
+		m.VendorPath = GenDir
+		m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
 	}
 
 	return nil
