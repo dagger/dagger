@@ -2194,16 +2194,12 @@ func (m *Test) Fn() string {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
 			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-			WithNewFile("fixedsrc/main.go", `package main
+			// we override the go sdk's dagger.gen.go with this custom one that tests functionality
+			// during init
+			WithNewFile("fixedsrc/dagger.gen.go", `package main
 import (
-	"encoding/json"
-	"fmt"
-	"os"
 	"context"
-	"errors"
-	"sort"
-
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"encoding/json"
 
 	"dagger/test/internal/dagger"
 )
@@ -2213,84 +2209,37 @@ var dag = dagger.Connect()
 func main() {
 	ctx := context.Background()
 
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func dispatch(ctx context.Context) (rerr error) {
 	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
 
-	result, err := invoke(ctx)
-	if err != nil {
-		var exec *dagger.ExecError
-		if errors.As(err, &exec) {
-			return exec.Unwrap()
-		}
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-
-func invoke(ctx context.Context) (any, error) {
 	// verify execs work
 	_, err := dag.Container().From("`+alpineImage+`").
 		WithExec([]string{"true"}).
 		Sync(ctx)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	// verify CurrentModule().Source() works
 	_, err = dag.CurrentModule().Source().File("main.go").Contents(ctx)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	return dag.Module().WithObject(dag.TypeDef().
+	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
+	result := dag.Module().WithObject(dag.TypeDef().
 		WithObject("Test").
 		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))),
-	), nil
-}
+	)
 
-func convertError(rerr error) *dagger.Error {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
 	}
-	return dag.Error(rerr.Error())
-}
 
+	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		panic(err)
+	}
+}
 `).
 			WithNewFile("main.go", `package main
 
@@ -2316,7 +2265,7 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 func (m *CoolSdk) generatedCtx(modSource *dagger.ModuleSource) *dagger.Directory {
 	ctxDir := modSource.WithSDK("go").AsModule().GeneratedContextDirectory()
 	ctxDir = modSource.ContextDirectory().WithDirectory("/", ctxDir)
-	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/main.go"))
+	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/dagger.gen.go"))
 	return ctxDir
 }
 `,
@@ -2329,10 +2278,11 @@ type Test struct {}
 `,
 			)
 
-		_, err := ctr.
+		out, err := ctr.
 			With(daggerFunctions()).
 			Stdout(ctx)
 		require.NoError(t, err)
+		require.Contains(t, out, `cool-fn`) // hardcoded typedef in fixedsrc/dagger.gen.go
 	})
 }
 
