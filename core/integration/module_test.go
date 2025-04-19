@@ -2183,6 +2183,149 @@ func (m *Test) Fn() string {
 			require.Equal(t, "true", strings.TrimSpace(out))
 		})
 	})
+
+	t.Run("exec during module initialization", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/coolsdk").
+			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+			WithNewFile("fixedsrc/main.go", `package main
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"context"
+	"errors"
+	"sort"
+
+	"github.com/vektah/gqlparser/v2/gqlerror"
+
+	"dagger/test/internal/dagger"
+)
+
+var dag = dagger.Connect()
+
+func main() {
+	ctx := context.Background()
+
+	if err := dispatch(ctx); err != nil {
+		os.Exit(2)
+	}
+}
+
+func dispatch(ctx context.Context) (rerr error) {
+	fnCall := dag.CurrentFunctionCall()
+	defer func() {
+		if rerr != nil {
+			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
+				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
+			}
+		}
+	}()
+
+	result, err := invoke(ctx)
+	if err != nil {
+		var exec *dagger.ExecError
+		if errors.As(err, &exec) {
+			return exec.Unwrap()
+		}
+		return err
+	}
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		return fmt.Errorf("store return value: %w", err)
+	}
+	return nil
+}
+
+func invoke(ctx context.Context) (any, error) {
+	_, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"true"}).
+		Sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Module().WithObject(dag.TypeDef().
+		WithObject("Test").
+		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))),
+	), nil
+}
+
+func convertError(rerr error) *dagger.Error {
+	var gqlErr *gqlerror.Error
+	if errors.As(rerr, &gqlErr) {
+		dagErr := dag.Error(gqlErr.Message)
+		if gqlErr.Extensions != nil {
+			keys := make([]string, 0, len(gqlErr.Extensions))
+			for k := range gqlErr.Extensions {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				val, err := json.Marshal(gqlErr.Extensions[k])
+				if err != nil {
+					fmt.Println("failed to marshal error value:", err)
+				}
+				dagErr = dagErr.WithValue(k, dagger.JSON(val))
+			}
+		}
+		return dagErr
+	}
+	return dag.Error(rerr.Error())
+}
+
+`).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/cool-sdk/internal/dagger"
+)
+
+type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
+	ctxDir := m.generatedCtx(modSource)
+	return dag.Container().From("`+golangImage+`").
+		WithMountedDirectory("/work", ctxDir).
+		WithWorkdir("/work").
+		WithExec([]string{"go", "build", "-o", "/runtime", "."}).
+		WithEntrypoint([]string{"/runtime"})
+}
+
+func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
+	return dag.GeneratedCode(m.generatedCtx(modSource))
+}
+
+func (m *CoolSdk) generatedCtx(modSource *dagger.ModuleSource) *dagger.Directory {
+	ctxDir := modSource.WithSDK("go").AsModule().GeneratedContextDirectory()
+	ctxDir = modSource.ContextDirectory().WithDirectory("/", ctxDir)
+	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/main.go"))
+	return ctxDir
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+			WithNewFile("main.go", `package main
+
+type Test struct {}
+`,
+			)
+
+		out, err := ctr.
+			With(daggerFunctions()).
+			Stdout(ctx)
+		require.NoError(t, err)
+		t.Log(out)
+	})
+
 }
 
 // TestHostError verifies the host api is not exposed to modules
