@@ -32,6 +32,8 @@ var (
 
 	dev    bool
 	isInit bool
+
+	bundle bool
 )
 
 var rootCmd = &cobra.Command{
@@ -61,6 +63,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
 	rootCmd.Flags().StringVar(&dependenciesJSONFilePath, "dependencies-json-file-path", "", "file containing the list of dependencies used by the module")
+	rootCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -77,6 +80,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		IsInit:     isInit,
 		ClientOnly: clientOnly,
 		Dev:        dev,
+		Bundle:     bundle,
 	}
 
 	if moduleName != "" {

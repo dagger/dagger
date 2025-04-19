@@ -6,6 +6,14 @@ import * as path from "path"
 const allowedExtensions = [".ts", ".mts"]
 
 function listTsFilesInModule(dir = import.meta.dirname): string[] {
+  let bundle = true
+
+  // For background compatibility, if there's a package.json in the sdk directory
+  // We should set the right path to the client.
+  if (fs.existsSync(`${import.meta.dirname}/../sdk/package.json`)) {
+    bundle = false
+  }
+
   const res = fs.readdirSync(dir).map((file) => {
     const filepath = path.join(dir, file)
 
@@ -25,7 +33,7 @@ function listTsFilesInModule(dir = import.meta.dirname): string[] {
 
   return res.reduce(
     (p, c) => [...c, ...p],
-    [`${import.meta.dirname}/../sdk/src/api/client.gen.ts`],
+    [`${import.meta.dirname}/../sdk/${bundle ? "" : "src/api/"}client.gen.ts`],
   )
 }
 
