@@ -207,8 +207,8 @@ defmodule Dagger.Binding do
   end
 
   @doc "Returns true if the binding is null"
-  @spec is_null(t()) :: {:ok, boolean()} | {:error, term()}
-  def is_null(%__MODULE__{} = binding) do
+  @spec null?(t()) :: {:ok, boolean()} | {:error, term()}
+  def null?(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("isNull")
 
