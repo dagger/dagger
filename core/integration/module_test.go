@@ -2184,9 +2184,12 @@ func (m *Test) Fn() string {
 		})
 	})
 
-	t.Run("exec during module initialization", func(ctx context.Context, t *testctx.T) {
+	t.Run("module initialization", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
+		// verify that SDKs can successfully:
+		// - create an exec during module initialization
+		// - call CurrentModule().Source
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
@@ -2245,9 +2248,16 @@ func dispatch(ctx context.Context) (rerr error) {
 }
 
 func invoke(ctx context.Context) (any, error) {
+	// verify execs work
 	_, err := dag.Container().From("`+alpineImage+`").
 		WithExec([]string{"true"}).
 		Sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// verify CurrentModule().Source() works
+	_, err = dag.CurrentModule().Source().File("main.go").Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2319,13 +2329,11 @@ type Test struct {}
 `,
 			)
 
-		out, err := ctr.
+		_, err := ctr.
 			With(daggerFunctions()).
 			Stdout(ctx)
 		require.NoError(t, err)
-		t.Log(out)
 	})
-
 }
 
 // TestHostError verifies the host api is not exposed to modules
