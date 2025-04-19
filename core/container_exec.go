@@ -109,6 +109,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
+		if mod.InstanceID == nil {
+			return nil, fmt.Errorf("current module has no instance ID")
+		}
 		// allow the exec to reach services scoped to the module that
 		// installed it
 		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains,

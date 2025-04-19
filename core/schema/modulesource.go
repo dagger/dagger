@@ -2113,6 +2113,24 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
 	// functions)
+
+	// temporary instance ID to support CurrentModule calls made during the function, it will
+	// be finalized at the end of `asModule`
+	tmpModInst, err := dagql.NewInstanceForID(s.dag, src, mod, dagql.CurrentID(ctx).WithDigest(
+		dagql.HashFrom(
+			srcInstContentHashed.ID().Digest().String(),
+			"modInit",
+		),
+	))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
+	}
+	_, err = s.dag.Cache.GetOrInitializeValue(ctx, tmpModInst.ID().Digest(), tmpModInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+	mod.InstanceID = tmpModInst.ID()
+
 	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
 	modName := src.Self.ModuleName
 	getModDefFn, err := core.NewModFunction(
