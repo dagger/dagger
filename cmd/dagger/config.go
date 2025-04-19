@@ -37,7 +37,11 @@ dagger config -m github.com/dagger/hello-dagger
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef)
 
 			sourceRootSubpath, err := modSrc.SourceRootSubpath(ctx)
 			if err != nil {
