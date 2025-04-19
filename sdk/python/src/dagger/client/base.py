@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING
+import typing
 
-if TYPE_CHECKING:
-    from ._core import Context
+from typing_extensions import override
+
+if typing.TYPE_CHECKING:
+    from dagger.client._core import Context
+    from dagger.client._session import BaseConnection
 
 
 class Scalar(str):
@@ -44,7 +47,7 @@ class Type(Object):
 
     __slots__ = ("_ctx",)
 
-    def __init__(self, ctx: Context) -> None:
+    def __init__(self, ctx: Context):
         self._ctx = ctx
 
     def _select(self, *args, **kwargs):
@@ -52,3 +55,27 @@ class Type(Object):
 
     def _select_multiple(self, **kwargs):
         return self._ctx.select_multiple(self._graphql_name(), **kwargs)
+
+
+class Root(Type):
+    """Top level query object type (a.k.a. Query)."""
+
+    @override
+    def __init__(self, ctx: Context | None = None):
+        if ctx is None:
+            from ._core import Context
+
+            ctx = Context()
+
+        super().__init__(ctx)
+
+    @classmethod
+    def from_connection(cls, conn: BaseConnection):
+        """Create a new instance of the root type, using the given connection."""
+        from ._core import Context
+
+        return cls(Context(conn))
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Query"

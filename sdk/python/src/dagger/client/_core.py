@@ -1,12 +1,12 @@
+import collections
+import dataclasses
 import functools
 import logging
 import typing
-from collections import deque
-from dataclasses import MISSING, dataclass, field, replace
+from dataclasses import MISSING
 from typing import (
     Any,
     TypeVar,
-    get_type_hints,
     overload,
 )
 
@@ -30,18 +30,19 @@ from dagger import (
     TransportError,
 )
 from dagger._exceptions import _query_error_from_transport
-from dagger.client.base import Type
+from dagger.client._session import BaseConnection, SharedConnection
+from dagger.client.base import Scalar, Type
 
 from ._guards import (
     IDType,
     is_id_type,
     is_id_type_sequence,
 )
-from ._session import BaseConnection, SharedConnection
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+Obj_T = TypeVar("Obj_T", bound=Type)
 
 
 class Arg(typing.NamedTuple):
@@ -50,12 +51,12 @@ class Arg(typing.NamedTuple):
     default: Any = MISSING
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class Field:
     type_name: str
     name: str
     args: dict[str, Any]
-    children: dict[str, "Field"] = field(default_factory=dict)
+    children: dict[str, "Field"] = dataclasses.field(default_factory=dict)
 
     def to_dsl(self, schema: DSLSchema) -> DSLField:
         type_: DSLType = getattr(schema, self.type_name)
@@ -67,20 +68,25 @@ class Field:
         return field_
 
     def add_child(self, child: "Field") -> "Field":
-        return replace(self, children={child.name: child})
+        return dataclasses.replace(self, children={child.name: child})
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class Context:
-    conn: BaseConnection
-    selections: deque[Field] = field(default_factory=deque)
-    converter: cattrs.Converter = field(init=False)
+    conn: BaseConnection = dataclasses.field(default_factory=SharedConnection)
+    selections: collections.deque[Field] = dataclasses.field(
+        default_factory=collections.deque
+    )
+    converter: cattrs.Converter = dataclasses.field(init=False)
 
     def __post_init__(self):
         self.converter = make_converter(self)
 
     def select(
-        self, type_name: str, field_name: str, args: typing.Sequence[Arg]
+        self,
+        type_name: str,
+        field_name: str,
+        args: typing.Sequence[Arg],
     ) -> "Context":
         args_ = self.converter.unstructure(
             {arg.name: arg.value for arg in args if arg.value is not arg.default}
@@ -88,21 +94,35 @@ class Context:
         field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
         selections.append(field_)
-        return replace(self, selections=selections)
+        return dataclasses.replace(self, selections=selections)
 
     def select_multiple(self, type_name: str, **fields: str) -> "Context":
         selections = self.selections.copy()
         parent = selections.pop()
         # When selecting multiple fields, set them as children of the last
         # selection to make `build` logic simpler.
-        field_ = replace(
+        field_ = dataclasses.replace(
             parent,
             # Using kwargs for alias names. This way the returned result
             # is already formatted with the python name we expect.
             children={k: Field(type_name, v, {}) for k, v in fields.items()},
         )
         selections.append(field_)
-        return replace(self, selections=selections)
+        return dataclasses.replace(self, selections=selections)
+
+    def root_select(
+        self,
+        field_name: str,
+        args: typing.Sequence[Arg],
+    ) -> "Context":
+        ctx = dataclasses.replace(self, selections=collections.deque())
+        return ctx.select("Query", field_name, args)
+
+    def select_id(self, type_name: str, id_value: Scalar) -> "Context":
+        return self.root_select(
+            f"load{type_name}FromID",
+            [Arg("id", id_value)],
+        )
 
     async def build(self) -> DSLSelectable:
         if not self.selections:
@@ -163,6 +183,31 @@ class Context:
             raise
 
         return self.get_value(result, return_type) if return_type else None
+
+    async def execute_object_list(
+        self,
+        element_type: type[Obj_T],
+    ) -> list[Obj_T]:
+        @dataclasses.dataclass
+        class Response:
+            id: Scalar
+
+        ctx = element_type(self)._select("id", [])  # noqa: SLF001
+        ids = await ctx.execute(list[Response])
+
+        return [element_type(ctx.select_id(element_type.__name__, v.id)) for v in ids]
+
+    async def execute_sync(
+        self,
+        obj: Obj_T,
+        field_name: str = "sync",
+        args: typing.Sequence[Arg] = (),
+    ) -> Obj_T:
+        ctx = obj._select(field_name, args)  # noqa: SLF001
+        id_ = await ctx.execute(Scalar)
+        cls = obj.__class__
+        ctx = self.select_id(cls.__name__, id_)
+        return cls(ctx)
 
     @overload
     def get_value(self, value: None, return_type: Any) -> None: ...
@@ -227,7 +272,7 @@ def make_converter(ctx: Context):
 
     def _struct(d: dict[str, Any], cls: type) -> Any:
         obj = cls(ctx)
-        hints = get_type_hints(cls)
+        hints = typing.get_type_hints(cls)
         for slot in getattr(cls, "__slots__", ()):
             t = hints.get(slot)
             if t and slot in d:
@@ -240,24 +285,3 @@ def make_converter(ctx: Context):
     )
 
     return conv
-
-
-class Root(Type):
-    """Top level query object type (a.k.a. Query)."""
-
-    @classmethod
-    def _graphql_name(cls) -> str:
-        return "Query"
-
-    @classmethod
-    def from_context(cls, ctx: Context):
-        return cls(replace(ctx, selections=deque()))
-
-    @classmethod
-    def from_connection(cls, conn: BaseConnection):
-        return cls(Context(conn))
-
-    def __init__(self, ctx: Context | None = None):
-        # Since SharedConnection is a singleton, we could make Context optional
-        # in every Type like here, but let's keep it only for the root object for now.
-        super().__init__(ctx or Context(SharedConnection()))
