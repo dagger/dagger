@@ -427,11 +427,13 @@ func renderFile(
 
 	formatted, err := format.Source(source)
 	if err != nil {
+		os.Stderr.Write(source)
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
 	}
 	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error formatting generated code: %w", err)
+		os.Stderr.Write(source)
+		return nil, fmt.Errorf("error processing imports in generated code: %w", err)
 	}
 	return formatted, nil
 }

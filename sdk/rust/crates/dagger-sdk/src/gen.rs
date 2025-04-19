@@ -1715,6 +1715,11 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The binding's string value
+    pub async fn as_string(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("asString");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The digest of the binding value
     pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
@@ -1723,6 +1728,11 @@ impl Binding {
     /// A unique identifier for this Binding.
     pub async fn id(&self) -> Result<BindingId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns true if the binding is null
+    pub async fn is_null(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isNull");
         query.execute(self.graphql_client.clone()).await
     }
     /// The binding name
@@ -3538,7 +3548,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem
+    /// Return a new container snapshot, with a file added to its filesystem with text content
     ///
     /// # Arguments
     ///
@@ -3555,7 +3565,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem
+    /// Return a new container snapshot, with a file added to its filesystem with text content
     ///
     /// # Arguments
     ///
@@ -5953,6 +5963,7 @@ impl Env {
     ///
     /// * `name` - The name of the binding
     /// * `value` - The string value to assign to the binding
+    /// * `description` - The description of the input
     pub fn with_string_input(
         &self,
         name: impl Into<String>,
@@ -5962,6 +5973,26 @@ impl Env {
         let mut query = self.selection.select("withStringInput");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update an input value of type string
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - The description of the output
+    pub fn with_string_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withStringOutput");
+        query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
             proc: self.proc.clone(),
@@ -7123,7 +7154,7 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// return the raw llm message history as json
-    pub async fn history_json(&self) -> Result<String, DaggerError> {
+    pub async fn history_json(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("historyJSON");
         query.execute(self.graphql_client.clone()).await
     }
@@ -7247,6 +7278,15 @@ impl Llm {
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Disable the default system prompt
+    pub fn without_default_system_prompt(&self) -> Llm {
+        let query = self.selection.select("withoutDefaultSystemPrompt");
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -8011,6 +8051,9 @@ pub struct QueryEnvOpts {
     /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     #[builder(setter(into, strip_option), default)]
     pub privileged: Option<bool>,
+    /// Allow new outputs to be declared and saved in the environment
+    #[builder(setter(into, strip_option), default)]
+    pub writable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
@@ -8199,6 +8242,9 @@ impl Query {
         let mut query = self.selection.select("env");
         if let Some(privileged) = opts.privileged {
             query = query.arg("privileged", privileged);
+        }
+        if let Some(writable) = opts.writable {
+            query = query.arg("writable", writable);
         }
         Env {
             proc: self.proc.clone(),

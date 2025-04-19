@@ -109,7 +109,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			return
 		}
 
-		if span.Passthrough ||
+		if (span.Passthrough && !opts.Debug) ||
 			// We inserted a stub for this span, but never received data for it. This
 			// can happen if we're within a larger trace - we'll allocate our parent,
 			// but not actually see it, so just move along to its children.
@@ -175,7 +175,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		if verbosity < ShowSpammyVerbosity {
 			// Process revealed spans before normal children
 			for _, revealed := range span.RevealedSpans.Order {
-				if revealed.Passthrough {
+				if revealed.Passthrough && !opts.Debug {
 					for _, child := range revealed.ChildSpans.Order {
 						// HACK: it's hacky to mutate the span snapshot directly here, the intent
 						// is for ShouldShow to pick it up.

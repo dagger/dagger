@@ -487,6 +487,27 @@ class Binding(Type):
         _ctx = self._select("asSocket", _args)
         return Socket(_ctx)
 
+    async def as_string(self) -> str | None:
+        """The binding's string value
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asString", _args)
+        return await _ctx.execute(str | None)
+
     async def digest(self) -> str:
         """The digest of the binding value
 
@@ -531,6 +552,25 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(BindingID)
+
+    async def is_null(self) -> bool:
+        """Returns true if the binding is null
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isNull", _args)
+        return await _ctx.execute(bool)
 
     async def name(self) -> str:
         """The binding name
@@ -2063,6 +2103,7 @@ class Container(Type):
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a file added to its filesystem
+        with text content
 
         Parameters
         ----------
@@ -4539,6 +4580,7 @@ class Env(Type):
         value:
             The string value to assign to the binding
         description:
+            The description of the input
         """
         _args = [
             Arg("name", name),
@@ -4546,6 +4588,23 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withStringInput", _args)
+        return Env(_ctx)
+
+    def with_string_output(self, name: str, description: str) -> Self:
+        """Create or update an input value of type string
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the output
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
@@ -6413,15 +6472,13 @@ class LLM(Type):
         _ctx = self._select("history", _args)
         return await _ctx.execute(list[str])
 
-    async def history_json(self) -> str:
+    async def history_json(self) -> JSON:
         """return the raw llm message history as json
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        JSON
+            An arbitrary JSON-encoded value.
 
         Raises
         ------
@@ -6432,7 +6489,7 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("historyJSON", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(JSON)
 
     async def id(self) -> LLMID:
         """A unique identifier for this LLM.
@@ -6635,6 +6692,12 @@ class LLM(Type):
             Arg("prompt", prompt),
         ]
         _ctx = self._select("withSystemPrompt", _args)
+        return LLM(_ctx)
+
+    def without_default_system_prompt(self) -> Self:
+        """Disable the default system prompt"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDefaultSystemPrompt", _args)
         return LLM(_ctx)
 
     def with_(self, cb: Callable[["LLM"], "LLM"]) -> "LLM":
@@ -8260,7 +8323,12 @@ class Client(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
-    def env(self, *, privileged: bool | None = False) -> Env:
+    def env(
+        self,
+        *,
+        privileged: bool | None = False,
+        writable: bool | None = False,
+    ) -> Env:
         """Initialize a new environment
 
         .. caution::
@@ -8271,9 +8339,12 @@ class Client(Root):
         privileged:
             Give the environment the same privileges as the caller: core API
             including host access, current module, and dependencies
+        writable:
+            Allow new outputs to be declared and saved in the environment
         """
         _args = [
             Arg("privileged", privileged, False),
+            Arg("writable", writable, False),
         ]
         _ctx = self._select("env", _args)
         return Env(_ctx)

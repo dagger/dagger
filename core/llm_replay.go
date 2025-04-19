@@ -16,7 +16,16 @@ func newHistoryReplay(messages []ModelMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
+func (*LLMReplayer) IsRetryable(err error) bool {
+	return false
+}
+
 func (c *LLMReplayer) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	if len(history) > 0 && history[0].Role == "system" && history[0].Content == defaultSystemPrompt {
+		// HACK: drop the default system prompt, since we don't return it in
+		// HistoryJSON
+		history = history[1:]
+	}
 	if len(history) >= len(c.messages) {
 		return nil, fmt.Errorf("no more messages")
 	}

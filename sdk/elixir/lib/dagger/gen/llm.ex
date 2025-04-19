@@ -57,7 +57,7 @@ defmodule Dagger.LLM do
   end
 
   @doc "return the raw llm message history as json"
-  @spec history_json(t()) :: {:ok, String.t()} | {:error, term()}
+  @spec history_json(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
   def history_json(%__MODULE__{} = llm) do
     query_builder =
       llm.query_builder |> QB.select("historyJSON")
@@ -205,6 +205,18 @@ defmodule Dagger.LLM do
   def with_system_prompt(%__MODULE__{} = llm, prompt) do
     query_builder =
       llm.query_builder |> QB.select("withSystemPrompt") |> QB.put_arg("prompt", prompt)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc "Disable the default system prompt"
+  @spec without_default_system_prompt(t()) :: Dagger.LLM.t()
+  def without_default_system_prompt(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withoutDefaultSystemPrompt")
 
     %Dagger.LLM{
       query_builder: query_builder,

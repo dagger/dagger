@@ -97,7 +97,9 @@ func (s *LLMSession) reset() {
 	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 		WithEnv(s.dag.Env(dagger.EnvOpts{
 			Privileged: true,
-		}))
+			Writable:   true,
+		})).
+		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`)
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -257,6 +259,50 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
 		return err
 	}
+	outputs, err := s.llm.Env().Outputs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, output := range outputs {
+		isNull, err := output.IsNull(ctx)
+		if err != nil {
+			return err
+		}
+		if isNull {
+			continue
+		}
+		name, err := output.Name(ctx)
+		if err != nil {
+			return err
+		}
+		typeName, err := output.TypeName(ctx)
+		if err != nil {
+			return err
+		}
+		if typeName == "String" {
+			str, err := output.AsString(ctx)
+			if err != nil {
+				return err
+			}
+			if err := s.assignShellString(ctx, name, str); err != nil {
+				return err
+			}
+			continue
+		}
+		var objID string
+		if err := s.dag.QueryBuilder().
+			Select("loadBindingFromID").
+			Arg("id", &output). // TODO: weird to have to use a pointer here
+			Select("as" + typeName).
+			Select("id").
+			Bind(&objID).
+			Execute(ctx); err != nil {
+			return err
+		}
+		if err := s.assignShell(ctx, name, &dynamicObject{objID, typeName}); err != nil {
+			return err
+		}
+	}
 	bnd := s.llm.BindResult(lastValueVar)
 	typeName, err := bnd.TypeName(ctx)
 	if err != nil {
@@ -302,6 +348,10 @@ func (s *LLMSession) assignShell(ctx context.Context, name string, idable dagqlO
 	if err != nil {
 		return err
 	}
+	return s.assignShellString(ctx, name, val)
+}
+
+func (s *LLMSession) assignShellString(ctx context.Context, name string, val string) error {
 	quot, err := syntax.Quote(val, syntax.LangBash)
 	if err != nil {
 		return err

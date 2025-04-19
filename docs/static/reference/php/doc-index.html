@@ -136,7 +136,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Service</p></dd><dt><a href="Dagger/Binding.html#method_asSocket">
 <abbr title="Dagger\Binding">Binding</abbr>::asSocket</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Socket</p></dd><dt><a href="Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
+                    <dd><p>Retrieve the binding value, as type Socket</p></dd><dt><a href="Dagger/Binding.html#method_asString">
+<abbr title="Dagger\Binding">Binding</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>The binding's string value</p></dd><dt><a href="Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client/AbstractInputObject.html"><abbr title="Dagger\Client\AbstractInputObject">AbstractInputObject</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
@@ -466,7 +468,9 @@
 <abbr title="Dagger\Attribute\Ignore">Ignore</abbr>#ignore</a> &mdash; <em>Property in class <a href="Dagger/Attribute/Ignore.html"><abbr title="Dagger\Attribute\Ignore">Ignore</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_id">
 <abbr title="Dagger\Binding">Binding</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Binding.</p></dd><dt><a href="Dagger/CacheVolume.html#method_id">
+                    <dd><p>A unique identifier for this Binding.</p></dd><dt><a href="Dagger/Binding.html#method_isNull">
+<abbr title="Dagger\Binding">Binding</abbr>::isNull</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Returns true if the binding is null</p></dd><dt><a href="Dagger/CacheVolume.html#method_id">
 <abbr title="Dagger\CacheVolume">CacheVolume</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a></em></dt>
                     <dd><p>A unique identifier for this CacheVolume.</p></dd><dt><a href="Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client/IdAble.html#method_id">
@@ -1028,7 +1032,7 @@
 <abbr title="Dagger\Container">Container</abbr>::withMountedTemp</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.</p></dd><dt><a href="Dagger/Container.html#method_withNewFile">
 <abbr title="Dagger\Container">Container</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Return a new container snapshot, with a file added to its filesystem</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
+                    <dd><p>Return a new container snapshot, with a file added to its filesystem with text content</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
 <abbr title="Dagger\Container">Container</abbr>::withRegistryAuth</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Attach credentials for future publishing to a registry. Use in combination with publish</p></dd><dt><a href="Dagger/Container.html#method_withRootfs">
 <abbr title="Dagger\Container">Container</abbr>::withRootfs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1154,6 +1158,8 @@
 <abbr title="Dagger\Env">Env</abbr>::withSocketOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Declare a desired Socket output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withStringInput">
 <abbr title="Dagger\Env">Env</abbr>::withStringInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update an input value of type string</p></dd><dt><a href="Dagger/Env.html#method_withStringOutput">
+<abbr title="Dagger\Env">Env</abbr>::withStringOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update an input value of type string</p></dd><dt><a href="Dagger/Error.html#method_withValue">
 <abbr title="Dagger\Error">Error</abbr>::withValue</a>() &mdash; <em>Method in class <a href="Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></em></dt>
                     <dd><p>Add a value to the error.</p></dd><dt><a href="Dagger/File.html#method_withName">
@@ -1184,7 +1190,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>append the contents of a file to the llm context</p></dd><dt><a href="Dagger/LLM.html#method_withSystemPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::withSystemPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Add a system prompt to the LLM's environment</p></dd><dt><a href="Dagger/Module.html#method_withDescription">
+                    <dd><p>Add a system prompt to the LLM's environment</p></dd><dt><a href="Dagger/LLM.html#method_withoutDefaultSystemPrompt">
+<abbr title="Dagger\LLM">LLM</abbr>::withoutDefaultSystemPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Disable the default system prompt</p></dd><dt><a href="Dagger/Module.html#method_withDescription">
 <abbr title="Dagger\Module">Module</abbr>::withDescription</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Retrieves the module with the given description</p></dd><dt><a href="Dagger/Module.html#method_withEnum">
 <abbr title="Dagger\Module">Module</abbr>::withEnum</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>

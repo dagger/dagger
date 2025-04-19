@@ -1,10 +1,10 @@
 package call
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/opencontainers/go-digest"
@@ -161,7 +161,7 @@ func (id *ID) Modules() []*Module {
 }
 
 func (id *ID) Path() string {
-	buf := new(bytes.Buffer)
+	buf := new(strings.Builder)
 	if id.receiver != nil {
 		fmt.Fprintf(buf, "%s.", id.receiver.Path())
 	}
@@ -170,7 +170,7 @@ func (id *ID) Path() string {
 }
 
 func (id *ID) DisplaySelf() string {
-	buf := new(bytes.Buffer)
+	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)
 	for ai, arg := range id.args {
 		if arg.isSensitive {

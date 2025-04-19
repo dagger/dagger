@@ -44,7 +44,7 @@ type Span struct {
 
 // Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.ChildCount = countChildren(span.ChildSpans)
+	span.ChildCount = countChildren(span.ChildSpans, FrontendOpts{})
 	span.Failed_, span.FailedReason_ = span.FailedReason()
 	span.Cached_, span.CachedReason_ = span.CachedReason()
 	span.Pending_, span.PendingReason_ = span.PendingReason()
@@ -88,11 +88,11 @@ func (span *Span) Base() *callpbv1.Call {
 	return nil
 }
 
-func countChildren(set SpanSet) int {
+func countChildren(set SpanSet, opts FrontendOpts) int {
 	count := 0
 	for _, child := range set.Order {
-		if child.Passthrough {
-			count += countChildren(child.ChildSpans)
+		if child.Passthrough && !opts.Debug {
+			count += countChildren(child.ChildSpans, opts)
 		} else {
 			count += 1
 		}

@@ -605,6 +605,12 @@
                         </td>
                         <td> Give the environment the same privileges as the caller: core API including host access, current module, and dependencies. Default = <code>false</code> </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>writable</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Allow new outputs to be declared and saved in the environment. Default = <code>false</code> </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -3810,12 +3816,20 @@
                         <td> Retrieve the binding value, as type Socket </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The binding's string value </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The digest of the binding value </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-id" href="#Binding-id"><code>id</code></a> - <span class="property-type"><a href="#definition-BindingID"><code>BindingID!</code></a></span> </td>
                         <td> A unique identifier for this Binding. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-isNull" href="#Binding-isNull"><code>isNull</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Returns true if the binding is null </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-name" href="#Binding-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -5021,7 +5035,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withNewFile" href="#Container-withNewFile"><code>withNewFile</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Return a new container snapshot, with a file added to its filesystem </td>
+                        <td> Return a new container snapshot, with a file added to its filesystem with text content </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7164,6 +7178,28 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The description of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withStringOutput" href="#Env-withStringOutput"><code>withStringOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update an input value of type string </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The description of the output</p>
                               </div>
                             </div>
                           </div>
@@ -8745,7 +8781,7 @@
                         <td> return the llm message history </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-historyJSON" href="#LLM-historyJSON"><code>historyJSON</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="LLM-historyJSON" href="#LLM-historyJSON"><code>historyJSON</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
                         <td> return the raw llm message history as json </td>
                       </tr>
                       <tr>
@@ -8863,6 +8899,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-withoutDefaultSystemPrompt" href="#LLM-withoutDefaultSystemPrompt"><code>withoutDefaultSystemPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Disable the default system prompt </td>
                       </tr>
                     </tbody>
                   </table>

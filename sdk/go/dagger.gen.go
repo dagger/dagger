@@ -276,8 +276,10 @@ type PortForward struct {
 type Binding struct {
 	query *querybuilder.Selection
 
+	asString *string
 	digest   *string
 	id       *BindingID
+	isNull   *bool
 	name     *string
 	typeName *string
 }
@@ -414,6 +416,19 @@ func (r *Binding) AsSocket() *Socket {
 	}
 }
 
+// The binding's string value
+func (r *Binding) AsString(ctx context.Context) (string, error) {
+	if r.asString != nil {
+		return *r.asString, nil
+	}
+	q := r.query.Select("asString")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The digest of the binding value
 func (r *Binding) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
@@ -465,6 +480,19 @@ func (r *Binding) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns true if the binding is null
+func (r *Binding) IsNull(ctx context.Context) (bool, error) {
+	if r.isNull != nil {
+		return *r.isNull, nil
+	}
+	q := r.query.Select("isNull")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The binding name
@@ -1909,7 +1937,7 @@ type ContainerWithNewFileOpts struct {
 	Expand bool
 }
 
-// Return a new container snapshot, with a file added to its filesystem
+// Return a new container snapshot, with a file added to its filesystem with text content
 func (r *Container) WithNewFile(path string, contents string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -4120,6 +4148,17 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 	}
 }
 
+// Create or update an input value of type string
+func (r *Env) WithStringOutput(name string, description string) *Env {
+	q := r.query.Select("withStringOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
@@ -6046,7 +6085,7 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 type LLM struct {
 	query *querybuilder.Selection
 
-	historyJSON *string
+	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
 	model       *string
@@ -6109,13 +6148,13 @@ func (r *LLM) History(ctx context.Context) ([]string, error) {
 }
 
 // return the raw llm message history as json
-func (r *LLM) HistoryJSON(ctx context.Context) (string, error) {
+func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	if r.historyJSON != nil {
 		return *r.historyJSON, nil
 	}
 	q := r.query.Select("historyJSON")
 
-	var response string
+	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6290,6 +6329,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Disable the default system prompt
+func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
+	q := r.query.Select("withoutDefaultSystemPrompt")
 
 	return &LLM{
 		query: q,
@@ -7928,6 +7976,8 @@ func (r *Client) Engine() *Engine {
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
 	Privileged bool
+	// Allow new outputs to be declared and saved in the environment
+	Writable bool
 }
 
 // Initialize a new environment
@@ -7939,6 +7989,10 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 		// `privileged` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Privileged) {
 			q = q.Arg("privileged", opts[i].Privileged)
+		}
+		// `writable` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Writable) {
+			q = q.Arg("writable", opts[i].Writable)
 		}
 	}
 
