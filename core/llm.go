@@ -699,7 +699,14 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 }
 
 func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
-	if len(llm.messages) == 0 {
+	var hasUserMessage bool
+	for _, message := range llm.messages {
+		if message.Role == "user" {
+			hasUserMessage = true
+			break
+		}
+	}
+	if !hasUserMessage {
 		// dirty but no messages, possibly just a state change, nothing to do
 		// until a prompt is given
 		return nil
