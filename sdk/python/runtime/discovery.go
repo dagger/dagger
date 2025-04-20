@@ -66,13 +66,8 @@ type Discovery struct {
 	// Images is a map of container image names to their addresses.
 	Images map[string]Image
 
+	// DefaultImages is a map of default container image addresses.
 	DefaultImages map[string]Image
-
-	// Default Python container image references
-	// DefaultBaseImage Image
-
-	// Default container image refereence to download uv
-	// DefaultUvImage Image
 
 	// FileSet is a set of file names in the SDK source directory.
 	SdkFileSet map[string]struct{}
@@ -223,14 +218,12 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 	eg.Go(func() error {
 		// m.Source() depends on SubPath
 		<-doneSubPath
-
 		entries, _ := m.Source().Entries(gctx)
 		d.mu.Lock()
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
 		d.mu.Unlock()
-
 		return nil
 	})
 
@@ -264,7 +257,7 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		if err != nil {
 			return fmt.Errorf("get engine version: %w", err)
 		}
-		// if it's a dev build, vendor the library
+		// if it's a custom build, vendor the library
 		if strings.Contains(version, "-") {
 			return nil
 		}
@@ -365,6 +358,7 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		for _, entry := range entries {
 			d.SdkFileSet[entry] = struct{}{}
 		}
+		// quick check to avoid an unnecessary request
 		hasDist := d.SdkHasFile("dist/")
 		d.mu.Unlock()
 

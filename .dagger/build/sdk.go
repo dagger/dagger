@@ -70,13 +70,12 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			Include: []string{"uv*"},
 		})
 
-	// bundle the codegen script and its dependencies into a single executable
-	rootfs = rootfs.WithFile(
-		"dist/codegen",
-		base.
-			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
-			WithMountedDirectory("/src", rootfs.Directory("codegen")).
+	rootfs = rootfs.
+		// bundle the codegen script and its dependencies into a single executable
+		WithFile("dist/rodegen", base.
 			WithWorkdir("/src").
+			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
+			WithMountedDirectory("", rootfs.Directory("codegen")).
 			WithExec([]string{
 				"uv", "export",
 				"--no-hashes",
@@ -93,7 +92,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 				"-r", "/requirements.txt",
 			}).
 			File("/codegen"),
-	)
+		)
 
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
