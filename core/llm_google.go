@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/googleapis/gax-go/v2/apierror"
@@ -187,7 +188,16 @@ func (c *GenaiClient) processStreamResponse(
 var _ LLMClient = (*GenaiClient)(nil)
 
 func (c *GenaiClient) IsRetryable(err error) bool {
-	return false
+	apiErr, ok := apierror.FromError(err)
+	if !ok {
+		return false
+	}
+	switch apiErr.HTTPCode() {
+	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
