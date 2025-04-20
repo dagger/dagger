@@ -13,38 +13,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_S7AznJm5K5SfoQXsZVsQy6d1",
-        "function": {
-          "name": "think",
-          "arguments": {
-            "thought": "My objective is to write a Hello World program in Go. The process:\n1. Write the main.go file with the Hello World program.\n2. Build the program to check for compilation errors.\n\nI will begin by selecting the write tool to create the appropriate file, then build to ensure it compiles."
-          }
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "input_tokens": 868,
-      "output_tokens": 79,
-      "total_tokens": 947
-    }
-  },
-  {
-    "role": "user",
-    "content": "Finished thinking.",
-    "tool_call_id": "call_S7AznJm5K5SfoQXsZVsQy6d1",
-    "token_usage": {
-      "input_tokens": 0,
-      "output_tokens": 0,
-      "total_tokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "call_sTyI0mst9pIXyOra1n1Lkf6n",
+        "id": "call_ZhoycPk2Ai9To17Lyhic4069",
         "function": {
           "name": "select_tools",
           "arguments": {
@@ -59,15 +28,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 956,
+      "input_tokens": 807,
       "output_tokens": 26,
-      "total_tokens": 982
+      "total_tokens": 833
     }
   },
   {
     "role": "user",
-    "content": "{\"addedTools\":null}",
-    "tool_call_id": "call_sTyI0mst9pIXyOra1n1Lkf6n",
+    "content": "{\"added_tools\":[{\"name\":\"ToyWorkspace_build\",\"description\":\"\\nBuild the code at the current directory in the workspace\\n\\n\\nReturn type: Void\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_read\",\"description\":\"\\nRead a file\\n\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_write\",\"description\":\"\\nWrite a file\\n\\n\\nReturn type: ToyWorkspace!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"},\"content\":{\"type\":\"string\"}},\"required\":[\"ToyWorkspace\",\"content\"],\"type\":\"object\"}}]}",
+    "tool_call_id": "call_ZhoycPk2Ai9To17Lyhic4069",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -79,7 +48,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_htagdfImkp9pBQZsuiOmkhCF",
+        "id": "call_yLnbafoWOhHiTCv5Wg4Sfqq1",
         "function": {
           "name": "ToyWorkspace_write",
           "arguments": {
@@ -90,15 +59,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1142,
-      "output_tokens": 44,
-      "total_tokens": 1186
+      "input_tokens": 1236,
+      "output_tokens": 52,
+      "total_tokens": 1288
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"ToyWorkspace#2\"}",
-    "tool_call_id": "call_htagdfImkp9pBQZsuiOmkhCF",
+    "tool_call_id": "call_yLnbafoWOhHiTCv5Wg4Sfqq1",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -110,7 +79,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_MDPBlleZutFAy7y4oxMAqcr5",
+        "id": "call_OEfPInz3gpwrgE8uokrqIhYM",
         "function": {
           "name": "ToyWorkspace_build",
           "arguments": {}
@@ -119,15 +88,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1273,
+      "input_tokens": 1367,
       "output_tokens": 21,
-      "total_tokens": 1294
+      "total_tokens": 1388
     }
   },
   {
     "role": "user",
     "content": "{\"result\":null}",
-    "tool_call_id": "call_MDPBlleZutFAy7y4oxMAqcr5",
+    "tool_call_id": "call_OEfPInz3gpwrgE8uokrqIhYM",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -139,7 +108,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_t7Pf4fK0UlTaKKKkMFSYwEda",
+        "id": "call_M5AlTUEnlfpc5skS2GUhJY00",
         "function": {
           "name": "save",
           "arguments": {
@@ -150,15 +119,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1299,
+      "input_tokens": 1393,
       "output_tokens": 17,
-      "total_tokens": 1316
+      "total_tokens": 1410
     }
   },
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_t7Pf4fK0UlTaKKKkMFSYwEda",
+    "tool_call_id": "call_M5AlTUEnlfpc5skS2GUhJY00",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,

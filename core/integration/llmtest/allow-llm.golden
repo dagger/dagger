@@ -10,42 +10,11 @@
   },
   {
     "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "call_puz0dFrLBN2IPHAEq50d4N4L",
-        "function": {
-          "name": "think",
-          "arguments": {
-            "thought": "The user wants to be greeted. I should generate a friendly greeting message addressed to the user."
-          }
-        },
-        "type": "function"
-      }
-    ],
+    "content": "Hello! How can I help you today?",
     "token_usage": {
-      "input_tokens": 763,
-      "output_tokens": 33,
-      "total_tokens": 796
-    }
-  },
-  {
-    "role": "user",
-    "content": "Finished thinking.",
-    "tool_call_id": "call_puz0dFrLBN2IPHAEq50d4N4L",
-    "token_usage": {
-      "input_tokens": 0,
-      "output_tokens": 0,
-      "total_tokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "Hello! I hope you're having a wonderful day. How can I assist you today?",
-    "token_usage": {
-      "input_tokens": 805,
-      "output_tokens": 19,
-      "total_tokens": 824
+      "input_tokens": 700,
+      "output_tokens": 11,
+      "total_tokens": 711
     }
   }
 ]

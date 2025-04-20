@@ -933,6 +933,9 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 						selectedTools = append(selectedTools, foundTool)
 					}
 				}
+				sort.Slice(selectedTools, func(i, j int) bool {
+					return selectedTools[i].Name < selectedTools[j].Name
+				})
 				res := map[string]any{
 					"added_tools": selectedTools,
 				}
