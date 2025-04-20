@@ -156,6 +156,7 @@ type SpanSnapshot struct {
 
 	CallDigest  string `json:",omitempty"`
 	CallPayload string `json:",omitempty"`
+	CallScope   string `json:",omitempty"`
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
@@ -177,6 +178,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.DagCallAttr:
 		snapshot.CallPayload = val.(string)
+
+	case telemetry.DagCallScopeAttr:
+		snapshot.CallScope = val.(string)
 
 	case telemetry.CachedAttr:
 		snapshot.Cached = val.(bool)

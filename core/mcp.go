@@ -973,7 +973,9 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				}
 				attrs = append(attrs,
 					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
-					attribute.String(telemetry.DagCallAttr, callAttr))
+					attribute.String(telemetry.DagCallAttr, callAttr),
+					attribute.String(telemetry.DagCallScopeAttr, "llm"),
+				)
 				return nil
 			}()
 			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,

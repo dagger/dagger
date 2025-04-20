@@ -7,6 +7,11 @@ const (
 	// represents.
 	DagCallAttr = "dagger.io/dag.call"
 
+	// The scope of the call.
+	//
+	// Examples: llm, graphql
+	DagCallScopeAttr = "dagger.io/dag.call.scope"
+
 	// The digest of the protobuf-marshalled Call that this span represents.
 	//
 	// This value acts as a node ID in the conceptual DAG.
