@@ -26,20 +26,24 @@ func (result *EvalsAcrossModels) CSV(
 	csvW := csv.NewWriter(buf)
 	if header {
 		csvW.Write([]string{
+			"trace_id",
 			"model",
+			"model_span_id",
 			"eval",
+			"eval_span_id",
 			"input_tokens",
 			"output_tokens",
 			"total_attempts",
 			"success_rate",
-			"trace_id",
 		})
 	}
 	for _, modelResult := range result.ModelResults {
 		for _, evalResult := range modelResult.EvalReports {
 			csvW.Write([]string{
 				modelResult.ModelName,
+				modelResult.SpanID,
 				evalResult.Name,
+				evalResult.SpanID,
 				fmt.Sprintf("%d", evalResult.InputTokens),
 				fmt.Sprintf("%d", evalResult.OutputTokens),
 				fmt.Sprintf("%d", evalResult.TotalAttempts),

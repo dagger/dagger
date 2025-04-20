@@ -59,11 +59,13 @@ func (m *Evaluator) env() *dagger.Env {
 
 type ModelResult struct {
 	ModelName   string
+	SpanID      string
 	EvalReports []EvalResult
 }
 
 type EvalResult struct {
 	Name          string
+	SpanID        string
 	Error         string
 	Report        string
 	SuccessRate   float64
@@ -151,6 +153,8 @@ func (m *Evaluator) EvalsAcrossModels(
 		p.Go(func() ModelResult {
 			report := ModelResult{
 				ModelName: model,
+				// track model span ID so we can link to it
+				SpanID: modelSpan.SpanContext().SpanID().String(),
 			}
 			defer telemetry.End(modelSpan, func() error {
 				return report.Check()
@@ -170,6 +174,8 @@ func (m *Evaluator) EvalsAcrossModels(
 						Model:    model,
 						Attempts: attempts,
 					})
+					// track eval span ID so we can link to it
+					result.SpanID = evalSpan.SpanContext().SpanID().String()
 					var err error
 					result.Report, err = attempts.Report(ctx)
 					if err != nil {
