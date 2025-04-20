@@ -93,6 +93,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 //nolint:gocyclo
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
 	var lastTree *TraceTree
+	var lastCall *TraceTree
 	seen := make(map[SpanID]bool)
 	var walk func(*Span, *TraceTree)
 	walk = func(span *Span, parent *TraceTree) {
@@ -145,19 +146,15 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			Parent: parent,
 		}
 		if lastTree != nil {
-			if base := span.Base(); base != nil {
-				tree.Chained = base.Digest == lastTree.Span.CallDigest ||
-					base.Digest == lastTree.Span.Output
-				lastTree.Final = !tree.Chained
-			}
-			if lastTree.Span.ActorEmoji != "" &&
-				// we're the same actor
-				lastTree.Span.ActorEmoji == span.ActorEmoji {
-				tree.Chained = true
-				lastTree.Final = !tree.Chained
-			}
 			if lastTree.Span.Call() != nil && span.Call() == nil {
 				lastTree.Final = true
+			}
+		}
+		if lastCall != nil {
+			if base := span.Base(); base != nil {
+				tree.Chained = base.Digest == lastCall.Span.CallDigest ||
+					base.Digest == lastCall.Span.Output
+				lastCall.Final = !tree.Chained
 			}
 		}
 		if span.IsRunningOrEffectsRunning() {
@@ -166,6 +163,9 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 
 		f(tree)
 		lastTree = tree
+		if tree.Span.CallDigest != "" {
+			lastCall = tree
+		}
 
 		verbosity := opts.Verbosity
 		if v, ok := opts.SpanVerbosity[span.ID]; ok {
@@ -203,6 +203,9 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			lastTree.Final = true
 		}
 		lastTree = tree
+		if tree.Span.CallDigest != "" {
+			lastCall = tree
+		}
 	}
 	for span := range spans {
 		walk(span, nil)
