@@ -73,6 +73,8 @@ ignore = [
     # Too many arguments to function call.
     "PLR0913",
 ]
+# Same as above, for dev module
+"src/dagger_gen.py" = ["A", "D", "E501", "SLF001", "PLR0913"]
 # Ignore built-in shadowing in test mocks.
 "./tests/client/test_inputs.py" = ["A", "ERA001"]
 "./tests/*.py" = [

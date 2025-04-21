@@ -136,7 +136,7 @@ class PythonSdkDev:
             Doc("Result of the introspection query"),
         ],
     ) -> dagger.Directory:
-        """Generate the client bindings for the API."""
+        """Generate the client bindings for the core API."""
         path = "src/dagger/client/gen.py"
         self.container = self.container.with_file(
             path,

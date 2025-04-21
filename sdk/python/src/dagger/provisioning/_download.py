@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import functools
 import hashlib
 import io
@@ -11,7 +12,6 @@ import tempfile
 import typing
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import IO, ClassVar
 
@@ -20,10 +20,10 @@ import anyio.to_thread
 import httpx
 import platformdirs
 
-import dagger
+from dagger._engine._version import CLI_VERSION
 
-from ._version import CLI_VERSION
-from .progress import Progress
+from ._exceptions import DownloadError
+from ._progress import Progress
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class StreamReader(IO[bytes]):
         return self.hasher.hexdigest()
 
 
-@dataclass
+@dataclasses.dataclass
 class Downloader:
     """Download the dagger CLI binary."""
 
@@ -123,8 +123,8 @@ class Downloader:
     CLI_BIN_PREFIX: ClassVar[str] = "dagger-"
 
     version: str = CLI_VERSION
-    platform: Platform = field(default_factory=get_platform, kw_only=True)
-    progress: Progress = field(default_factory=Progress, kw_only=True)
+    platform: Platform = dataclasses.field(default_factory=get_platform, kw_only=True)
+    progress: Progress = dataclasses.field(default_factory=Progress, kw_only=True)
 
     def _create_url(self, file_name: str):
         return httpx.URL(
@@ -193,21 +193,21 @@ class Downloader:
             expected_hash = self.expected_checksum()
         except httpx.HTTPError as e:
             msg = f"Failed to download checksums from {self.checksum_url}: {e}"
-            raise dagger.DownloadError(msg) from e
+            raise DownloadError(msg) from e
 
         with TempFile(f"temp-{self.CLI_BIN_PREFIX}", self.cache_dir) as tmp_bin:
             try:
                 actual_hash = self.extract_cli_archive(tmp_bin)
             except httpx.HTTPError as e:
                 msg = f"Failed to download archive from {self.archive_url}: {e}"
-                raise dagger.DownloadError(msg) from e
+                raise DownloadError(msg) from e
 
             if actual_hash != expected_hash:
                 msg = (
                     f"Downloaded CLI binary checksum ({actual_hash}) "
                     f"does not match expected checksum ({expected_hash})"
                 )
-                raise dagger.DownloadError(msg)
+                raise DownloadError(msg)
 
         tmp_bin_path = Path(tmp_bin.name)
         tmp_bin_path.chmod(0o700)
@@ -222,7 +222,7 @@ class Downloader:
                 if filename == archive_name:
                     return checksum
         msg = "Could not find checksum for archive"
-        raise dagger.DownloadError(msg)
+        raise DownloadError(msg)
 
     def extract_cli_archive(self, dest: IO[bytes]) -> str:
         """
@@ -260,7 +260,7 @@ class Downloader:
                     break
             else:
                 msg = "There is no item named 'dagger' in the archive"
-                raise dagger.DownloadError(msg)
+                raise DownloadError(msg)
 
     @contextlib.contextmanager
     def _extract_from_zip(self, reader: StreamReader) -> Iterator[IO[bytes]]:
@@ -271,4 +271,4 @@ class Downloader:
                     yield file
             except KeyError as e:
                 msg = "There is no item named 'dagger.exe' in the archive"
-                raise dagger.DownloadError(msg) from e
+                raise DownloadError(msg) from e

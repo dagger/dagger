@@ -15,7 +15,8 @@ const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 	GenDir                = "sdk"
-	GenPath               = "src/dagger/client/gen.py"
+	SDKGenPath            = "src/dagger/client/gen.py"
+	UserGenPath           = "src/dagger_gen.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
 	ProjectCfg            = "pyproject.toml"
@@ -32,35 +33,40 @@ const (
 // use-uv = false
 // ```
 type UserConfig struct {
+	// BaseImage is the image reference to use for the base container.
+	BaseImage string `toml:"base-image"`
+
 	// UseUv is for choosing the faster uv tool instead of pip to install packages.
 	UseUv bool `toml:"use-uv"`
 
 	// UvVersion is the version of the uv tool to use.
 	//
 	// By default, it's pinned to a specific version in each dagger version.
-	// Can be useful to get a newer version to fix a bug or get a new feature.
 	UvVersion string `toml:"uv-version"`
-
-	// BaseImage is the image reference to use for the base container.
-	BaseImage string `toml:"base-image"`
 }
 
 func New(
 	// Directory with the Python SDK source code.
 	// +defaultPath=".."
-	// +ignore=["**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md"]
+	// +ignore=["**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md", "!dist/*"]
 	sdkSourceDir *dagger.Directory,
 ) (*PythonSdk, error) {
 	// Shouldn't happen due to defaultPath, but just in case.
 	if sdkSourceDir == nil {
 		return nil, fmt.Errorf("sdk source directory not provided")
 	}
+	d, err := NewDiscovery(UserConfig{
+		UseUv: true,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &PythonSdk{
-		Discovery: NewDiscovery(UserConfig{
-			UseUv: true,
-		}),
-		SdkSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
+		Discovery:    d,
+		SdkSourceDir: sdkSourceDir,
 		Container:    dag.Container(),
+		// TODO: remove the following when we no longer vendor every time
+		VendorPath: GenDir,
 	}, nil
 }
 
@@ -100,6 +106,12 @@ type PythonSdk struct {
 	// The source needed to load and run a module
 	ModSource *dagger.ModuleSource
 
+	// The current engine version
+	//
+	// Used to pin the same client library version. If a dev build the SDK
+	// should be vendored.
+	EngineVersion string
+
 	// ContextDir is a copy of the context directory from the module source
 	//
 	// We add files to this directory, always joining paths with the source's
@@ -119,6 +131,9 @@ type PythonSdk struct {
 
 	// Relative path from the context directory to the source directory
 	SubPath string
+
+	// Relative path to vendor client library into
+	VendorPath string
 
 	// True if the module is new and we need to create files from the template
 	//
@@ -140,13 +155,21 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
+
+	ignorePaths := []string{".venv", "**/__pycache__"}
+	genPaths := []string{
+		// TODO: uncomment when we no longer vendor every time
+		// UserGenPath,
+	}
+
+	if m.VendorPath != "" {
+		ignorePaths = append(ignorePaths, m.VendorPath)
+		genPaths = []string{m.VendorPath + "/**"}
+	}
+
 	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
-		WithVCSGeneratedPaths(
-			[]string{GenDir + "/**"},
-		).
-		WithVCSIgnoredPaths(
-			[]string{GenDir, ".venv", "**/__pycache__"},
-		), nil
+		WithVCSGeneratedPaths(genPaths).
+		WithVCSIgnoredPaths(ignorePaths), nil
 }
 
 // Container for executing the Python module runtime
@@ -166,6 +189,7 @@ func (m *PythonSdk) ModuleRuntime(
 func (m *PythonSdk) Common(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
+	// +optional
 	introspectionJSON *dagger.File,
 ) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
@@ -207,56 +231,28 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 //
 // Workdir is set to the module's source directory.
 func (m *PythonSdk) WithBase() (*PythonSdk, error) {
-	baseImage, err := m.Discovery.GetImage(BaseImageName)
-	if err != nil {
-		return nil, err
-	}
-	baseAddr := baseImage.String()
-	baseTag := baseImage.Tag()
-
-	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
-	// Even if users don't use it, it's useful to create a faster virtual env
-	// and faster install for the codegen package.
-	uvImage, err := m.Discovery.GetImage(UvImageName)
-	if err != nil {
-		return nil, err
-	}
-	uvAddr := uvImage.String()
-	uvTag := uvImage.Tag()
+	baseAddr := m.getImage(BaseImageName).String()
 
 	// NB: Adding env vars with container images that were pulled allows
 	// modules to reuse them for performance benefits.
 	m.Container = dag.Container().
 		// Base Python
 		From(baseAddr).
+		// This var is informational only, in case it's useful in a module.
+		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
 		WithEnvVariable("PYTHONUNBUFFERED", "1").
-		// Pip
 		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1").
 		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
-		WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpython-pip-"+baseTag)).
 		// Uv
-		WithDirectory(
-			"/usr/local/bin",
-			dag.Container().From(uvAddr).Rootfs(),
-			dagger.ContainerWithDirectoryOpts{
-				Include: []string{"uv*"},
-			},
-		).
-		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
+		With(m.uv()).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
 		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
-		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
-		WithWorkdir(path.Join(m.ContextDirPath, m.SubPath)).
-		WithEnvVariable("DAGGER_MODULE", m.ModName).
-		WithEnvVariable("DAGGER_DEFAULT_PYTHON_PACKAGE", m.PackageName).
-		WithEnvVariable("DAGGER_MAIN_OBJECT", m.MainObjectName).
-		// These are informational only, to be leveraged by the target module
-		// if needed.
-		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
-		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
-		WithEnvVariable("DAGGER_UV_VERSION", uvTag)
+		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv")
 
+	if !m.UseUv() {
+		m.Container = m.Container.WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpython-pip"))
+	}
 	if m.IndexURL() != "" {
 		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexURL())
 	}
@@ -265,6 +261,31 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 	}
 
 	return m, nil
+}
+
+func (m *PythonSdk) uv() dagger.WithContainerFunc {
+	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
+	// Even if users don't use it, it's useful to create a faster virtual env
+	// and faster install for the codegen package.
+	uvImage := m.getImage(UvImageName)
+
+	bins := dag.Container().From(uvImage.String()).Rootfs()
+
+	return func(ctr *dagger.Container) *dagger.Container {
+		// Use bundled uv binaries if version wasn't overridden.
+		if m.Discovery.SdkHasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultImages[UvImageName]) {
+			bins = m.SdkSourceDir.Directory("dist")
+		}
+
+		return ctr.
+			WithDirectory("/usr/local/bin", bins, dagger.ContainerWithDirectoryOpts{
+				Include: []string{"uv*"}, // uv and uvx
+			}).
+			WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
+			// These are informational only, to be leveraged by the target module if needed.
+			WithEnvVariable("DAGGER_UV_IMAGE", uvImage.String()).
+			WithEnvVariable("DAGGER_UV_VERSION", uvImage.Tag())
+	}
 }
 
 // Add the template files to skaffold a new module
@@ -304,10 +325,13 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		// existence of this file will set d.IsInit = true, thus skipping
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
-			m.AddNewFile(
-				ProjectCfg,
-				strings.ReplaceAll(tplToml, "main", m.ProjectName),
-			)
+			projCfg := strings.ReplaceAll(tplToml, "main", m.ProjectName)
+
+			if m.EngineVersion != "" {
+				projCfg = strings.Replace(projCfg, `"dagger-io"`, `"dagger-io ==`+m.EngineVersion+`"`, 1)
+			}
+
+			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
 			m.AddNewFile(
@@ -329,21 +353,51 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
-	m.AddDirectory(GenDir, m.SdkSourceDir)
+	if m.VendorPath != "" {
+		src := m.SdkSourceDir
+		// If not vendoring we don't care to remove this
+		if m.Discovery.SdkHasFile("dist/") {
+			src = src.WithoutDirectory("dist")
+		}
+		m.AddDirectory(m.VendorPath, src)
+	}
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
-		genFile := m.Container.
-			WithMountedDirectory("", m.SdkSourceDir).
-			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec([]string{
+		ctr := m.Container
+		cmd := []string{"codegen"}
+
+		// When not using the bundled codegen executable we can revert to executing directly
+		if m.Discovery.SdkHasFile("dist/codegen") {
+			ctr = ctr.
+				WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
+				WithMountedFile("/usr/local/bin/codegen", m.SdkSourceDir.File("dist/codegen"))
+		} else {
+			ctr = ctr.
+				WithWorkdir("/sdk").
+				WithMountedDirectory("", m.SdkSourceDir)
+			cmd = []string{
 				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
-			}).
+				"python", "-m", "codegen",
+			}
+		}
+
+		genFile := ctr.
+			// mounted schema as late as possible because it varies more often
+			WithMountedFile(SchemaPath, introspectionJSON).
+			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
-		m.AddFile(path.Join(GenDir, GenPath), genFile)
+		genPath := UserGenPath
+
+		// For now, patch vendored client library with generated bindings.
+		// TODO: Always generate outside library, even if vendored.
+		if m.VendorPath != "" {
+			genPath = path.Join(m.VendorPath, SDKGenPath)
+		}
+
+		m.AddFile(genPath, genFile)
 	}
 
 	return m
@@ -351,7 +405,18 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 
 // Add the module's source code
 func (m *PythonSdk) WithSource() *PythonSdk {
-	m.Container = m.Container.WithMountedDirectory(m.ContextDirPath, m.ContextDir)
+	m.Container = m.Container.
+		WithWorkdir(path.Join(m.ContextDirPath, m.SubPath)).
+		WithMountedDirectory(m.ContextDirPath, m.ContextDir).
+		// These are added as late as possible  to avoid cache invalidation
+		// between different modules. It may be used by the runtime entrypoint
+		// so only needed in ModuleRuntime but added here so that extension
+		// modules get it for free since they need to reimplement ModuleRuntime.
+		// It's ok since the previous layer is already dependent on the target
+		// module's sources.
+		WithEnvVariable("DAGGER_MODULE", m.ModName).
+		WithEnvVariable("DAGGER_DEFAULT_PYTHON_PACKAGE", m.PackageName).
+		WithEnvVariable("DAGGER_MAIN_OBJECT", m.MainObjectName)
 	return m
 }
 
@@ -374,12 +439,17 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 	case d.HasFile(PipCompileLock) && !m.IsInit:
 		// Support requirements.lock (legacy).
-		ctr = ctr.WithExec([]string{
+		args := []string{
 			"uv", "pip", "compile", "-q", "--universal",
 			"-o", PipCompileLock,
-			path.Join(GenDir, ProjectCfg),
 			ProjectCfg,
-		})
+		}
+
+		if m.VendorPath != "" {
+			args = append(args, path.Join(m.VendorPath, ProjectCfg))
+		}
+
+		ctr = ctr.WithExec(args)
 	}
 
 	m.Container = ctr

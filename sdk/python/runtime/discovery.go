@@ -26,9 +26,18 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
+	Sources struct {
+		Dagger UvSource `toml:"dagger-io"`
+	} `toml:"sources"`
+
 	// Index is a list of uv index configurations.
 	// Ssee [uv v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23)
 	Index []UvIndexConfig `toml:"index"`
+}
+
+type UvSource struct {
+	Path     string `toml:"path"`
+	Editable bool   `toml:"editable"`
 }
 
 type UvIndexConfig struct {
@@ -40,21 +49,28 @@ type UvIndexConfig struct {
 // PyProject is the parsed pyproject.toml file.
 type PyProject struct {
 	Project struct {
-		Name           string
-		RequiresPython string `toml:"requires-python"`
-	}
+		Name           string   `toml:"name"`
+		RequiresPython string   `toml:"requires-python"`
+		Dependencies   []string `toml:"dependencies"`
+	} `toml:"project"`
 	Tool struct {
-		Uv     UvConfig
-		Dagger UserConfig
-	}
+		Uv     UvConfig   `toml:"uv"`
+		Dagger UserConfig `toml:"dagger"`
+	} `toml:"tool"`
 }
 
 // Discovery is a helper to load information from the target module.
 type Discovery struct {
-	Config *PyProject
+	Config PyProject
 
 	// Images is a map of container image names to their addresses.
-	Images map[string]*Image
+	Images map[string]Image
+
+	// DefaultImages is a map of default container image addresses.
+	DefaultImages map[string]Image
+
+	// FileSet is a set of file names in the SDK source directory.
+	SdkFileSet map[string]struct{}
 
 	// FileSet is a set of file names from an initial Entries() call for quick lookups.
 	FileSet map[string]struct{}
@@ -71,33 +87,27 @@ type Discovery struct {
 	mu sync.Mutex
 }
 
-func NewDiscovery(cfg UserConfig) *Discovery {
+func NewDiscovery(cfg UserConfig) (*Discovery, error) {
 	proj := PyProject{}
 	proj.Tool.Dagger = cfg
+
+	// Get image addresses from the Dockerfile
+	images, err := extractImages()
+	if err != nil {
+		return nil, fmt.Errorf("get default container image addresses: %w", err)
+	}
+
 	return &Discovery{
-		Config:  &proj,
-		FileSet: make(map[string]struct{}),
-		Files:   make(map[string]string),
+		Config:        proj,
+		DefaultImages: images,
+		Images:        make(map[string]Image),
+		SdkFileSet:    make(map[string]struct{}),
+		FileSet:       make(map[string]struct{}),
+		Files:         make(map[string]string),
 
 		// Custom config can only be disabled by an extension module.
 		EnableCustomConfig: true,
-	}
-}
-
-// GetImage returns the container image address for the given name.
-func (d *Discovery) GetImage(name string) (*Image, error) {
-	if len(d.Images) == 0 {
-		images, err := extractImages()
-		if err != nil {
-			return nil, fmt.Errorf("get container image addresses: %w", err)
-		}
-		d.Images = images
-	}
-	image, ok := d.Images[name]
-	if !ok {
-		return nil, fmt.Errorf("%q container image address not found", name)
-	}
-	return image, nil
+	}, nil
 }
 
 // UserConfig is the configuration the user can set in pyproject.toml, under
@@ -113,6 +123,12 @@ func (d *Discovery) UvConfig() *UvConfig {
 // HasFile returns true if the file exists in the original module's source directory.
 func (d *Discovery) HasFile(name string) bool {
 	_, ok := d.FileSet[name]
+	return ok
+}
+
+// SdkHasFile returns true if the file exists in the SDK's source directory.
+func (d *Discovery) SdkHasFile(name string) bool {
+	_, ok := d.SdkFileSet[name]
 	return ok
 }
 
@@ -148,6 +164,15 @@ func (m *PythonSdk) AddDirectory(name string, dir *dagger.Directory) {
 // just use the context directory with subpath everywhere.
 func (m *PythonSdk) Source() *dagger.Directory {
 	return m.ContextDir.Directory(m.SubPath)
+}
+
+// getImage returns the container image address for the given name.
+func (m *PythonSdk) getImage(name string) Image {
+	image, exists := m.Discovery.Images[name]
+	if !exists {
+		return m.Discovery.DefaultImages[name]
+	}
+	return image
 }
 
 // Load reads from the module source files and metadata.
@@ -227,6 +252,21 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
+	eg.Go(func() error {
+		version, err := dag.Version(ctx)
+		if err != nil {
+			return fmt.Errorf("get engine version: %w", err)
+		}
+		// if it's a custom build, vendor the library
+		if strings.Contains(version, "-") {
+			return nil
+		}
+		d.mu.Lock()
+		m.EngineVersion = strings.TrimPrefix(version, "v")
+		d.mu.Unlock()
+		return nil
+	})
+
 	// TODO: Provide runtime modules with a boolean to indicate whether the
 	// module is new or not. Could be `dagger init --sdk` or `dagger develop --sdk`.
 	//
@@ -258,6 +298,12 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 
 // loadFiles loads the contents of certain module source files.
 func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
+	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
+	// adding sources (`dagger develop --sdk`).
+	if !m.IsInit && !d.HasFile("pyproject.toml") {
+		m.IsInit = true
+	}
+
 	// These paths should be in "exclude" in dagger.json.
 	// Let's remove them just in case, to avoid conflicts.
 	for _, exclude := range DirExcludes {
@@ -266,12 +312,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 				path.Join(m.SubPath, exclude),
 			)
 		}
-	}
-
-	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
-	// adding sources (`dagger develop --sdk`).
-	if !m.IsInit && !d.HasFile("pyproject.toml") {
-		m.IsInit = true
 	}
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -312,55 +352,53 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
+	eg.Go(func() error {
+		entries, _ := m.SdkSourceDir.Entries(gctx)
+		d.mu.Lock()
+		for _, entry := range entries {
+			d.SdkFileSet[entry] = struct{}{}
+		}
+		// quick check to avoid an unnecessary request
+		hasDist := d.SdkHasFile("dist/")
+		d.mu.Unlock()
+
+		if hasDist {
+			entries, _ = m.SdkSourceDir.Glob(gctx, "dist/*")
+			d.mu.Lock()
+			for _, entry := range entries {
+				d.SdkFileSet[entry] = struct{}{}
+			}
+			d.mu.Unlock()
+		}
+
+		return nil
+	})
+
 	return eg.Wait()
 }
 
-// loadConfig loads the pyproject.toml file.
+// loadConfig loads configurations from user files listed in FileContents.
 func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
-	contents, ok := d.Files["pyproject.toml"]
-	if !ok {
+	// d.Files can be empty if EnableCustomConfig is false, which can be disabled
+	// on extension modules. Otherwise, `pyproject.toml` can only be empty
+	// on `dagger init`, in which case it will be created from template.
+	contents, exists := d.Files["pyproject.toml"]
+	if !exists {
 		return nil
 	}
 
-	if err := toml.Unmarshal([]byte(contents), d.Config); err != nil {
+	if err := toml.Unmarshal([]byte(contents), &d.Config); err != nil {
 		return err
 	}
 
-	// Get image addresses from the Dockerfile to combine with possible
-	// overrides in pyproject.toml.
-	baseImage, err := d.GetImage(BaseImageName)
+	baseImage, err := d.parseBaseImage(d.DefaultImages[BaseImageName])
 	if err != nil {
 		return err
 	}
-	uvImage, err := d.GetImage(UvImageName)
+	uvImage, err := d.parseUvImage(d.DefaultImages[UvImageName])
 	if err != nil {
 		return err
 	}
-
-	cfg := d.UserConfig()
-
-	// The base image can change if the requested Python version is different
-	// than the default, or if the user has set a custom base image.
-	base, err := d.parseBaseImage(cfg.BaseImage, baseImage)
-	if err != nil {
-		return err
-	}
-
-	// If the image name and tag is the same as the default, reuse the default
-	// because of the digest.
-	if base != nil && !base.Equal(baseImage) {
-		baseImage = base
-	}
-
-	// Uv's image tag matches the version exactly.
-	if cfg.UvVersion != "" && cfg.UvVersion != uvImage.Tag() {
-		uv, err := uvImage.WithTag(cfg.UvVersion)
-		if err != nil {
-			return err
-		}
-		uvImage = uv
-	}
-
 	d.Images[BaseImageName] = baseImage
 	d.Images[UvImageName] = uvImage
 
@@ -368,6 +406,32 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	if d.Config.Project.Name != "" {
 		m.ProjectName = d.Config.Project.Name
 		m.PackageName = NormalizePackageName(m.ProjectName)
+	}
+
+	m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
+
+	switch {
+	case m.EngineVersion != "":
+		for _, dep := range d.Config.Project.Dependencies {
+			if strings.HasPrefix(strings.TrimSpace(dep), "dagger-io") {
+				if !strings.HasSuffix(dep, "=="+m.EngineVersion) {
+					m.AddNewFile("pyproject.toml", strings.Replace(
+						contents,
+						fmt.Sprintf("%q", dep),
+						fmt.Sprintf(`"dagger-io ==%s"`, m.EngineVersion),
+						1,
+					))
+				}
+				break
+			}
+		}
+
+	case m.EngineVersion == "" && m.VendorPath == "":
+		// Force vendoring on dev builds even if not already vendoring. This
+		// way users can opt-out when back to a stable build, but also not have
+		// to manually update pyproject.toml in order for it to work.
+		m.VendorPath = GenDir
+		m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
 	}
 
 	return nil
@@ -414,14 +478,45 @@ func (d *Discovery) findPythonVersion() string {
 //
 // WARNING: Using an image that deviates from the official slim Python image
 // is not supported and may lead to unexpected behavior. Use at own risk.
-func (d *Discovery) parseBaseImage(ref string, defaultImage *Image) (*Image, error) {
+func (d *Discovery) parseBaseImage(defaultImage Image) (Image, error) {
+	ref := d.UserConfig().BaseImage
+
 	if ref == "" {
 		version := d.findPythonVersion()
 		if version == "" {
-			return nil, nil
+			return defaultImage, nil
 		}
+
 		tag := fmt.Sprintf("%s-slim", version)
-		return defaultImage.WithTag(tag)
+		image, err := defaultImage.WithTag(tag)
+
+		// If the image name and tag is the same as the default, reuse the default
+		// because of the digest.
+		if err != nil || image.Equal(defaultImage) {
+			return defaultImage, err
+		}
+
+		return image, nil
 	}
-	return parseImageRef(ref)
+	return NewImage(ref)
+}
+
+// parseUvImage parses user configuration to look for an override of the uv image.
+//
+// To override the uv image in pyproject.toml:
+// ```toml
+// [tool.dagger]
+// uv-version = "0.6.14"
+// ```
+//
+// Can be useful to get a newer version to fix a bug or get a new feature.
+func (d *Discovery) parseUvImage(defaultImage Image) (Image, error) {
+	version := d.UserConfig().UvVersion
+
+	// Uv's image tag matches the version exactly.
+	if version != "" && version != defaultImage.Tag() {
+		return defaultImage.WithTag(version)
+	}
+
+	return defaultImage, nil
 }

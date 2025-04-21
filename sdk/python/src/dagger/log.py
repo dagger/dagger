@@ -26,10 +26,11 @@ def configure_logging(level: int | str = logging.WARNING):
                 "handlers": ["console"],
                 "level": level,
             },
-            "dagger.client._transport": {
-                "level": "WARNING",
-                "propagate": False,
-            },
         },
     }
     logging.config.dictConfig(config)
+
+
+def configure_debug_logging():
+    """Configure logging for the dagger package with DEBUG level."""
+    configure_logging(logging.DEBUG)
