@@ -78,7 +78,6 @@ func (i *Image) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if ref == "" {
-		i = &Image{}
 		return nil
 	}
 	img, err := NewImage(ref)
