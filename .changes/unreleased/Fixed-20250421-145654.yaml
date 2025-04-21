@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix caching of contextual directory args when multiple clients invoking the same function.
+time: 2025-04-21T14:56:54.826667957-07:00
+custom:
+  Author: sipsma
+  PR: "10187"
