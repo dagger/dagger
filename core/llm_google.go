@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/googleapis/gax-go/v2/apierror"
@@ -134,7 +135,7 @@ func (c *GenaiClient) processStreamResponse(
 	stream *genai.GenerateContentResponseIterator,
 	stdout io.Writer,
 	onTokenUsage func(*genai.UsageMetadata) LLMTokenUsage,
-) (content string, toolCalls []ToolCall, tokenUsage LLMTokenUsage, err error) {
+) (content string, toolCalls []LLMToolCall, tokenUsage LLMTokenUsage, err error) {
 	for {
 		res, err := stream.Next()
 		if err != nil {
@@ -169,7 +170,7 @@ func (c *GenaiClient) processStreamResponse(
 				fmt.Fprint(stdout, x)
 				content += string(x)
 			case genai.FunctionCall:
-				toolCalls = append(toolCalls, ToolCall{
+				toolCalls = append(toolCalls, LLMToolCall{
 					ID:       x.Name,
 					Function: FuncCall{Name: x.Name, Arguments: x.Args},
 					Type:     "function",
@@ -182,6 +183,21 @@ func (c *GenaiClient) processStreamResponse(
 	}
 
 	return content, toolCalls, tokenUsage, nil
+}
+
+var _ LLMClient = (*GenaiClient)(nil)
+
+func (c *GenaiClient) IsRetryable(err error) bool {
+	apiErr, ok := apierror.FromError(err)
+	if !ok {
+		return false
+	}
+	switch apiErr.HTTPCode() {
+	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {

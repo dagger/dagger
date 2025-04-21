@@ -137,6 +137,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The binding's string value
+     */
+    public function asString(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('asString');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'asString');
+    }
+
+    /**
      * The digest of the binding value
      */
     public function digest(): string
@@ -152,6 +161,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\BindingId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Returns true if the binding is null
+     */
+    public function isNull(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isNull');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isNull');
     }
 
     /**

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,90 +18,65 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // A frontend for LLM tool calling
 type LLMTool struct {
 	// Tool name
-	Name string
-	// Return type (just a hint to the model)
-	Returns string
+	Name string `json:"name"`
 	// Tool description
-	Description string
+	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
-	Schema map[string]any
+	Schema map[string]any `json:"schema"`
+	// Return type, used to hint to the model in tool lists - not exposed through
+	// this field, since there's no such thing (I wish!)
+	Returns string `json:"-"`
 	// Function implementing the tool.
-	Call func(context.Context, any) (any, error)
+	Call func(context.Context, any) (any, error) `json:"-"`
 }
 
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
 	env *Env
-	// The currently selected object.
-	current dagql.Object
-	// Whether the LLM needs instructions on how to use the tool scheme
-	needsSystemPrompt bool
 	// Only show these functions, if non-empty
-	functionMask map[string]bool
+	selectedTools map[string]bool
+	// The last value returned by a function.
+	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
 }
 
-func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
-	m := &MCP{
-		env:          env,
-		functionMask: map[string]bool{},
+func newMCP(env *Env) *MCP {
+	return &MCP{
+		env:           env,
+		selectedTools: map[string]bool{},
 	}
-	if env.Root() != nil {
-		m.Select(env.Root())
-	}
-	if endpoint != nil {
-		m.needsSystemPrompt = (endpoint.Provider == Google)
-	}
-	return m
 }
 
 //go:embed llm_dagger_prompt.md
 var defaultSystemPrompt string
 
 func (m *MCP) DefaultSystemPrompt() string {
-	if m.needsSystemPrompt {
-		return defaultSystemPrompt
-	}
-	return ""
-}
-
-func (m *MCP) WithEnvironment(env *Env) *MCP {
-	m = m.Clone()
-	m.env = env
-	// We keep the current selection even if underlying environment is swapped out
-	return m
+	return defaultSystemPrompt
 }
 
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
-	cp.functionMask = cloneMap(cp.functionMask)
+	cp.selectedTools = cloneMap(cp.selectedTools)
+	cp.returned = false
 	return &cp
 }
 
-// Return the current selection
-func (m *MCP) Current() dagql.Object {
-	return m.current
-}
-
-// Change the current selection
-func (m *MCP) Select(obj dagql.Object, functions ...string) {
-	m.current = obj
-	clear(m.functionMask)
-	for _, fn := range functions {
-		m.functionMask[fn] = true
-	}
+func (m *MCP) Returned() bool {
+	return m.returned
 }
 
 // Get an object saved at a given key
@@ -119,19 +96,26 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
+func (m *MCP) LastResult() dagql.Typed {
+	return m.lastResult
+}
+
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
-	builtins, err := m.Builtins(srv)
+	allTools, err := m.tools(srv)
 	if err != nil {
 		return nil, err
 	}
-	if m.Current() == nil {
-		return builtins, nil
-	}
-	objTools, err := m.tools(srv, m.Current().Type().Name())
+	builtins, err := m.Builtins(srv, allTools)
 	if err != nil {
 		return nil, err
 	}
-	return append(builtins, objTools...), nil
+	var tools []LLMTool
+	for _, tool := range allTools {
+		if m.selectedTools[tool.Name] {
+			tools = append(tools, tool)
+		}
+	}
+	return append(tools, builtins...), nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -168,20 +152,32 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
+func (m *MCP) tools(srv *dagql.Server) ([]LLMTool, error) {
 	schema := srv.Schema()
+	tools := []LLMTool{}
+	typeNames := m.env.Types()
+	if m.env.Root() != nil {
+		typeNames = append(typeNames, schema.Query.Name)
+	}
+	for _, typeName := range typeNames {
+		typeTools, err := m.typeTools(srv, schema, typeName)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, typeTools...)
+	}
+	return tools, nil
+}
+
+func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) ([]LLMTool, error) {
 	typeDef, ok := schema.Types[typeName]
 	if !ok {
 		return nil, fmt.Errorf("type %q not found", typeName)
 	}
 	var tools []LLMTool
-	masked := len(m.functionMask) > 0
 	for _, field := range typeDef.Fields {
 		if _, found := m.env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
-			continue
-		}
-		if masked && !m.functionMask[field.Name] {
 			continue
 		}
 		if strings.HasPrefix(field.Name, "_") {
@@ -302,43 +298,88 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			// with implementations
 			continue
 		}
-		schema, err := fieldArgsToJSONSchema(schema, field)
+		if field.Directives.ForName(deprecatedDirectiveName) != nil {
+			// don't expose deprecated APIs
+			continue
+		}
+		if references(field, TypesHiddenFromEnvExtensions...) {
+			// references a banned type
+			continue
+		}
+		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeName, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeName == "Query" {
+		if typeName == schema.Query.Name {
 			toolName = field.Name
 		} else {
-			toolName = typeDef.Name + "_" + field.Name
+			toolName = typeDef.Name + "_" + strcase.ToSnake(field.Name)
 		}
 		tools = append(tools, LLMTool{
 			Name:        toolName,
 			Returns:     field.Type.String(),
-			Description: field.Description,
-			Schema:      schema,
+			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
+			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, field, args)
+				return m.call(ctx, srv, schema, typeName, field, args)
 			},
 		})
 	}
 	return tools, nil
 }
 
+func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
+	names := map[string]bool{}
+	for _, t := range types {
+		names[t.Type().Name()] = true
+	}
+	if names[fieldDef.Type.Name()] {
+		return true
+	}
+	for _, arg := range fieldDef.Arguments {
+		if names[arg.Type.Name()] {
+			return true
+		}
+	}
+	return false
+}
+
+func displayArgs(args any) string {
+	switch args := args.(type) {
+	case map[string]any:
+		var sb strings.Builder
+		sb.WriteString("(")
+		argList := make([]string, 0, len(args))
+		for key, value := range args {
+			argList = append(argList, fmt.Sprintf("%s: %v", key, value))
+		}
+		sort.Strings(argList)
+		sb.WriteString(strings.Join(argList, ", "))
+		sb.WriteString(")")
+		return sb.String()
+	default:
+		return fmt.Sprintf(" %v", args)
+	}
+}
+
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
+	schema *ast.Schema,
+	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
-) (_ any, rerr error) {
+) (res string, rerr error) {
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("%s %v", fieldDef.Name, args),
+		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
 		telemetry.ActorEmoji("🤖"),
 		telemetry.Passthrough(),
 		telemetry.Reveal())
+
 	defer telemetry.End(span, func() error {
 		if rerr != nil && !validated {
 			// only reveal for "plumbing" errors, not errors from the field, since
@@ -348,22 +389,45 @@ func (m *MCP) call(ctx context.Context,
 		return rerr
 	})
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer func() {
+		fmt.Fprintln(stdio.Stdout, res)
+		stdio.Close()
+	}()
+
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
-	if m.Current() == nil {
-		return nil, fmt.Errorf("no current context")
-	}
-	target, ok := dagql.UnwrapAs[dagql.Object](m.Current())
-	if !ok {
-		return nil, fmt.Errorf("current context is not an object, got %T", m.Current())
-	}
 	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
+		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
+	}
+	var target dagql.Object
+	if m.env.Root() != nil && selfType == schema.Query.Name {
+		target = m.env.Root()
+	} else {
+		self, ok := argsMap[selfType]
+		if !ok {
+			// default to the newest object of this type
+			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCounts[selfType])
+		}
+		recv, ok := self.(string)
+		if !ok {
+			return "", fmt.Errorf("expected %q to be a string - got %#v", selfType, recv)
+		}
+		// don't pass 'self' along to future arg validation
+		delete(argsMap, selfType)
+		var err error
+		target, err = m.GetObject(recv, selfType)
+		if err != nil {
+			return "", err
+		}
+		if target.ObjectType().TypeName() != selfType {
+			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
+		}
 	}
 	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert call inputs: %w", err)
+		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
 	validated = true
 
@@ -378,64 +442,63 @@ func (m *MCP) selectionToToolResult(
 	target dagql.Object,
 	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
-) (any, error) {
+) (string, error) {
+	sels := []dagql.Selector{fieldSel}
+
 	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
-		// Handle object returns.
-		//
-		var val dagql.Typed
 		if sync, ok := retObjType.FieldSpec("sync"); ok {
+			// If the Object supports "sync", auto-select it.
+			//
 			syncSel := dagql.Selector{
 				Field: sync.Name,
 			}
-			idType, ok := retObjType.IDType()
-			if !ok {
-				return nil, fmt.Errorf("field %q is not an ID type", sync.Name)
-			}
-			if err := srv.Select(ctx, target, &idType, fieldSel, syncSel); err != nil {
-				return nil, fmt.Errorf("failed to sync: %w", err)
-			}
-			syncedObj, err := srv.Load(ctx, idType.ID())
-			if err != nil {
-				return nil, fmt.Errorf("failed to load synced object: %w", err)
-			}
-			val = syncedObj
-		} else if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
-			return nil, err
-		}
-		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-			prev := m.Current()
-			m.Select(obj)
-			return m.currentState(prev)
-		} else {
-			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
+			sels = append(sels, syncSel)
 		}
 	} else if fieldDef.Type.Elem != nil {
 		if _, isObj := srv.ObjectType(fieldDef.Type.Elem.NamedType); isObj {
-			// Handle array object returns.
+			// Handle arrays of objects by ingesting each object ID.
 			//
 			var objs []dagql.Object
 			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
-				return nil, fmt.Errorf("failed to sync: %w", err)
+				return "", fmt.Errorf("failed to sync: %w", err)
 			}
 			var res []any
 			for _, obj := range objs {
-				res = append(res, m.env.Ingest(obj))
+				res = append(res, m.env.Ingest(obj, ""))
 			}
 			return toolStructuredResponse(map[string]any{
 				"objects": res,
 			})
 		}
 	}
-	// Handle scalar or array-of-scalar returns.
-	//
+
+	// Make the DagQL call.
 	var val dagql.Typed
-	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
-		return nil, fmt.Errorf("failed to sync: %w", err)
+	if err := srv.Select(ctx, target, &val, sels...); err != nil {
+		return "", fmt.Errorf("failed to sync: %w", err)
 	}
+
 	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
-		// avoid dumping full IDs, show the type and hash instead
-		return m.describe(id), nil
-	} else if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
+		// Handle ID results by turning them back into Objects, since these are
+		// typically implementation details hinting to SDKs to unlazy the call.
+		//
+		syncedObj, err := srv.Load(ctx, id.ID())
+		if err != nil {
+			return "", fmt.Errorf("failed to load synced object: %w", err)
+		}
+		val = syncedObj
+	}
+
+	m.lastResult = val
+
+	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+		// Handle object returns by switching to them.
+		return m.newState(obj)
+	}
+
+	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
+		// Handle strings by guarding against non-utf8 or giant payloads.
+		//
 		bytes := []byte(str.String())
 		if !utf8.Valid(bytes) {
 			return toolStructuredResponse(map[string]any{
@@ -454,6 +517,9 @@ func (m *MCP) selectionToToolResult(
 			})
 		}
 	}
+
+	// Handle scalars or arrays of scalars.
+	//
 	return toolStructuredResponse(map[string]any{
 		"result": val,
 	})
@@ -471,7 +537,18 @@ func (m *MCP) toolCallToSelection(
 	targetObjType := target.ObjectType()
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
 	if !ok {
-		return sel, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+		return sel, fmt.Errorf("field %q not found in object type %q",
+			fieldDef.Name,
+			targetObjType.TypeName())
+	}
+	var unknownArgs error
+	for name := range argsMap {
+		if _, ok := field.Args.Lookup(name); !ok {
+			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", name))
+		}
+	}
+	if unknownArgs != nil {
+		return sel, unknownArgs
 	}
 	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
@@ -512,21 +589,7 @@ func (m *MCP) toolCallToSelection(
 
 const maxStr = 80 * 1024
 
-func (m *MCP) describe(val dagql.Typed) string {
-	if val == nil {
-		return "Void"
-	}
-	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-		// NOTE: this covers both Objects and ID scalars
-		return m.env.Ingest(obj)
-	}
-	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
-		return val.Type().String() + " (length: " + strconv.Itoa(list.Len()) + ")"
-	}
-	return val.Type().String()
-}
-
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (string, bool) {
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (string, bool) {
 	var tool *LLMTool
 	for _, t := range tools {
 		if t.Name == toolCall.Function.Name {
@@ -536,59 +599,18 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 
 	if tool == nil {
-		errRes := map[string]any{
+		res, err := toolStructuredResponse(map[string]any{
 			"error": fmt.Sprintf("Tool '%s' is not available.", toolCall.Function.Name),
-		}
-		if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
-			if m.Current() == nil {
-				errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select%s` first.", typeName)
-			} else if m.Current().Type().Name() == typeName {
-				errRes["hint"] = "The current object type does not provide this function."
-			} else {
-				errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select%s` first.", m.Current().Type().Name(), typeName)
-			}
-		}
-		payload, err := json.Marshal(errRes)
+		})
 		if err != nil {
 			return fmt.Sprintf("marshal error: %v", err), false
 		}
-		return string(payload), true
+		return res, true
 	}
 
 	result, err := tool.Call(ctx, toolCall.Function.Arguments)
 	if err != nil {
-		errResponse := err.Error()
-		// propagate error values to the model
-		var extErr dagql.ExtendedError
-		if errors.As(err, &extErr) {
-			// TODO: return a structured error object instead?
-			var exts []string
-			for k, v := range extErr.Extensions() {
-				var ext strings.Builder
-				fmt.Fprintf(&ext, "<%s>\n", k)
-
-				switch v := v.(type) {
-				case string:
-					ext.WriteString(v)
-				default:
-					jsonBytes, err := json.Marshal(v)
-					if err != nil {
-						fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
-					} else {
-						ext.Write(jsonBytes)
-					}
-				}
-
-				fmt.Fprintf(&ext, "\n</%s>", k)
-
-				exts = append(exts, ext.String())
-			}
-			if len(exts) > 0 {
-				sort.Strings(exts)
-				errResponse += "\n\n" + strings.Join(exts, "\n\n")
-			}
-		}
-		return errResponse, true
+		return toolErrorMessage(err), true
 	}
 
 	switch v := result.(type) {
@@ -603,24 +625,108 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
-func (m *MCP) returnBuiltin() LLMTool {
-	props := map[string]any{}
-	required := []string{}
-	for name, b := range m.env.outputsByName {
-		typeName := b.expectedType.TypeName()
-		required = append(required, name)
-		props[name] = map[string]any{
-			"type":           "string",
-			"pattern":        idPattern(typeName),
-			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format. %s", typeName, typeName, b.Description),
-			jsonSchemaIDAttr: typeName,
+func toolErrorMessage(err error) string {
+	errResponse := err.Error()
+	// propagate error values to the model
+	var extErr dagql.ExtendedError
+	if errors.As(err, &extErr) {
+		// TODO: return a structured error object instead?
+		var exts []string
+		for k, v := range extErr.Extensions() {
+			var ext strings.Builder
+			fmt.Fprintf(&ext, "<%s>\n", k)
+
+			switch v := v.(type) {
+			case string:
+				ext.WriteString(v)
+			default:
+				jsonBytes, err := json.Marshal(v)
+				if err != nil {
+					fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
+				} else {
+					ext.Write(jsonBytes)
+				}
+			}
+
+			fmt.Fprintf(&ext, "\n</%s>", k)
+
+			exts = append(exts, ext.String())
+		}
+		if len(exts) > 0 {
+			sort.Strings(exts)
+			errResponse += "\n\n" + strings.Join(exts, "\n\n")
 		}
 	}
-	return LLMTool{
-		Name: "return",
-		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
+	return errResponse
+}
 
-Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
+func (m *MCP) allIDs(typeName string) []string {
+	total := m.env.typeCounts[typeName]
+	ids := make([]string, 0, total)
+	for i := total; i > 0; i-- {
+		ids = append(ids, fmt.Sprintf("%s#%d", typeName, i))
+	}
+	return ids
+}
+
+func (m *MCP) returnBuiltin() (LLMTool, bool) {
+	if len(m.env.outputsByName) == 0 {
+		// no outputs desired
+		return LLMTool{}, false
+	}
+
+	props := map[string]any{}
+	required := []string{}
+
+	desc := "Save your work, making the requested outputs available to the user:\n"
+
+	var outputs []string
+	var anyUnavailable bool
+	for name, b := range m.env.outputsByName {
+		required = append(required, name)
+
+		typeName := b.ExpectedType
+
+		outputs = append(outputs,
+			fmt.Sprintf("- %s (%s): %s", name, typeName, b.Description))
+
+		argSchema := map[string]any{
+			"type": "string",
+		}
+
+		var desc string
+		if typeName == "String" {
+			desc = b.Description
+		} else {
+			argSchema[jsonSchemaIDAttr] = typeName
+			desc = fmt.Sprintf("%s ID. %s", typeName, b.Description)
+			enum := m.allIDs(typeName)
+			if len(enum) == 0 {
+				desc += " (TODO)"
+				anyUnavailable = true
+			} else {
+				argSchema["enum"] = enum
+			}
+		}
+
+		argSchema["description"] = desc
+
+		props[name] = argSchema
+	}
+
+	// append outputs
+	sort.Strings(outputs)
+	for _, out := range outputs {
+		desc += fmt.Sprintf("\n%s", out)
+	}
+
+	if anyUnavailable {
+		desc += "\n\nWARNING: you still have some outputs to create - don't call this yet! (See TODOs.)"
+	}
+
+	return LLMTool{
+		Name:        "save",
+		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
@@ -633,103 +739,226 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 			if !ok {
 				return nil, fmt.Errorf("invalid arguments: %T", args)
 			}
-			for name := range m.env.outputsByName {
+			for name, output := range m.env.outputsByName {
 				arg, ok := vals[name]
 				if !ok {
-					return nil, fmt.Errorf("required argument %s not provided", name)
+					return nil, fmt.Errorf("required output %s not provided", name)
 				}
 				argStr, ok := arg.(string)
 				if !ok {
 					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
 				}
-				bnd, ok := m.env.objsByID[argStr]
-				if !ok {
-					return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
-				}
-				obj := bnd.Value
-				if output, found := m.env.Output(name); found {
-					if expected := output.expectedType; expected != nil {
-						expectedType := expected.TypeName()
-						actualType := obj.Type().Name()
-						if expectedType != actualType {
-							return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, expectedType, actualType)
-						}
+				if output.ExpectedType == "String" {
+					output.Value = dagql.String(argStr)
+				} else {
+					bnd, ok := m.env.objsByID[argStr]
+					if !ok {
+						return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
+					}
+
+					obj := bnd.Value
+
+					// Propagate description from output to binding so that outputs are
+					// described under `Available objects:`
+					bnd.Description = output.Description
+
+					actualType := obj.Type().Name()
+					if output.ExpectedType != actualType {
+						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
 					}
 					output.Value = obj
-				} else {
-					return nil, fmt.Errorf("undefined output: %q", name)
 				}
 			}
 			m.returned = true
 			return "ok", nil
 		},
-	}
+	}, true
 }
 
-func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{}
-
-	if len(m.env.outputsByName) > 0 {
-		builtins = append(builtins, m.returnBuiltin())
+func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
+	builtins := []LLMTool{
+		{
+			Name:        "think",
+			Description: `A tool for thinking through problems, brainstorming ideas, or planning without executing any actions`,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"thought": map[string]any{
+						"type":        "string",
+						"description": "Your thoughts.",
+					},
+				},
+				"required": []string{"thought"},
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				Thought string
+			}) (_ any, rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx, "think",
+					telemetry.Reveal(),
+					trace.WithAttributes(
+						attribute.String(telemetry.UIMessageAttr, "received"),
+						attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					),
+				)
+				defer telemetry.End(span, func() error { return rerr })
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				defer stdio.Close()
+				fmt.Fprint(stdio.Stdout, args.Thought)
+				return "Finished thinking.", nil
+			}),
+		},
 	}
 
-	for _, typeName := range m.env.Types() {
-		tools, err := m.tools(srv, typeName)
-		if err != nil {
-			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
+	if m.env.writable {
+		allTypes := map[string]dagql.Type{
+			"String":  dagql.String(""),
+			"Int":     dagql.Int(0),
+			"Float":   dagql.Float(0.0),
+			"Boolean": dagql.Boolean(false),
+		}
+		for name := range srv.Schema().Types {
+			objectType, ok := srv.ObjectType(name)
+			if !ok {
+				continue
+			}
+			if slices.ContainsFunc(TypesHiddenFromEnvExtensions, func(t dagql.Typed) bool {
+				return t.Type().Name() == name
+			}) {
+				continue
+			}
+			allTypes[name] = objectType
 		}
 		builtins = append(builtins, LLMTool{
-			Name:    "select" + typeName,
-			Returns: typeName,
+			Name:        "declare_output",
+			Description: "Declare a new output that can have a value saved to it",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "The name of the output, following shell naming conventions.",
+						"format":      "[a-z][a-z0-9_]*",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "The type of the output.",
+						"enum":        slices.Sorted(maps.Keys(allTypes)),
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "A description of the output.",
+					},
+				},
+				"required": []string{"name", "description"},
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				Name        string
+				Type        string
+				Description string
+			}) (any, error) {
+				return "done", m.env.DeclareOutput(args.Name, allTypes[args.Type], args.Description)
+			}),
+		})
+	}
+
+	if len(tools) > 0 {
+		builtins = append(builtins, LLMTool{
+			Name: "select_tools",
 			Description: (func() string {
-				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
-				desc += "\n\nProvides the following tools:\n"
+				desc := `Select tools for interacting with the available objects.`
+				desc += "\n\nAvailable tools:"
 				for _, tool := range tools {
-					desc += fmt.Sprintf("\n- %s", tool.Name)
+					if m.selectedTools[tool.Name] {
+						// already have it
+						continue
+					}
+					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+				}
+				var objects []string
+				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
+					count := m.env.typeCounts[typeName]
+					for i := 1; i <= count; i++ {
+						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+					}
+				}
+				if len(objects) > 0 {
+					desc += "\n\nAvailable objects:"
+					for _, input := range objects {
+						desc += fmt.Sprintf("\n- %s", input)
+					}
 				}
 				return desc
 			})(),
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id": map[string]any{
-						"type":           "string",
-						"pattern":        idPattern(typeName),
-						"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
-						jsonSchemaIDAttr: typeName,
+					"tools": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "The tools to select.",
 					},
-					// "functions": map[string]any{
-					// 	"type": "array",
-					// 	"items": map[string]any{
-					// 		"type": "string",
-					// 	},
-					// 	"description": "List of functions to use. " + fnsDesc,
-					// },
 				},
-				"strict":               true,
-				"required":             []string{"id"}, // , "functions"},
-				"additionalProperties": false,
+				"required": []string{"tools"},
 			},
 			Call: ToolFunc(func(ctx context.Context, args struct {
-				ID string `name:"id"`
-				// Functions []string
+				Tools []string `json:"tools"`
 			}) (any, error) {
-				obj, err := m.GetObject(args.ID, typeName)
-				if err != nil {
-					return nil, err
+				toolCounts := make(map[string]int)
+				for _, tool := range args.Tools {
+					toolCounts[tool]++
 				}
-				prev := m.Current()
-				m.Select(obj) // , args.Functions...)
-				return m.currentState(prev)
+				// perform a sanity check; some LLMs will do silly things like request
+				// the same tool 3 times when told to call it 3 times
+				for tool, count := range toolCounts {
+					if count > 1 {
+						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
+					}
+				}
+				var selectedTools []LLMTool
+				var unknownTools []string
+				for tool := range toolCounts {
+					var foundTool LLMTool
+					for _, t := range tools {
+						if t.Name == tool {
+							foundTool = t
+							break
+						}
+					}
+					if foundTool.Name == "" {
+						unknownTools = append(unknownTools, tool)
+					} else {
+						m.selectedTools[tool] = true
+						selectedTools = append(selectedTools, foundTool)
+					}
+				}
+				sort.Slice(selectedTools, func(i, j int) bool {
+					return selectedTools[i].Name < selectedTools[j].Name
+				})
+				res := map[string]any{
+					"added_tools": selectedTools,
+				}
+				if len(unknownTools) > 0 {
+					res["unknown_tools"] = unknownTools
+				}
+				return toolStructuredResponse(res)
 			}),
 		})
 	}
 
-	// register getters for all the env vars
-	builtins = append(builtins, m.envGetters()...)
+	if returnTool, ok := m.returnBuiltin(); ok {
+		builtins = append(builtins, returnTool)
+	}
+
+	builtins = append(builtins, m.userProvidedValues()...)
 
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
+		if builtin.Name == "think" {
+			// has its own custom telemetry
+			continue
+		}
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
 			attrs := []attribute.KeyValue{
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
@@ -747,7 +976,9 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				}
 				attrs = append(attrs,
 					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
-					attribute.String(telemetry.DagCallAttr, callAttr))
+					attribute.String(telemetry.DagCallAttr, callAttr),
+					attribute.String(telemetry.DagCallScopeAttr, "llm"),
+				)
 				return nil
 			}()
 			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,
@@ -771,17 +1002,40 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	return builtins, nil
 }
 
-func (m *MCP) envGetters() []LLMTool {
-	var tools []LLMTool
+func (m *MCP) userProvidedValues() []LLMTool {
+	desc := "The following values have been provided by the user:"
+	var anyProvided bool
 	for _, input := range m.env.Inputs() {
+		if _, isObj := input.AsObject(); isObj {
+			continue
+		}
+
+		anyProvided = true
+
+		desc += "\n\n---"
+
 		description := input.Description
 		if description == "" {
-			description = fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName())
+			description = input.Key
 		}
-		tools = append(tools, LLMTool{
-			Name:        input.Key,
-			Returns:     input.TypeName(),
-			Description: description,
+
+		desc += "\n\n" + description
+
+		payload, err := json.Marshal(input.Value)
+		if err != nil {
+			desc += "\n\nMARSHAL ERROR: " + err.Error()
+			continue
+		}
+		desc += "\n\n" + string(payload)
+	}
+	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
+	if !anyProvided {
+		return nil
+	}
+	return []LLMTool{
+		{
+			Name:        "user_provided_values",
+			Description: desc,
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -789,17 +1043,11 @@ func (m *MCP) envGetters() []LLMTool {
 				"required":             []string{},
 				"additionalProperties": false,
 			},
-			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				if obj, isObj := input.AsObject(); isObj {
-					prev := m.Current()
-					m.Select(obj)
-					return m.currentState(prev)
-				}
-				return input.Value, nil
+			Call: func(ctx context.Context, args any) (any, error) {
+				return desc, nil
 			},
-		})
+		},
 	}
-	return tools
 }
 
 func (m *MCP) IsDone() bool {
@@ -885,15 +1133,31 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	), nil
 }
 
-func fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
+func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.FieldDefinition) (map[string]any, error) {
 	jsonSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
 	}
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
+	if typeName != schema.Query.Name {
+		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCounts[typeName])
+		schema := map[string]any{
+			"type":        "string",
+			"description": fmt.Sprintf("The %s to operate against. Default: %s", typeName, latest),
+			"default":     latest,
+		}
+		if ids := m.allIDs(typeName); len(ids) > 0 {
+			schema["enum"] = ids
+		}
+		properties[typeName] = schema
+
+		// mark this required, as a hint. lots of models forget to pass it, so we
+		// tolerate that too, but our schema should suggest the right mental model.
+		required = append(required, typeName)
+	}
 	for _, arg := range field.Arguments {
-		argSchema, err := typeToJSONSchema(schema, arg.Type)
+		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -905,7 +1169,11 @@ func fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[
 
 		// Add default value if present
 		if arg.DefaultValue != nil {
-			argSchema["default"] = arg.DefaultValue.Raw
+			val, err := arg.DefaultValue.Value(nil)
+			if err != nil {
+				return nil, fmt.Errorf("default value: %w", err)
+			}
+			argSchema["default"] = val
 		}
 
 		properties[arg.Name] = argSchema
@@ -921,13 +1189,13 @@ func fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[
 	return jsonSchema, nil
 }
 
-func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
+func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 	jsonSchema := map[string]any{}
 
 	// Handle lists
 	if t.Elem != nil {
 		jsonSchema["type"] = "array"
-		items, err := typeToJSONSchema(schema, t.Elem)
+		items, err := m.typeToJSONSchema(schema, t.Elem)
 		if err != nil {
 			return nil, fmt.Errorf("elem type: %w", err)
 		}
@@ -957,7 +1225,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 			jsonSchema["type"] = "object"
 			properties := map[string]any{}
 			for _, f := range typeDef.Fields {
-				fieldSpec, err := typeToJSONSchema(schema, f.Type)
+				fieldSpec, err := m.typeToJSONSchema(schema, f.Type)
 				if err != nil {
 					return nil, fmt.Errorf("field type: %w", err)
 				}
@@ -975,9 +1243,12 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 			if strings.HasSuffix(t.NamedType, "ID") {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
-				jsonSchema["pattern"] = idPattern(typeName)
+				if ids := m.allIDs(typeName); len(ids) > 0 {
+					jsonSchema["enum"] = ids
+				} else {
+					desc += " (UNAVAILABLE)"
+				}
 				jsonSchema[jsonSchemaIDAttr] = typeName
-				desc = fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, desc)
 			} else {
 				jsonSchema["type"] = "string"
 			}
@@ -992,20 +1263,10 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 
 const jsonSchemaIDAttr = "x-id-type"
 
-func idPattern(typeName string) string {
-	return `^` + typeName + `#\d+$`
-}
-
-func (m *MCP) currentState(previous dagql.Object) (string, error) {
-	cur := m.Current()
-	res := map[string]any{
-		// "selected" to hint to the model that it doesn't need to select it
-		"selected": m.describe(cur),
-	}
-	if previous != nil {
-		res["previous"] = m.describe(previous)
-	}
-	return toolStructuredResponse(res)
+func (m *MCP) newState(target dagql.Object) (string, error) {
+	return toolStructuredResponse(map[string]any{
+		"result": m.env.Ingest(target, ""),
+	})
 }
 
 func toolStructuredResponse(val any) (string, error) {

@@ -876,7 +876,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Return a new container snapshot, with a file added to its filesystem"
+  @doc "Return a new container snapshot, with a file added to its filesystem with text content"
   @spec with_new_file(t(), String.t(), String.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},

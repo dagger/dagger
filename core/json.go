@@ -17,6 +17,10 @@ func init() {
 	strcase.ConfigureAcronym("JSON", "JSON")
 }
 
+func (p JSON) String() string {
+	return string(p)
+}
+
 func (p JSON) Bytes() []byte {
 	return p
 }

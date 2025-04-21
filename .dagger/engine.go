@@ -192,6 +192,9 @@ func (e *DaggerEngine) Lint(
 				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken/") {
 					continue
 				}
+				if strings.HasPrefix(pkg, "modules/evaluator/") {
+					continue
+				}
 				pkgs = append(pkgs, pkg)
 			}
 		}
