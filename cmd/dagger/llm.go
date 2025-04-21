@@ -263,66 +263,56 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, output := range outputs {
-		isNull, err := output.IsNull(ctx)
+
+	assign := func(bnd *dagger.Binding) error {
+		name, err := bnd.Name(ctx)
+		if err != nil {
+			return err
+		}
+		typeName, err := bnd.TypeName(ctx)
+		if err != nil {
+			return err
+		}
+		isNull, err := bnd.IsNull(ctx)
 		if err != nil {
 			return err
 		}
 		if isNull {
-			continue
+			return nil
 		}
-		name, err := output.Name(ctx)
-		if err != nil {
-			return err
-		}
-		typeName, err := output.TypeName(ctx)
-		if err != nil {
-			return err
+		if typeName == "" || typeName == "Query" {
+			return nil
 		}
 		if typeName == "String" {
-			str, err := output.AsString(ctx)
+			str, err := bnd.AsString(ctx)
 			if err != nil {
 				return err
 			}
-			if err := s.assignShellString(ctx, name, str); err != nil {
-				return err
-			}
-			continue
+			return s.assignShellString(ctx, name, str)
 		}
 		var objID string
-		if err := s.dag.QueryBuilder().
-			Select("loadBindingFromID").
-			Arg("id", &output). // TODO: weird to have to use a pointer here
-			Select("as" + typeName).
-			Select("id").
-			Bind(&objID).
-			Execute(ctx); err != nil {
+		if err :=
+			s.dag.QueryBuilder().
+				Select("loadBindingFromID").
+				Arg("id", bnd).
+				Select("as" + typeName).
+				Select("id").
+				Bind(&objID).
+				Execute(ctx); err != nil {
 			return err
 		}
-		if err := s.assignShell(ctx, name, &dynamicObject{objID, typeName}); err != nil {
+		return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
+	}
+
+	// assign all outputs
+	for _, output := range outputs {
+		if err := assign(&output); err != nil {
 			return err
 		}
 	}
-	bnd := s.llm.BindResult(lastValueVar)
-	typeName, err := bnd.TypeName(ctx)
-	if err != nil {
-		return err
-	}
-	if typeName == "" || typeName == "Query" {
-		return nil
-	}
-	var objID string
-	if err :=
-		s.dag.QueryBuilder().
-			Select("loadBindingFromID").
-			Arg("id", bnd).
-			Select("as" + typeName).
-			Select("id").
-			Bind(&objID).
-			Execute(ctx); err != nil {
-		return err
-	}
-	return s.assignShell(ctx, lastValueVar, &dynamicObject{objID, typeName})
+
+	// assign last value
+	return assign(s.llm.BindResult(lastValueVar))
 }
 
 type dagqlObject interface {
