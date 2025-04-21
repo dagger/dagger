@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -560,7 +561,7 @@ func (s *moduleSchema) currentModuleSource(
 ) (inst dagql.Instance[*core.Directory], err error) {
 	curSrc := curMod.Module.Source
 	if curSrc.Self == nil {
-		return inst, fmt.Errorf("module source not available during initialization")
+		return inst, errors.New("invalid unset current module source")
 	}
 
 	srcSubpath := curSrc.Self.SourceSubpath

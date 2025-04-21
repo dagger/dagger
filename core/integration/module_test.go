@@ -2183,6 +2183,107 @@ func (m *Test) Fn() string {
 			require.Equal(t, "true", strings.TrimSpace(out))
 		})
 	})
+
+	t.Run("module initialization", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// verify that SDKs can successfully:
+		// - create an exec during module initialization
+		// - call CurrentModule().Source
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/coolsdk").
+			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+			// we override the go sdk's dagger.gen.go with this custom one that tests functionality
+			// during init
+			WithNewFile("fixedsrc/dagger.gen.go", `package main
+import (
+	"context"
+	"encoding/json"
+
+	"dagger/test/internal/dagger"
+)
+
+var dag = dagger.Connect()
+
+func main() {
+	ctx := context.Background()
+
+	fnCall := dag.CurrentFunctionCall()
+
+	// verify execs work
+	_, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"true"}).
+		Sync(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// verify CurrentModule().Source() works
+	_, err = dag.CurrentModule().Source().File("main.go").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
+	result := dag.Module().WithObject(dag.TypeDef().
+		WithObject("Test").
+		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))),
+	)
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		panic(err)
+	}
+}
+`).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/cool-sdk/internal/dagger"
+)
+
+type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
+	ctxDir := m.generatedCtx(modSource)
+	return dag.Container().From("`+golangImage+`").
+		WithMountedDirectory("/work", ctxDir).
+		WithWorkdir("/work").
+		WithExec([]string{"go", "build", "-o", "/runtime", "."}).
+		WithEntrypoint([]string{"/runtime"})
+}
+
+func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
+	return dag.GeneratedCode(m.generatedCtx(modSource))
+}
+
+func (m *CoolSdk) generatedCtx(modSource *dagger.ModuleSource) *dagger.Directory {
+	ctxDir := modSource.WithSDK("go").AsModule().GeneratedContextDirectory()
+	ctxDir = modSource.ContextDirectory().WithDirectory("/", ctxDir)
+	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/dagger.gen.go"))
+	return ctxDir
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+			WithNewFile("main.go", `package main
+
+type Test struct {}
+`,
+			)
+
+		out, err := ctr.
+			With(daggerFunctions()).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `cool-fn`) // hardcoded typedef in fixedsrc/dagger.gen.go
+	})
 }
 
 // TestHostError verifies the host api is not exposed to modules

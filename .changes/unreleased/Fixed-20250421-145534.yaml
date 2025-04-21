@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix errors using CurrentModule API during SDK module initialization.
+time: 2025-04-21T14:55:34.675123543-07:00
+custom:
+  Author: sipsma
+  PR: "10213"
