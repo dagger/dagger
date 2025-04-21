@@ -170,6 +170,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"git", "openssh-client", "pigz", "xz",
 					// for CNI
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
+					// for Kata Containers integration
+					"e2fsprogs",
 				},
 				Arch: build.platformSpec.Architecture,
 			}).
@@ -193,6 +195,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"apt-get", "install", "-y",
 				"iptables", "git", "dnsmasq-base", "network-manager",
 				"gpg", "curl",
+				"e2fsprogs",
 			}).
 			WithExec([]string{
 				"update-alternatives",
@@ -215,6 +218,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			"git", "openssh-client", "pigz", "xz",
 			// for CNI
 			"iptables", "ip6tables", "dnsmasq",
+			// for Kata Containers integration
+			"e2fsprogs",
 		}
 		if build.gpuSupport {
 			pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
