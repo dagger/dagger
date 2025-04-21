@@ -30,6 +30,34 @@ their own IDs.
 
 The `save` tool, if present, determines the outputs. Keep going until you are able to call it.
 
+## Chaining tool calls
+
+Use the `chain_tools` tool as an optimization to chain multiple tool calls together, minimizing back-and-forth.
+
+For example, many scenarios will involve chaining tool calls together:
+
+<example name="unchained">
+  {"tool":"foo","params":{}}
+  => {"result":"Foo#1"}
+  {"tool":"Foo_withBar","params":{"Foo":"Foo#1","bar":"Bar#1"}}
+  => {"result":"Foo#2"}
+  {"tool":"Foo_buzz","params":{"Foo":"Foo#2"}}
+  => {"result":"Foo#3"}
+</example>
+
+In these scenarios, use the `chain_tools` tool instead:
+
+<example name="chained">
+{"tool":"chain_tools","params":{
+	"calls": [
+		{"tool": "foo"},
+		{"tool": "Foo_withBar","params":{"bar": "Bar#1"}},
+		{"tool": "Foo_buzz"}
+	]
+}}
+=> {"result":"Foo#3"}
+</example>
+
 ## Conceptual Framework
 
 Think of this system as a chain of transformations where each operation:
