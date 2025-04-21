@@ -19,6 +19,18 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     name
     |> normalize_name()
     |> Macro.underscore()
+    |> case do
+      <<"is_", rest::binary>> = orig ->
+        # Special case: is_foo => foo?
+        if String.starts_with?(orig, "is_") do
+          rest <> "?"
+        else
+          orig
+        end
+
+      other ->
+        other
+    end
   end
 
   defp normalize_name(name) do

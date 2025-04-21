@@ -414,6 +414,7 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		jobs[idify(job.Name)] = api.Job{
 			// The job name is used by the "required checks feature" in branch protection rules
 			Name:           job.Name,
+			Condition:      job.Condition,
 			RunsOn:         job.Runner,
 			Steps:          steps,
 			TimeoutMinutes: job.TimeoutMinutes,

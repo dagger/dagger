@@ -4,10 +4,7 @@
   "sdk": {
     "source": "go"
   },
-  "include": [
-    "engine/distconsts/**/*",
-    "sdk/typescript/runtime/**/*"
-  ],
+  "include": ["engine/distconsts/**/*", "sdk/typescript/runtime/**/*"],
   "dependencies": [
     {
       "name": "alpine",

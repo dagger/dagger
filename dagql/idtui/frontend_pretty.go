@@ -1261,8 +1261,8 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "-":
 		fe.FrontendOpts.Verbosity--
-		if fe.FrontendOpts.Verbosity < 0 {
-			fe.FrontendOpts.Verbosity = 0
+		if fe.FrontendOpts.Verbosity < -1 {
+			fe.FrontendOpts.Verbosity = -1
 		}
 		fe.recalculateViewLocked()
 		return nil

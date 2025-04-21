@@ -3,36 +3,198 @@
     "role": "user",
     "content": "tell me the value of PATH",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
     "role": "assistant",
-    "content": "The `PATH` variable is an environment variable in Unix and Unix-like operating systems (such as Linux and macOS), as well as in Windows, that tells the shell which directories to search for executable files. Its value is a list of directories separated by colons (`:`) on Unix-like systems or semicolons (`;`) on Windows.\n\nThe specific value of `PATH` can vary depending on the system and the user's configuration, but here is a typical example for a Unix-like system:\n\n```\n/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n```\n\nAnd for Windows, it might look like:\n\n```\nC:\\Windows\\System32;C:\\Windows;C:\\Program Files\n```\n\nTo find the actual value of `PATH` on your system, you can open a terminal or command prompt and type `echo $PATH` on Unix-like systems or `echo %PATH%` on Windows.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_unJGt9QDgnorT4sDVCJIoyGL",
+        "function": {
+          "name": "select_tools",
+          "arguments": {
+            "tools": [
+              "Container_with_exec",
+              "Container_stdout"
+            ]
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 523,
-      "OutputTokens": 194,
-      "TotalTokens": 717
+      "input_tokens": 931,
+      "output_tokens": 21,
+      "total_tokens": 952
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"added_tools\":[{\"name\":\"Container_stdout\",\"description\":\"The buffered standard output stream of the last executed command\\n\\nReturns an error if no command was executed\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"}},\"required\":[\"Container\"],\"type\":\"object\"}},{\"name\":\"Container_with_exec\",\"description\":\"Execute a command in the container, and return a new snapshot of the container state after execution.\\n\\nReturn type: Container!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"},\"args\":{\"description\":\"Command to execute. Must be valid exec() arguments, not a shell command. Example: [\\\"go\\\", \\\"run\\\", \\\"main.go\\\"].\\n\\nTo run a shell command, execute the shell and pass the shell command as argument. Example: [\\\"sh\\\", \\\"-c\\\", \\\"ls -l | grep foo\\\"]\\n\\nDefaults to the container's default arguments (see \\\"defaultArgs\\\" and \\\"withDefaultArgs\\\").\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"expand\":{\"default\":false,\"description\":\"Replace \\\"${VAR}\\\" or \\\"$VAR\\\" in the args according to the current environment variables defined in the container (e.g. \\\"/$VAR/foo\\\").\",\"type\":\"boolean\"},\"expect\":{\"default\":\"SUCCESS\",\"description\":\"Exit codes this command is allowed to exit with without error\",\"enum\":[\"SUCCESS\",\"FAILURE\",\"ANY\"],\"type\":\"string\"},\"experimentalPrivilegedNesting\":{\"default\":false,\"description\":\"Provides Dagger access to the executed command.\",\"type\":\"boolean\"},\"insecureRootCapabilities\":{\"default\":false,\"description\":\"Execute the command with all root capabilities. Like --privileged in Docker\\n\\nDANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.\",\"type\":\"boolean\"},\"noInit\":{\"default\":false,\"description\":\"Skip the automatic init process injected into containers by default.\\n\\nOnly use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.\",\"type\":\"boolean\"},\"redirectStderr\":{\"default\":\"\",\"description\":\"Like redirectStdout, but for standard error\",\"type\":\"string\"},\"redirectStdout\":{\"default\":\"\",\"description\":\"Redirect the command's standard output to a file in the container. Example: \\\"./stdout.txt\\\"\",\"type\":\"string\"},\"stdin\":{\"default\":\"\",\"description\":\"Content to write to the command's standard input. Example: \\\"Hello world\\\")\",\"type\":\"string\"},\"useEntrypoint\":{\"default\":false,\"description\":\"Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.\",\"type\":\"boolean\"}},\"required\":[\"Container\",\"args\"],\"type\":\"object\"}}]}",
+    "tool_call_id": "call_unJGt9QDgnorT4sDVCJIoyGL",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_reMIvJ9ztjDRawImNzoz6ald",
+        "function": {
+          "name": "Container_with_exec",
+          "arguments": {
+            "args": [
+              "sh",
+              "-c",
+              "echo $PATH"
+            ]
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 2132,
+      "output_tokens": 30,
+      "total_tokens": 2162
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"Container#2\"}",
+    "tool_call_id": "call_reMIvJ9ztjDRawImNzoz6ald",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_bSj1JqdP9DKZjox23nTDQLoi",
+        "function": {
+          "name": "Container_stdout",
+          "arguments": {}
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 2206,
+      "output_tokens": 17,
+      "total_tokens": 2223
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\\n\"}",
+    "tool_call_id": "call_bSj1JqdP9DKZjox23nTDQLoi",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The value of PATH in the alpine linux container is:\n\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "token_usage": {
+      "input_tokens": 2250,
+      "output_tokens": 34,
+      "total_tokens": 2284
     }
   },
   {
     "role": "user",
     "content": "now tell me the value of TERM",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
     "role": "assistant",
-    "content": "The `TERM` environment variable specifies the type of terminal to emulate when running the shell. This variable tells applications how to interact with the terminal interface, particularly in terms of capabilities like color support, cursor movement, and screen manipulation.\n\nThe value of `TERM` can vary depending on the terminal emulator or environment you are using. Here are some common values:\n\n- `xterm`: A common default for many terminal emulators.\n- `xterm-256color`: Similar to `xterm` but with support for 256 colors.\n- `screen`: Used when running in a terminal multiplexer like GNU Screen.\n- `tmux`: Used when running inside the tmux terminal multiplexer.\n- `linux`: Used on the Linux console.\n- `vt100`: Emulates a VT100 terminal, often used for basic terminal compatibility.\n\nTo find the actual value of `TERM` on your system, you can open a terminal and type `echo $TERM`.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_W7W3H6WXYMpV6SeDtOrk3y5N",
+        "function": {
+          "name": "Container_with_exec",
+          "arguments": {
+            "args": [
+              "sh",
+              "-c",
+              "echo $TERM"
+            ]
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 730,
-      "OutputTokens": 195,
-      "TotalTokens": 925
+      "input_tokens": 2297,
+      "output_tokens": 30,
+      "total_tokens": 2327
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"Container#3\"}",
+    "tool_call_id": "call_W7W3H6WXYMpV6SeDtOrk3y5N",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_RMlEzcBJevIA63bA8PzPR6QC",
+        "function": {
+          "name": "Container_stdout",
+          "arguments": {}
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 2371,
+      "output_tokens": 17,
+      "total_tokens": 2388
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"\\n\"}",
+    "tool_call_id": "call_RMlEzcBJevIA63bA8PzPR6QC",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The value of TERM in the alpine linux container is empty (not set).",
+    "token_usage": {
+      "input_tokens": 2395,
+      "output_tokens": 17,
+      "total_tokens": 2412
     }
   }
 ]

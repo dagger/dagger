@@ -396,4 +396,15 @@ class Env extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('description', $description);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Create or update an input value of type string
+     */
+    public function withStringOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStringOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

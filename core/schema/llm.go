@@ -29,6 +29,10 @@ func (s llmSchema) Install() {
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
 		dagql.Func("historyJSON", s.historyJSON).
+			View(AllVersion).
+			Doc("return the raw llm message history as json"),
+		dagql.Func("historyJSON", s.historyJSONString).
+			View(BeforeVersion("v0.18.4")).
 			Doc("return the raw llm message history as json"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
@@ -52,6 +56,8 @@ func (s llmSchema) Install() {
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
 			ArgDoc("prompt", "The system prompt to send"),
+		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
+			Doc("Disable the default system prompt"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
 			var zero dagql.ID[*core.LLM]
 			var inst dagql.Instance[*core.LLM]
@@ -128,6 +134,10 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	return llm.WithSystemPrompt(args.Prompt), nil
 }
 
+func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.WithoutDefaultSystemPrompt(), nil
+}
+
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
@@ -164,25 +174,24 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	return core.NewLLM(ctx, parent, model, maxAPICalls)
 }
 
-func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Array[dagql.String], error) {
-	history, err := llm.History(ctx, s.srv)
-	if err != nil {
-		return nil, err
-	}
-	return dagql.NewStringArray(history...), nil
+func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
+	return llm.History(ctx, s.srv)
 }
 
-func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.String, error) {
-	history, err := llm.HistoryJSON(ctx, s.srv)
+func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {
+	return llm.HistoryJSON(ctx, s.srv)
+}
+
+func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+	js, err := llm.HistoryJSON(ctx, s.srv)
 	if err != nil {
 		return "", err
 	}
-	return dagql.NewString(history), nil
+	return js.String(), nil
 }
 
-func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.String, error) {
-	doc, err := llm.ToolsDoc(ctx, s.srv)
-	return dagql.NewString(doc), err
+func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+	return llm.ToolsDoc(ctx, s.srv)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {

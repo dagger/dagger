@@ -3,9 +3,9 @@
     "role": "user",
     "content": "You are an expert go programmer. You have access to a workspace.\nUse the read, write, build tools to complete the following assignment.\nDo not try to access the container directly.\nDon't stop until your code builds.\n\nAssignment: write a hello world program\n",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
@@ -13,59 +13,34 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_rreQM3amv7xB9GdZQvK2snKZ",
+        "id": "call_ZhoycPk2Ai9To17Lyhic4069",
         "function": {
-          "name": "workspace",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "InputTokens": 261,
-      "OutputTokens": 10,
-      "TotalTokens": 271
-    }
-  },
-  {
-    "role": "user",
-    "content": "{\"selected\":\"ToyWorkspace#1\"}",
-    "tool_call_id": "call_rreQM3amv7xB9GdZQvK2snKZ",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "call_zvlMXZspUIE0kHBoSYqaCAqp",
-        "function": {
-          "name": "ToyWorkspace_write",
+          "name": "select_tools",
           "arguments": {
-            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}"
+            "tools": [
+              "ToyWorkspace_write",
+              "ToyWorkspace_build",
+              "ToyWorkspace_read"
+            ]
           }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "InputTokens": 337,
-      "OutputTokens": 43,
-      "TotalTokens": 380
+      "input_tokens": 807,
+      "output_tokens": 26,
+      "total_tokens": 833
     }
   },
   {
     "role": "user",
-    "content": "{\"previous\":\"ToyWorkspace#1\",\"selected\":\"ToyWorkspace#2\"}",
-    "tool_call_id": "call_zvlMXZspUIE0kHBoSYqaCAqp",
+    "content": "{\"added_tools\":[{\"name\":\"ToyWorkspace_build\",\"description\":\"\\nBuild the code at the current directory in the workspace\\n\\n\\nReturn type: Void\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_read\",\"description\":\"\\nRead a file\\n\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"}},\"required\":[\"ToyWorkspace\"],\"type\":\"object\"}},{\"name\":\"ToyWorkspace_write\",\"description\":\"\\nWrite a file\\n\\n\\nReturn type: ToyWorkspace!\",\"schema\":{\"properties\":{\"ToyWorkspace\":{\"default\":\"ToyWorkspace#1\",\"description\":\"The ToyWorkspace to operate against. Default: ToyWorkspace#1\",\"enum\":[\"ToyWorkspace#1\"],\"type\":\"string\"},\"content\":{\"type\":\"string\"}},\"required\":[\"ToyWorkspace\",\"content\"],\"type\":\"object\"}}]}",
+    "tool_call_id": "call_ZhoycPk2Ai9To17Lyhic4069",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
@@ -73,7 +48,38 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_LM9VkPtoMbKdTWwh7Djgua30",
+        "id": "call_yLnbafoWOhHiTCv5Wg4Sfqq1",
+        "function": {
+          "name": "ToyWorkspace_write",
+          "arguments": {
+            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, world!\")\n}\n"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 1236,
+      "output_tokens": 52,
+      "total_tokens": 1288
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"ToyWorkspace#2\"}",
+    "tool_call_id": "call_yLnbafoWOhHiTCv5Wg4Sfqq1",
+    "token_usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_OEfPInz3gpwrgE8uokrqIhYM",
         "function": {
           "name": "ToyWorkspace_build",
           "arguments": {}
@@ -82,19 +88,19 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 403,
-      "OutputTokens": 13,
-      "TotalTokens": 416
+      "input_tokens": 1367,
+      "output_tokens": 21,
+      "total_tokens": 1388
     }
   },
   {
     "role": "user",
     "content": "{\"result\":null}",
-    "tool_call_id": "call_LM9VkPtoMbKdTWwh7Djgua30",
+    "tool_call_id": "call_OEfPInz3gpwrgE8uokrqIhYM",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   },
   {
@@ -102,9 +108,9 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_zy4h14qSaTmczDpQCeSqfuuY",
+        "id": "call_M5AlTUEnlfpc5skS2GUhJY00",
         "function": {
-          "name": "return",
+          "name": "save",
           "arguments": {
             "result": "ToyWorkspace#2"
           }
@@ -113,28 +119,19 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 429,
-      "OutputTokens": 17,
-      "TotalTokens": 446
+      "input_tokens": 1393,
+      "output_tokens": 17,
+      "total_tokens": 1410
     }
   },
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_zy4h14qSaTmczDpQCeSqfuuY",
+    "tool_call_id": "call_M5AlTUEnlfpc5skS2GUhJY00",
     "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "The \"Hello, World!\" program has been successfully written and built in the workspace. The code is ready.",
-    "token_usage": {
-      "InputTokens": 453,
-      "OutputTokens": 24,
-      "TotalTokens": 477
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
     }
   }
 ]

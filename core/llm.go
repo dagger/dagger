@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -68,6 +70,9 @@ type LLM struct {
 	// History of messages
 	messages []ModelMessage
 
+	// Whether to disable the default system prompt
+	disableDefaultSystemPrompt bool
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 }
@@ -85,18 +90,19 @@ type LLMProvider string
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
 	SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	IsRetryable(err error) bool
 }
 
 type LLMResponse struct {
 	Content    string
-	ToolCalls  []ToolCall
+	ToolCalls  []LLMToolCall
 	TokenUsage LLMTokenUsage
 }
 
 type LLMTokenUsage struct {
-	InputTokens  int64 `field:"true"`
-	OutputTokens int64 `field:"true"`
-	TotalTokens  int64 `field:"true"`
+	InputTokens  int64 `field:"true" json:"input_tokens"`
+	OutputTokens int64 `field:"true" json:"output_tokens"`
+	TotalTokens  int64 `field:"true" json:"total_tokens"`
 }
 
 func (*LLMTokenUsage) Type() *ast.Type {
@@ -110,13 +116,13 @@ func (*LLMTokenUsage) Type() *ast.Type {
 type ModelMessage struct {
 	Role        string        `json:"role"`
 	Content     string        `json:"content"`
-	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string        `json:"tool_call_id,omitempty"`
 	ToolErrored bool          `json:"tool_errored,omitempty"`
 	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
 }
 
-type ToolCall struct {
+type LLMToolCall struct {
 	ID       string   `json:"id"`
 	Function FuncCall `json:"function"`
 	Type     string   `json:"type"`
@@ -440,7 +446,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(endpoint),
+		mcp:         NewEnv().MCP(),
 		once:        &sync.Once{},
 	}, nil
 }
@@ -561,6 +567,13 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	return llm
 }
 
+// Disable the default system prompt
+func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
+	llm = llm.Clone()
+	llm.disableDefaultSystemPrompt = true
+	return llm
+}
+
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
@@ -581,26 +594,18 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
-	var hasSystemPrompt bool
-	for _, env := range llm.messages {
-		if env.Role == "system" {
-			return llm.messages
-		}
+	if llm.disableDefaultSystemPrompt {
+		return llm.messages
 	}
-
-	messages := llm.messages
-
-	// inject default system prompt if none are found
-	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
 				Content: prompt,
 			},
-		}, messages...)
+		}, llm.messages...)
 	}
-
-	return messages
+	return llm.messages
 }
 
 type ModelFinishedError struct {
@@ -654,6 +659,9 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if msg == "" {
+		return errors.New("no interjection provided; giving up")
+	}
 	fmt.Fprint(stdio.Stdout, msg)
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
@@ -691,11 +699,25 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 }
 
 func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
-	if len(llm.messages) == 0 {
+	var hasUserMessage bool
+	for _, message := range llm.messages {
+		if message.Role == "user" {
+			hasUserMessage = true
+			break
+		}
+	}
+	if !hasUserMessage {
 		// dirty but no messages, possibly just a state change, nothing to do
 		// until a prompt is given
 		return nil
 	}
+
+	b := backoff.NewExponentialBackOff()
+	// Sane defaults (ideally not worth extra knobs)
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
@@ -707,7 +729,34 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 			return err
 		}
 
-		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
+		messagesToSend := llm.messagesWithSystemPrompt()
+
+		var res *LLMResponse
+
+		// Retry operation
+		client := llm.Endpoint.Client
+		err = backoff.Retry(func() error {
+			var sendErr error
+			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+			if sendErr != nil {
+				var finished *ModelFinishedError
+				if errors.As(sendErr, &finished) {
+					// Don't retry if the model finished explicitly, treat as permanent.
+					return backoff.Permanent(sendErr)
+				}
+				if !client.IsRetryable(sendErr) {
+					// Maybe an invalid request - give up.
+					return backoff.Permanent(sendErr)
+				}
+				// Log retry attempts? Maybe with increasing severity?
+				// For now, just return the error to signal backoff to retry.
+				return sendErr
+			}
+			// Success, stop retrying
+			return nil
+		}, backoff.WithContext(b, ctx))
+
+		// Check the final error after retries (if any)
 		if err != nil {
 			var finished *ModelFinishedError
 			if errors.As(err, &finished) {
@@ -722,7 +771,8 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 					break
 				}
 			}
-			return err
+			// Handle persistent error after all retries failed.
+			return fmt.Errorf("not retrying: %w", err)
 		}
 
 		// Add the model reply to the history
@@ -748,11 +798,15 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		for _, toolCall := range res.ToolCalls {
 			content, isError := llm.mcp.Call(ctx, tools, toolCall)
 			llm.messages = append(llm.messages, ModelMessage{
-				Role:        "user", // Anthropic only allows tool calls in user messages
+				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
 				ToolCallID:  toolCall.ID,
 				ToolErrored: isError,
 			})
+		}
+		if llm.mcp.Returned() {
+			// we returned; exit the loop, since some models just keep going
+			break
 		}
 	}
 	return nil
@@ -791,13 +845,23 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
+func squash(str string) string {
+	return strings.ReplaceAll(str, "\n", `\n`)
+}
+
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var history []string
+	var lastRole string
 	for _, msg := range llm.messages {
-		content := strings.TrimRight(msg.Content, "\n")
+		if len(history) > 0 && lastRole != msg.Role {
+			// add a blank line when roles change
+			history = append(history, "")
+			lastRole = msg.Role
+		}
+		content := squash(msg.Content)
 		switch msg.Role {
 		case "user":
 			var item string
@@ -834,31 +898,25 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
+func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error) {
 	if err := llm.Sync(ctx, dag); err != nil {
-		return "", err
+		return nil, err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(result), nil
+	return JSON(result), nil
 }
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.MCP(llm.Endpoint)
+	llm.mcp = env.Clone().MCP()
 	return llm
 }
 
 func (llm *LLM) Env() *Env {
 	return llm.mcp.env
-}
-
-func (llm *LLM) With(value dagql.Object) *LLM {
-	llm = llm.Clone()
-	llm.mcp.Select(value)
-	return llm
 }
 
 // A variable in the LLM environment
@@ -885,13 +943,14 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 	if err := llm.Sync(ctx, dag); err != nil {
 		return res, err
 	}
-	if llm.mcp.Current() == nil {
+	if llm.mcp.LastResult() == nil {
 		return res, nil
 	}
 	res.Value = &Binding{
-		Key:   name,
-		Value: llm.mcp.Current(),
-		env:   llm.mcp.env,
+		Key:          name,
+		Value:        llm.mcp.LastResult(),
+		ExpectedType: llm.mcp.LastResult().Type().Name(),
+		env:          llm.mcp.env,
 	}
 	res.Valid = true
 	return res, nil

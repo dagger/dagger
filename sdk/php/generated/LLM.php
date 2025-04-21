@@ -51,10 +51,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * return the raw llm message history as json
      */
-    public function historyJSON(): string
+    public function historyJSON(): Json
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('historyJSON');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'historyJSON');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'historyJSON'));
     }
 
     /**
@@ -176,6 +176,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
         $innerQueryBuilder->setArgument('prompt', $prompt);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Disable the default system prompt
+     */
+    public function withoutDefaultSystemPrompt(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDefaultSystemPrompt');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
