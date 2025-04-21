@@ -97,7 +97,8 @@ func New() *CI {
 			"php",
 			"dotnet",
 		).
-		withPrepareReleaseWorkflow()
+		withPrepareReleaseWorkflow().
+		withEvalsWorkflow()
 }
 
 // Generate Github Actions workflows to call our Dagger workflows
@@ -175,21 +176,6 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
-		WithJob(runner.Job(
-			"testdev-evals",
-			"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",
-			dagger.GhaJobOpts{
-				Module:        "modules/evaluator",
-				DaggerVersion: ".", // always evaluate dev engine for latest LLM changes
-				Runner:        []string{GoldRunner(true)},
-				Condition:     fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
-				Secrets:       []string{"OP_SERVICE_ACCOUNT_TOKEN"},
-				Env: []string{
-					"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
-					"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
-					"OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY",
-				},
-			})).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
 				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
@@ -218,8 +204,8 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{PlatinumRunner(true)},
 			}},
 		}))
-
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
+
 	return ci
 }
 
@@ -284,6 +270,37 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
 
+	return ci
+}
+
+func (ci *CI) withEvalsWorkflow() *CI {
+	gha := dag.Gha(dagger.GhaOpts{
+		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+			Runner:         []string{BronzeRunner(false)},
+			DaggerVersion:  daggerVersion,
+			TimeoutMinutes: timeoutMinutes,
+		}),
+	})
+	w := gha.Workflow("evals", dagger.GhaWorkflowOpts{
+		// NOTE: this will still run for fork branches, so we need the conditional
+		// below to actually skip those.
+		OnPushBranches: []string{"*"},
+	}).WithJob(gha.Job(
+		"testdev",
+		"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",
+		dagger.GhaJobOpts{
+			Module:        "modules/evaluator",
+			DaggerVersion: ".", // testdev, so run against local dagger
+			Runner:        []string{GoldRunner(true)},
+			Condition:     fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
+			Secrets:       []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+			Env: []string{
+				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
+				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
+				"OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY",
+			},
+		}))
+	ci.Workflows = ci.Workflows.WithWorkflow(w)
 	return ci
 }
 
