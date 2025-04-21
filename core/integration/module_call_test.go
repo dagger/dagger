@@ -2159,9 +2159,34 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 			defer cleanup()
 
 			out, err := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				With(privateSetup).
 				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+		})
+
+		t.Run("go dep", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			privateSetup, cleanup := privateRepoSetup(c, t, tc)
+			defer cleanup()
+
+			out, err := goGitBase(t, c).
+				With(privateSetup).
+				With(daggerExec("init", "--source=.", "--name=foo", "--sdk=go")).
+				With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
+				WithNewFile("main.go", `package main
+import (
+	"context"
+)
+
+type Foo struct {}
+
+func (m *Foo) Fn(ctx context.Context) (string, error) {
+	return dag.TopLevel().Fn(ctx)
+}
+`).
+				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
@@ -2173,12 +2198,37 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 			defer cleanup()
 
 			out, err := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				With(privateSetup).
 				With(daggerCallAt(testGitModuleRef(tc, "ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
+
+		t.Run("typescript dep", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			privateSetup, cleanup := privateRepoSetup(c, t, tc)
+			defer cleanup()
+
+			out, err := goGitBase(t, c).
+				With(privateSetup).
+				With(daggerExec("init", "--source=.", "--name=foo", "--sdk=go")).
+				With(daggerExec("install", testGitModuleRef(tc, "ts"))).
+				WithNewFile("main.go", `package main
+import (
+	"context"
+)
+
+type Foo struct {}
+
+func (m *Foo) Fn(ctx context.Context) (string, error) {
+	return dag.Test().ContainerEcho("yoyoyo").Stdout(ctx)
+}
+`).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyoyo", strings.TrimSpace(out))
 		})
 
 		t.Run("python", func(ctx context.Context, t *testctx.T) {
@@ -2187,12 +2237,37 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 			defer cleanup()
 
 			out, err := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				With(privateSetup).
 				With(daggerCallAt(testGitModuleRef(tc, "py"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
+
+		t.Run("python dep", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			privateSetup, cleanup := privateRepoSetup(c, t, tc)
+			defer cleanup()
+
+			out, err := goGitBase(t, c).
+				With(privateSetup).
+				With(daggerExec("init", "--source=.", "--name=foo", "--sdk=go")).
+				With(daggerExec("install", testGitModuleRef(tc, "py"))).
+				WithNewFile("main.go", `package main
+import (
+	"context"
+)
+
+type Foo struct {}
+
+func (m *Foo) Fn(ctx context.Context) (string, error) {
+	return dag.Test().ContainerEcho("yoyoyo").Stdout(ctx)
+}
+`).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyoyo", strings.TrimSpace(out))
 		})
 	})
 }

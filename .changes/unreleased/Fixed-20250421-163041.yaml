@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix "client not found" errors when loading cached modules from private repos.
+time: 2025-04-21T16:30:41.36479966-07:00
+custom:
+  Author: sipsma
+  PR: "10223"

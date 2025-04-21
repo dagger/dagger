@@ -482,7 +482,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call sdk module moduleRuntime: %w", err)
+		return nil, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
 	}
 	return inst.Self, nil
 }
