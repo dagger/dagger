@@ -28,8 +28,8 @@
       "pin": "d83fad32dc187838c849d4ea8152cc97a46de00a"
     },
     {
-      "name": "version",
-      "source": "../version"
+      "name": "dagger-version",
+      "source": "../dagger-version"
     }
   ]
 }

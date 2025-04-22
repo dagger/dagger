@@ -27,8 +27,8 @@
       "source": "../sdk/php/dev"
     },
     {
-      "name": "version",
-      "source": "../version"
+      "name": "dagger-version",
+      "source": "../dagger-version"
     }
   ],
   "source": ".dagger"
