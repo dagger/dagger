@@ -55,7 +55,12 @@ func ResourceTransferPostCall(
 
 	srcSecretStore, err := query.Secrets(srcClientCtx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get source client secret store: %w", err)
+		// If we can't find the source client, we must have called a function that is persistently cached
+		// *on the buildkit cache* (as opposed to dagql cache). Currently this is just internal SDK calls
+		// like ModuleRuntime. In this case, the only secrets involved are any related to pulling the module
+		// source (like a git auth token). These secrets are already known by the caller and the secret transfer
+		// is thus not needed.
+		return nopTransfer, nil //nolint:nilerr
 	}
 	srcDag, err := query.Server.Server(srcClientCtx)
 	if err != nil {

@@ -804,6 +804,54 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 			Stdout(ctx)
 		require.NoError(t, err)
 	})
+
+	t.Run("secret uri plaintext", func(ctx context.Context, t *testctx.T) {
+		callMod := func(c *dagger.Client, val string) (string, error) {
+			return goGitBase(t, c).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/secreter/internal/dagger"
+)
+
+type Secreter struct {}
+
+func (*Secreter) CheckPlaintext(ctx context.Context, s *dagger.Secret, expected string) error {
+	plaintext, err := s.Plaintext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get plaintext: %w", err)
+	}
+	if plaintext != expected {
+		return fmt.Errorf("expected %q, got %q", expected, plaintext)
+	}
+	return nil
+}
+`,
+				).
+				WithEnvVariable("DASECRET", val).
+				With(daggerCall(
+					"check-plaintext",
+					"--s", "env://DASECRET",
+					"--expected", val,
+				)).
+				Stdout(ctx)
+		}
+
+		c1 := connect(ctx, t)
+		randVal1 := identity.NewID()
+		_, err := callMod(c1, randVal1)
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		randVal2 := identity.NewID()
+		_, err = callMod(c2, randVal2)
+		require.NoError(t, err)
+	})
 }
 
 func (LLMSuite) TestCrossSessionLLM(ctx context.Context, t *testctx.T) {

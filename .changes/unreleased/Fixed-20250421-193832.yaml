@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fixed error when setSecret provided empty plaintext value and passed between function calls.
+time: 2025-04-21T19:38:32.53903125-07:00
+custom:
+  Author: sipsma
+  PR: "10223"

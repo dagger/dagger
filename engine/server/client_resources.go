@@ -81,7 +81,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 				// don't attempt to add the secret if it doesn't exist and was optional
 				continue
 			}
-			if err := destClient.secretStore.AddSecret(secret); err != nil {
+			if err := destClient.secretStore.AddSecretFromOtherStore(srcClient.secretStore, secret); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
 		}

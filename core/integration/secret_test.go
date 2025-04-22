@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -185,6 +186,7 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "***", stdout)
 }
+
 func (SecretSuite) TestVaultSecretsProviderTTL(ctx context.Context, t *testctx.T) {
 	var baseContainer = func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
 		return c.Container().
@@ -297,4 +299,58 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 			require.Equal(t, fmt.Sprintf("original: original-password\nupdated: %s", tc.expectedUpdatedPassword), output)
 		})
 	}
+}
+
+func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
+	callMod := func(c *dagger.Client) (string, error) {
+		return goGitBase(t, c).
+			WithWorkdir("/work/secreter").
+			With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/secreter/internal/dagger"
+)
+
+type Secreter struct {}
+
+func (*Secreter) CheckEmptyPlaintext(ctx context.Context, s *dagger.Secret) error {
+	plaintext, err := s.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "" {
+		return fmt.Errorf("expected empty plaintext, got %q", plaintext)
+	}
+	return nil
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=caller", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./secreter")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Caller struct {}
+
+func (*Caller) Test(ctx context.Context) error {
+	return dag.Secreter().CheckEmptyPlaintext(ctx, dag.SetSecret("FOO", ""))
+}
+`,
+			).
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerCall("test")).
+			Stdout(ctx)
+	}
+
+	c1 := connect(ctx, t)
+	_, err := callMod(c1)
+	require.NoError(t, err)
 }
