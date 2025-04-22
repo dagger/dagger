@@ -82,6 +82,22 @@ func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
 	return nil
 }
 
+func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.Instance[*Secret]) error {
+	secretIDDgst := secret.ID().Digest()
+
+	srcStore.mu.RLock()
+	srcSecret, ok := srcStore.secrets[secretIDDgst]
+	srcStore.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("secret %s not found in source store", secretIDDgst)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.secrets[secretIDDgst] = srcSecret
+	return nil
+}
+
 func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -157,7 +173,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
 	}
 	if caller == nil {
-		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: was nil")
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session %q: was nil", buildkitSessionID)
 	}
 
 	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{

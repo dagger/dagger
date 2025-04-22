@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix "buildkit session not found" errors when calling `.plaintext` on a URI-based secret from a module w/ cache hit.
+time: 2025-04-21T18:01:36.85935517-07:00
+custom:
+  Author: sipsma
+  PR: "10223"
