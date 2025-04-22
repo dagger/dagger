@@ -1,10 +1,13 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.18.3",
+  "engineVersion": "v0.18.4",
   "sdk": {
     "source": "go"
   },
-  "include": ["engine/distconsts/**/*", "sdk/typescript/runtime/**/*"],
+  "include": [
+    "engine/distconsts/**/*",
+    "sdk/typescript/runtime/**/*"
+  ],
   "dependencies": [
     {
       "name": "alpine",
