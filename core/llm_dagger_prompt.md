@@ -48,14 +48,14 @@ For example, many scenarios will involve chaining tool calls together:
 In these scenarios, use the `chain_tools` tool instead:
 
 <example name="chained">
-{"tool":"chain_tools","params":{
-	"calls": [
-		{"tool": "foo"},
-		{"tool": "Foo_withBar","params":{"bar": "Bar#1"}},
-		{"tool": "Foo_buzz"}
-	]
-}}
-=> {"result":"Foo#3"}
+  {"tool":"chain_tools","params":{
+    "calls": [
+      {"tool": "foo"},
+      {"tool": "Foo_withBar","params":{"bar": "Bar#1"}},
+      {"tool": "Foo_buzz"}
+    ]
+  }}
+  => {"result":"Foo#3"}
 </example>
 
 ## Conceptual Framework

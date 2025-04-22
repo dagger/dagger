@@ -754,15 +754,14 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 					}
 
 					obj := bnd.Value
-
-					// Propagate description from output to binding so that outputs are
-					// described under `Available objects:`
-					bnd.Description = output.Description
-
 					actualType := obj.Type().Name()
 					if output.ExpectedType != actualType {
 						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
 					}
+
+					// Propagate description from output to binding so that outputs are
+					// described under `Available objects:`
+					bnd.Description = output.Description
 					output.Value = obj
 				}
 			}
