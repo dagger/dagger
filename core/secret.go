@@ -160,7 +160,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	}
 
 	// If the secret is stored locally (setSecret), return the plaintext.
-	if len(secret.Self.Plaintext) > 0 {
+	if secret.Self.URI == "" {
 		return secret.Self.Plaintext, nil
 	}
 
