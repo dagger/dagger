@@ -158,7 +158,7 @@ if (!fs.existsSync(tsConfigPath)) {
 
   if (standaloneClient.value === true) {
     defaultTsConfig.compilerOptions.paths[daggerClientPathAlias] = [
-      `${clientDir.value}/client.gen.ts`,
+      `./${clientDir.value}/client.gen.ts`,
     ]
   }
 

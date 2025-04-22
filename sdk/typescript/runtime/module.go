@@ -133,7 +133,7 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 // Typescript SDK.
 // We need to use a node container to run npm since it's not available on
 // bun (https://github.com/oven-sh/bun/issues/9840).
-// This fucntion can be removed once supported by bun so we
+// This function can be removed once supported by bun so we
 // can gain some performance.
 func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger.File {
 	ctr := dag.
@@ -286,12 +286,12 @@ func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File
 			WithoutDirectory("codegen").
 			WithoutDirectory("runtime").
 			WithoutDirectory("tsx_module").
-			WithoutDirectory("bundled_Lib").
+			WithoutDirectory("bundled_lib").
 			WithoutDirectory("src/provisioning").
 			WithFile("src/api/client.gen.ts", m.generateClient(introspectionJSON))
-	default:
-		// This should never happens since detectSdkLibOrigin default to Bundle.
-		sdkDir = dag.Directory()
+	case Remote:
+		// TODO: Add support for remote SDK in module
+		panic("remote sdk not supported yet in module")
 	}
 
 	m.ctr = m.ctr.

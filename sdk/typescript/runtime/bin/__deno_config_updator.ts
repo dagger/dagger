@@ -19,7 +19,7 @@
  * If any value is already set with a wrong value, the script will update it to its expected value.
  *
  * Usage:
- *   deno_config_updator --sdk-lib-origin=bundle|local
+ *   deno_config_updator --sdk-lib-origin=bundle|local|remote --standalone-client=true|false --output-dir=string
  *
  * Note: The file is heavily documented because it's a single script and it can be quite
  * confusing when reading through it otherwise.
@@ -28,7 +28,7 @@
 /*******************************************************************************
  * CLI configuration and parsing
  ******************************************************************************/
-const help = `Usage: deno_config_updator <--sdk-lib-origin=bundle|local>`
+const help = `Usage: deno_config_updator <--sdk-lib-origin=bundle|local> --standalone-client=true|false --output-dir=string>`
 const args = Deno.args
 
 class Arg<T> {
@@ -39,13 +39,18 @@ class Arg<T> {
 }
 
 const sdkLibOrigin = new Arg<string>("sdk-lib-origin", null)
+const standaloneClient = new Arg<boolean>("standalone-client", false)
+const clientDir = new Arg<string>("client-dir", null)
 
 // Parse arguments from the CLI.
 for (const arg of args) {
   const [name, value] = arg.slice("--".length).split("=")
   switch (name) {
     case sdkLibOrigin.name:
-      if (!value || (value !== "bundle" && value !== "local")) {
+      if (
+        !value ||
+        (value !== "bundle" && value !== "local" && value != "remote")
+      ) {
         console.error(
           `Invalid value for ${sdkLibOrigin.name}: ${value}.\n${help}`,
         )
@@ -53,6 +58,32 @@ for (const arg of args) {
       }
 
       sdkLibOrigin.value = value
+      break
+    case standaloneClient.name:
+      if (value === undefined || value === "true") {
+        standaloneClient.value = true
+        break
+      }
+
+      if (value === "false") {
+        standaloneClient.value = false
+        break
+      }
+
+      console.error(
+        `Invalid value for ${standaloneClient.name}: ${value}\n ${help}`,
+      )
+      Deno.exit(1)
+
+      break
+    case clientDir.name:
+      if (value === undefined) {
+        console.error(`Missing value for ${clientDir.name}\n ${help}`)
+        Deno.exit(1)
+      }
+
+      clientDir.value = value
+
       break
   }
 }
@@ -62,10 +93,22 @@ if (!sdkLibOrigin.value) {
   Deno.exit(1)
 }
 
+if (standaloneClient.value === true && clientDir.value === null) {
+  console.error(
+    `Missing output-dir argument while standalone client is set to true\n${help}`,
+  )
+  Deno.exit(1)
+}
+
 /*******************************************************************************
  * Constants config section
  ******************************************************************************/
 const denoConfigPath = "./deno.json"
+
+// Import paths used by user.
+const daggerPathAlias = "@dagger.io/dagger"
+const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
+const daggerClientPathAlias = "@dagger.io/client"
 
 // Filename of imported path aliases.
 const daggerRootFilename = {
@@ -78,11 +121,12 @@ const daggerTelemetryFilename = {
   local: "./sdk/src/telemetry/index.ts",
 }
 
+const typescriptImport = `npm:typescript@^5.8.2`
+
 // Imports map to be added to the deno.json file.
 const daggerImports = {
-  "@dagger.io/dagger": `${daggerRootFilename[sdkLibOrigin.value!]}`,
-  "@dagger.io/dagger/telemetry": `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
-  typescript: "npm:typescript@^5.8.2",
+  [daggerPathAlias]: `${daggerRootFilename[sdkLibOrigin.value!]}`,
+  [daggerTelemetryPathAlias]: `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
 }
 
 // Unstable flags to set in the deno.json file.
@@ -96,6 +140,10 @@ const unstableFlags = [
 /*******************************************************************************
  * Main script
  ******************************************************************************/
+
+console.log(`
+  Updating deno.json (sdkLibOrigin=${sdkLibOrigin.value}, standaloneClient=${standaloneClient.value}, clientDir=${clientDir.value})
+`)
 
 // Read the deno.json file
 const denoConfigFile = Deno.readTextFileSync(denoConfigPath)
@@ -117,10 +165,20 @@ if (!denoConfig.imports) {
   denoConfig.imports = {}
 }
 
-for (const [key, value] of Object.entries(daggerImports)) {
-  if (!denoConfig.imports[key]) {
+if (denoConfig.imports["typescript"] === undefined) {
+  denoConfig.imports["typescript"] = typescriptImport
+}
+
+if (sdkLibOrigin.value !== "remote") {
+  for (const [key, value] of Object.entries(daggerImports)) {
     denoConfig.imports[key] = value
   }
+}
+
+if (standaloneClient.value === true) {
+  denoConfig.compilerOptions.paths[daggerClientPathAlias] = [
+    `./${clientDir.value}/client.gen.ts`,
+  ]
 }
 
 // Update unstable features
@@ -139,13 +197,17 @@ if (!denoConfig.compilerOptions) {
   denoConfig.compilerOptions = {}
 }
 
-denoConfig.compilerOptions.experimentalDecorators = true
+if (standaloneClient.value === false) {
+  denoConfig.compilerOptions.experimentalDecorators = true
+}
 
 // Update nodeModulesDir
 if (!denoConfig.nodeModulesDir) {
   denoConfig.nodeModulesDir = "auto"
 }
 denoConfig.nodeModulesDir = "auto"
+
+console.log(`deno.json updated.`)
 
 // Write file back
 Deno.writeTextFileSync(denoConfigPath, JSON.stringify(denoConfig, null, 2))

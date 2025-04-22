@@ -40,6 +40,7 @@ type SDKLibOrigin string
 const (
 	Bundle SDKLibOrigin = "bundle"
 	Local  SDKLibOrigin = "local"
+	Remote SDKLibOrigin = "remote"
 )
 
 type packageJSONConfig struct {
@@ -52,7 +53,8 @@ type packageJSONConfig struct {
 }
 
 type denoJSONConfig struct {
-	Workspaces []string `json:"workspaces"`
+	Workspace []string          `json:"workspace"`
+	Imports    map[string]string `json:"imports"`
 	Dagger     *struct {
 		BaseImage string `json:"baseImage"`
 	} `json:"dagger"`
@@ -177,28 +179,56 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 // detectSDKLibOrigin return the SDK library config based on the user's module config.
 // For Node & Bun:
-// - if the package.json has `dependencies[@dagger.io/dagger]=./sdk` -> Return Local
-// - else -> Return Bundle
+// - if there's no package.json -> default to Bundle.
+// - if the package.json has `dependencies[@dagger.io/dagger]=./sdk` -> Return Local.
+// - if the package.json has `dependencies[@dagger.io/dagger] = <version>` -> Return Remote.
+// - if the package.json has no `dependencies[@dagger.io/dagger]` -> Return Bundle.
 // For Deno:
+// - if there's no deno.json -> default to Bundle.
 // - if deno.json has `workspaces` with `./sdk` in it -> Return Local
-// - else -> Return Bundle
+// - if deno.json has `imports` with `@dagger.io/dagger="npm:@dagger.io/dagger@<version>` -> Return Remote
+// - if deno.json has no `imports` with  `@dagger.io/dagger` -> Return Bundle
+//
 // Return Bundle by default since it's more performant.
 func (c *moduleConfig) detectSDKLibOrigin() (SDKLibOrigin, error) {
 	runtime := c.runtime
 
 	switch runtime {
 	case Node, Bun:
-		if c.packageJSONConfig != nil && c.packageJSONConfig.Dependencies["@dagger.io/dagger"] == "./sdk" {
+		if c.packageJSONConfig == nil {
+			return Bundle, nil
+		}
+
+		daggerDep, exist := c.packageJSONConfig.Dependencies["@dagger.io/dagger"]
+		if !exist {
+			return Bundle, nil
+		}
+
+		if daggerDep == "./sdk" {
 			return Local, nil
 		}
 
-		return Bundle, nil
+		return Remote, nil
 	case Deno:
-		if c.denoJSONConfig != nil && slices.Contains(c.denoJSONConfig.Workspaces, "./sdk") {
+		if c.denoJSONConfig == nil {
+			return Bundle, nil
+		}
+
+		if slices.Contains(c.denoJSONConfig.Workspace, "./sdk") {
 			return Local, nil
 		}
 
-		return Bundle, nil
+		daggerDep, exist := c.denoJSONConfig.Imports["@dagger.io/dagger"]
+		if !exist {
+			return Bundle, nil
+		}
+
+		if strings.HasPrefix(daggerDep, "npm:@dagger.io/dagger") {
+			return Remote, nil
+		}
+
+		// dagger.io/dagger is imported but not to a remote library so it must be local.
+		return Local, nil
 	default:
 		return Bundle, fmt.Errorf("unknown runtime: %s", runtime)
 	}
