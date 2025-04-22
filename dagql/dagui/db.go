@@ -99,6 +99,10 @@ func (db *DB) hasSeen(spanID SpanID) bool {
 
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	snapshots := snapshotSpans(db.updatedSpans.Order, func(span *Span) bool {
+		if !span.Received {
+			// don't send along any stubs; let the client-side create its own stubs
+			return false
+		}
 		if filter == nil || filter[span.ParentID] {
 			// include subscribed (or all) spans
 			return true
@@ -211,7 +215,7 @@ func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
 
 func (db *DB) RemainingSnapshots() []SpanSnapshot {
 	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
-		return !db.hasSeen(span.ID)
+		return span.Received && !db.hasSeen(span.ID)
 	})
 }
 
@@ -625,14 +629,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CallPayloads[span.CallDigest] = span.CallPayload
 	}
 
-	if !span.ParentID.IsValid() {
-		// TODO: when we initialize new spans we haven't seen before, they
-		// end up with a zero parent ID, so just do a nil check as a
-		// workaround, as we'll always see the true root first.
-		if db.RootSpan == nil {
-			// keep track of the trace's root span
-			db.RootSpan = span
-		}
+	if !span.ParentID.IsValid() && span.Received {
+		// keep track of the trace's root span
+		db.RootSpan = span
 
 		if !db.PrimarySpan.IsValid() {
 			// default primary to root span, though we might never see a "root
