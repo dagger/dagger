@@ -1,7 +1,6 @@
 {
   "type": "module",
   "dependencies": {
-    "typescript": "^5.5.4",
-    "@dagger.io/dagger": "./sdk"
+    "typescript": "^5.5.4"
   }
 }

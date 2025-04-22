@@ -132,6 +132,8 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 			"README.md",
 			"runtime",
 			"package.json",
+			"tsconfig.json",
+			"rollup.dts.config.mjs",
 			"dagger.json",
 		},
 		Exclude: []string{
@@ -140,10 +142,27 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
+	bunBuilderCtr := dag.Container().
+		From(tsdistconsts.DefaultBunImageRef).
+		// NodeJS is required to run tsc.
+		WithExec([]string{"apk", "add", "nodejs"}).
+		// Install tsc binary.
+		WithExec([]string{"bun", "install", "-g", "typescript"}).
+		WithMountedDirectory("/src", rootfs).
+		WithWorkdir("/src").
+		WithExec([]string{"bun", "install"}).
+		// Build the SDK bundled that contains the whole static library + default client
+		// The bundle works for all runtimes as long as we target node since deno & bun have compatibility API for node.
+		WithExec([]string{"bun", "build", "./src/index.ts", "--external=typescript", "--target=node", "--outfile", "/out-node/core.js"}).
+		// Emit type declaration for these files
+		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
+		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
+
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		WithDirectory("/tsx_module", tsxNodeModule).
+		WithDirectory("/bundled_lib", bunBuilderCtr.Directory("/out-node")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})

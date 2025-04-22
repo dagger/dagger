@@ -6,7 +6,7 @@ const (
 	DefaultNodeImageRef = "node:" + DefaultNodeVersion + "-alpine@" + nodeImageDigest
 
 	DefaultBunVersion  = "1.1.38"
-	bunImageDigest     = "sha256:5148f6742ac31fac28e6eab391ab1f11f6dfc0c8512c7a3679b374ec470f5982"
+	bunImageDigest     = "sha256:c1cc397e0be452c54f37cbcdfaa747eff93c993723af7d91658764d0fdfe5873"
 	DefaultBunImageRef = "oven/bun:" + DefaultBunVersion + "-alpine@" + bunImageDigest
 
 	DefaultDenoVersion  = "2.2.4"

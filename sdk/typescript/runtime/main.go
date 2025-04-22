@@ -40,6 +40,13 @@ const (
 	NpmDefaultVersion  = "10.7.0"
 )
 
+type SDKLibOrigin string
+
+const (
+	Bundle SDKLibOrigin = "bundle"
+	Local  SDKLibOrigin = "local"
+)
+
 func New(
 	// +optional
 	sdkSourceDir *dagger.Directory,
@@ -51,7 +58,8 @@ func New(
 }
 
 type packageJSONConfig struct {
-	PackageManager string `json:"packageManager"`
+	PackageManager string            `json:"packageManager"`
+	Dependencies   map[string]string `json:"dependencies"`
 	Dagger         *struct {
 		BaseImage string `json:"baseImage"`
 		Runtime   string `json:"runtime"`
@@ -59,7 +67,8 @@ type packageJSONConfig struct {
 }
 
 type denoJSONConfig struct {
-	Dagger *struct {
+	Workspaces []string `json:"workspaces"`
+	Dagger     *struct {
 		BaseImage string `json:"baseImage"`
 	} `json:"dagger"`
 }
@@ -81,6 +90,8 @@ type moduleConfig struct {
 
 	name    string
 	subPath string
+
+	sdkLibOrigin SDKLibOrigin
 }
 
 type TypescriptSdk struct {
@@ -291,11 +302,9 @@ func (t *TypescriptSdk) GenerateClient(
 
 	if dev {
 		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
-			WithoutDirectory("codegen").
-			WithoutDirectory("runtime").
-			WithoutDirectory("tsx_module"),
+			Directory("/bundled_lib").
+			WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export/client")),
 		).
-			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
 			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=true", fmt.Sprintf("--library-dir=%s", outputDir)})
 	} else {
 		ctr = ctr.
@@ -317,7 +326,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	// Get a directory with the SDK sources installed and the generated client.
 	sdk := t.
 		addSDK().
-		WithDirectory(".", t.generateClient(base, introspectionJSON))
+		WithFile("client.gen.ts", t.generateClient(base, introspectionJSON))
 
 	base = base.
 		// Add template directory
@@ -488,53 +497,118 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 		}
 
 		return ctr.
-			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
+			WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)}).
+			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
 	case Node:
 		if t.moduleConfig.packageJSONConfig == nil {
 			return templateSetup()
 		}
 
 		return ctr.
-			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
-			WithExec([]string{"npm", "pkg", "set", "type=module"}).
-			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+			WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)}).
+			WithFile("package.json", t.configurePackageJSON(ctr.File("package.json")))
 	case Deno:
-		return ctr.WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts"})
+		return ctr.WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", t.moduleConfig.sdkLibOrigin)})
 	default:
 		return ctr
 	}
 }
 
+// Update the user's package.json with required dependencies to use the Typescript SDK.
+func (t *TypescriptSdk) configurePackageJSON(file *dagger.File) *dagger.File {
+	ctr := dag.
+		Container().
+		From(tsdistconsts.DefaultNodeImageRef).
+		WithDirectory("/src", dag.Directory().WithFile("package.json", file)).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "pkg", "set", "type=module"})
+
+	if t.moduleConfig.packageJSONConfig != nil {
+		_, ok := t.moduleConfig.packageJSONConfig.Dependencies["typescript"]
+		if !ok {
+			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
+		}
+	}
+
+	return ctr.File("/src/package.json")
+}
+
 // addSDK returns a directory with the SDK sources.
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
-	return t.SDKSourceDir.
-		WithoutDirectory("codegen").
-		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module").
-		WithoutDirectory("src/provisioning")
+	switch t.moduleConfig.sdkLibOrigin {
+	case Bundle:
+		return t.SDKSourceDir.
+			Directory("/bundled_lib").
+			WithDirectory("/", dag.CurrentModule().Source().Directory("bundled_static_export/module"))
+	case Local:
+		return t.SDKSourceDir.
+			WithoutDirectory("codegen").
+			WithoutDirectory("runtime").
+			WithoutDirectory("tsx_module").
+			WithoutDirectory("bundled_Lib").
+			WithoutDirectory("src/provisioning")
+	default:
+		// This should never happen.
+		return dag.Directory()
+	}
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.Directory {
+func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.File {
+	codegenArgs := []string{
+		codegenBinPath,
+		"--lang", "typescript",
+		"--output", ModSourceDirPath,
+		"--module-name", t.moduleConfig.name,
+		"--module-source-path", t.moduleConfig.modulePath(),
+		"--introspection-json-path", schemaPath,
+	}
+
+	if t.moduleConfig.sdkLibOrigin == Bundle {
+		codegenArgs = append(codegenArgs, "--bundle")
+	}
+
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", ModSourceDirPath,
-			"--module-name", t.moduleConfig.name,
-			"--module-source-path", t.moduleConfig.modulePath(),
-			"--introspection-json-path", schemaPath,
-		}, dagger.ContainerWithExecOpts{
+		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		// Return the generated code directory.
-		Directory(t.moduleConfig.sdkPath())
+		Directory(t.moduleConfig.sdkPath()).
+		File("/src/api/client.gen.ts")
+}
+
+// detectSDKLibOrigin return the SDK library config based on the user's module config.
+// For Node & Bun:
+// - if the package.json has `dependencies[@dagger.io/dagger]=./sdk` -> Return Local
+// - else -> Return Bundle
+// For Deno:
+// - if deno.json has `workspaces` with `./sdk` in it -> Return Local
+// - else -> Return Bundle
+// Return Bundle by default since it's more performant.
+func (t *TypescriptSdk) detectSDKLibOrigin() (SDKLibOrigin, error) {
+	runtime := t.moduleConfig.runtime
+
+	switch runtime {
+	case Node, Bun:
+		if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dependencies["@dagger.io/dagger"] == "./sdk" {
+			return Local, nil
+		}
+
+		return Bundle, nil
+	case Deno:
+		if t.moduleConfig.denoJSONConfig != nil && slices.Contains(t.moduleConfig.denoJSONConfig.Workspaces, "./sdk") {
+			return Local, nil
+		}
+
+		return Bundle, nil
+	default:
+		return Bundle, fmt.Errorf("unknown runtime: %s", runtime)
+	}
 }
 
 // detectBaseImageRef return the base image ref of the runtime
@@ -726,7 +800,7 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 	case Pnpm:
 		ctr = ctr.WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)})
 
-		if !t.moduleConfig.hasFile("pnpm-workspace.yaml") {
+		if !t.moduleConfig.hasFile("pnpm-workspace.yaml") && t.moduleConfig.sdkLibOrigin == Local {
 			ctr = ctr.
 				WithNewFile("pnpm-workspace.yaml", `packages:
   - './sdk'
@@ -787,6 +861,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 			entries:           make(map[string]bool),
 			runtime:           Node,
 			packageJSONConfig: nil,
+			sdkLibOrigin:      Bundle,
 		}
 	}
 
@@ -854,6 +929,11 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	t.moduleConfig.image, err = t.detectBaseImageRef()
 	if err != nil {
 		return fmt.Errorf("failed to detect base image ref: %w", err)
+	}
+
+	t.moduleConfig.sdkLibOrigin, err = t.detectSDKLibOrigin()
+	if err != nil {
+		return fmt.Errorf("failed to detect sdk lib origin: %w", err)
 	}
 
 	return nil

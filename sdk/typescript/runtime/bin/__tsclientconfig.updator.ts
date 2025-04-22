@@ -3,8 +3,8 @@ import path from "path"
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
-const daggerPath = "./sdk/src"
-const daggerTelemetryPath = "./sdk/src/telemetry"
+const daggerPath = "./sdk/index.ts"
+const daggerTelemetryPath = "./sdk/telemetry.ts"
 const daggerClientPathAlias = "@dagger.io/client"
 
 const help = `Usage: ts_client_config_updator <dev=true|false> <output-dir=string>`

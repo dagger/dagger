@@ -1,5 +1,8 @@
 export { GraphQLClient } from "graphql-request"
 
+// Telemetry
+export * from "./telemetry/index.js"
+
 // Default client bindings
 export * from "./api/client.gen.js"
 
