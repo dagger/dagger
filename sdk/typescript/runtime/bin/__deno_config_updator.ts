@@ -22,7 +22,7 @@
  *   deno_config_updator --sdk-lib-origin=bundle|local
  *
  * Note: The file is heavily documented because it's a single script and it can be quite
- * confusing when reading through it otherwise.ƒ
+ * confusing when reading through it otherwise.
  */
 
 /*******************************************************************************

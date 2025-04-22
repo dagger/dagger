@@ -548,7 +548,7 @@ func (t *TypescriptSdk) addSDK() *dagger.Directory {
 			WithoutDirectory("bundled_Lib").
 			WithoutDirectory("src/provisioning")
 	default:
-		// This should never happens.
+		// This should never happen.
 		return dag.Directory()
 	}
 }
