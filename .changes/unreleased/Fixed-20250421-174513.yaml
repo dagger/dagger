@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Fix API authentication errors when calling `llm.withModel` from a module function.
-time: 2025-04-21T17:45:13.36105315-07:00
-custom:
-  Author: sipsma
-  PR: "10230"
