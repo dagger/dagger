@@ -500,7 +500,7 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
 	// FIXME: mcp implementation takes hints from endpoint: reconfigure it
 	llm = llm.Clone()
-	router, err := NewLLMRouter(ctx, srv)
+	router, err := loadLLMRouter(ctx, llm.Query)
 	if err != nil {
 		return nil, err
 	}
