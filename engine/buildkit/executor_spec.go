@@ -681,7 +681,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return net.Listen("tcp", "127.0.0.1:0")
 	})
 	if err != nil {
-		return fmt.Errorf("otel tcp proxy listen: %w", err)
+		return fmt.Errorf("internal telemetry proxy listen: %w", err)
 	}
 	otelSrv := &http.Server{
 		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -698,22 +698,22 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	listenerPool.Go(func() error {
 		return otelSrv.Serve(listener)
 	})
-	state.cleanups.Add("wait for otel proxy", func() error {
+	state.cleanups.Add("wait for internal telemetry forwarder", func() error {
 		if err := listenerPool.Wait(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
 	})
-	state.cleanups.Add("shutdown otel proxy", Infallible(func() {
+	state.cleanups.Add("shutdown internal telemetry forwarder", Infallible(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		switch err := otelSrv.Shutdown(shutdownCtx); {
 		case err == nil:
 			return
 		case errors.Is(err, context.DeadlineExceeded):
-			slog.ErrorContext(ctx, "timeout waiting for OTel proxy to shutdown", err)
+			slog.ErrorContext(ctx, "timeout waiting for internal telemetry forwarder to shutdown", err)
 		default:
-			slog.ErrorContext(ctx, "failed to shutdown OTel proxy", err)
+			slog.ErrorContext(ctx, "failed to shutdown internal telemetry forwarder", err)
 		}
 	}))
 
