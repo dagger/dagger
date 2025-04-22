@@ -214,8 +214,6 @@ github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/cyphar/filepath-securejoin v0.4.1 h1:JyxxyPEaktOD+GAnqIqTf9A8tHyAG22rowi7HkoSU1s=
 github.com/cyphar/filepath-securejoin v0.4.1/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
-github.com/dagger/buildkit v0.0.0-20250418225557-9389ea772a3a h1:XFmYhL3Ho/0pWnO992xb9rsQS+PxWmR8oWDL0yizvYw=
-github.com/dagger/buildkit v0.0.0-20250418225557-9389ea772a3a/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/dagger/testctx v0.0.4 h1:In6AOkH1Q6LHWHAnMByViz9SFiXbYjKttGlO6GciE9s=
 github.com/dagger/testctx v0.0.4/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/dagger/testctx/oteltest v0.0.3 h1:3a4u7S2HhQtUvZbRs+1WC4qWNCLlbcm2KoEK/Lhck/4=
@@ -653,6 +651,8 @@ github.com/shibumi/go-pathspec v1.3.0 h1:QUyMZhFo0Md5B8zV8x2tesohbb5kfbpTi9rBnKh
 github.com/shibumi/go-pathspec v1.3.0/go.mod h1:Xutfslp817l2I1cZvgcfeMQJG5QnU2lh5tVaaMCl3jE=
 github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29 h1:B1PEwpArrNp4dkQrfxh/abbBAOZBVp0ds+fBEOUOqOc=
 github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29/go.mod h1:AuYgA5Kyo4c7HfUmvRGs/6rGlMMV/6B1bVnB9JxJEEg=
+github.com/sipsma/buildkit v0.6.1-0.20250422044555-fb00ec7eb528 h1:R07kfRRIvL10c6Imu+TG2kLJhn7JpG2KqLV/9ti8fmY=
+github.com/sipsma/buildkit v0.6.1-0.20250422044555-fb00ec7eb528/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
