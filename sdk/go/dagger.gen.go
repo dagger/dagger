@@ -616,7 +616,7 @@ type ContainerAsServiceOpts struct {
 	Args []string
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -867,11 +867,11 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures all available GPUs on the host to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Experimental: Subject to change/removal at any time
 func (r *Container) ExperimentalWithAllGPUs() *Container {
 	q := r.query.Select("experimentalWithAllGPUs")
 
@@ -880,11 +880,11 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 	}
 }
 
-// EXPERIMENTAL API! Subject to change/removal at any time.
-//
 // Configures the provided list of devices to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
+//
+// Experimental: Subject to change/removal at any time
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 	q := r.query.Select("experimentalWithGPU")
 	q = q.Arg("devices", devices)
@@ -1269,7 +1269,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 type ContainerTerminalOpts struct {
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -1312,7 +1312,7 @@ type ContainerUpOpts struct {
 	Args []string
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -1406,7 +1406,7 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 
 // ContainerWithDefaultTerminalCmdOpts contains options for Container.WithDefaultTerminalCmd
 type ContainerWithDefaultTerminalCmdOpts struct {
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -1537,7 +1537,7 @@ type ContainerWithExecOpts struct {
 	//
 	// Default: SUCCESS
 	Expect ReturnType
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
@@ -1607,7 +1607,7 @@ type ContainerWithExposedPortOpts struct {
 	Protocol NetworkProtocol
 	// Port description. Example: "payment API endpoint"
 	Description string
-	// Skip the health check when run as a service.
+	// EXPERIMENTAL: Skip the health check when run as a service.
 	ExperimentalSkipHealthcheck bool
 }
 
@@ -2786,7 +2786,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 type DirectoryTerminalOpts struct {
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
-	// Provides Dagger access to the executed command.
+	// EXPERIMENTAL: Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
@@ -8040,7 +8040,7 @@ type GitOpts struct {
 	//
 	// Default: true
 	KeepGitDir bool
-	// A service which must be started before the repo is fetched.
+	// EXPERIMENTAL: A service which must be started before the repo is fetched.
 	ExperimentalServiceHost *Service
 	// Set SSH known hosts
 	SSHKnownHosts string
@@ -8087,7 +8087,7 @@ func (r *Client) Host() *Host {
 
 // HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
-	// A service which must be started before the URL is fetched.
+	// EXPERIMENTAL: A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Service
 }
 

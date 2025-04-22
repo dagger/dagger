@@ -40,7 +40,7 @@ func (s *gitSchema) Install() {
 			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
-			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
+			ArgExperimental("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
 		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, dagql.CachePerClient).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
@@ -51,7 +51,7 @@ func (s *gitSchema) Install() {
 			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
-			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
+			ArgExperimental("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRepository]{

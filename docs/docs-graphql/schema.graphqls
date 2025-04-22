@@ -128,7 +128,7 @@ type Container {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -263,17 +263,13 @@ type Container {
   exitCode: Int!
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-  
   Configures all available GPUs on the host to be accessible to this container.
   
   This currently works for Nvidia devices only.
   """
-  experimentalWithAllGPUs: Container!
+  experimentalWithAllGPUs: Container! @experimental(reason: "Subject to change/removal at any time")
 
   """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-  
   Configures the provided list of devices to be accessible to this container.
   
   This currently works for Nvidia devices only.
@@ -281,7 +277,7 @@ type Container {
   experimentalWithGPU(
     """List of devices to be accessible to this container."""
     devices: [String!]!
-  ): Container!
+  ): Container! @experimental(reason: "Subject to change/removal at any time")
 
   """
   Writes the container as an OCI tarball to the destination file path on the host.
@@ -474,7 +470,7 @@ type Container {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -513,7 +509,7 @@ type Container {
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -568,7 +564,7 @@ type Container {
     """The args of the command."""
     args: [String!]!
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -682,7 +678,7 @@ type Container {
     """Exit codes this command is allowed to exit with without error"""
     expect: ReturnType = SUCCESS
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -733,7 +729,7 @@ type Container {
     """
     description: String
 
-    """Skip the health check when run as a service."""
+    """EXPERIMENTAL: Skip the health check when run as a service."""
     experimentalSkipHealthcheck: Boolean = false
   ): Container!
 
@@ -1420,7 +1416,7 @@ type Directory {
     """
     cmd: [String!] = []
 
-    """Provides Dagger access to the executed command."""
+    """EXPERIMENTAL: Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
 
     """
@@ -3236,7 +3232,9 @@ type Query {
     """DEPRECATED: Set to true to keep .git directory."""
     keepGitDir: Boolean = true
 
-    """A service which must be started before the repo is fetched."""
+    """
+    EXPERIMENTAL: A service which must be started before the repo is fetched.
+    """
     experimentalServiceHost: ServiceID
 
     """Set SSH known hosts"""
@@ -3254,7 +3252,9 @@ type Query {
     """HTTP url to get the content from (e.g., "https://docs.dagger.io")."""
     url: String!
 
-    """A service which must be started before the URL is fetched."""
+    """
+    EXPERIMENTAL: A service which must be started before the URL is fetched.
+    """
     experimentalServiceHost: ServiceID
   ): File!
 

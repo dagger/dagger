@@ -32,7 +32,7 @@ func (s *serviceSchema) Install() {
 				`If empty, the container's default command is used.`).
 			ArgDoc("useEntrypoint",
 				`If the container has an entrypoint, prepend it to the args.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -71,7 +71,7 @@ func (s *serviceSchema) Install() {
 				`If empty, the container's default command is used.`).
 			ArgDoc("useEntrypoint",
 				`If the container has an entrypoint, prepend it to the args.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to

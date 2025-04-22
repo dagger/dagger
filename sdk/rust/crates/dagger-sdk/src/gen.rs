@@ -1774,7 +1774,7 @@ pub struct ContainerAsServiceOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1880,7 +1880,7 @@ pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1896,7 +1896,7 @@ pub struct ContainerUpOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1919,7 +1919,7 @@ pub struct ContainerUpOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -1963,7 +1963,7 @@ pub struct ContainerWithExecOpts<'a> {
     /// Exit codes this command is allowed to exit with without error
     #[builder(setter(into, strip_option), default)]
     pub expect: Option<ReturnType>,
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. Like --privileged in Docker
@@ -1992,7 +1992,7 @@ pub struct ContainerWithExposedPortOpts<'a> {
     /// Port description. Example: "payment API endpoint"
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// Skip the health check when run as a service.
+    /// EXPERIMENTAL: Skip the health check when run as a service.
     #[builder(setter(into, strip_option), default)]
     pub experimental_skip_healthcheck: Option<bool>,
     /// Network protocol. Example: "tcp"
@@ -2384,7 +2384,6 @@ impl Container {
         let query = self.selection.select("exitCode");
         query.execute(self.graphql_client.clone()).await
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
     pub fn experimental_with_all_gp_us(&self) -> Container {
@@ -2395,7 +2394,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures the provided list of devices to be accessible to this container.
     /// This currently works for Nvidia devices only.
     ///
@@ -4338,7 +4336,7 @@ pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the default container used for the terminal.
     #[builder(setter(into, strip_option), default)]
     pub container: Option<ContainerId>,
-    /// Provides Dagger access to the executed command.
+    /// EXPERIMENTAL: Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -8057,7 +8055,7 @@ pub struct QueryEnvOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
-    /// A service which must be started before the repo is fetched.
+    /// EXPERIMENTAL: A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
     /// DEPRECATED: Set to true to keep .git directory.
@@ -8072,7 +8070,7 @@ pub struct QueryGitOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts {
-    /// A service which must be started before the URL is fetched.
+    /// EXPERIMENTAL: A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
 }

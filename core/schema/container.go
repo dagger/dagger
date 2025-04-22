@@ -395,7 +395,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("redirectStderr",
 				`Like redirectStdout, but for standard error`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. Like --privileged in Docker`,
@@ -426,7 +426,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -453,7 +453,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -596,7 +596,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("port", `Port number to expose. Example: 8080`).
 			ArgDoc("protocol", `Network protocol. Example: "tcp"`).
 			ArgDoc("description", `Port description. Example: "payment API endpoint"`).
-			ArgDoc("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
+			ArgExperimental("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
 
 		dagql.Func("withoutExposedPort", s.withoutExposedPort).
 			Doc(`Unexpose a previously exposed port.`).
@@ -629,7 +629,7 @@ func (s *containerSchema) Install() {
 		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			ArgDoc("args", `The args of the command.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -643,7 +643,7 @@ func (s *containerSchema) Install() {
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -655,7 +655,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
@@ -665,14 +665,14 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
-			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
-				`Configures the provided list of devices to be accessible to this container.`,
+			Experimental("Subject to change/removal at any time").
+			Doc(`Configures the provided list of devices to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`).
 			ArgDoc("devices", `List of devices to be accessible to this container.`),
 
 		dagql.Func("experimentalWithAllGPUs", s.withAllGPUs).
-			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
-				`Configures all available GPUs on the host to be accessible to this container.`,
+			Experimental("Subject to change/removal at any time").
+			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
 	}.Install(s.srv)
 

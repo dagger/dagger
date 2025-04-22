@@ -195,8 +195,6 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures all available GPUs on the host to be accessible to this container.
 
   This currently works for Nvidia devices only.
@@ -213,8 +211,6 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  EXPERIMENTAL API! Subject to change/removal at any time.
-
   Configures the provided list of devices to be accessible to this container.
 
   This currently works for Nvidia devices only.
