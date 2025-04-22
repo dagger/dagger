@@ -236,6 +236,7 @@ func (mod *Module) CacheConfigForCall(
 		mod.Source.Self.Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
+
 	return &cacheCfg, nil
 }
 

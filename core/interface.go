@@ -168,6 +168,7 @@ func (iface *InterfaceType) TypeDef() *TypeDef {
 	}
 }
 
+//nolint:gocyclo
 func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) error {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
 	slog.ExtraDebug("installing interface")
@@ -340,7 +341,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 						return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
 					}
 
-					return userModObj.mod.CacheConfigForCall(ctx, parentObj, args, cacheCfg)
+					callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
+					if err != nil {
+						return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
+					}
+
+					return callable.CacheConfigForCall(ctx, parentObj, args, cacheCfg)
 				},
 			},
 		})

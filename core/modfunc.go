@@ -136,7 +136,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 // It first load the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
-func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, execMD *buildkit.ExecutionMetadata) ([]*FunctionCallArgValue, error) {
+func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
 
@@ -154,7 +154,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
 		}
 
-		if len(arg.metadata.Ignore) > 0 {
+		if len(arg.metadata.Ignore) > 0 && arg.metadata.DefaultPath == "" { // DefaultPath (aka contextual) args already have ignore applied
 			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
 			if err != nil {
 				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
@@ -188,39 +188,73 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 		hasArg[name] = true
 	}
 
-	// Load contextual arguments
-	var ctxArgs []*FunctionArg
-	for _, arg := range fn.metadata.Args {
-		// Skip contextual arguments if already set.
-		if hasArg[arg.OriginalName] || arg.DefaultPath == "" {
-			continue
-		}
-		ctxArgs = append(ctxArgs, arg)
-	}
-	ctxArgVals := make([]*FunctionCallArgValue, len(ctxArgs))
-	execMDMu := &sync.Mutex{}
-	eg, ctx := errgroup.WithContext(ctx)
-	for i, arg := range ctxArgs {
-		eg.Go(func() error {
-			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg, execMD, execMDMu)
-			if err != nil {
-				return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
-			}
+	return callInputs, nil
+}
 
-			ctxArgVals[i] = &FunctionCallArgValue{
-				Name:  arg.OriginalName,
-				Value: ctxVal,
-			}
-
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
+func (fn *ModuleFunction) CacheConfigForCall(
+	ctx context.Context,
+	parent dagql.Object,
+	args map[string]dagql.Input,
+	inputCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, inputCfg)
+	if err != nil {
 		return nil, err
 	}
-	callInputs = append(callInputs, ctxArgVals...)
 
-	return callInputs, nil
+	dgstInputs := []string{cacheCfg.Digest.String()}
+
+	var ctxArgs []*FunctionArg
+	for _, argMetadata := range fn.metadata.Args {
+		if argMetadata.DefaultPath == "" {
+			// not a contextual argument
+			continue
+		}
+		if args[argMetadata.Name] != nil {
+			// was explicitly set by the user, no need to load default contextual value
+			continue
+		}
+		ctxArgs = append(ctxArgs, argMetadata)
+	}
+	if len(ctxArgs) > 0 {
+		cacheCfg.UpdatedArgs = make(map[string]dagql.Input)
+		var mu sync.Mutex
+		type argInput struct {
+			name string
+			val  dagql.IDType
+		}
+		ctxArgVals := make([]*argInput, len(ctxArgs))
+		eg, ctx := errgroup.WithContext(ctx)
+		srv := dagql.CurrentDagqlServer(ctx)
+		for i, arg := range ctxArgs {
+			eg.Go(func() error {
+				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
+				if err != nil {
+					return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+				}
+
+				ctxArgVals[i] = &argInput{
+					name: arg.OriginalName,
+					val:  ctxVal,
+				}
+				mu.Lock()
+				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
+				mu.Unlock()
+
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+
+		for _, arg := range ctxArgVals {
+			dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+		}
+	}
+
+	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
+	return cacheCfg, nil
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
@@ -252,7 +286,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 
-	callInputs, err := fn.setCallInputs(ctx, opts, &execMD)
+	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set call inputs: %w", err)
 	}
@@ -528,9 +562,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	ctx context.Context,
 	dag *dagql.Server,
 	arg *FunctionArg,
-	execMD *buildkit.ExecutionMetadata,
-	execMDMu *sync.Mutex,
-) (JSON, error) {
+) (dagql.IDType, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
 	}
@@ -547,16 +579,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
-
-		dirID, err := dir.ID().Encode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode dir ID: %w", err)
-		}
-
-		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
+		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPath)
@@ -570,9 +593,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
-		execMDMu.Lock()
-		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMDMu.Unlock()
 
 		var fileID FileID
 
@@ -593,12 +613,7 @@ func (fn *ModuleFunction) loadContextualArg(
 			return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
 		}
 
-		encodedFileID, err := fileID.Encode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode file ID: %w", err)
-		}
-
-		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
+		return fileID, nil
 
 	default:
 		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
