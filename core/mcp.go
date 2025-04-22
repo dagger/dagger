@@ -859,32 +859,48 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 	}
 
 	if len(typeTools) > 0 {
+		describeContext := func() string {
+			desc := "Available tools:"
+			for _, tool := range typeTools {
+				if m.selectedTools[tool.Name] {
+					// already have it
+					continue
+				}
+				desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+			}
+			var objects []string
+			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
+				count := m.env.typeCounts[typeName]
+				for i := 1; i <= count; i++ {
+					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+				}
+			}
+			if len(objects) > 0 {
+				desc += "\n\nAvailable objects:"
+				for _, input := range objects {
+					desc += fmt.Sprintf("\n- %s", input)
+				}
+			}
+			return desc
+		}
+
 		builtins = append(builtins, LLMTool{
+			Name:        "describe_context",
+			Description: "Describe the current context, including available tools and objects.",
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+				"required":   []string{},
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
+				return describeContext(), nil
+			}),
+		}, LLMTool{
 			Name: "select_tools",
 			Description: (func() string {
 				desc := `Select tools for interacting with the available objects.`
-				desc += "\n\nAvailable tools:"
-				for _, tool := range typeTools {
-					if m.selectedTools[tool.Name] {
-						// already have it
-						continue
-					}
-					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
-				}
-				var objects []string
-				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
-					count := m.env.typeCounts[typeName]
-					for i := 1; i <= count; i++ {
-						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
-						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-					}
-				}
-				if len(objects) > 0 {
-					desc += "\n\nAvailable objects:"
-					for _, input := range objects {
-						desc += fmt.Sprintf("\n- %s", input)
-					}
-				}
+				desc += "\n\n" + describeContext()
 				return desc
 			})(),
 			Schema: map[string]any{
@@ -925,7 +941,7 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 					if foundTool.Name == "" {
 						unknownTools = append(unknownTools, tool)
 					} else {
-						m.selectedTools[tool] = true
+						// m.selectedTools[tool] = true
 						selectedTools = append(selectedTools, foundTool)
 					}
 				}
@@ -940,6 +956,55 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 				}
 				return toolStructuredResponse(res)
 			}),
+		}, LLMTool{
+			Name:        "run_tool",
+			Description: `Invoke a single tool call`,
+			// Description: "Run a batch of chained tool calls, passing the result of one call as the receiver of the next",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tool": map[string]any{
+						"type":        "string",
+						"description": "The name of the tool to call.",
+					},
+					"params": map[string]any{
+						"type":                 "object",
+						"description":          "The parameters to pass to the tool.",
+						"additionalProperties": true,
+					},
+				},
+				"required": []string{"tool", "params"},
+			},
+			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+				var call struct {
+					Tool   string         `json:"tool"`
+					Params map[string]any `json:"params"`
+				}
+				pl, err := json.Marshal(argsAny)
+				if err != nil {
+					return nil, err
+				}
+				if err := json.Unmarshal(pl, &call); err != nil {
+					return nil, err
+				}
+				var tool LLMTool
+				if call.Tool == "" {
+					return nil, errors.New("tool name cannot be empty")
+				}
+				for _, t := range typeTools {
+					if t.Name == call.Tool {
+						tool = t
+						break
+					}
+				}
+				if tool.Name == "" {
+					return nil, fmt.Errorf("tool not found: %q", call.Tool)
+				}
+				if call.Params == nil {
+					call.Params = make(map[string]any)
+				}
+				return tool.Call(ctx, call.Params)
+			},
 		}, LLMTool{
 			Name:        "chain_tools",
 			Description: `Invoke multiple tool calls sequentially, passing the result of one call as the receiver of the next`,
