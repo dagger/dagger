@@ -54,8 +54,8 @@ type packageJSONConfig struct {
 
 type denoJSONConfig struct {
 	Workspace []string          `json:"workspace"`
-	Imports    map[string]string `json:"imports"`
-	Dagger     *struct {
+	Imports   map[string]string `json:"imports"`
+	Dagger    *struct {
 		BaseImage string `json:"baseImage"`
 	} `json:"dagger"`
 }
@@ -227,8 +227,13 @@ func (c *moduleConfig) detectSDKLibOrigin() (SDKLibOrigin, error) {
 			return Remote, nil
 		}
 
-		// dagger.io/dagger is imported but not to a remote library so it must be local.
-		return Local, nil
+		// dagger.io/dagger is imported but points to the local SDK directory so it must be local.
+		if strings.HasPrefix(daggerDep, "./sdk/src") {
+			return Local, nil
+		}
+
+		// Otherwise, it's imported but point to ./sdk/index.ts so it's bundled.
+		return Bundle, nil
 	default:
 		return Bundle, fmt.Errorf("unknown runtime: %s", runtime)
 	}

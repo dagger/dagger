@@ -212,7 +212,7 @@ if (sdkLibOrigin.value !== "remote") {
 
 if (standaloneClient.value === true) {
   tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
-    `${clientDir.value}/client.gen.ts`,
+    `./${clientDir.value}/client.gen.ts`,
   ]
 }
 
