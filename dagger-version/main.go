@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/dagger/dagger/version/internal/dagger"
+	"github.com/dagger/dagger/dagger-version/internal/dagger"
 )
 
 func New(
@@ -38,7 +38,7 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", "!.changes/*"]
 	changes *dagger.Directory,
-) (*Version, error) {
+) (*DaggerVersion, error) {
 	// NOTE: uploading the whole git dir is inefficient.
 	// we can stop doing it once dagger/dagger#8520 ships
 
@@ -49,7 +49,7 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &Version{
+	return &DaggerVersion{
 		Git:     git,
 		Inputs:  inputs,
 		Changes: changes,
@@ -62,7 +62,7 @@ var ignores = []string{
 	"**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes/**", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack",
 }
 
-type Version struct {
+type DaggerVersion struct {
 	Git *Git
 
 	// +private
@@ -73,7 +73,7 @@ type Version struct {
 }
 
 // Generate a version string from the current context
-func (v Version) Version(ctx context.Context) (string, error) {
+func (v DaggerVersion) Version(ctx context.Context) (string, error) {
 	dirty, err := v.Git.Dirty(ctx)
 	if err != nil {
 		return "", err
@@ -129,7 +129,7 @@ func pseudoversionTimestamp(t time.Time) string {
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
-func (v Version) ImageTag(ctx context.Context) (string, error) {
+func (v DaggerVersion) ImageTag(ctx context.Context) (string, error) {
 	head, err := v.Git.Head(ctx)
 	if err != nil {
 		return "", err
@@ -174,7 +174,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 }
 
 // Determine the last released version.
-func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
+func (v DaggerVersion) LastReleaseVersion(ctx context.Context) (string, error) {
 	tag, err := v.Git.VersionTagLatest(ctx, "", "")
 	if err != nil {
 		return "", err
@@ -190,7 +190,7 @@ func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
 // It first attempts to use the version in .changes/.next, but if this fails,
 // or that version seems to have already been released, then we automagically
 // calculate the next patch release in the current series.
-func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
+func (v DaggerVersion) NextReleaseVersion(ctx context.Context) (string, error) {
 	var nextVersion string
 
 	// if there's a defined next version, try and use that

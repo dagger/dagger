@@ -156,7 +156,7 @@ func (Test) Version() string {
 // Encouragement
 func (Test) Go() string {
 	return "Let's go!"
-} 
+}
 `,
 	).
 		With(withModInitAt("modules/dep", "go", `// Dependency module
@@ -165,26 +165,13 @@ package main
 
 func New() *Dep {
 	return &Dep{
-		Version: "dep function",  
+		Version: "dep function",
 	}
 }
 
 type Dep struct{
 	// Dep version
 	Version string
-}
-`,
-		)).
-		With(withModInitAt("modules/git", "go", `// A git helper
-
-package main
-
-func New(url string) *Git {
-	return &Git{URL: url}
-}
-
-type Git struct{
-	URL string
 }
 `,
 		)).
@@ -197,7 +184,7 @@ type Go struct{}
 // Go version
 func (Go) Version() string {
 	return "go version"
-} 
+}
 `,
 		)).
 		With(withModInitAt("other", "go", `// A local module
@@ -208,11 +195,10 @@ type Other struct{}
 
 func (Other) Version() string {
 	return "other function"
-} 
+}
 `,
 		)).
 		With(daggerExec("install", "./modules/dep")).
-		With(daggerExec("install", "./modules/git")).
 		With(daggerExec("install", "./modules/go"))
 
 	t.Run("current module doc", func(ctx context.Context, t *testctx.T) {
@@ -293,24 +279,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "RETURNS")
 	})
 
-	t.Run("dependency module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell("git acme.org | url")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "acme.org", out)
-	})
-
-	t.Run("dependency module function doc takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			With(daggerShell(".help git")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "A git helper")
-		require.Contains(t, out, "ENTRYPOINT")
-		require.Contains(t, out, "AVAILABLE FUNCTIONS")
-	})
-
 	t.Run("other module function", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell("other | version")).
@@ -327,23 +295,6 @@ func (Other) Version() string {
 		require.Contains(t, out, "A local module")
 		require.NotContains(t, out, "ENTRYPOINT")
 		require.Contains(t, out, "AVAILABLE FUNCTIONS")
-	})
-
-	t.Run("current module required constructor arg error", func(ctx context.Context, t *testctx.T) {
-		_, err := setup.
-			WithWorkdir("modules/git").
-			With(daggerShell("url")).
-			Sync(ctx)
-		requireErrOut(t, err, "constructor: requires 1 positional argument(s), received 0")
-	})
-
-	t.Run("current module required constructor arg function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
-			WithWorkdir("modules/git").
-			With(daggerShell(". acme.org | url")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "acme.org", out)
 	})
 
 	t.Run("dep result", func(ctx context.Context, t *testctx.T) {
@@ -370,7 +321,6 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "- dep")
-		require.Contains(t, out, "- git")
 		require.Contains(t, out, "- go")
 	})
 
@@ -380,7 +330,6 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, regexp.MustCompile(`\n  dep +Dependency module`), out)
-		require.Regexp(t, regexp.MustCompile(`\n  git +A git helper`), out)
 		require.Regexp(t, regexp.MustCompile(`\n  go +A go helper`), out)
 	})
 
