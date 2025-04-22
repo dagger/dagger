@@ -16,6 +16,7 @@ import (
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
+	rustCargoFilePath    = "sdk/rust/Cargo.toml"
 
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.77-bookworm"
@@ -189,6 +190,8 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
 	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
 	version = strings.TrimPrefix(version, "v")
+	cargoVersionStr := "\\[workspace.package\\]\nversion = \"([0-9\\.-a-zA-Z]+)\""
+	cargoVersionStrf := "[workspace.package]\nversion = \"%s\""
 
 	versionContents, err := r.Dagger.Source.File(rustVersionFilePath).Contents(ctx)
 	if err != nil {
@@ -205,7 +208,24 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 		fmt.Sprintf(versionStrf, version),
 	)
 
-	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents), nil
+	cargoVersionRe, err := regexp.Compile(cargoVersionStr)
+	if err != nil {
+		return nil, err
+	}
+
+	cargoContents, err := r.Dagger.Source.File(rustCargoFilePath).Contents(ctx)
+
+	cargoBumpedContents := cargoVersionRe.ReplaceAllString(
+		cargoContents,
+		fmt.Sprintf(cargoVersionStrf, version),
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents).
+		WithNewFile(rustCargoFilePath, cargoBumpedContents), nil
 }
 
 func (r RustSDK) rustBase(image string) *dagger.Container {
