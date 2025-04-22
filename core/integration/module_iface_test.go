@@ -27,6 +27,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 	for _, tc := range []testCase{
 		{sdk: "go", path: "./testdata/modules/go/ifaces"},
 		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
+		{sdk: "python", path: "./testdata/modules/python/ifaces"},
 	} {
 		tc := tc
 
@@ -123,24 +124,24 @@ func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 type Mallard struct {}
 
 func (m *Mallard) Quack() string {
-  return "mallard quack"
+	return "mallard quack"
 }
 			`,
 			testSource: `package main
 
 import (
-  "context"
+	"context"
 )
 
 type Test struct {}
 
 type Duck interface {
-  DaggerObject
-  Quack(ctx context.Context) (string, error)
+	DaggerObject
+	Quack(ctx context.Context) (string, error)
 }
 
 func (m *Test) GetDuck() Duck {
-  return dag.Mallard()
+	return dag.Mallard()
 }`,
 		},
 		{
@@ -171,6 +172,33 @@ export class Test {
 }
 `,
 		},
+		{
+			sdk: "python",
+			depSource: `import dagger
+
+@dagger.object_type
+class Mallard:
+    @dagger.function
+    def quack(self) -> str: 
+        return "mallard quack"
+`,
+			testSource: `import typing
+
+import dagger
+from dagger import dag
+
+@dagger.interface
+class Duck(typing.Protocol):
+    @dagger.function
+    async def quack(self) -> str: ...
+
+@dagger.object_type
+class Test:
+    @dagger.function 
+    def get_duck(self) -> Duck:
+        return dag.mallard() 
+`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -179,17 +207,21 @@ export class Test {
 		for _, rtc := range tests {
 			rtc := rtc
 
-			t.Run(fmt.Sprintf("%s iface called from %s", tc.sdk, rtc.sdk), func(ctx context.Context, t *testctx.T) {
+			// No need for every permutation, just within the same SDK and
+			// with Go as a reference implementation.
+			if tc.sdk != "go" && rtc.sdk != "go" && tc.sdk != rtc.sdk {
+				continue
+			}
+
+			t.Run(fmt.Sprintf("%s implementation defined in %s", tc.sdk, rtc.sdk), func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
 				out, err := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work/mallard").
-					With(daggerExec("init", "--source=.", "--name=mallard", fmt.Sprintf("--sdk=%s", tc.sdk))).
-					With(sdkSource(tc.sdk, tc.depSource)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--source=.", "--name=test", fmt.Sprintf("--sdk=%s", rtc.sdk))).
-					With(sdkSource(rtc.sdk, rtc.testSource)).
+					With(withModInitAt("mallard", tc.sdk, tc.depSource)).
+					With(daggerCallAt("mallard", "quack")).
+					With(withModInit(rtc.sdk, rtc.testSource)).
 					With(daggerExec("install", "./mallard")).
 					With(daggerCall("get-duck", "quack")).
 					Stdout(ctx)

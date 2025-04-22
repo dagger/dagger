@@ -1,0 +1,7 @@
+{
+  "name": "test",
+  "engineVersion": "v0.18.2-010101000000-dev-7ed045a88646",
+  "sdk": {
+    "source": "python"
+  }
+}

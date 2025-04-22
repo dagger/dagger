@@ -1,10 +1,13 @@
 import itertools
 from typing import Annotated
 
-from typing_extensions import Doc
+import pytest
+from typing_extensions import Doc, Self
 
 import dagger
+from dagger import dag
 from dagger.mod import Module
+from dagger.mod._converter import to_typedef
 
 
 def test_object_type_resolvers():
@@ -104,3 +107,47 @@ def test_external_alt_constructor_doc():
         external = mod.function()(External)
 
     assert mod.get_object("Test").functions["external"].doc == "Factory constructor."
+
+
+def test_void_return_type():
+    mod = Module()
+
+    @mod.object_type
+    class Test:
+        @mod.function
+        def void(self): ...
+
+    func = mod.get_object("Test").functions["void"]
+
+    assert func.return_type is None
+
+    assert to_typedef(func.return_type) == dag.type_def().with_optional(True).with_kind(
+        dagger.TypeDefKind.VOID_KIND
+    )
+
+
+@pytest.mark.anyio
+async def test_self_return_type():
+    mod = Module()
+
+    @mod.object_type
+    class Test:
+        @mod.function
+        def iden(self) -> Self:
+            return self
+
+        @mod.function
+        def seq(self) -> list[Self]:
+            return [self]
+
+    obj = mod.get_object("Test")
+    iden = obj.functions["iden"]
+    seq = obj.functions["seq"]
+
+    assert iden.return_type is Test
+    assert seq.return_type == list[Test]
+
+    expected = dag.type_def().with_object("Test")
+
+    assert to_typedef(iden.return_type) == expected
+    assert to_typedef(seq.return_type) == dag.type_def().with_list_of(expected)

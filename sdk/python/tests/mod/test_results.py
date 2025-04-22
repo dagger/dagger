@@ -1,8 +1,9 @@
+import typing
 from dataclasses import InitVar
 from typing import Annotated
 
 import pytest
-from typing_extensions import Self
+import typing_extensions
 
 import dagger
 from dagger import Doc, Name, dag
@@ -12,10 +13,6 @@ from dagger.mod._exceptions import FatalError
 pytestmark = [
     pytest.mark.anyio,
 ]
-
-
-def set_main_object(mod: Module, name: str):
-    mod.get_object(name).add_constructor()
 
 
 @pytest.mark.slow
@@ -99,12 +96,22 @@ async def test_method_returns_self():
     class Foo:
         message: str = "foo"
 
+        if hasattr(typing, "Self"):
+
+            @mod.function
+            def foo(self) -> typing.Self:
+                self.message = "foobar"
+                return self
+
         @mod.function
-        def bar(self) -> Self:
-            self.message = "foobar"
+        def bar(self) -> typing_extensions.Self:
+            self.message = "barfoo"
             return self
 
-    assert await mod.get_result("Foo", {}, "bar", {}) == {"message": "foobar"}
+    if hasattr(typing, "Self"):
+        assert await mod.get_result("Foo", {}, "foo", {}) == {"message": "foobar"}
+
+    assert await mod.get_result("Foo", {}, "bar", {}) == {"message": "barfoo"}
 
 
 async def test_constructor_post_init():

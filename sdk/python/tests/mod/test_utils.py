@@ -1,15 +1,17 @@
-from typing import Annotated, Optional
+import dataclasses
+from typing import Annotated, List, Optional, Protocol  # noqa: UP035
 
 import pytest
 from beartype.door import TypeHint
 from typing_extensions import Doc, Self
 
-from dagger import Name, field
-from dagger.mod import Module
+from dagger import Name
 from dagger.mod._utils import (
     get_alt_name,
     get_doc,
+    is_list_type,
     is_nullable,
+    list_of,
     non_null,
     normalize_name,
 )
@@ -42,7 +44,8 @@ def test_non_optional(typ, expected):
     assert non_null(TypeHint(typ)) == TypeHint(expected)
 
 
-class ClassWithDocstring:
+@dataclasses.dataclass
+class ObjWithDoc:
     """Foo."""
 
     @classmethod
@@ -50,21 +53,32 @@ class ClassWithDocstring:
         """Bar."""
         return cls()
 
+    def with_doc(self):
+        """Foo."""
 
-def func_with_docstring():
+    async def async_with_doc(self):
+        """Foo."""
+
+
+class IfaceWithDoc(Protocol):
     """Foo."""
 
+    def with_doc(self):
+        """Foo."""
 
-async def async_func_with_docstring():
-    """Foo."""
+    async def async_with_doc(self):
+        """Foo."""
 
 
 @pytest.mark.parametrize(
     "annotation",
     [
-        ClassWithDocstring,
-        func_with_docstring,
-        async_func_with_docstring,
+        ObjWithDoc,
+        ObjWithDoc.with_doc,
+        ObjWithDoc.async_with_doc,
+        IfaceWithDoc,
+        IfaceWithDoc.with_doc,
+        IfaceWithDoc.async_with_doc,
         Annotated[str, Doc("Foo.")],
         Annotated[str | None, Doc("Foo.")],
         Annotated[str, Doc("Foo."), "Not supported"],
@@ -76,24 +90,29 @@ def test_get_doc(annotation):
 
 
 def test_get_factory_doc():
-    assert get_doc(ClassWithDocstring.create) == "Bar."
+    assert get_doc(ObjWithDoc.create) == "Bar."
 
 
-class ClassWithoutDocstring: ...
+@dataclasses.dataclass
+class ObjWithoutDoc:
+    def without_doc(self): ...
+    async def async_without_doc(self): ...
 
 
-def func_without_docstring(): ...
-
-
-async def async_func_without_docstring(): ...
+class IfaceWithoutDoc(Protocol):
+    def without_doc(self): ...
+    async def async_without_doc(self): ...
 
 
 @pytest.mark.parametrize(
     "annotation",
     [
-        ClassWithoutDocstring,
-        func_without_docstring,
-        async_func_without_docstring,
+        ObjWithoutDoc,
+        ObjWithoutDoc.without_doc,
+        ObjWithoutDoc.async_without_doc,
+        IfaceWithoutDoc,
+        IfaceWithoutDoc.without_doc,
+        IfaceWithoutDoc.async_without_doc,
         str,
         str | None,
         Annotated[str, "Not supported"],
@@ -102,16 +121,6 @@ async def async_func_without_docstring(): ...
 )
 def test_no_annotated_doc(annotation):
     assert get_doc(annotation) is None
-
-
-def test_no_dataclass_default_doc():
-    mod = Module()
-
-    @mod.object_type
-    class Foo:
-        bar: str = field()
-
-    assert get_doc(Foo) is None
 
 
 @pytest.mark.parametrize(
@@ -144,3 +153,33 @@ def test_get_last_alt_name():
 )
 def test_no_get_alt_name(annotation):
     assert get_alt_name(annotation) is None
+
+
+@pytest.mark.parametrize(
+    ("typ", "expected"),
+    [
+        (str, False),
+        (list[str], True),
+        (List[str], True),  # noqa: UP006
+        (tuple[str, int], False),
+        (tuple[str, ...], True),
+    ],
+)
+def test_is_list(typ, expected):
+    assert is_list_type(typ) == expected
+
+
+class Foo: ...
+
+
+@pytest.mark.parametrize(
+    ("typ", "expected"),
+    [
+        (str, None),
+        (list[str], str),
+        (List[str], str),  # noqa: UP006
+        (list[Foo], Foo),
+    ],
+)
+def test_list_of(typ, expected):
+    assert list_of(typ) == expected

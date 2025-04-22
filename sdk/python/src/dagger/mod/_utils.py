@@ -13,9 +13,11 @@ import anyio
 import anyio.from_thread
 import anyio.to_thread
 import typing_extensions
-from beartype.door import TypeHint, UnionTypeHint
+from beartype.door import TypeHint, UnionTypeHint, is_subhint
+from cattrs.cols import is_sequence
 from graphql.pyutils import snake_to_camel
 
+from dagger.client.base import Type
 from dagger.mod._arguments import DefaultPath, Ignore, Name
 from dagger.mod._types import ContextPath
 
@@ -25,6 +27,10 @@ syncify = anyio.from_thread.run
 T = TypeVar("T")
 
 AwaitableOrValue: TypeAlias = Coroutine[Any, Any, T] | T
+
+if typing.TYPE_CHECKING:
+    from dagger.mod._module import Module
+    from dagger.mod._resolver import ObjectType
 
 
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
@@ -64,21 +70,33 @@ def get_doc(obj: Any) -> str | None:
     """Get the last Doc() in an annotated type or the docstring of an object."""
     if annotated := get_meta(obj, typing_extensions.Doc):
         return annotated.documentation
-    if inspect.getmodule(obj) != builtins and (
-        inspect.isclass(obj) or inspect.isroutine(obj)
+
+    # Avoid getting docs from builtins.
+    # We're only interested in things we decorate.
+    if inspect.getmodule(obj) == builtins or (
+        not inspect.isclass(obj) and not inspect.isroutine(obj)
     ):
-        doc = inspect.getdoc(obj)
-        # By default, a dataclass's __doc__ will be the signature of the class,
-        # not None.
-        if (
-            doc
-            and dataclasses.is_dataclass(obj)
-            and doc.startswith(f"{obj.__name__}(")
-            and doc.endswith(")")
-        ):
-            doc = None
-        return doc
-    return None
+        return None
+
+    # Don't look in base classes (otherwise just use inspect.get_doc).
+    try:
+        doc = obj.__doc__
+    except AttributeError:
+        return None
+    if not isinstance(doc, str):
+        return None
+
+    # By default, a dataclass's __doc__ will be the signature of the class,
+    # not None.
+    if (
+        doc
+        and dataclasses.is_dataclass(obj)
+        and doc.startswith(f"{obj.__name__}(")
+        and doc.endswith(")")
+    ):
+        return None
+
+    return inspect.cleandoc(doc)
 
 
 def get_ignore(obj: Any) -> list[str] | None:
@@ -99,12 +117,12 @@ def get_alt_name(annotation: type) -> str | None:
 
 
 def is_union(th: TypeHint) -> bool:
-    """Returns True if the unsubscripted part of a type is a Union."""
+    """Check if the unsubscripted part of a type is a Union."""
     return isinstance(th, UnionTypeHint)
 
 
 def is_nullable(th: TypeHint) -> bool:
-    """Returns True if the annotation is SomeType | None.
+    """Check if the annotation is SomeType | None.
 
     Does not support Annotated types. Use only on types that have been
     resolved with get_type_hints.
@@ -113,7 +131,7 @@ def is_nullable(th: TypeHint) -> bool:
 
 
 def non_null(th: TypeHint) -> TypeHint:
-    """Removes None from a union.
+    """Remove None from a union.
 
     Does not support Annotated types. Use only on types that have been
     resolved with get_type_hints.
@@ -126,6 +144,13 @@ def non_null(th: TypeHint) -> TypeHint:
 
 
 _T = TypeVar("_T", bound=type)
+Obj_T = TypeVar("Obj_T", bound=Type)
+
+
+def is_self(annotation: type) -> typing.TypeGuard[type]:
+    """Check if an annotatino is a Self type."""
+    # Typing extensions should return typing.Self if it exists (Python 3.11+)
+    return annotation is typing_extensions.Self
 
 
 def is_annotated(annotation: type) -> bool:
@@ -136,19 +161,90 @@ def is_annotated(annotation: type) -> bool:
     )
 
 
-def is_initvar(annotation: type) -> typing.TypeGuard[dataclasses.InitVar]:
-    """Check if the given type is a dataclasses.InitVar."""
-    return annotation is dataclasses.InitVar or type(annotation) is dataclasses.InitVar
-
-
 def strip_annotations(t: _T) -> _T:
     """Strip the annotations from a given type."""
     return strip_annotations(typing.get_args(t)[0]) if is_annotated(t) else t
 
 
+def is_list_type(t: Any) -> typing.TypeGuard[typing.Sequence]:
+    """Check if an annotation represents a list."""
+    return is_sequence(t)
+
+
+def list_of(t: typing.Any) -> type | None:
+    """Retrieve a list's element type or None if not a list."""
+    if not is_list_type(t):
+        return None
+    th = TypeHint(t)
+    try:
+        return th.args[0]
+    except IndexError:
+        msg = (
+            "Expected sequence type to be subscripted "
+            f"with 1 subtype, got {len(th)}: {th.hint!r}"
+        )
+        raise TypeError(msg) from None
+
+
+def is_list_of(v: Any, t: _T) -> typing.TypeGuard[typing.Sequence[_T]]:
+    """Check if the annotation is a list of the given type."""
+    return is_subhint(v, typing.Sequence[t])
+
+
+def is_object_list_type(t: Any):
+    """Check if the annotation is a list of an object client binding."""
+    return is_list_of(t, Type)
+
+
+def object_list_of(t: Any) -> type[Type] | None:
+    """Retrive a list's element type or None if not a list of objects."""
+    if is_object_list_type(t) and (el := list_of(t)):
+        return cast(type[Type], el)
+    return None
+
+
+def is_dagger_object_type(t: typing.Any) -> typing.TypeGuard[type[Type]]:
+    """Check if the annotation is an object client binding."""
+    return is_subclass(t, Type)
+
+
+def is_dagger_interface_type(t: typing.Any) -> typing.TypeGuard[type]:
+    """Check if the annotation is an interface definition."""
+    obj = get_object_type(t)
+    return obj is not None and obj.interface and is_protocol(t)
+
+
+def is_subclass(obj: type, bases) -> typing.TypeGuard[type]:
+    """A safe version of issubclass (won't raise)."""
+    try:
+        return issubclass(obj, bases)
+    except TypeError:
+        return False
+
+
+def is_protocol(t: Any) -> typing.TypeGuard[type]:
+    """Check if the given type is a Protocol subclass."""
+    return is_subclass(t, typing.Protocol) and getattr(t, "_is_protocol", False)
+
+
+def is_initvar(annotation: type) -> typing.TypeGuard[dataclasses.InitVar]:
+    """Check if the given type is a dataclasses.InitVar."""
+    return annotation is dataclasses.InitVar or type(annotation) is dataclasses.InitVar
+
+
 def is_mod_object_type(cls) -> bool:
     """Check if the given class was decorated with @object_type."""
-    return hasattr(cls, "__dagger_module__")
+    return hasattr(cls, "__dagger_object_type__")
+
+
+def get_object_type(cls) -> "ObjectType | None":
+    """Return the decorated object_type metadata on a class."""
+    return getattr(cls, "__dagger_object_type__", None)
+
+
+def get_module(cls) -> "Module | None":
+    """Return the Module instance on a decorated object_type class."""
+    return getattr(cls, "__dagger_module__", None)
 
 
 def get_alt_constructor(cls: type[T]) -> Callable[..., T] | None:

@@ -6,6 +6,7 @@ import dagger
 
 pytestmark = [
     pytest.mark.anyio,
+    pytest.mark.slow,
 ]
 
 
@@ -15,7 +16,6 @@ async def client():
         yield client
 
 
-@pytest.mark.slow
 async def test_timeout(client: dagger.Client, httpx_mock: HTTPXMock):
     httpx_mock.add_exception(httpx.ReadTimeout("Request took too long"))
     msg = "Try setting a higher timeout value"
@@ -95,7 +95,6 @@ async def test_no_path_query_error(client: dagger.Client, httpx_mock: HTTPXMock)
     assert exc.errors[0].locations is None
 
 
-@pytest.mark.slow
 async def test_exec_error(client: dagger.Client, httpx_mock: HTTPXMock):
     error = {
         "message": "command not found",
