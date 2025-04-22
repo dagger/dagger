@@ -16,7 +16,9 @@ defmodule Dagger.InputTypeDef do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Static fields defined on this input object, if any."
+  @doc """
+  Static fields defined on this input object, if any.
+  """
   @spec fields(t()) :: {:ok, [Dagger.FieldTypeDef.t()]} | {:error, term()}
   def fields(%__MODULE__{} = input_type_def) do
     query_builder =
@@ -36,7 +38,9 @@ defmodule Dagger.InputTypeDef do
     end
   end
 
-  @doc "A unique identifier for this InputTypeDef."
+  @doc """
+  A unique identifier for this InputTypeDef.
+  """
   @spec id(t()) :: {:ok, Dagger.InputTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = input_type_def) do
     query_builder =
@@ -45,7 +49,9 @@ defmodule Dagger.InputTypeDef do
     Client.execute(input_type_def.client, query_builder)
   end
 
-  @doc "The name of the input object."
+  @doc """
+  The name of the input object.
+  """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = input_type_def) do
     query_builder =
