@@ -235,9 +235,6 @@ func (src gitSourceContext) context(dag *dagger.Client) *dagger.Directory {
 	gitOpts := dagger.GitOpts{
 		KeepGitDir: true,
 	}
-	if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-		gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
-	}
 	git := dag.Git(src.Root, gitOpts)
 	var gitRef *dagger.GitRef
 	if src.Pin != "" {

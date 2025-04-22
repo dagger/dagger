@@ -343,9 +343,6 @@ func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client) *dagger.Direct
 	gitOpts := dagger.GitOpts{
 		KeepGitDir: true,
 	}
-	if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-		gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
-	}
 	git := dag.Git(gitURL.Remote(), gitOpts)
 	var gitRef *dagger.GitRef
 	if gitURL.Fragment.Ref == "" {
@@ -404,9 +401,6 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	if err == nil {
 		gitOpts := dagger.GitOpts{
 			KeepGitDir: true,
-		}
-		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
 		git := dag.Git(parsedGit.Remote(), gitOpts)
 		var gitRef *dagger.GitRef
