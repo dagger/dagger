@@ -10,6 +10,7 @@ name: evals
             - core/llm_*.md
             - core/schema/llm.go
             - core/schema/env.go
+            - modules/evaluator/**
     workflow_dispatch: {}
 jobs:
     testdev:

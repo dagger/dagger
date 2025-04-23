@@ -292,6 +292,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/llm_*.md",
 			"core/schema/llm.go",
 			"core/schema/env.go",
+			"modules/evaluator/**",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
