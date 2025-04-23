@@ -54,9 +54,9 @@ func parseRefString(
 	statFS statFS,
 	refString string,
 	refPin string,
-) (*parsedRefString, error) {
+) (_ *parsedRefString, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	kind := fastModuleSourceKindCheck(refString, refPin)
 	switch kind {
@@ -134,9 +134,9 @@ type parsedGitRefString struct {
 
 type gitEndpointError struct{ error }
 
-func parseGitRefString(ctx context.Context, refString string) (parsedGitRefString, error) {
+func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefString, rerr error) {
 	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	scheme, schemelessRef := parseScheme(refString)
 
