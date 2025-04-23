@@ -36,7 +36,7 @@ type LLMTool struct {
 	Schema map[string]any `json:"schema"`
 	// Return type, used to hint to the model in tool lists - not exposed through
 	// this field, since there's no such thing (I wish!)
-	Returns string `json:"-"`
+	Returns *ast.Type `json:"-"`
 	// Function implementing the tool.
 	Call func(context.Context, any) (any, error) `json:"-"`
 }
@@ -322,7 +322,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 		}
 		tools = append(tools, LLMTool{
 			Name:        toolName,
-			Returns:     field.Type.String(),
+			Returns:     field.Type,
 			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
@@ -772,6 +772,8 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 }
 
 func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error) {
+	schema := srv.Schema()
+
 	builtins := []LLMTool{
 		{
 			Name:        "think",
@@ -813,7 +815,7 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 			"Float":   dagql.Float(0.0),
 			"Boolean": dagql.Boolean(false),
 		}
-		for name := range srv.Schema().Types {
+		for name := range schema.Types {
 			objectType, ok := srv.ObjectType(name)
 			if !ok {
 				continue
@@ -869,7 +871,7 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 						// already have it
 						continue
 					}
-					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+					desc += "\n- " + tool.Name + " (returns " + tool.Returns.String() + ")"
 				}
 				var objects []string
 				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
@@ -971,10 +973,7 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var args struct {
-					Calls []struct {
-						Tool   string         `json:"tool"`
-						Params map[string]any `json:"params"`
-					} `json:"calls"`
+					Calls []ChainedCall `json:"calls"`
 				}
 				pl, err := json.Marshal(argsAny)
 				if err != nil {
@@ -983,8 +982,8 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 				if err := json.Unmarshal(pl, &args); err != nil {
 					return nil, err
 				}
-				if len(args.Calls) == 0 {
-					return nil, errors.New("no tools called")
+				if err := m.validateChain(args.Calls, typeTools, schema); err != nil {
+					return nil, err
 				}
 				var res any
 				for i, call := range args.Calls {
@@ -1124,6 +1123,51 @@ func (m *MCP) userProvidedValues() []LLMTool {
 			},
 		},
 	}
+}
+
+type ChainedCall struct {
+	Tool   string         `json:"tool"`
+	Params map[string]any `json:"params"`
+}
+
+func (m *MCP) validateChain(calls []ChainedCall, typeTools []LLMTool, schema *ast.Schema) error {
+	if len(calls) == 0 {
+		return errors.New("no tools called")
+	}
+	var returnedType *ast.Type
+	for _, call := range calls {
+		if call.Tool == "" {
+			return fmt.Errorf("tool name cannot be empty")
+		}
+		var tool LLMTool
+		for _, t := range typeTools {
+			if t.Name == call.Tool {
+				tool = t
+				break
+			}
+		}
+		if tool.Name == "" {
+			return fmt.Errorf("unknown tool: %q", call.Tool)
+		}
+		if returnedType != nil {
+			if returnedType.Elem != nil {
+				return fmt.Errorf("cannot chain %q call from array result", tool.Name)
+			}
+			typeDef, found := schema.Types[returnedType.Name()]
+			if !found {
+				return fmt.Errorf("unknown type: %q", returnedType.Name())
+			}
+			if typeDef.Kind != ast.Object {
+				return fmt.Errorf("cannot chain %q call from non-Object type: %q (%s)", tool.Name, returnedType.Name(), typeDef.Kind)
+			}
+			props := tool.Schema["properties"].(map[string]any)
+			if _, found := props[typeDef.Name]; !found {
+				return fmt.Errorf("tool %q does not chain from type %q", tool.Name, typeDef.Name)
+			}
+		}
+		returnedType = tool.Returns
+	}
+	return nil
 }
 
 func (m *MCP) IsDone() bool {
