@@ -1221,7 +1221,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 		if !found {
 			return nil, fmt.Errorf("unknown type (impossible?): %q", t.NamedType)
 		}
-		desc := typeDef.Description
 		switch typeDef.Kind {
 		case ast.InputObject:
 			jsonSchema["type"] = "object"
@@ -1247,8 +1246,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 				jsonSchema["type"] = "string"
 				if ids := m.allIDs(typeName); len(ids) > 0 {
 					jsonSchema["enum"] = ids
-				} else {
-					desc += " (UNAVAILABLE)"
 				}
 				jsonSchema[jsonSchemaIDAttr] = typeName
 			} else {
@@ -1257,7 +1254,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 		default:
 			return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
 		}
-		jsonSchema["description"] = desc
 	}
 
 	return jsonSchema, nil
