@@ -2,8 +2,6 @@
 name: evals
 "on":
     push:
-        branches:
-            - '*'
         paths:
             - core/{llm,mcp,env}.go
             - core/llm_*.go
