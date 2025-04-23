@@ -518,6 +518,8 @@ func (m *MCP) selectionToToolResult(
 				"original_size":  origSize,
 			})
 		}
+		// Return string content directly, without wrapping it in JSON.
+		return str.String(), nil
 	}
 
 	// Handle scalars or arrays of scalars.
