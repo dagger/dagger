@@ -164,8 +164,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
-     *
      * Configures all available GPUs on the host to be accessible to this container.
      *
      * This currently works for Nvidia devices only.
@@ -177,8 +175,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * EXPERIMENTAL API! Subject to change/removal at any time.
-     *
      * Configures the provided list of devices to be accessible to this container.
      *
      * This currently works for Nvidia devices only.

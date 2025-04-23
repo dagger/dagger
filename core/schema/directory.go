@@ -135,7 +135,7 @@ func (s *directorySchema) Install() {
 			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
 			ArgDoc("container", `If set, override the default container used for the terminal.`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
+			ArgExperimental("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to

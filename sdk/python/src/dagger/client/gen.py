@@ -671,7 +671,7 @@ class Container(Type):
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -917,24 +917,26 @@ class Container(Type):
         return await _ctx.execute(int)
 
     def experimental_with_all_gp_us(self) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures all available GPUs on the host to be accessible to this
+        """Configures all available GPUs on the host to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. caution::
+            Experimental: Subject to change/removal at any time
         """
         _args: list[Arg] = []
         _ctx = self._select("experimentalWithAllGPUs", _args)
         return Container(_ctx)
 
     def experimental_with_gpu(self, devices: list[str]) -> Self:
-        """EXPERIMENTAL API! Subject to change/removal at any time.
-
-        Configures the provided list of devices to be accessible to this
+        """Configures the provided list of devices to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
+
+        .. caution::
+            Experimental: Subject to change/removal at any time
 
         Parameters
         ----------
@@ -1366,7 +1368,7 @@ class Container(Type):
             If set, override the container's default terminal command and
             invoke these command arguments instead.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1416,7 +1418,7 @@ class Container(Type):
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1529,7 +1531,7 @@ class Container(Type):
         args:
             The args of the command.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1686,7 +1688,7 @@ class Container(Type):
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -1746,7 +1748,7 @@ class Container(Type):
         description:
             Port description. Example: "payment API endpoint"
         experimental_skip_healthcheck:
-            Skip the health check when run as a service.
+            EXPERIMENTAL: Skip the health check when run as a service.
         """
         _args = [
             Arg("port", port),
@@ -3005,7 +3007,7 @@ class Directory(Type):
             If set, override the container's default terminal command and
             invoke these command arguments instead.
         experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
+            EXPERIMENTAL: Provides Dagger access to the executed command.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -8067,7 +8069,8 @@ class Client(Root):
         keep_git_dir:
             DEPRECATED: Set to true to keep .git directory.
         experimental_service_host:
-            A service which must be started before the repo is fetched.
+            EXPERIMENTAL: A service which must be started before the repo is
+            fetched.
         ssh_known_hosts:
             Set SSH known hosts
         ssh_auth_socket:
@@ -8102,7 +8105,8 @@ class Client(Root):
         url:
             HTTP url to get the content from (e.g., "https://docs.dagger.io").
         experimental_service_host:
-            A service which must be started before the URL is fetched.
+            EXPERIMENTAL: A service which must be started before the URL is
+            fetched.
         """
         _args = [
             Arg("url", url),
