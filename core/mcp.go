@@ -322,7 +322,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, schema, typeName, field, args)
+				return m.call(ctx, srv, toolSchema, schema, typeName, field, args)
 			},
 		})
 	}
@@ -366,6 +366,7 @@ func displayArgs(args any) string {
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
+	toolSchema map[string]any,
 	schema *ast.Schema,
 	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
@@ -401,6 +402,7 @@ func (m *MCP) call(ctx context.Context,
 	if !ok {
 		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
+	toolProps := toolSchema["properties"].(map[string]any)
 	var target dagql.Object
 	if m.env.Root() != nil && selfType == schema.Query.Name {
 		target = m.env.Root()
@@ -425,7 +427,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
 		}
 	}
-	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
+	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap, toolProps)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -530,6 +532,7 @@ func (m *MCP) toolCallToSelection(
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
+	propsSchema map[string]any,
 ) (dagql.Selector, error) {
 	sel := dagql.Selector{
 		Field: fieldDef.Name,
@@ -542,38 +545,34 @@ func (m *MCP) toolCallToSelection(
 			targetObjType.TypeName())
 	}
 	var unknownArgs error
-	for name := range argsMap {
-		if _, ok := field.Args.Lookup(name); !ok {
-			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", name))
-		}
-	}
-	if unknownArgs != nil {
-		return sel, unknownArgs
-	}
 	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
 		}
-		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
-			if idStr, ok := val.(string); ok {
-				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
-				envVal, err := m.GetObject(idStr, idType)
-				if err != nil {
-					return sel, err
-				}
-				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
-					enc, err := obj.ID().Encode()
-					if err != nil {
-						return sel, err
-					}
-					val = enc
-				} else {
-					return sel, fmt.Errorf("expected object, got %T", val)
-				}
-			} else {
+		argSchema, ok := propsSchema[arg.Name].(map[string]any)
+		if !ok {
+			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", arg.Name))
+			continue
+		}
+		if idType, ok := argSchema[jsonSchemaIDAttr].(string); ok {
+			idStr, ok := val.(string)
+			if !ok {
 				return sel, fmt.Errorf("expected string, got %T", val)
 			}
+			envVal, err := m.GetObject(idStr, idType)
+			if err != nil {
+				return sel, err
+			}
+			obj, ok := dagql.UnwrapAs[dagql.Object](envVal)
+			if !ok {
+				return sel, fmt.Errorf("expected object, got %T", val)
+			}
+			enc, err := obj.ID().Encode()
+			if err != nil {
+				return sel, err
+			}
+			val = enc
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
@@ -583,6 +582,9 @@ func (m *MCP) toolCallToSelection(
 			Name:  arg.Name,
 			Value: input,
 		})
+	}
+	if unknownArgs != nil {
+		return sel, unknownArgs
 	}
 	return sel, nil
 }
