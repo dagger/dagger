@@ -1270,9 +1270,12 @@ func (m *MCP) newState(target dagql.Object) (string, error) {
 }
 
 func toolStructuredResponse(val any) (string, error) {
-	pl, err := json.Marshal(val)
-	if err != nil {
+	str := new(strings.Builder)
+	enc := json.NewEncoder(str)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(val); err != nil {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
-	return string(pl), nil
+	return str.String(), nil
 }
