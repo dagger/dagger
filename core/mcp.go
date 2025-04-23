@@ -89,6 +89,10 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	}
 	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
+			objType := obj.Type().Name()
+			if expectedType != "" && objType != expectedType {
+				return nil, fmt.Errorf("type error: expected %q, got %q", expectedType, objType)
+			}
 			return obj, nil
 		}
 		return nil, fmt.Errorf("type error: %q exists but is not an object", key)
@@ -560,15 +564,15 @@ func (m *MCP) toolCallToSelection(
 		if idType, ok := argSchema[jsonSchemaIDAttr].(string); ok {
 			idStr, ok := val.(string)
 			if !ok {
-				return sel, fmt.Errorf("expected string, got %T", val)
+				return sel, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
 			}
 			envVal, err := m.GetObject(idStr, idType)
 			if err != nil {
-				return sel, err
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
 			obj, ok := dagql.UnwrapAs[dagql.Object](envVal)
 			if !ok {
-				return sel, fmt.Errorf("expected object, got %T", val)
+				return sel, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 			}
 			enc, err := obj.ID().Encode()
 			if err != nil {
@@ -578,7 +582,7 @@ func (m *MCP) toolCallToSelection(
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+			return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
