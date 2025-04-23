@@ -22,10 +22,6 @@ func tsConfigUpdatorFile() *dagger.File {
 	return binDirectory().File("__tsconfig.updator.ts")
 }
 
-func tsClientConfigUpdatorFile() *dagger.File {
-	return binDirectory().File("__tsclientconfig.updator.ts")
-}
-
 func bundledStaticDirectoryForModule() *dagger.Directory {
 	return dag.CurrentModule().Source().Directory("bundled_static_export/module")
 }

@@ -38,7 +38,7 @@ const (
 // On call, this will trigger the entrypoint that will either intropect and register the
 // module in the Dagger engine or execute a function of that module.
 //
-// The returned container has the codegen freshly generated and any necesary dependency
+// The returned container has the codegen freshly generated and any necessary dependency
 // installed.
 func (t *TypescriptSdk) ModuleRuntime(
 	ctx context.Context,
