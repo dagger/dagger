@@ -72,7 +72,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 
 	rootfs = rootfs.
 		// bundle the codegen script and its dependencies into a single executable
-		WithFile("dist/rodegen", base.
+		WithFile("dist/codegen", base.
 			WithWorkdir("/src").
 			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
 			WithMountedDirectory("", rootfs.Directory("codegen")).
