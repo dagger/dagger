@@ -16,7 +16,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/moby/buildkit/util/gitutil"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
@@ -343,10 +343,7 @@ func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client) *dagger.Direct
 	gitOpts := dagger.GitOpts{
 		KeepGitDir: true,
 	}
-	if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-		gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
-	}
-	git := dag.Git(gitURL.Remote, gitOpts)
+	git := dag.Git(gitURL.Remote(), gitOpts)
 	var gitRef *dagger.GitRef
 	if gitURL.Fragment.Ref == "" {
 		gitRef = git.Head()
@@ -405,10 +402,7 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		gitOpts := dagger.GitOpts{
 			KeepGitDir: true,
 		}
-		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
-		}
-		git := dag.Git(parsedGit.Remote, gitOpts)
+		git := dag.Git(parsedGit.Remote(), gitOpts)
 		var gitRef *dagger.GitRef
 		if parsedGit.Fragment.Ref == "" {
 			gitRef = git.Head()
@@ -755,7 +749,7 @@ func (v *gitRepositoryValue) Get(ctx context.Context, dag *dagger.Client, _ *dag
 		if gitURL.Fragment.Subdir != "" {
 			return nil, fmt.Errorf("git repository cannot contain subdir")
 		}
-		return dag.Git(gitURL.Remote), nil
+		return dag.Git(gitURL.Remote()), nil
 	}
 
 	// Otherwise it's a local dir path
@@ -799,7 +793,7 @@ func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Mod
 		if gitURL.Fragment.Subdir != "" {
 			return nil, fmt.Errorf("git repository cannot contain subdir")
 		}
-		repo := dag.Git(gitURL.Remote)
+		repo := dag.Git(gitURL.Remote())
 		if ref := gitURL.Fragment.Ref; ref != "" {
 			return repo.Ref(ref), nil
 		}

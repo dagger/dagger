@@ -32,13 +32,25 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The resolved ref name at this ref.
+     */
+    public function ref(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'ref');
+    }
+
+    /**
      * The filesystem tree at this ref.
      */
-    public function tree(?bool $discardGitDir = false): Directory
+    public function tree(?bool $discardGitDir = false, ?int $depth = 1): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
         if (null !== $discardGitDir) {
         $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
+        }
+        if (null !== $depth) {
+        $innerQueryBuilder->setArgument('depth', $depth);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

@@ -7,7 +7,9 @@ import (
 
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
@@ -87,6 +89,9 @@ type Server interface {
 	// The content store for the engine as a whole
 	OCIStore() content.Store
 
+	// The dns configuration for the engine as a whole
+	DNS() *oci.DNSConfig
+
 	// The lease manager for the engine as a whole
 	LeaseManager() *leaseutil.Manager
 
@@ -98,6 +103,10 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
+
+	// A global lock for the engine, can be used to synchronize access to
+	// shared resources between multiple potentially concurrent calls.
+	Locker() *locker.Locker
 }
 
 func NewRoot(srv Server) *Query {

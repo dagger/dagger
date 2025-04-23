@@ -939,6 +939,11 @@ export type GitRefTreeOpts = {
    * Set to true to discard .git directory.
    */
   discardGitDir?: boolean
+
+  /**
+   * The depth of the tree to fetch.
+   */
+  depth?: number
 }
 
 /**
@@ -5437,15 +5442,17 @@ export class GeneratedCode extends BaseClient {
 export class GitRef extends BaseClient {
   private readonly _id?: GitRefID = undefined
   private readonly _commit?: string = undefined
+  private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRefID, _commit?: string) {
+  constructor(ctx?: Context, _id?: GitRefID, _commit?: string, _ref?: string) {
     super(ctx)
 
     this._id = _id
     this._commit = _commit
+    this._ref = _ref
   }
 
   /**
@@ -5479,8 +5486,24 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * The resolved ref name at this ref.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The filesystem tree at this ref.
    * @param opts.discardGitDir Set to true to discard .git directory.
+   * @param opts.depth The depth of the tree to fetch.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })

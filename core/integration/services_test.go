@@ -2160,7 +2160,7 @@ func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, c
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/srv", makeGitDir(c, content, branchName)).
 		WithExposedPort(gitPort).
-		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --enable=receive-pack --base-path=/root/srv"}).
 		AsService()
 
 	gitHost, err := gitDaemon.Hostname(ctx)

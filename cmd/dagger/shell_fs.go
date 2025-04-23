@@ -10,7 +10,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/moby/buildkit/util/gitutil"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -233,17 +232,19 @@ func (src gitSourceContext) Subpath() string {
 }
 
 func (src gitSourceContext) context(dag *dagger.Client) *dagger.Directory {
-	ref := src.Pin
-	if ref == "" {
-		ref = src.Version
+	gitOpts := dagger.GitOpts{
+		KeepGitDir: true,
 	}
-	url := &gitutil.GitURL{
-		Remote: src.Root,
-		Fragment: &gitutil.GitURLFragment{
-			Ref: ref,
-		},
+	git := dag.Git(src.Root, gitOpts)
+	var gitRef *dagger.GitRef
+	if src.Pin != "" {
+		gitRef = git.Ref(src.Pin)
+	} else if src.Version != "" {
+		gitRef = git.Ref(src.Version)
+	} else {
+		gitRef = git.Head()
 	}
-	return makeGitDirectory(url, dag)
+	return gitRef.Tree()
 }
 
 func (src gitSourceContext) Directory(dag *dagger.Client, subpath string) *dagger.Directory {

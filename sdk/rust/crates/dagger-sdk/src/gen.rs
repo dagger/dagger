@@ -6631,6 +6631,9 @@ pub struct GitRef {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
+    /// The depth of the tree to fetch.
+    #[builder(setter(into, strip_option), default)]
+    pub depth: Option<isize>,
     /// Set to true to discard .git directory.
     #[builder(setter(into, strip_option), default)]
     pub discard_git_dir: Option<bool>,
@@ -6644,6 +6647,11 @@ impl GitRef {
     /// A unique identifier for this GitRef.
     pub async fn id(&self) -> Result<GitRefId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The resolved ref name at this ref.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
     }
     /// The filesystem tree at this ref.
@@ -6668,6 +6676,9 @@ impl GitRef {
         let mut query = self.selection.select("tree");
         if let Some(discard_git_dir) = opts.discard_git_dir {
             query = query.arg("discardGitDir", discard_git_dir);
+        }
+        if let Some(depth) = opts.depth {
+            query = query.arg("depth", depth);
         }
         Directory {
             proc: self.proc.clone(),
