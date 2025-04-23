@@ -19,6 +19,12 @@ func (c *clientGenContainer) GeneratedDirectory() *dagger.Directory {
 	return c.ctr.Directory(ModSourceDirPath)
 }
 
+// Create a base container for the client generator based on the given configuration.
+// If Node or Bun: Create a container with the default Node image.
+// If Deno: Create a container with the default Deno image.
+// Add required binaries to the container:
+// - tsx: to execute Typescript scripts
+// - codegen: to generate the client bindings
 func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *clientGenContainer {
 	baseCtr := dag.Container()
 
@@ -46,6 +52,14 @@ func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *
 	return clientGenCtr
 }
 
+// Returns the container with the SDK directory.
+// If lib origin is bundled:
+// - Add the bundle library (code.js & core.d.ts) to the sdk directory.
+// - Add the static export setup (index.ts & client.gen.ts) to the sdk directory.
+// If lib origin is local:
+// - Copy the complete Typescript SDK directory
+// Do nothing if remote.
+// Note: this doesn't include the generated client, only SDK.
 func (c *clientGenContainer) withBundledSDK() *clientGenContainer {
 	switch c.cfg.sdkLibOrigin {
 	case Bundle:
@@ -71,6 +85,14 @@ func (c *clientGenContainer) withBundledSDK() *clientGenContainer {
 	return c
 }
 
+// Return the container with the updated execution environment.
+// If Node or Bun:
+// - Copy the local host `package.json` and `tsconfig.json` in the current directory.
+// - Update the `package.json` to work with Dagger and add Typescript if it's not already set.
+// - Update the `tsconfig.json` with the necessary configuration to work with the generated client.
+// If Deno:
+// - Copy the local host `deno.json` in the current directory.
+// - Update the `deno.json` with necessary configuration to work with the generated client.
 func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGenContainer {
 	switch c.cfg.runtime {
 	case Node, Bun:
@@ -105,6 +127,13 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 			})
 
 	case Deno:
+		c.ctr = c.ctr.WithDirectory(
+			".",
+			c.cfg.source,
+			dagger.ContainerWithDirectoryOpts{
+				Include: []string{"deno.json"},
+			})
+
 		c.ctr = c.ctr.
 			WithMountedFile("/opt/module/bin/__deno_config_updator.ts", denoConfigUpdatorFile()).
 			WithExec([]string{
@@ -118,6 +147,7 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 	return c
 }
 
+// Return the container with the generated client inside it's current working directory.
 func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File, outputDir string) *clientGenContainer {
 	codegenArgs := []string{
 		codegenBinPath,
@@ -157,6 +187,8 @@ func (c *clientGenContainer) withBundledGitDependenciesJSON(gitDepsJSON string) 
 	return c
 }
 
+// Return the list of git dependencies of the current caller module so it can be bundled in
+// the generated client.
 func extraGitDependenciesFromModule(ctx context.Context, modSource *dagger.ModuleSource) (string, error) {
 	dependencies, err := modSource.Dependencies(ctx)
 	if err != nil {

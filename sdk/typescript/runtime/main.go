@@ -81,6 +81,8 @@ func (t *TypescriptSdk) Codegen(
 		withGeneratedLockFile().
 		withUserSourceCode()
 
+	// Check if there's any user source files, if not, add the template file.
+	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
 	sourcesFiles, err := runtimeBaseCtr.Container().Directory(".").Glob(ctx, "src/**/*.ts")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user source files: %w", err)
@@ -112,6 +114,7 @@ func (t *TypescriptSdk) Codegen(
 		}), nil
 }
 
+// Returns the list of files that are copied from the host when generating the client.
 func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
 	return []string{
 		"./package.json",
@@ -120,6 +123,8 @@ func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
 	}
 }
 
+// Returns a directory with a standalone generated client and any necessary configuration
+// files that are required to work.
 func (t *TypescriptSdk) GenerateClient(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
