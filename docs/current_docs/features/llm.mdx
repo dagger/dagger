@@ -17,7 +17,7 @@ A key feature of Dagger's LLM integration is out-of-the-box support for tool use
 flowchart TD
     A["Dagger LLM Agent"]
     subgraph Environment
-        B["MCP"]
+        B["Tool use"]
         B --> C1["Module A"] & C2["Module B"]
         C1 --> D1["Function Discovery A"] & E1["Tool Execution A"]
         C2 --> D2["Function Discovery B"] & E2["Tool Execution B"]
