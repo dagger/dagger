@@ -111,10 +111,14 @@ export class Registry {
     opts?: ArgumentOptions,
   ): ((
     target: object,
-    propertyKey: string,
+    propertyKey: string | undefined,
     parameterIndex: number,
   ) => void) => {
-    return (target: object, propertyKey: string, parameterIndex: number) => {}
+    return (
+      target: object,
+      propertyKey: string | undefined,
+      parameterIndex: number,
+    ) => {}
   }
 
   /**

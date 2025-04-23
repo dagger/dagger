@@ -66,6 +66,8 @@ if (!fs.existsSync(tsConfigPath)) {
       target: "ES2022",
       moduleResolution: "Node",
       experimentalDecorators: true,
+      strict: true,
+      skipLibCheck: true,
       paths: {
         "@dagger.io/client": [
           `./${path.join(libraryDir.value, "client.gen.ts")}`,
