@@ -25,8 +25,8 @@ type Workspace struct {
 	Findings []string
 }
 
-var knownModels = []string{
-	"gpt-4o",
+var testedModels = []string{
+	// "gpt-4o",
 	"gpt-4.1",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
@@ -82,7 +82,7 @@ func (w *Workspace) EvalNames() []string {
 
 // The list of models that you can run evaluations against.
 func (w *Workspace) KnownModels() []string {
-	return knownModels
+	return testedModels
 }
 
 // Record an interesting finding after performing evaluations.
