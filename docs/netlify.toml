@@ -52,9 +52,14 @@
   from = "/ai-agents"
   to = "/features/llm"
   status = 301
-  
+
 [[redirects]]
     from = "/features/large-language-model/"
+    to = "/features/llm"
+    status = 301
+
+[[redirects]]
+    from = "/features/mcp/"
     to = "/features/llm"
     status = 301
 
