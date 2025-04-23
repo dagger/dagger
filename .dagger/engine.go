@@ -189,7 +189,7 @@ func (e *DaggerEngine) Lint(
 				if strings.HasPrefix(pkg, "core/integration/") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken/") {
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
 					continue
 				}
 				if strings.HasPrefix(pkg, "modules/evaluator/") {
