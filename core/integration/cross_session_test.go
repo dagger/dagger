@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -845,6 +847,59 @@ func (*Secreter) CheckPlaintext(ctx context.Context, s *dagger.Secret, expected 
 		c1 := connect(ctx, t)
 		randVal1 := identity.NewID()
 		_, err := callMod(c1, randVal1)
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		randVal2 := identity.NewID()
+		_, err = callMod(c2, randVal2)
+		require.NoError(t, err)
+	})
+
+	t.Run("contenthash cache hit with secrets", func(ctx context.Context, t *testctx.T) {
+		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.NotEmpty(t, authTokenTestCase.token)
+		tokenPlaintextBytes, err := base64.StdEncoding.DecodeString(authTokenTestCase.token)
+		require.NoError(t, err)
+		tokenPlaintext := strings.TrimSpace(string(tokenPlaintextBytes))
+
+		callMod := func(c *dagger.Client, cacheBust string) (string, error) {
+			return goGitBase(t, c).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"dagger/secreter/internal/dagger"
+)
+
+type Secreter struct {}
+
+func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
+	authSecret := dag.SetSecret("GIT_AUTH", tokenPlaintext)
+	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private").
+		WithAuthToken(authSecret).
+		Branch("main").
+		Tree()
+
+	return dag.Container().From("alpine:3.20").
+		WithEnvVariable("CACHEBUST", cacheBust).
+		WithMountedDirectory("/src", gitRepo).
+		WithExec([]string{"true"})
+}
+`,
+				).
+				With(daggerCall(
+					"fn",
+					"--cache-bust", cacheBust,
+					"--token-plaintext", tokenPlaintext,
+					"stdout",
+				)).
+				Stdout(ctx)
+		}
+
+		c1 := connect(ctx, t)
+		randVal1 := identity.NewID()
+		_, err = callMod(c1, randVal1)
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
