@@ -17,6 +17,8 @@ Expected stderr:
 │ │ │ │ ┃ # dagger/broken
 │ │ │ │ ┃ ./main.go:6:6: undefined: ctx
 │ │ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ │ ✘ asModule getModDef X.Xs
+│ │ │ ! failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
 Error logs:
 

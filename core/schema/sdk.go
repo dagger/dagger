@@ -62,13 +62,13 @@ func (s *sdkLoader) sdkForModule(
 	query *core.Query,
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
-) (core.SDK, error) {
+) (_ core.SDK, rerr error) {
 	if sdk == nil {
 		return nil, errors.New("sdk ref is required")
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	builtinSDK, err := s.builtinSDK(ctx, query, sdk)
 	if err == nil {

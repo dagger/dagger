@@ -2131,69 +2131,74 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 	mod.InstanceID = tmpModInst.ID()
 
-	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
 	modName := src.Self.ModuleName
-	getModDefFn, err := core.NewModFunction(
-		getModDefCtx,
-		src.Self.Query,
-		mod,
-		nil,
-		mod.Runtime,
-		core.NewFunction("", &core.TypeDef{
-			Kind:     core.TypeDefKindObject,
-			AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
-		}))
-	if err != nil {
-		getModDefSpan.End()
-		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
-	}
-	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
-		Cache:          true,
-		SkipSelfSchema: true,
-		Server:         s.dag,
-		// Don't include the digest for the current call (which is a bunch of module source stuff, including
-		// APIs that are cached per-client when local sources are involved) in the cache key of this
-		// function call. That would needlessly invalidate the cache more than is needed, similar to how
-		// we want to scope the codegen cache keys by the content digested source instance above.
-		SkipCallDigestCacheKey: true,
-	})
-	if err != nil {
-		getModDefSpan.End()
-		return nil, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
-	}
-	if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
-		var postCall func(context.Context) error
-		postCall, result = postCallRes.GetPostCall()
-		if postCall != nil {
-			if err := postCall(ctx); err != nil {
-				getModDefSpan.End()
-				return nil, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+
+	var initialized *core.Module
+	err = (func() (rerr error) {
+		ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
+		defer telemetry.End(span, func() error { return rerr })
+		getModDefFn, err := core.NewModFunction(
+			ctx,
+			src.Self.Query,
+			mod,
+			nil,
+			mod.Runtime,
+			core.NewFunction("", &core.TypeDef{
+				Kind:     core.TypeDefKindObject,
+				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
+			}))
+		if err != nil {
+			return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+		}
+		result, err := getModDefFn.Call(ctx, &core.CallOpts{
+			Cache:          true,
+			SkipSelfSchema: true,
+			Server:         s.dag,
+			// Don't include the digest for the current call (which is a bunch of module source stuff, including
+			// APIs that are cached per-client when local sources are involved) in the cache key of this
+			// function call. That would needlessly invalidate the cache more than is needed, similar to how
+			// we want to scope the codegen cache keys by the content digested source instance above.
+			SkipCallDigestCacheKey: true,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+		}
+		if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
+			var postCall func(context.Context) error
+			postCall, result = postCallRes.GetPostCall()
+			if postCall != nil {
+				if err := postCall(ctx); err != nil {
+					return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+				}
 			}
 		}
-	}
 
-	resultInst, ok := result.(dagql.Instance[*core.Module])
-	if !ok {
-		getModDefSpan.End()
-		return nil, fmt.Errorf("expected Module result, got %T", result)
+		resultInst, ok := result.(dagql.Instance[*core.Module])
+		if !ok {
+			return fmt.Errorf("expected Module result, got %T", result)
+		}
+		initialized = resultInst.Self
+		return nil
+	})()
+	if err != nil {
+		return nil, err
 	}
-	getModDefSpan.End()
 
 	// update the module's types with what was returned from the call above
-	mod.Description = resultInst.Self.Description
-	for _, obj := range resultInst.Self.ObjectDefs {
+	mod.Description = initialized.Description
+	for _, obj := range initialized.ObjectDefs {
 		mod, err = mod.WithObject(ctx, obj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
 		}
 	}
-	for _, iface := range resultInst.Self.InterfaceDefs {
+	for _, iface := range initialized.InterfaceDefs {
 		mod, err = mod.WithInterface(ctx, iface)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
 		}
 	}
-	for _, enum := range resultInst.Self.EnumDefs {
+	for _, enum := range initialized.EnumDefs {
 		mod, err = mod.WithEnum(ctx, enum)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
@@ -2295,9 +2300,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (*core.ModDeps, error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (_ *core.ModDeps, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	var eg errgroup.Group
 	depMods := make([]dagql.Instance[*core.Module], len(src.Dependencies))

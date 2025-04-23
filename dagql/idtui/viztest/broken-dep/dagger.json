@@ -1,0 +1,13 @@
+{
+  "name": "broken-dep",
+  "engineVersion": "v0.18.3",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "broken",
+      "source": "./broken"
+    }
+  ]
+}

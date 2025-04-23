@@ -119,7 +119,10 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			// note cpu pressure, io pressure, and network stats are not tested here. they only appear when nonzero.
 		}, Flaky: "Depends on details of the engine runner (e.g. fails in Windows + WSL2)"},
 
-		{Module: "./viztest/broken", Function: "broken", Fail: true},
+		// test that directly using a broken module surfaces the error
+		{Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true},
+		// test that a module with a broken dependency surfaces the error
+		{Module: "./viztest/broken-dep", Function: "use-broken", Fail: true},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
 		// engine. spent a day investigating, don't have a good explanation. it
@@ -136,7 +139,11 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/typescript", Function: "pending", Fail: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
 	} {
-		t.Run(path.Join(ex.Module, ex.Function), func(ctx context.Context, t *testctx.T) {
+		testName := ex.Function
+		if ex.Module != "" {
+			testName = path.Join(path.Base(ex.Module), testName)
+		}
+		t.Run(testName, func(ctx context.Context, t *testctx.T) {
 			out, db := ex.Run(ctx, t, s)
 			switch {
 			case ex.Flaky != "":

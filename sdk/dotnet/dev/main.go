@@ -9,6 +9,7 @@ import (
 	_ "embed"
 
 	"github.com/dagger/dagger/sdk/dotnet/dev/internal/dagger"
+	"github.com/dagger/dagger/sdk/dotnet/dev/internal/telemetry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -70,14 +71,14 @@ func (m *DotnetSdkDev) Lint(ctx context.Context) error {
 // Run test and lint.
 func (m *DotnetSdkDev) Check(ctx context.Context, introspectionJSON *dagger.File) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "test")
-		defer span.End()
+		defer telemetry.End(span, func() error { return rerr })
 		return m.Test(ctx, introspectionJSON)
 	})
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint")
-		defer span.End()
+		defer telemetry.End(span, func() error { return rerr })
 		return m.Lint(ctx)
 	})
 	return eg.Wait()
