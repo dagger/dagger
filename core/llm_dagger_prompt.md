@@ -34,6 +34,10 @@ The `save` tool, if present, determines the outputs. Keep going until you are ab
 
 Use the `chain_tools` tool as an optimization to chain multiple tool calls together, minimizing back-and-forth.
 
+The first tool runs as normal. The subsequent tools default their typed receiver argument to the result of the previous tool.
+
+Chaining is analogous to method calling, i.e. `foo.bar().baz()` - so only the typed "self" argument can be omitted (e.g. the `Foo` arg for a tool named `Foo_withBar`), and you cannot continue chaining after a tool that returns a scalar or array.
+
 For example, many scenarios will involve chaining tool calls together:
 
 <example name="unchained">
@@ -57,6 +61,8 @@ In these scenarios, use the `chain_tools` tool instead:
   }}
   => {"result":"Foo#3"}
 </example>
+
+Note that the "Foo" param in the chained example is omitted for the chained calls.
 
 ## Conceptual Framework
 
