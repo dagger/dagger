@@ -282,9 +282,15 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		}),
 	})
 	w := gha.Workflow("evals", dagger.GhaWorkflowOpts{
-		// NOTE: this will still run for fork branches, so we need the conditional
-		// below to actually skip those.
-		OnPushBranches: []string{"*"},
+		// Only run when LLM-related files are changed
+		OnPushPaths: []string{
+			"core/{llm,mcp,env}.go",
+			"core/llm_*.go",
+			"core/llm_*.md",
+			"core/schema/llm.go",
+			"core/schema/env.go",
+			"modules/evaluator/**",
+		},
 	}).WithJob(gha.Job(
 		"testdev",
 		"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",
@@ -292,8 +298,9 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			Module:        "modules/evaluator",
 			DaggerVersion: ".", // testdev, so run against local dagger
 			Runner:        []string{GoldRunner(true)},
-			Condition:     fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
-			Secrets:       []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+			// NOTE: avoid running for forks
+			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
+			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{
 				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
 				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",

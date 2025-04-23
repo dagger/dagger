@@ -146,6 +146,9 @@ func (gha *Gha) Workflow(
 	// Run the workflow on git push to the specified branches
 	// +optional
 	onPushBranches []string,
+	// Run the workflow only if the paths match
+	// +optional
+	onPushPaths []string,
 	// Run the workflow at a schedule time
 	// +optional
 	onSchedule []string,
@@ -246,13 +249,16 @@ func (gha *Gha) Workflow(
 		w = w.onPullRequest([]string{"auto_merge_disabled"}, nil, nil)
 	}
 	if onPush {
-		w = w.onPush(nil, nil)
+		w = w.onPush(nil, nil, nil)
 	}
 	if onPushBranches != nil {
-		w = w.onPush(onPushBranches, nil)
+		w = w.onPush(onPushBranches, nil, nil)
 	}
 	if onPushTags != nil {
-		w = w.onPush(nil, onPushTags)
+		w = w.onPush(nil, onPushTags, nil)
+	}
+	if onPushPaths != nil {
+		w = w.onPush(nil, nil, onPushPaths)
 	}
 	if onSchedule != nil {
 		w = w.onSchedule(onSchedule)
@@ -304,12 +310,16 @@ func (w *Workflow) onPush(
 	// Run only on push to specific tags
 	// +optional
 	tags []string,
+	// Run only if the paths match
+	// +optional
+	paths []string,
 ) *Workflow {
 	if w.Triggers.Push == nil {
 		w.Triggers.Push = &api.PushEvent{}
 	}
 	w.Triggers.Push.Branches = append(w.Triggers.Push.Branches, branches...)
 	w.Triggers.Push.Tags = append(w.Triggers.Push.Tags, tags...)
+	w.Triggers.Push.Paths = append(w.Triggers.Push.Paths, paths...)
 	return w
 }
 
