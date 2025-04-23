@@ -408,7 +408,10 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 		m.PackageName = NormalizePackageName(m.ProjectName)
 	}
 
-	m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
+	// Only look for vendor path when uv.lock is being used
+	if m.UseUvLock() {
+		m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
+	}
 
 	switch {
 	case m.EngineVersion != "":
@@ -431,7 +434,10 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 		// way users can opt-out when back to a stable build, but also not have
 		// to manually update pyproject.toml in order for it to work.
 		m.VendorPath = GenDir
-		m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
+
+		if m.UseUvLock() {
+			m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
+		}
 	}
 
 	return nil
