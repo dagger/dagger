@@ -285,6 +285,14 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		// NOTE: this will still run for fork branches, so we need the conditional
 		// below to actually skip those.
 		OnPushBranches: []string{"*"},
+		// Only run when LLM-related files are changed
+		OnPushPaths: []string{
+			"core/{llm,mcp,env}.go",
+			"core/llm_*.go",
+			"core/llm_*.md",
+			"core/schema/llm.go",
+			"core/schema/env.go",
+		},
 	}).WithJob(gha.Job(
 		"testdev",
 		"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",

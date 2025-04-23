@@ -4,6 +4,12 @@ name: evals
     push:
         branches:
             - '*'
+        paths:
+            - core/{llm,mcp,env}.go
+            - core/llm_*.go
+            - core/llm_*.md
+            - core/schema/llm.go
+            - core/schema/env.go
     workflow_dispatch: {}
 jobs:
     testdev:
