@@ -15,7 +15,7 @@ on:
 jobs:
   remote-dagger-engine-tmpfs:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: dagger-x1-v0-18-3-16c-tmpfs-1
+    runs-on: dagger-x1-v0-18-4-16c-tmpfs-1
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo

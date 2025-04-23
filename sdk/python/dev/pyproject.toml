@@ -2,7 +2,7 @@
 name = "python-sdk-dev"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["dagger-io"]
+dependencies = ["dagger-io ==0.18.4"]
 
 [tool.dagger]
 # Ensure the dev module works both with released and dev engine.
