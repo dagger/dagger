@@ -106,12 +106,6 @@ type PythonSdk struct {
 	// The source needed to load and run a module
 	ModSource *dagger.ModuleSource
 
-	// The current engine version
-	//
-	// Used to pin the same client library version. If a dev build the SDK
-	// should be vendored.
-	EngineVersion string
-
 	// ContextDir is a copy of the context directory from the module source
 	//
 	// We add files to this directory, always joining paths with the source's
@@ -158,7 +152,7 @@ func (m *PythonSdk) Codegen(
 
 	ignorePaths := []string{".venv", "**/__pycache__"}
 	genPaths := []string{
-		// TODO: uncomment when we no longer vendor every time
+		// TODO: uncomment when we start generating client bindings outside the library
 		// UserGenPath,
 	}
 
@@ -326,11 +320,6 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
 			projCfg := strings.ReplaceAll(tplToml, "main", m.ProjectName)
-
-			if m.EngineVersion != "" {
-				projCfg = strings.Replace(projCfg, `"dagger-io"`, `"dagger-io ==`+m.EngineVersion+`"`, 1)
-			}
-
 			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
