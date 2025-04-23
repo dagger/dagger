@@ -17,7 +17,6 @@ module.exports = {
         "features/modules",
         "features/shell",
         "features/llm",
-        "features/mcp",
         "features/caching",
         "features/debugging",
         "features/services",
