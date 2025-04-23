@@ -298,12 +298,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	objDef := obj.TypeDef
 	mod := obj.Module
 
-	// constructors are installed on the Root, so check that we're not overriding the core apis (git, container, etc.)
-	_, ok := dag.Root().ObjectType().FieldSpec(mod.Name(), dag.View)
-	if ok {
-		return fmt.Errorf("module name %q shadows core API function", mod.Name())
-	}
-
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{

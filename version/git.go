@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/dagger/dagger/dagger-version/internal/dagger"
+	"github.com/dagger/dagger/version/internal/dagger"
 )
 
 // Git is an opinionated helper for performing various commands on our dagger repo.

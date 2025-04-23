@@ -10,8 +10,8 @@
       "source": "../../modules/go"
     },
     {
-      "name": "dagger-version",
-      "source": "../../dagger-version"
+      "name": "version",
+      "source": "../../version"
     }
   ],
   "source": ".dagger"

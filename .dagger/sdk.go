@@ -115,7 +115,7 @@ type gitPublishOpts struct {
 	dryRun bool
 }
 
-func gitPublish(ctx context.Context, git *dagger.DaggerVersionGit, opts gitPublishOpts) error {
+func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
 		base = dag.

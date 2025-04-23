@@ -2389,31 +2389,6 @@ func (m *Chain) Echo(msg string) string {
 	})
 }
 
-func (CallSuite) TestModuleShadow(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	// Create a container with our test environment
-	ctr := goGitBase(t, c)
-
-	// Create a module named "git" (lowercase) which should conflict with the core API
-	ctr = ctr.WithWorkdir("/work").
-		WithExec([]string{"mkdir", "-p", "git"}).
-		With(withModInitAt("git", "go", `package main
-
-type Git struct {}
-
-func (g *Git) Echo(msg string) string {
-	return msg
-}
-`))
-
-	// Attempt to use the module - this should fail due to shadowing core API function
-	_, err := ctr.With(daggerCallAt("git", "echo", "--msg", "hello")).Stdout(ctx)
-
-	// Verify the error message
-	requireErrOut(t, err, `module name "git" shadows core API function`)
-}
-
 func (CallSuite) TestInvalidEnum(ctx context.Context, t *testctx.T) {
 	t.Run("duplicated enum value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

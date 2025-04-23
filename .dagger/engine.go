@@ -131,7 +131,7 @@ func (e *DaggerEngine) Service(
 ) (*dagger.Service, error) {
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
-		version, err := dag.DaggerVersion().Version(ctx)
+		version, err := dag.Version().Version(ctx)
 		if err != nil {
 			return nil, err
 		}

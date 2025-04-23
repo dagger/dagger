@@ -63,8 +63,8 @@
       "source": "modules/shellcheck"
     },
     {
-      "name": "dagger-version",
-      "source": "dagger-version"
+      "name": "version",
+      "source": "version"
     },
     {
       "name": "wolfi",

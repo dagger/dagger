@@ -21,11 +21,11 @@ func New(
 ) (*DaggerCli, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
-	version, err := dag.DaggerVersion().Version(ctx)
+	version, err := dag.Version().Version(ctx)
 	if err != nil {
 		return nil, err
 	}
-	imageTag, err := dag.DaggerVersion().ImageTag(ctx)
+	imageTag, err := dag.Version().ImageTag(ctx)
 	if err != nil {
 		return nil, err
 	}
