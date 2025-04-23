@@ -854,6 +854,18 @@
                         </td>
                         <td> Set SSH auth socket </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>httpAuthToken</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
+                        </td>
+                        <td> Secret used to populate the password during basic HTTP Authorization </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>httpAuthHeader</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
+                        </td>
+                        <td> Secret used to populate the Authorization HTTP header </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8233,8 +8245,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Header to authenticate the remote with. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Header to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthHeader" in the constructor instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8250,8 +8263,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Token to authenticate the remote with. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Token to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthToken" in the constructor instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">

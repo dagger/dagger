@@ -107,6 +107,9 @@ defmodule Dagger.GitRepository do
     Client.execute(git_repository.client, query_builder)
   end
 
+  @deprecated """
+  Use \\"httpAuthHeader\\" in the constructor instead.
+  """
   @doc """
   Header to authenticate the remote with.
   """
@@ -123,6 +126,9 @@ defmodule Dagger.GitRepository do
     }
   end
 
+  @deprecated """
+  Use \\"httpAuthToken\\" in the constructor instead.
+  """
   @doc """
   Token to authenticate the remote with.
   """

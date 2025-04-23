@@ -1193,6 +1193,16 @@ export type ClientGitOpts = {
    * Set SSH auth socket
    */
   sshAuthSocket?: Socket
+
+  /**
+   * Secret used to populate the password during basic HTTP Authorization
+   */
+  httpAuthToken?: Secret
+
+  /**
+   * Secret used to populate the Authorization HTTP header
+   */
+  httpAuthHeader?: Secret
 }
 
 export type ClientHttpOpts = {
@@ -5600,6 +5610,7 @@ export class GitRepository extends BaseClient {
   /**
    * Header to authenticate the remote with.
    * @param header Secret used to populate the Authorization HTTP header
+   * @deprecated Use "httpAuthHeader" in the constructor instead.
    */
   withAuthHeader = (header: Secret): GitRepository => {
     const ctx = this._ctx.select("withAuthHeader", { header })
@@ -5609,6 +5620,7 @@ export class GitRepository extends BaseClient {
   /**
    * Token to authenticate the remote with.
    * @param token Secret used to populate the password during basic HTTP Authorization
+   * @deprecated Use "httpAuthToken" in the constructor instead.
    */
   withAuthToken = (token: Secret): GitRepository => {
     const ctx = this._ctx.select("withAuthToken", { token })
@@ -7613,6 +7625,8 @@ export class Client extends BaseClient {
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    * @param opts.sshKnownHosts Set SSH known hosts
    * @param opts.sshAuthSocket Set SSH auth socket
+   * @param opts.httpAuthToken Secret used to populate the password during basic HTTP Authorization
+   * @param opts.httpAuthHeader Secret used to populate the Authorization HTTP header
    */
   git = (url: string, opts?: ClientGitOpts): GitRepository => {
     const ctx = this._ctx.select("git", { url, ...opts })

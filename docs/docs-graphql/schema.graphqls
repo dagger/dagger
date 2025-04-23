@@ -2454,13 +2454,13 @@ type GitRepository {
   withAuthHeader(
     """Secret used to populate the Authorization HTTP header"""
     header: SecretID!
-  ): GitRepository!
+  ): GitRepository! @deprecated(reason: "Use \"httpAuthHeader\" in the constructor instead.")
 
   """Token to authenticate the remote with."""
   withAuthToken(
     """Secret used to populate the password during basic HTTP Authorization"""
     token: SecretID!
-  ): GitRepository!
+  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
 }
 
 """
@@ -3250,6 +3250,12 @@ type Query {
 
     """Set SSH auth socket"""
     sshAuthSocket: SocketID
+
+    """Secret used to populate the password during basic HTTP Authorization"""
+    httpAuthToken: SecretID
+
+    """Secret used to populate the Authorization HTTP header"""
+    httpAuthHeader: SecretID
   ): GitRepository!
 
   """Queries the host environment."""

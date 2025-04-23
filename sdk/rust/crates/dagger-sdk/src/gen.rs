@@ -8071,6 +8071,12 @@ pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
+    /// Secret used to populate the Authorization HTTP header
+    #[builder(setter(into, strip_option), default)]
+    pub http_auth_header: Option<SecretId>,
+    /// Secret used to populate the password during basic HTTP Authorization
+    #[builder(setter(into, strip_option), default)]
+    pub http_auth_token: Option<SecretId>,
     /// DEPRECATED: Set to true to keep .git directory.
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
@@ -8362,6 +8368,12 @@ impl Query {
         }
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        if let Some(http_auth_token) = opts.http_auth_token {
+            query = query.arg("httpAuthToken", http_auth_token);
+        }
+        if let Some(http_auth_header) = opts.http_auth_header {
+            query = query.arg("httpAuthHeader", http_auth_header);
         }
         GitRepository {
             proc: self.proc.clone(),

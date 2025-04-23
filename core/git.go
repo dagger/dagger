@@ -271,7 +271,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		})
 	}
 
-	netConf, err := repo.dnsConfig(ctx)
+	netConf, err := DNSConfig(ctx, repo.Query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -291,7 +291,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) dnsConfig(ctx context.Context) (*oci.DNSConfig, error) {
+func DNSConfig(ctx context.Context, query *Query) (*oci.DNSConfig, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,7 @@ func (repo *RemoteGitRepository) dnsConfig(ctx context.Context) (*oci.DNSConfig,
 	clientDomains := []string{}
 	clientDomains = append(clientDomains, network.SessionDomain(namespace))
 
-	dns := *repo.Query.DNS()
+	dns := *query.DNS()
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 	return &dns, nil
 }

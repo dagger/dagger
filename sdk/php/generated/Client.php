@@ -151,6 +151,8 @@ class Client extends Client\AbstractClient
         ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
+        SecretId|Secret|null $httpAuthToken = null,
+        SecretId|Secret|null $httpAuthHeader = null,
     ): GitRepository {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
@@ -165,6 +167,12 @@ class Client extends Client\AbstractClient
         }
         if (null !== $sshAuthSocket) {
         $innerQueryBuilder->setArgument('sshAuthSocket', $sshAuthSocket);
+        }
+        if (null !== $httpAuthToken) {
+        $innerQueryBuilder->setArgument('httpAuthToken', $httpAuthToken);
+        }
+        if (null !== $httpAuthHeader) {
+        $innerQueryBuilder->setArgument('httpAuthHeader', $httpAuthHeader);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
