@@ -87,7 +87,7 @@ func (s *moduleSchema) Install() {
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
-			ArgDoc("includeDependencies", "expose the dependencies of this module to the client"),
+			ArgDoc("includeDependencies", "Expose the dependencies of this module to the client"),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.CurrentModule]{
