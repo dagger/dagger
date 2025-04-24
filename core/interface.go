@@ -323,6 +323,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				return wrapIface(ifaceReturnType, objReturnType, res)
 			},
 			CacheSpec: dagql.CacheSpec{
+				SkipDedupe: true,
 				GetCacheConfig: func(
 					ctx context.Context,
 					parentObj dagql.Object,

@@ -277,19 +277,23 @@ func TestCacheResultRelease(t *testing.T) {
 		})
 		assert.NilError(t, err)
 
-		assert.Equal(t, 2, len(c.calls))
+		assert.Equal(t, 0, len(c.ongoingCalls))
+		assert.Equal(t, 2, len(c.completedCalls))
 
 		err = res2.Release(ctx)
 		assert.NilError(t, err)
-		assert.Equal(t, 1, len(c.calls))
+		assert.Equal(t, 0, len(c.ongoingCalls))
+		assert.Equal(t, 1, len(c.completedCalls))
 
 		err = res1A.Release(ctx)
 		assert.NilError(t, err)
-		assert.Equal(t, 1, len(c.calls))
+		assert.Equal(t, 0, len(c.ongoingCalls))
+		assert.Equal(t, 1, len(c.completedCalls))
 
 		err = res1B.Release(ctx)
 		assert.NilError(t, err)
-		assert.Equal(t, 0, len(c.calls))
+		assert.Equal(t, 0, len(c.ongoingCalls))
+		assert.Equal(t, 0, len(c.completedCalls))
 	})
 
 	t.Run("onRelease", func(t *testing.T) {
@@ -300,7 +304,7 @@ func TestCacheResultRelease(t *testing.T) {
 		ctx := context.Background()
 
 		releaseCalledCh := make(chan struct{})
-		res1A, err := c.GetOrInitializeWithCallbacks(ctx, 1, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		res1A, err := c.GetOrInitializeWithCallbacks(ctx, 1, false, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			return &ValueWithCallbacks[int]{Value: 1, OnRelease: func(ctx context.Context) error {
 				close(releaseCalledCh)
 				return nil
@@ -331,7 +335,7 @@ func TestCacheResultRelease(t *testing.T) {
 		}
 
 		// test error in onRelease
-		res2, err := c.GetOrInitializeWithCallbacks(ctx, 2, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		res2, err := c.GetOrInitializeWithCallbacks(ctx, 2, false, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			return &ValueWithCallbacks[int]{Value: 2, OnRelease: func(ctx context.Context) error {
 				return fmt.Errorf("oh no")
 			}}, nil

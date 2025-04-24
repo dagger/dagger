@@ -26,6 +26,7 @@ type Cache[K comparable, V any] interface {
 	GetOrInitializeWithCallbacks(
 		context.Context,
 		K,
+		bool,
 		func(context.Context) (*ValueWithCallbacks[V], error),
 	) (Result[K, V], error)
 
@@ -60,8 +61,9 @@ func NewCache[K comparable, V any]() Cache[K, V] {
 }
 
 type cache[K comparable, V any] struct {
-	mu    sync.Mutex
-	calls map[K]*result[K, V]
+	mu             sync.Mutex
+	ongoingCalls   map[K]*result[K, V]
+	completedCalls map[K]*result[K, V]
 }
 
 var _ Cache[int, int] = &cache[int, int]{}
@@ -107,7 +109,7 @@ func (c *cache[K, V]) Size() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return len(c.calls)
+	return len(c.ongoingCalls) + len(c.completedCalls)
 }
 
 func (c *cache[K, V]) GetOrInitializeValue(
@@ -125,7 +127,7 @@ func (c *cache[K, V]) GetOrInitialize(
 	key K,
 	fn func(context.Context) (V, error),
 ) (Result[K, V], error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, false, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -137,6 +139,7 @@ func (c *cache[K, V]) GetOrInitialize(
 func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	ctx context.Context,
 	key K,
+	skipDedupe bool,
 	fn func(context.Context) (*ValueWithCallbacks[V], error),
 ) (Result[K, V], error) {
 	var zeroKey K
@@ -160,15 +163,29 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}
 
 	c.mu.Lock()
-	if c.calls == nil {
-		c.calls = make(map[K]*result[K, V])
+	if c.ongoingCalls == nil {
+		c.ongoingCalls = make(map[K]*result[K, V])
+	}
+	if c.completedCalls == nil {
+		c.completedCalls = make(map[K]*result[K, V])
 	}
 
-	if res, ok := c.calls[key]; ok {
-		// already an ongoing call
-		res.waiters++
+	if res, ok := c.completedCalls[key]; ok {
+		res.refCount++
 		c.mu.Unlock()
-		return c.wait(ctx, key, res)
+		return &perCallResult[K, V]{
+			result:   res,
+			hitCache: true,
+		}, nil
+	}
+
+	if !skipDedupe {
+		if res, ok := c.ongoingCalls[key]; ok {
+			// already an ongoing call
+			res.waiters++
+			c.mu.Unlock()
+			return c.wait(ctx, key, res)
+		}
 	}
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
@@ -183,7 +200,11 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		cancel:  cancel,
 		waiters: 1,
 	}
-	c.calls[key] = res
+
+	if !skipDedupe {
+		c.ongoingCalls[key] = res
+	}
+
 	go func() {
 		defer close(res.waitCh)
 		valWithCallbacks, err := fn(callCtx)
@@ -237,6 +258,13 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 	}
 
 	if err == nil {
+		delete(c.ongoingCalls, key)
+		if existingRes, ok := c.completedCalls[key]; ok {
+			res = existingRes
+		} else {
+			c.completedCalls[key] = res
+		}
+
 		res.refCount++
 		return &perCallResult[K, V]{
 			result:   res,
@@ -246,7 +274,8 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 
 	if res.refCount == 0 {
 		// error happened and no refs left, delete it now
-		delete(c.calls, key)
+		delete(c.ongoingCalls, key)
+		delete(c.completedCalls, key)
 	}
 	return nil, err
 }
@@ -270,7 +299,8 @@ func (res *result[K, V]) Release(ctx context.Context) error {
 	var onRelease OnReleaseFunc
 	if res.refCount == 0 && res.waiters == 0 {
 		// no refs left and no one waiting on it, delete from cache
-		delete(res.cache.calls, res.key)
+		delete(res.cache.ongoingCalls, res.key)
+		delete(res.cache.completedCalls, res.key)
 		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()

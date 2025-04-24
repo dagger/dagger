@@ -359,15 +359,15 @@ func NoopDone(res Typed, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	inputArgs, newID, doNotCache, err := r.preselect(ctx, s, sel)
+	inputArgs, newID, doNotCache, skipDedupe, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, nil, err
 	}
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	return r.call(ctx, s, newID, inputArgs, doNotCache, skipDedupe)
 }
 
 func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	_, newID, _, err := r.preselect(ctx, s, sel)
+	_, newID, _, _, err := r.preselect(ctx, s, sel) //nolint:dogsled
 	if err != nil {
 		return nil, nil, err
 	}
@@ -378,11 +378,11 @@ func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (T
 	return returnType, newID, nil
 }
 
-func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (map[string]Input, *call.ID, bool, error) {
+func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (map[string]Input, *call.ID, bool, bool, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		return nil, nil, false, false, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -417,7 +417,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, false, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, nil, false, false, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 	// TODO: it's better DX if it matches schema order
@@ -441,6 +441,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 	)
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
+	skipDedupe := field.CacheSpec.SkipDedupe
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
@@ -450,7 +451,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 			Digest: origDgst,
 		})
 		if err != nil {
-			return nil, nil, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
+			return nil, nil, false, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
 		}
 
 		if len(cacheCfg.UpdatedArgs) > 0 {
@@ -488,7 +489,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 		}
 	}
 
-	return inputArgs, newID, doNotCache, nil
+	return inputArgs, newID, doNotCache, skipDedupe, nil
 }
 
 // Call calls the field on the instance specified by the ID.
@@ -531,7 +532,8 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 	}
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	skipDedupe := field.CacheSpec.SkipDedupe
+	return r.call(ctx, s, newID, inputArgs, doNotCache, skipDedupe)
 }
 
 func (r Instance[T]) call(
@@ -540,6 +542,7 @@ func (r Instance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 	doNotCache bool,
+	skipDedupe bool,
 ) (Typed, *call.ID, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
@@ -554,7 +557,7 @@ func (r Instance[T]) call(
 			return s.telemetry(ctx, r, newID)
 		}))
 	}
-	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, skipDedupe, func(ctx context.Context) (*CacheValWithCallbacks, error) {
 		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), View(newID.View()), inputArgs)
 		if err != nil {
 			return nil, err
@@ -1136,6 +1139,9 @@ type CacheSpec struct {
 	// If set, the result of this field will never be cached and not have concurrent equal
 	// calls deduped. The string value is a reason why the field should not be cached.
 	DoNotCache string
+
+	// TODO: doc
+	SkipDedupe bool
 }
 
 type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, View, CacheConfig) (*CacheConfig, error)
