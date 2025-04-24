@@ -13,7 +13,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_unJGt9QDgnorT4sDVCJIoyGL",
+        "id": "call_dirbJoSxHGTa8X3TE9Ne4Nyb",
         "function": {
           "name": "select_tools",
           "arguments": {
@@ -27,15 +27,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 931,
+      "input_tokens": 992,
       "output_tokens": 21,
-      "total_tokens": 952
+      "total_tokens": 1013
     }
   },
   {
     "role": "user",
-    "content": "{\"added_tools\":[{\"name\":\"Container_stdout\",\"description\":\"The buffered standard output stream of the last executed command\\n\\nReturns an error if no command was executed\\n\\nReturn type: String!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"}},\"required\":[\"Container\"],\"type\":\"object\"}},{\"name\":\"Container_with_exec\",\"description\":\"Execute a command in the container, and return a new snapshot of the container state after execution.\\n\\nReturn type: Container!\",\"schema\":{\"properties\":{\"Container\":{\"default\":\"Container#1\",\"description\":\"The Container to operate against. Default: Container#1\",\"enum\":[\"Container#1\"],\"type\":\"string\"},\"args\":{\"description\":\"Command to execute. Must be valid exec() arguments, not a shell command. Example: [\\\"go\\\", \\\"run\\\", \\\"main.go\\\"].\\n\\nTo run a shell command, execute the shell and pass the shell command as argument. Example: [\\\"sh\\\", \\\"-c\\\", \\\"ls -l | grep foo\\\"]\\n\\nDefaults to the container's default arguments (see \\\"defaultArgs\\\" and \\\"withDefaultArgs\\\").\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"expand\":{\"default\":false,\"description\":\"Replace \\\"${VAR}\\\" or \\\"$VAR\\\" in the args according to the current environment variables defined in the container (e.g. \\\"/$VAR/foo\\\").\",\"type\":\"boolean\"},\"expect\":{\"default\":\"SUCCESS\",\"description\":\"Exit codes this command is allowed to exit with without error\",\"enum\":[\"SUCCESS\",\"FAILURE\",\"ANY\"],\"type\":\"string\"},\"experimentalPrivilegedNesting\":{\"default\":false,\"description\":\"Provides Dagger access to the executed command.\",\"type\":\"boolean\"},\"insecureRootCapabilities\":{\"default\":false,\"description\":\"Execute the command with all root capabilities. Like --privileged in Docker\\n\\nDANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.\",\"type\":\"boolean\"},\"noInit\":{\"default\":false,\"description\":\"Skip the automatic init process injected into containers by default.\\n\\nOnly use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.\",\"type\":\"boolean\"},\"redirectStderr\":{\"default\":\"\",\"description\":\"Like redirectStdout, but for standard error\",\"type\":\"string\"},\"redirectStdout\":{\"default\":\"\",\"description\":\"Redirect the command's standard output to a file in the container. Example: \\\"./stdout.txt\\\"\",\"type\":\"string\"},\"stdin\":{\"default\":\"\",\"description\":\"Content to write to the command's standard input. Example: \\\"Hello world\\\")\",\"type\":\"string\"},\"useEntrypoint\":{\"default\":false,\"description\":\"Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.\",\"type\":\"boolean\"}},\"required\":[\"Container\",\"args\"],\"type\":\"object\"}}]}",
-    "tool_call_id": "call_unJGt9QDgnorT4sDVCJIoyGL",
+    "content": "{\n  \"added_tools\": [\n    {\n      \"name\": \"Container_stdout\",\n      \"description\": \"The buffered standard output stream of the last executed command\\n\\nReturns an error if no command was executed\\n\\nReturn type: String!\",\n      \"schema\": {\n        \"properties\": {\n          \"Container\": {\n            \"default\": \"Container#1\",\n            \"description\": \"The Container to operate against. Default: Container#1\",\n            \"enum\": [\n              \"Container#1\"\n            ],\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"Container\"\n        ],\n        \"type\": \"object\"\n      }\n    },\n    {\n      \"name\": \"Container_with_exec\",\n      \"description\": \"Execute a command in the container, and return a new snapshot of the container state after execution.\\n\\nReturn type: Container!\",\n      \"schema\": {\n        \"properties\": {\n          \"Container\": {\n            \"default\": \"Container#1\",\n            \"description\": \"The Container to operate against. Default: Container#1\",\n            \"enum\": [\n              \"Container#1\"\n            ],\n            \"type\": \"string\"\n          },\n          \"args\": {\n            \"description\": \"Command to execute. Must be valid exec() arguments, not a shell command. Example: [\\\"go\\\", \\\"run\\\", \\\"main.go\\\"].\\n\\nTo run a shell command, execute the shell and pass the shell command as argument. Example: [\\\"sh\\\", \\\"-c\\\", \\\"ls -l | grep foo\\\"]\\n\\nDefaults to the container's default arguments (see \\\"defaultArgs\\\" and \\\"withDefaultArgs\\\").\",\n            \"items\": {\n              \"type\": \"string\"\n            },\n            \"type\": \"array\"\n          },\n          \"expand\": {\n            \"default\": false,\n            \"description\": \"Replace \\\"${VAR}\\\" or \\\"$VAR\\\" in the args according to the current environment variables defined in the container (e.g. \\\"/$VAR/foo\\\").\",\n            \"type\": \"boolean\"\n          },\n          \"expect\": {\n            \"default\": \"SUCCESS\",\n            \"description\": \"Exit codes this command is allowed to exit with without error\",\n            \"enum\": [\n              \"SUCCESS\",\n              \"FAILURE\",\n              \"ANY\"\n            ],\n            \"type\": \"string\"\n          },\n          \"experimentalPrivilegedNesting\": {\n            \"default\": false,\n            \"description\": \"Provides Dagger access to the executed command.\",\n            \"type\": \"boolean\"\n          },\n          \"insecureRootCapabilities\": {\n            \"default\": false,\n            \"description\": \"Execute the command with all root capabilities. Like --privileged in Docker\\n\\nDANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.\",\n            \"type\": \"boolean\"\n          },\n          \"noInit\": {\n            \"default\": false,\n            \"description\": \"Skip the automatic init process injected into containers by default.\\n\\nOnly use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.\",\n            \"type\": \"boolean\"\n          },\n          \"redirectStderr\": {\n            \"default\": \"\",\n            \"description\": \"Like redirectStdout, but for standard error\",\n            \"type\": \"string\"\n          },\n          \"redirectStdout\": {\n            \"default\": \"\",\n            \"description\": \"Redirect the command's standard output to a file in the container. Example: \\\"./stdout.txt\\\"\",\n            \"type\": \"string\"\n          },\n          \"stdin\": {\n            \"default\": \"\",\n            \"description\": \"Content to write to the command's standard input. Example: \\\"Hello world\\\")\",\n            \"type\": \"string\"\n          },\n          \"useEntrypoint\": {\n            \"default\": false,\n            \"description\": \"Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.\",\n            \"type\": \"boolean\"\n          }\n        },\n        \"required\": [\n          \"Container\",\n          \"args\"\n        ],\n        \"type\": \"object\"\n      }\n    }\n  ]\n}\n",
+    "tool_call_id": "call_dirbJoSxHGTa8X3TE9Ne4Nyb",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -47,7 +47,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_reMIvJ9ztjDRawImNzoz6ald",
+        "id": "call_jInSnoTdIr07q2DkgxQpGQBD",
         "function": {
           "name": "Container_with_exec",
           "arguments": {
@@ -62,15 +62,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2132,
+      "input_tokens": 2431,
       "output_tokens": 30,
-      "total_tokens": 2162
+      "total_tokens": 2461
     }
   },
   {
     "role": "user",
-    "content": "{\"result\":\"Container#2\"}",
-    "tool_call_id": "call_reMIvJ9ztjDRawImNzoz6ald",
+    "content": "{\n  \"result\": \"Container#2\"\n}\n",
+    "tool_call_id": "call_jInSnoTdIr07q2DkgxQpGQBD",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -82,7 +82,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_bSj1JqdP9DKZjox23nTDQLoi",
+        "id": "call_0Vr4Q18YHvvrAOcPsM6u3RbQ",
         "function": {
           "name": "Container_stdout",
           "arguments": {}
@@ -91,15 +91,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2206,
+      "input_tokens": 2509,
       "output_tokens": 17,
-      "total_tokens": 2223
+      "total_tokens": 2526
     }
   },
   {
     "role": "user",
-    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\\n\"}",
-    "tool_call_id": "call_bSj1JqdP9DKZjox23nTDQLoi",
+    "content": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+    "tool_call_id": "call_0Vr4Q18YHvvrAOcPsM6u3RbQ",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -108,11 +108,11 @@
   },
   {
     "role": "assistant",
-    "content": "The value of PATH in the alpine linux container is:\n\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "content": "The value of PATH is:\n\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "token_usage": {
-      "input_tokens": 2250,
-      "output_tokens": 34,
-      "total_tokens": 2284
+      "input_tokens": 2548,
+      "output_tokens": 29,
+      "total_tokens": 2577
     }
   },
   {
@@ -129,7 +129,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_W7W3H6WXYMpV6SeDtOrk3y5N",
+        "id": "call_SXx07mSkbTiGdHetHuKAb3Zc",
         "function": {
           "name": "Container_with_exec",
           "arguments": {
@@ -144,15 +144,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2297,
+      "input_tokens": 2590,
       "output_tokens": 30,
-      "total_tokens": 2327
+      "total_tokens": 2620
     }
   },
   {
     "role": "user",
-    "content": "{\"result\":\"Container#3\"}",
-    "tool_call_id": "call_W7W3H6WXYMpV6SeDtOrk3y5N",
+    "content": "{\n  \"result\": \"Container#3\"\n}\n",
+    "tool_call_id": "call_SXx07mSkbTiGdHetHuKAb3Zc",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -164,7 +164,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_RMlEzcBJevIA63bA8PzPR6QC",
+        "id": "call_SRM4xpnxHAsSWUO9pReA06Xj",
         "function": {
           "name": "Container_stdout",
           "arguments": {}
@@ -173,15 +173,15 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 2371,
+      "input_tokens": 2668,
       "output_tokens": 17,
-      "total_tokens": 2388
+      "total_tokens": 2685
     }
   },
   {
     "role": "user",
-    "content": "{\"result\":\"\\n\"}",
-    "tool_call_id": "call_RMlEzcBJevIA63bA8PzPR6QC",
+    "content": "\n",
+    "tool_call_id": "call_SRM4xpnxHAsSWUO9pReA06Xj",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -190,11 +190,11 @@
   },
   {
     "role": "assistant",
-    "content": "The value of TERM in the alpine linux container is empty (not set).",
+    "content": "The value of TERM is empty (i.e., it is not set by default in this container).",
     "token_usage": {
-      "input_tokens": 2395,
-      "output_tokens": 17,
-      "total_tokens": 2412
+      "input_tokens": 2687,
+      "output_tokens": 22,
+      "total_tokens": 2709
     }
   }
 ]
