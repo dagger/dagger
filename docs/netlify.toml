@@ -36,6 +36,36 @@
   status = 301
 
 [[redirects]]
+  # redirect /quickstart/cli pages
+  from = "/quickstart/cli"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
+  # redirect /quickstart/daggerize pages
+  from = "/quickstart/daggerize"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
+  # redirect /quickstart/publish pages
+  from = "/quickstart/publish"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
+  # redirect /quickstart/test pages
+  from = "/quickstart/test"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
+  # redirect /quickstart/basics pages
+  from = "/quickstart/basics"
+  to = "/quickstart"
+  status = 301
+
+[[redirects]]
   # redirect /quickstart/basics pages
   from = "/quickstart/basics"
   to = "/quickstart"
@@ -86,7 +116,7 @@
 [[redirects]]
   # redirect old quickstart index page
   from = "/648215/quickstart"
-  to = "/quickstart/"
+  to = "/quickstart"
   status = 301
 
 [[redirects]]
@@ -116,6 +146,21 @@
 # redirects for developer manual pages
 [[redirects]]
   from = "/developer-guide"
+  to = "/api"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/go"
+  to = "/api"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/python"
+  to = "/api"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/typescript"
   to = "/api"
   status = 301
 
@@ -520,7 +565,12 @@
 
 [[redirects]]
   from = "/integrations/php"
-  to = "/reference/php"
+  to = "/api/sdk"
+  status = 301
+
+[[redirects]]
+  from = "/ci/integrations/php"
+  to = "/api/sdk"
   status = 301
 
 [[redirects]]
