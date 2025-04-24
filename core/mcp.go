@@ -105,8 +105,8 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
-	allTools, err := m.tools(srv)
-	if err != nil {
+	allTools := map[string]LLMTool{}
+	if err := m.allTypeTools(srv, allTools); err != nil {
 		return nil, err
 	}
 	builtins, err := m.Builtins(srv, allTools)
@@ -119,6 +119,15 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 			tools = append(tools, tool)
 		}
 	}
+	// ensure consistent tool order
+	sort.Slice(tools, func(i, j int) bool {
+		return tools[i].Name < tools[j].Name
+	})
+	for _, tool := range builtins {
+		// make builtins selectable too
+		allTools[tool.Name] = tool
+	}
+	// builtins are added last so they carry more weight
 	return append(tools, builtins...), nil
 }
 
@@ -156,29 +165,23 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func (m *MCP) tools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error {
 	schema := srv.Schema()
-	tools := []LLMTool{}
 	typeNames := m.env.Types()
 	if m.env.Root() != nil {
 		typeNames = append(typeNames, schema.Query.Name)
 	}
 	for _, typeName := range typeNames {
-		typeTools, err := m.typeTools(srv, schema, typeName)
-		if err != nil {
-			return nil, err
+		typeDef, ok := schema.Types[typeName]
+		if !ok {
+			return fmt.Errorf("type %q not found", typeName)
 		}
-		tools = append(tools, typeTools...)
+		m.typeTools(allTools, srv, schema, typeDef)
 	}
-	return tools, nil
+	return nil
 }
 
-func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) ([]LLMTool, error) {
-	typeDef, ok := schema.Types[typeName]
-	if !ok {
-		return nil, fmt.Errorf("type %q not found", typeName)
-	}
-	var tools []LLMTool
+func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition) error {
 	for _, field := range typeDef.Fields {
 		if _, found := m.env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
@@ -196,7 +199,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 		}
 		// Hide functions from the largest and most commonly used core types,
 		// to prevent tool bloat
-		switch typeName {
+		switch typeDef.Name {
 		case "Query":
 			switch field.Name {
 			case
@@ -310,27 +313,27 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			// references a banned type
 			continue
 		}
-		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeName, field)
+		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeDef.Name, field)
 		if err != nil {
-			return nil, fmt.Errorf("field %q: %w", field.Name, err)
+			return fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeName == schema.Query.Name {
+		if typeDef.Name == schema.Query.Name {
 			toolName = field.Name
 		} else {
 			toolName = typeDef.Name + "_" + strcase.ToSnake(field.Name)
 		}
-		tools = append(tools, LLMTool{
+		allTools[toolName] = LLMTool{
 			Name:        toolName,
 			Returns:     field.Type,
 			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, toolSchema, schema, typeName, field, args)
+				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args)
 			},
-		})
+		}
 	}
-	return tools, nil
+	return nil
 }
 
 func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
@@ -759,7 +762,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}, true
 }
 
-func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error) {
+func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
 
 	builtins := []LLMTool{
@@ -886,17 +889,21 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 		}),
 	})
 
-	if len(typeTools) > 0 {
+	if len(allTools) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name: "select_tools",
 			Description: (func() string {
 				desc := `Select tools for interacting with the available objects.`
 				desc += "\n\nAvailable tools:"
-				for _, tool := range typeTools {
+				var tools []LLMTool
+				for _, tool := range allTools {
 					if m.selectedTools[tool.Name] {
 						// already have it
 						continue
 					}
+					tools = append(tools, tool)
+				}
+				for _, tool := range tools {
 					desc += "\n- " + tool.Name + " (returns " + tool.Returns.String() + ")"
 				}
 				return desc
@@ -928,19 +935,16 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 				}
 				var selectedTools []LLMTool
 				var unknownTools []string
-				for tool := range toolCounts {
-					var foundTool LLMTool
-					for _, t := range typeTools {
-						if t.Name == tool {
-							foundTool = t
-							break
-						}
-					}
-					if foundTool.Name == "" {
-						unknownTools = append(unknownTools, tool)
+				for toolName := range toolCounts {
+					// NOTE: builtins can _also_ be selected, for maximal compatibility.
+					// models/clients that only support static tools can discover updated
+					// schemas this way.
+					tool, found := allTools[toolName]
+					if found {
+						m.selectedTools[toolName] = true
+						selectedTools = append(selectedTools, tool)
 					} else {
-						m.selectedTools[tool] = true
-						selectedTools = append(selectedTools, foundTool)
+						unknownTools = append(unknownTools, toolName)
 					}
 				}
 				sort.Slice(selectedTools, func(i, j int) bool {
