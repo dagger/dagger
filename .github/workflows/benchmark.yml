@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           # invalidate the cache by modifying the source files
-          [ -f "src/main/__init__.py" ] && echo >> src/main/__init__.py
+          [ -f "src/benchmark/__init__.py" ] && echo >> src/benchmark/__init__.py
 
           dagger functions
         working-directory: ${{ runner.temp }}/benchmark

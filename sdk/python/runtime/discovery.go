@@ -252,21 +252,6 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
-	eg.Go(func() error {
-		version, err := dag.Version(ctx)
-		if err != nil {
-			return fmt.Errorf("get engine version: %w", err)
-		}
-		// if it's a custom build, vendor the library
-		if strings.Contains(version, "-") {
-			return nil
-		}
-		d.mu.Lock()
-		m.EngineVersion = strings.TrimPrefix(version, "v")
-		d.mu.Unlock()
-		return nil
-	})
-
 	// TODO: Provide runtime modules with a boolean to indicate whether the
 	// module is new or not. Could be `dagger init --sdk` or `dagger develop --sdk`.
 	//
@@ -408,30 +393,9 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 		m.PackageName = NormalizePackageName(m.ProjectName)
 	}
 
-	m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
-
-	switch {
-	case m.EngineVersion != "":
-		for _, dep := range d.Config.Project.Dependencies {
-			if strings.HasPrefix(strings.TrimSpace(dep), "dagger-io") {
-				if !strings.HasSuffix(dep, "=="+m.EngineVersion) {
-					m.AddNewFile("pyproject.toml", strings.Replace(
-						contents,
-						fmt.Sprintf("%q", dep),
-						fmt.Sprintf(`"dagger-io ==%s"`, m.EngineVersion),
-						1,
-					))
-				}
-				break
-			}
-		}
-
-	case m.EngineVersion == "" && m.VendorPath == "":
-		// Force vendoring on dev builds even if not already vendoring. This
-		// way users can opt-out when back to a stable build, but also not have
-		// to manually update pyproject.toml in order for it to work.
-		m.VendorPath = GenDir
-		m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
+	// Only look for vendor path when uv.lock is being used
+	if m.UseUvLock() {
+		m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
 	}
 
 	return nil
