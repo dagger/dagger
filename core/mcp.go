@@ -1170,13 +1170,18 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 			return nil, err
 		}
 
-		// Add description if present
-		if arg.Description != "" {
-			argSchema["description"] = arg.Description
-		} else if idType, ok := argSchema[jsonSchemaIDAttr]; ok {
-			// Default description so the model at least sees the expected type
-			argSchema["description"] = fmt.Sprintf("%s ID", idType)
+		// Add description
+		desc := arg.Description
+		if idType, ok := argSchema[jsonSchemaIDAttr]; ok {
+			// If it's an object ID, be sure to mention the type. JSON schema doesn't
+			// help here since they're all type 'string'.
+			if desc == "" {
+				desc = fmt.Sprintf("(%s ID)", idType)
+			} else {
+				desc = fmt.Sprintf("(%s ID) %s", idType, desc)
+			}
 		}
+		argSchema["description"] = desc
 
 		// Add default value if present
 		if arg.DefaultValue != nil {
