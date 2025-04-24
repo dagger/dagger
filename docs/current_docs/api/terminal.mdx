@@ -6,9 +6,9 @@ import TabItem from '@theme/TabItem';
 
 # Interactive Terminal
 
-Dagger provides an interactive terminal that can help greatly when trying to debug a pipeline failure.
+Dagger provides an interactive terminal that can help greatly when trying to debug a workflow failure.
 
-To use this, set one or more explicit breakpoints in your Dagger pipeline with the `Container.terminal()` method. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
+To use this, set one or more explicit breakpoints in your Dagger workflow with the `Container.terminal()` method. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your workflow run, with all the necessary context available to you.
 
 Here is a simple example, which opens an interactive terminal in an `alpine` container:
 
@@ -30,7 +30,7 @@ dagger core container from --address=alpine terminal
 </TabItem>
 </Tabs>
 
-Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
+Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger workflow to inspect the built container:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -52,7 +52,7 @@ Here is an example of a Dagger Function which opens an interactive terminal at t
 </TabItem>
 </Tabs>
 
-The `Container.terminal()` method can be chained. It returns a `Container`, so it can be injected at any point in a pipeline (in this example, between `Container.from()` and `Container.withExec()` methods).
+The `Container.terminal()` method can be chained. It returns a `Container`, so it can be injected at any point in a workflow (in this example, between `Container.from()` and `Container.withExec()` methods).
 
 :::tip
 Multiple terminals are supported in the same Dagger Function; they will open in sequence.

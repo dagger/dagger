@@ -13,7 +13,7 @@ module.exports = {
         id: "features/index",
       },
       items: [
-        "features/programmable-pipelines",
+        "features/programmability",
         "features/modules",
         "features/shell",
         "features/llm",

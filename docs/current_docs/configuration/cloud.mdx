@@ -43,7 +43,7 @@ The next step is to connect to Dagger Cloud from your local development environm
 
 #### Connect from your local development host
 
-You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
+You can visualize and debug your local Dagger workflow runs with Dagger Cloud to identify issues before pushing them to CI.
 
 To configure for local development, run the `dagger login` command.
 
@@ -59,7 +59,7 @@ Browser opened to: https://auth.dagger.cloud/activate?user_code=XXXX-YYYY
 Confirmation code: XXXX-YYYY
 ```
 
-Once you confirm your authentication code, your Dagger CLI will be authenticated and you can now visualize and debug your local Dagger pipeline runs.
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you can now visualize and debug your local Dagger workflow runs.
 
 :::info
 If you do not want to use `dagger login`, set your Dagger Cloud token as an environment variable. For example:
@@ -88,7 +88,7 @@ Once you have your token, you can use it to connect Dagger Cloud with your CI en
     You must store the Dagger Cloud token as a secret (not plaintext) with your CI environment and reference it in your CI workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
     :::
   - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
-- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding pipeline visualization in Dagger Cloud.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding workflow visualization in Dagger Cloud.
 
 You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
 
@@ -97,7 +97,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
 
-1. Update your GitHub Actions workflow and add the secret to the Dagger pipeline step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+1. Update your GitHub Actions workflow and add the secret to the Dagger workflow step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
     [See an example of a sample GitHub Actions workflow file](../ci/integrations/github.mdx)
 
@@ -117,7 +117,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Create a new environment variable in your CircleCI project named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the CircleCI documentation on [creating environment variables for a project](https://circleci.com/docs/set-environment-variable/#set-an-environment-variable-in-a-project).
 
-1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
+1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
 
     GitHub:
 
@@ -196,7 +196,7 @@ Trigger your CI workflow by pushing a commit or opening a pull request.
 
 ### Public traces
 
-Dagger Cloud automatically detects if the traces produced by your pipelines originate from
+Dagger Cloud automatically detects if the traces produced by your workflows originate from
 a CI system and a public repository. When both conditions are met, Dagger Cloud allows
 public access to these traces without requiring an invitation to the organization.
 
@@ -206,7 +206,7 @@ To modify this default setting, navigate to the organization settings page using
 
 ## Organizations
 
-A member account grants a person access to log in to a Dagger Cloud organization to diagnose pipeline failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
 
 :::important
 You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
@@ -214,11 +214,11 @@ You must hold the `Admin` role of a Dagger Cloud organization to administer memb
 
 ## Roles and permissions
 
-In Dagger Cloud, users can have one of two roles: `Admin` or `Member`. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
+In Dagger Cloud, users can have one of two roles: `Admin` or `Member`. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger workflow runs, ensure that the user also has the Member role.
 
 | Actions | Admin | Member |
 | --- | :---: | :---: |
-| View Dagger pipeline runs and changes |  | ✓ |
+| View Dagger workflow runs and changes |  | ✓ |
 | View members of an org | ✓ | ✓ |
 | Invite new members to an org | ✓ |  |
 | Delete an existing member from an org | ✓ |  |

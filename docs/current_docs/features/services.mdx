@@ -9,7 +9,7 @@ import VideoPlayer from '../../src/components/VideoPlayer';
 
 # Ephemeral Services
 
-Dagger Functions support service containers, enabling users to spin up additional services (as containers) and communicate with those services from their pipelines.
+Dagger Functions support service containers, enabling users to spin up additional services (as containers) and communicate with those services from their workflows.
 
 This makes it possible to:
 - Instantiate and return services from a Dagger Function, and then:
@@ -58,7 +58,7 @@ See it in action:
 
 <VideoPlayer src="/img/current_docs/features/service-container.webm" alt="Container to host networking" />
 
-This also works in the opposite direction: containers in Dagger Functions can communicate with services running on the host. Here's an example of how a pipeline running in a Dagger Function can access and query a MariaDB database service running on the host:
+This also works in the opposite direction: containers in Dagger Functions can communicate with services running on the host. Here's an example of how a workflow running in a Dagger Function can access and query a MariaDB database service running on the host:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">

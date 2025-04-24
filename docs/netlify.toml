@@ -93,6 +93,11 @@
     to = "/features/llm"
     status = 301
 
+[[redirects]]
+    from = "/features/programmable-pipelines"
+    to = "/features/programmability"
+    status = 301
+
 ###### end: specific redirects for ci+agent docs ######
 
 [[redirects]]

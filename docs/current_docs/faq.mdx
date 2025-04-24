@@ -14,7 +14,7 @@ import TabItem from "@theme/TabItem";
 
 ### What is the Dagger Platform?
 
-We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization's pipelines.
+We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization's workflows.
 
 ### How do I install, update, or uninstall Dagger?
 
@@ -55,7 +55,7 @@ Join us on [Discord](https://discord.com/invite/dagger-io), and ask your questio
 
 ### What is Dagger Cloud?
 
-Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization and operational insights.
+Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include workflow visualization and operational insights.
 
 ### Is Dagger Cloud a hosting service for Dagger Engines?
 
@@ -63,15 +63,15 @@ No, Dagger Cloud is a "bring your own compute" service. The Dagger Engine can ru
 
 ### Which CI providers does Dagger Cloud work with?
 
-Because the Dagger Engine can integrate seamlessly with practically any CI, there is no limit to the type and number of CI providers that Dagger Cloud can work with to provide Dagger pipeline visualization and operational insights. Users report successfully leveraging Dagger with: GitLab, CircleCI, GitHub Actions, Jenkins,Tekton and many more.
+Because the Dagger Engine can integrate seamlessly with practically any CI, there is no limit to the type and number of CI providers that Dagger Cloud can work with to provide Dagger workflow visualization and operational insights. Users report successfully leveraging Dagger with: GitLab, CircleCI, GitHub Actions, Jenkins,Tekton and many more.
 
-### What is pipeline visualization?
+### What is workflow visualization?
 
-Traces, a browser-based interface focused on tracing and debugging Dagger pipeline runs. A Trace contains detailed information about the steps performed by the pipeline. Traces let you visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+Traces, a browser-based interface focused on tracing and debugging Dagger workflow runs. A Trace contains detailed information about the steps performed by the workflow. Traces let you visualize each step of your workflow, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
 
 ### What operational insights does Dagger Cloud provide?
 
-Dagger Cloud collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
+Dagger Cloud collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all workflows, both pre-push and post-push.
 
 ### Why am I seeing `dagger functions` in the local trace list?
 
@@ -102,17 +102,17 @@ To ensure a great experience for developers using Community SDKs, maintainers mu
 
 - Community Support – The maintainer must be active in the Dagger Discord, providing support and answering questions about the SDK.
 - Version Compatibility – The SDK must stay up to date with the latest Dagger releases to ensure continued functionality.
-- Documentation Maintenance – The maintainer is responsible for writing and updating documentation, including code snippets and examples. See full list of documentation requirements [here](https://docs.google.com/spreadsheets/d/1pvpzZbWarkuws811NEEbnv2D-ggec4iuZeYhUyVwsWc/edit?gid=245490315#gid=245490315). 
+- Documentation Maintenance – The maintainer is responsible for writing and updating documentation, including code snippets and examples. See full list of documentation requirements [here](https://docs.google.com/spreadsheets/d/1pvpzZbWarkuws811NEEbnv2D-ggec4iuZeYhUyVwsWc/edit?gid=245490315#gid=245490315).
 - Openness to Contributions – Community SDKs should be open-source and encourage contributions from other developers.
 
-If you want to kick off this process for your SDK, email community@dagger.io and we'll discuss further. 
+If you want to kick off this process for your SDK, email community@dagger.io and we'll discuss further.
 
 ### How do I log in to a container registry using a Dagger SDK?
 
 There are two options available:
 
 1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK.
-1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger pipelines are running.
+1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger workflows are running.
 
 ### How do I uninstall a Dagger SDK?
 

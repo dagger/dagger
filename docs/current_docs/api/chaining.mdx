@@ -6,11 +6,11 @@ import TabItem from '@theme/TabItem';
 
 # Chaining
 
-Function chaining is one of Dagger's most powerful features, as it allows you to dynamically compose complex pipelines by connecting one Dagger Function with another. The following sections demonstrate a few more examples of function chaining with the Dagger CLI.
+Function chaining is one of Dagger's most powerful features, as it allows you to dynamically compose complex workflows by connecting one Dagger Function with another. The following sections demonstrate a few more examples of function chaining with the Dagger CLI.
 
 ## Execute commands in containers
 
-The Dagger CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the pipeline directly from the command-line. `Container` objects expose a `withExec()` API method, which lets you execute a command in the corresponding container.
+The Dagger CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the workflow directly from the command-line. `Container` objects expose a `withExec()` API method, which lets you execute a command in the corresponding container.
 
 Here is an example of chaining a `Container.withExec()` call to a container returned by a Wolfi container builder Dagger Function, to execute a command that displays the contents of the `/etc/` directory:
 
