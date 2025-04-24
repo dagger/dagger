@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -84,7 +85,20 @@ func ResourceTransferPostCall(
 		}
 		plaintext, err := srcSecretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get secret plaintext: %w", err)
+			// It's possible to hit secrets not found in the store when there's a cross-session cache hit
+			// on content-hashed values (like git tree directories). The value returned from cache may be
+			// from a client that used some other secret (e.g. a git auth token) to access the content, even
+			// though the final content is all the same.
+			// In this case, skipping the transfer of the secret is fine since there's already a cache hit
+			// on the content and thus no need to load the secret.
+			// Log this for now though in case it ever arises in unexpected cases. If that happens, the error
+			// will just be deferred and can be traced back to this log.
+			slog.Warn("failed to get secret plaintext",
+				"secret", secret.ID().Digest(),
+				"err", err,
+				"sourceClientID", sourceClientID,
+			)
+			continue
 		}
 		namedSecrets = append(namedSecrets, secretWithPlaintext{inst: secret, plaintext: plaintext})
 	}
