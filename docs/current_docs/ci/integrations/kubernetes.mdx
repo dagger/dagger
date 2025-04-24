@@ -195,6 +195,13 @@ dagger query <<EOF
 EOF
 ```
 
+## Tested Configurations
+
+- Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/helm/.dagger/main.go#L41) in CI
+- Dagger has run CI jobs at significant scale on AWS EKS using the [approach outlined here](https://dagger.io/blog/argo-cd-kubernetes)
+- Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in daemonset configuration. Recommend SLE Micro 6.1 with min 100GB SSD.
+- Many other Kubernetes configurations should be compatible.
+
 ## Resources
 
 Below are some resources from the Dagger community that may help as well. If you have any questions about additional ways to use Kubernetes with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
