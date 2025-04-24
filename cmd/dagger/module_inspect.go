@@ -339,6 +339,10 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 		rootObj.Functions = append(rootObj.Functions, m.MainObject.AsObject.Constructor)
 	}
 
+	for _, fn := range rootObj.Functions {
+		m.LoadFunctionTypeDefs(fn)
+	}
+
 	return nil
 }
 
