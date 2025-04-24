@@ -958,84 +958,82 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				}
 				return toolStructuredResponse(res)
 			}),
-		}, LLMTool{
-			Name:        "chain_tools",
-			Description: `Invoke multiple tool calls sequentially, passing the result of one call as the receiver of the next`,
-			// Description: "Run a batch of chained tool calls, passing the result of one call as the receiver of the next",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"calls": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"tool": map[string]any{
-									"type":        "string",
-									"description": "The name of the tool to call.",
-								},
-								"params": map[string]any{
-									"type":                 "object",
-									"description":          "The parameters to pass to the tool.",
-									"additionalProperties": true,
-								},
-							},
-							"required": []string{"tool", "params"},
-						},
-						"description": "The tools to select.",
-					},
-				},
-				"required": []string{"calls"},
-			},
-			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-				var args struct {
-					Calls []ChainedCall `json:"calls"`
-				}
-				pl, err := json.Marshal(argsAny)
-				if err != nil {
-					return nil, err
-				}
-				if err := json.Unmarshal(pl, &args); err != nil {
-					return nil, err
-				}
-				if err := m.validateChain(args.Calls, typeTools, schema); err != nil {
-					return nil, err
-				}
-				var res any
-				for i, call := range args.Calls {
-					var tool LLMTool
-					if call.Tool == "" {
-						return nil, errors.New("tool name cannot be empty")
-					}
-					for _, t := range typeTools {
-						if t.Name == call.Tool {
-							tool = t
-							break
-						}
-					}
-					if tool.Name == "" {
-						return nil, fmt.Errorf("tool not found: %q", call.Tool)
-					}
-					if call.Params == nil {
-						call.Params = make(map[string]any)
-					}
-					args := cloneMap(call.Params)
-					if i > 0 {
-						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
-							lastType := obj.Type().Name()
-							// override, since the whole point is to chain from the previous
-							// value; any value here is surely mistaken or hallucinated
-							args[lastType] = m.env.Ingest(obj, "")
-						}
-					}
-					res, err = tool.Call(ctx, args)
-					if err != nil {
-						return nil, fmt.Errorf("call %q: %w", call.Tool, err)
-					}
-				}
-				return res, nil
-			},
 		})
+
+		if len(m.selectedTools) > 0 {
+			builtins = append(builtins, LLMTool{
+				Name: "chain_tools",
+				Description: `Invoke multiple tool calls sequentially, passing the result of one call as the receiver of the next
+
+NOTE: you must select tools before chaining them`,
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"calls": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"tool": map[string]any{
+										"type":        "string",
+										"description": "The name of the tool to call.",
+										"enum":        slices.Sorted(maps.Keys(m.selectedTools)),
+									},
+									"params": map[string]any{
+										"type":                 "object",
+										"description":          "The properties to pass to the tool.",
+										"additionalProperties": true,
+									},
+								},
+								"required": []string{"tool", "params"},
+							},
+							"description": "The sequence of tools to call.",
+						},
+					},
+					"required": []string{"calls"},
+				},
+				Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+					var args struct {
+						Calls []ChainedCall `json:"calls"`
+					}
+					pl, err := json.Marshal(argsAny)
+					if err != nil {
+						return nil, err
+					}
+					if err := json.Unmarshal(pl, &args); err != nil {
+						return nil, err
+					}
+					if err := m.validateChain(args.Calls, allTools, schema); err != nil {
+						return nil, err
+					}
+					var res any
+					for i, call := range args.Calls {
+						var tool LLMTool
+						tool, found := allTools[call.Tool]
+						if !found {
+							return nil, fmt.Errorf("tool not found: %q", call.Tool)
+						}
+						if call.Params == nil {
+							call.Params = make(map[string]any)
+						}
+						args := cloneMap(call.Params)
+						if i > 0 {
+							if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
+								lastType := obj.Type().Name()
+								// override, since the whole point is to chain from the previous
+								// value; any value here is surely mistaken or hallucinated
+								args[lastType] = m.env.Ingest(obj, "")
+							}
+						}
+						res, err = tool.Call(ctx, args)
+						if err != nil {
+							return nil, fmt.Errorf("call %q: %w", call.Tool, err)
+						}
+					}
+					return res, nil
+				},
+			})
+		}
 	}
 
 	if returnTool, ok := m.returnBuiltin(); ok {
@@ -1139,44 +1137,47 @@ type ChainedCall struct {
 	Params map[string]any `json:"params"`
 }
 
-func (m *MCP) validateChain(calls []ChainedCall, typeTools []LLMTool, schema *ast.Schema) error {
+func (m *MCP) validateChain(calls []ChainedCall, allTools map[string]LLMTool, schema *ast.Schema) error {
 	if len(calls) == 0 {
 		return errors.New("no tools called")
 	}
 	var returnedType *ast.Type
-	for _, call := range calls {
+	var errs error
+	for i, call := range calls {
 		if call.Tool == "" {
-			return fmt.Errorf("tool name cannot be empty")
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool name cannot be empty", i))
+			continue
 		}
-		var tool LLMTool
-		for _, t := range typeTools {
-			if t.Name == call.Tool {
-				tool = t
-				break
-			}
+		tool, found := allTools[call.Tool]
+		if !found {
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown tool: %q", i, call.Tool))
+			continue
 		}
-		if tool.Name == "" {
-			return fmt.Errorf("unknown tool: %q", call.Tool)
+		if !m.selectedTools[tool.Name] {
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool %q is not selected", i, tool.Name))
 		}
 		if returnedType != nil {
 			if returnedType.Elem != nil {
-				return fmt.Errorf("cannot chain %q call from array result", tool.Name)
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from array result", i, tool.Name))
+				continue
 			}
 			typeDef, found := schema.Types[returnedType.Name()]
 			if !found {
-				return fmt.Errorf("unknown type: %q", returnedType.Name())
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown type: %q", i, returnedType.Name()))
+				continue
 			}
 			if typeDef.Kind != ast.Object {
-				return fmt.Errorf("cannot chain %q call from non-Object type: %q (%s)", tool.Name, returnedType.Name(), typeDef.Kind)
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from non-Object type: %q (%s)", i, tool.Name, returnedType.Name(), typeDef.Kind))
 			}
 			props := tool.Schema["properties"].(map[string]any)
 			if _, found := props[typeDef.Name]; !found {
-				return fmt.Errorf("tool %q does not chain from type %q", tool.Name, typeDef.Name)
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool %q does not chain from type %q", i, tool.Name, typeDef.Name))
+				continue
 			}
 		}
 		returnedType = tool.Returns
 	}
-	return nil
+	return errs
 }
 
 func (m *MCP) IsDone() bool {
