@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
-	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
+	rustGeneratedAPIPath  = "sdk/rust/crates/dagger-sdk/src/gen.rs"
+	rustVersionFilePath   = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
+	rustCargoTomlFilePath = "sdk/rust/Cargo.toml"
+	rustCargoLockFilePath = "sdk/rust/Cargo.lock"
 
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.77-bookworm"
@@ -205,7 +207,19 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 		fmt.Sprintf(versionStrf, version),
 	)
 
-	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents), nil
+	crate := "dagger-sdk"
+	base := r.
+		rustBase(rustDockerStable).
+		WithExec([]string{
+			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
+		}).
+		WithExec([]string{
+			"cargo", "set-version", "-p", crate, version,
+		})
+
+	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents).
+		WithFile(rustCargoTomlFilePath, base.File("Cargo.toml")).
+		WithFile(rustCargoLockFilePath, base.File("Cargo.lock")), nil
 }
 
 func (r RustSDK) rustBase(image string) *dagger.Container {

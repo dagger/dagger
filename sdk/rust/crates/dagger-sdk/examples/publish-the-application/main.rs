@@ -28,10 +28,11 @@ async fn main() -> eyre::Result<()> {
             .sync()
             .await?;
 
-        // let _ = test
-        //     .with_exec(vec!["npm", "run", "build"])
-        //     .directory("./build")
-        //     .export(output);
+        runner
+            .with_exec(vec!["npm", "run", "build"])
+            .directory("./build")
+            .export(output)
+            .await?;
 
         let mut rng = rand::thread_rng();
 
