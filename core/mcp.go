@@ -678,7 +678,6 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	desc := "Save your work, making the requested outputs available to the user:\n"
 
 	var outputs []string
-	var anyUnavailable bool
 	for name, b := range m.env.outputsByName {
 		required = append(required, name)
 
@@ -696,14 +695,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			desc = b.Description
 		} else {
 			argSchema[jsonSchemaIDAttr] = typeName
-			desc = fmt.Sprintf("%s ID. %s", typeName, b.Description)
-			enum := m.allIDs(typeName)
-			if len(enum) == 0 {
-				desc += " (TODO)"
-				anyUnavailable = true
-			} else {
-				argSchema["enum"] = enum
-			}
+			desc = fmt.Sprintf("(%s ID) %s", typeName, b.Description)
 		}
 
 		argSchema["description"] = desc
@@ -715,10 +707,6 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	sort.Strings(outputs)
 	for _, out := range outputs {
 		desc += fmt.Sprintf("\n%s", out)
-	}
-
-	if anyUnavailable {
-		desc += "\n\nWARNING: you still have some outputs to create - don't call this yet! (See TODOs.)"
 	}
 
 	return LLMTool{
@@ -860,6 +848,44 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 		})
 	}
 
+	builtins = append(builtins, LLMTool{
+		Name:        "list_objects",
+		Description: "List all available objects.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"type": map[string]any{
+					"type":        "string",
+					"description": "List objects of a particular type.",
+				},
+			},
+		},
+		Call: ToolFunc(func(ctx context.Context, args struct {
+			Type string `default:""`
+		}) (any, error) {
+			desc := "Available objects:"
+			var objects []string
+			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
+				if args.Type != "" && args.Type != typeName {
+					continue
+				}
+				count := m.env.typeCounts[typeName]
+				for i := 1; i <= count; i++ {
+					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+				}
+			}
+			if len(objects) > 0 {
+				for _, input := range objects {
+					desc += fmt.Sprintf("\n- %s", input)
+				}
+			} else {
+				desc += "\n- No objects available."
+			}
+			return desc, nil
+		}),
+	})
+
 	if len(typeTools) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name: "select_tools",
@@ -872,20 +898,6 @@ func (m *MCP) Builtins(srv *dagql.Server, typeTools []LLMTool) ([]LLMTool, error
 						continue
 					}
 					desc += "\n- " + tool.Name + " (returns " + tool.Returns.String() + ")"
-				}
-				var objects []string
-				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
-					count := m.env.typeCounts[typeName]
-					for i := 1; i <= count; i++ {
-						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
-						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-					}
-				}
-				if len(objects) > 0 {
-					desc += "\n\nAvailable objects:"
-					for _, input := range objects {
-						desc += fmt.Sprintf("\n- %s", input)
-					}
 				}
 				return desc
 			})(),
@@ -1081,27 +1093,20 @@ func (m *MCP) userProvidedValues() []LLMTool {
 	desc := "The following values have been provided by the user:"
 	var anyProvided bool
 	for _, input := range m.env.Inputs() {
-		if _, isObj := input.AsObject(); isObj {
-			continue
-		}
-
 		anyProvided = true
-
 		desc += "\n\n---"
-
 		description := input.Description
 		if description == "" {
 			description = input.Key
 		}
-
-		desc += "\n\n" + description
-
-		payload, err := json.Marshal(input.Value)
-		if err != nil {
-			desc += "\n\nMARSHAL ERROR: " + err.Error()
-			continue
+		desc += "\n\n" + description + "\n\n"
+		if obj, isObj := input.AsObject(); isObj {
+			desc += m.env.Ingest(obj, input.Description)
+		} else if payload, err := json.Marshal(input.Value); err == nil {
+			desc += string(payload)
+		} else {
+			desc += "MARSHAL ERROR: " + err.Error()
 		}
-		desc += "\n\n" + string(payload)
 	}
 	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
 	if !anyProvided {
@@ -1261,14 +1266,9 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	if typeName != schema.Query.Name {
-		latest := fmt.Sprintf("%s#%d", typeName, m.env.typeCounts[typeName])
 		schema := map[string]any{
 			"type":        "string",
-			"description": fmt.Sprintf("The %s to operate against. Default: %s", typeName, latest),
-			"default":     latest,
-		}
-		if ids := m.allIDs(typeName); len(ids) > 0 {
-			schema["enum"] = ids
+			"description": fmt.Sprintf("The %s to operate against, e.g. Potato#123.", typeName),
 		}
 		properties[typeName] = schema
 
@@ -1370,9 +1370,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 			if strings.HasSuffix(t.NamedType, "ID") {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
-				if ids := m.allIDs(typeName); len(ids) > 0 {
-					jsonSchema["enum"] = ids
-				}
 				jsonSchema[jsonSchemaIDAttr] = typeName
 			} else {
 				jsonSchema["type"] = "string"
@@ -1388,9 +1385,7 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 const jsonSchemaIDAttr = "x-id-type"
 
 func (m *MCP) newState(target dagql.Object) (string, error) {
-	return toolStructuredResponse(map[string]any{
-		"result": m.env.Ingest(target, ""),
-	})
+	return m.env.Ingest(target, ""), nil
 }
 
 func toolStructuredResponse(val any) (string, error) {
