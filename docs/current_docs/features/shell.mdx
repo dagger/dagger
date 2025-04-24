@@ -4,6 +4,7 @@ description: "Iterate faster with familiar Bash-like syntax and autocomplete"
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import VideoPlayer from '../../src/components/VideoPlayer';
 
 # Interactive Shell
 
@@ -32,7 +33,7 @@ container | from alpine | with-exec apk add curl | with-exec -- curl -L https://
 </TabItem>
 </Tabs>
 
-![Dagger Shell](/img/current_docs/features/shell-curl.gif)
+<VideoPlayer src="/img/current_docs/features/shell-curl.webm" alt="Dagger Shell" />
 
 Here's another, more complex example:
 
@@ -65,7 +66,7 @@ container |
 </TabItem>
 </Tabs>
 
-![Dagger Shell](/img/current_docs/features/shell-build.gif)
+<VideoPlayer src="/img/current_docs/features/shell-build.webm" alt="Shell build example" />
 
 :::note
 Dagger Shell allows you to execute Dagger Functions as native shell commands, using a Bash-compatible syntax. However, instead of calling a subprocess for execution, Dagger Shell directly interprets commands within the Dagger CLI and executes them in containers. This means that all your commands execute as API calls in a secure, sandboxed environment, rather than as processes with direct access to the host system.
@@ -110,7 +111,7 @@ Dagger Shell provides extensive built-in help:
 <function> | .help  # Shows details on the type returned by <function>, including available functions if an object
 ```
 
-![Dagger Shell help](/img/current_docs/features/shell-help.gif)
+<VideoPlayer src="/img/current_docs/features/shell-help.webm" alt="Dagger Shell help" />
 
 ## Navigation
 
@@ -126,7 +127,7 @@ To safeguard access to the host filesystem, the context root cannot be escaped.
 
 If the working directory contains a Dagger module, that module is automatically loaded, and its Dagger Functions can be directly inspected (via `.help`) or invoked.
 
-![Dagger Shell module loading](/img/current_docs/features/shell-module.gif)
+<VideoPlayer src="/img/current_docs/features/shell-module.webm" alt="Dagger Shell module loading" />
 
 :::tip
 If only the core Dagger API is needed, the `-M` (`--no-mod`) flag can be provided. This reduces the startup time because the Dagger CLI doesn't try to find and load a current module.
@@ -165,7 +166,7 @@ github.com/dagger/dagger/modules/wolfi@v0.16.2 |
 </TabItem>
 </Tabs>
 
-![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
+<VideoPlayer src="/img/current_docs/features/shell-host-path.webm" alt="Dagger Shell host path" />
 
 ## Variables
 
@@ -194,7 +195,7 @@ container | from nginx | with-directory /usr/share/nginx/html $build | terminal 
 </TabItem>
 </Tabs>
 
-![Dagger Shell variables](/img/current_docs/features/shell-variables.gif)
+<VideoPlayer src="/img/current_docs/features/shell-variables.webm" alt="Dagger Shell variables" />
 
 ## Differences from Bash
 

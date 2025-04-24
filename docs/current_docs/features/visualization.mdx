@@ -3,6 +3,8 @@ slug: /features/visualization
 description: "Visualize pipelines in real-time"
 ---
 
+import VideoPlayer from '../../src/components/VideoPlayer';
+
 # Visualization
 
 Dagger works by building up a DAG of operations and evaluating them, often in parallel. By nature, this is a difficult thing to display. It's easy to show the output of one operation at a time, but as soon as you have parallelism, you'll get jumbled output that's hard to understand.
@@ -19,7 +21,7 @@ The TUI is designed for rapid iteration, in the same way regular scripting works
 
 Here's an example of it in action:
 
-![Dagger TUI](/img/current_docs/features/tui.gif)
+<VideoPlayer src="/img/current_docs/features/tui.webm" alt="Dagger TUI" />
 
 The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A parent-child relationship means that the child call is being made by the parent call.
 
@@ -69,7 +71,7 @@ This is equally useful for debugging pipelines running on a developer's local en
 
 Here's an example of it in action:
 
-![Dagger Trace](/img/current_docs/features/trace.webp)
+<VideoPlayer src="/img/current_docs/features/trace.webm" alt="Dagger Trace" />
 
 ### OpenTelemetry
 

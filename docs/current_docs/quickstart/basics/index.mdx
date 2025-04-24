@@ -6,6 +6,7 @@ title: "Basics"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import PartialIde from '../../partials/_ide.mdx';
+import VideoPlayer from '../../../src/components/VideoPlayer';
 
 # Quickstart
 
@@ -39,7 +40,7 @@ container | from alpine | terminal
 
 This drops you into an interactive terminal running the `bash` shell. You can use this to interact with the running container, as shown below:
 
-![Terminal](/img/current_docs/quickstart/basics/terminal-1.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/terminal-1.webm" alt="Terminal demonstration" />
 
 ## Execute commands
 
@@ -87,7 +88,7 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" | terminal
 
 Check if the file exists, as shown below:
 
-![Terminal](/img/current_docs/quickstart/basics/terminal-2.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/terminal-2.webm" alt="Terminal file check demonstration" />
 
 :::tip INTERACTIVE CONTAINER DEBUGGING
 The `terminal` function is very useful for [debugging and experimenting](../../features/debugging.mdx), since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
@@ -104,7 +105,7 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
   with-entrypoint cat /hi.txt | publish ttl.sh/hello
 ```
 
-![Publish with Dagger Shell](/img/current_docs/quickstart/basics/publish-shell.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/publish-shell.webm" alt="Publishing demonstration" />
 
 ## Write custom functions
 
@@ -113,7 +114,6 @@ As your workflows become more complex, you'll start wishing you could make them 
 :::tip IDE INTEGRATION
 <PartialIde />
 :::
-
 
 Here's the previous example, rewritten as a Dagger Function:
 
@@ -187,7 +187,7 @@ public String publish()
 
 When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
 
-![Publish with a Dagger Function](/img/current_docs/quickstart/basics/publish-code.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/publish-code.webm" alt="Publishing demonstration" />
 
 ## Chain functions in code
 
@@ -479,7 +479,7 @@ You can group Dagger Functions into [modules](../../features/modules.mdx) and sh
 
 Here's an example of installing and using two modules from the Daggerverse: a Wolfi container builder and a Trivy container scanner:
 
-![Modules](/img/current_docs/quickstart/basics/modules.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/modules.webm" alt="Modules demonstration" />
 
 Here's what it looks like in code:
 
@@ -626,7 +626,7 @@ public function env(): Container
 
 Notice that when you call this Dagger Function multiple times, the second and subsequent runs are drastically faster than the first, since Dagger automatically reuses cached instructions and files from the cache.
 
-![Caching](/img/current_docs/quickstart/basics/caching.gif)
+<VideoPlayer src="/img/current_docs/quickstart/basics/caching.webm" alt="Caching demonstration" />
 
 ## Trace everything
 
@@ -634,7 +634,7 @@ Building and running workflows is only part of the problem - you also need a way
 
 Once configured, every time you execute a Dagger workflow, its operational telemetry is automatically sent to Dagger Cloud as a Trace and the workflow output includes a link to visualize the workflow run on Dagger Cloud. Here's an example:
 
-![Dagger Trace](/img/current_docs/features/trace.webp)
+<VideoPlayer src="/img/current_docs/features/trace.webm" alt="Trace demonstration" />
 
 :::tip DAGGER CLOUD
 [Dagger Cloud](https://dagger.io/cloud) sign-up is optional, and free of charge for a single user.
