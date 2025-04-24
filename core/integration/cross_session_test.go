@@ -710,13 +710,12 @@ import (
 
 type Caller struct {}
 
-func (*Caller) Fn(ctx context.Context, val string) (string, error) {
-	return dag.Secreter().GiveBack(dag.SetSecret("FOO", val)).Plaintext(ctx)
+func (*Caller) Fn(ctx context.Context) (string, error) {
+	return dag.Secreter().GiveBack(dag.SetSecret("FOO", "`+val+`")).Plaintext(ctx)
 }
 `,
 				).
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall("fn", "--val", val)).
+				With(daggerCall("fn")).
 				Stdout(ctx)
 		}
 

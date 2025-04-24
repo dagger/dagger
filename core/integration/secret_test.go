@@ -354,3 +354,40 @@ func (*Caller) Test(ctx context.Context) error {
 	_, err := callMod(c1)
 	require.NoError(t, err)
 }
+
+func (SecretSuite) TestSetSecretInModuleCaching(ctx context.Context, t *testctx.T) {
+	callMod := func(c *dagger.Client) (string, error) {
+		return goGitBase(t, c).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, rand string) (string, error) {
+	s := dag.SetSecret("FOO", "bar")
+	return dag.Container().From("alpine:3.20").
+		WithSecretVariable("FOO", s).
+		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+		Stdout(ctx)
+}
+`,
+			).
+			With(daggerCall("fn", "--rand", identity.NewID())).
+			Stdout(ctx)
+	}
+
+	c1 := connect(ctx, t)
+	out1, err := callMod(c1)
+	require.NoError(t, err)
+
+	c2 := connect(ctx, t)
+	out2, err := callMod(c2)
+	require.NoError(t, err)
+
+	require.Equal(t, out1, out2)
+}
