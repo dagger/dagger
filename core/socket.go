@@ -42,6 +42,9 @@ func (*Socket) TypeDescription() string {
 }
 
 func (socket *Socket) LLBID() string {
+	if socket == nil {
+		return ""
+	}
 	return socket.IDDigest.String()
 }
 

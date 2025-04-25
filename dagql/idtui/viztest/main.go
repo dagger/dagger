@@ -431,3 +431,9 @@ func (*Viztest) List(ctx context.Context, dir *dagger.Directory) (string, error)
 	}
 	return strings.Join(ents, "\n"), nil
 }
+
+func (*Viztest) GitReadme(ctx context.Context, remote string) (string, error) {
+	result, err := dag.Git(remote).Head().Tree().File("README.md").Contents(ctx)
+	result, _, _ = strings.Cut(result, "\n")
+	return result, err
+}

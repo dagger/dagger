@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -101,7 +102,10 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return op.ID.Digest(), nil
+	return digest.FromString(strings.Join([]string{
+		op.ID.Digest().String(),
+		op.Path,
+	}, "+")), nil
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
@@ -216,7 +220,10 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return op.ID.Digest(), nil
+	return digest.FromString(strings.Join([]string{
+		op.ID.Digest().String(),
+		op.Filename,
+	}, "+")), nil
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {

@@ -98,6 +98,10 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		}, Fail: true},
 		{Function: "revealed-spans"},
 
+		{Function: "git-readme", Args: []string{
+			"--remote", "https://github.com/dagger/dagger",
+		}},
+
 		// tests intended to trigger consistent tui exec metrics output
 		{Function: "disk-metrics", Verbosity: 3, FuzzyTest: func(t *testctx.T, out string) {
 			require.NotEmpty(t, out)

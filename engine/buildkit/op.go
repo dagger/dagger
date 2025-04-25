@@ -108,7 +108,7 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 		if err != nil {
 			return cm, ok, err
 		}
-		cm.Digest = digest.FromString(string(cm.Digest) + "+" + string(key))
+		cm.Digest = digest.FromString("customop+" + string(key))
 	}
 	return cm, ok, err
 }
