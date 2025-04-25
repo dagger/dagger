@@ -7383,7 +7383,7 @@ pub struct Module {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
-    /// expose the dependencies of this module to the client
+    /// Expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
     pub include_dependencies: Option<bool>,
 }

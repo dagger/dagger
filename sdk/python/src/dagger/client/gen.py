@@ -6868,7 +6868,7 @@ class Module(Type):
         Parameters
         ----------
         include_dependencies:
-            expose the dependencies of this module to the client
+            Expose the dependencies of this module to the client
 
         Returns
         -------

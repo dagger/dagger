@@ -6856,7 +6856,7 @@ func (r *Module) SDK() *SDKConfig {
 
 // ModuleServeOpts contains options for Module.Serve
 type ModuleServeOpts struct {
-	// expose the dependencies of this module to the client
+	// Expose the dependencies of this module to the client
 	IncludeDependencies bool
 }
 
