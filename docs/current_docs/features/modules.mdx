@@ -38,7 +38,7 @@ async def ci(self, source: dagger.Directory) -> str:
     return await dag.trivy().scan_container(dag.container().from_(ref))
 ```
 
-To make it easier to search and consume Dagger modules, the [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules. These might be Dagger modules developed by your team, your organization or the broader Dagger community. By importing and reusing these Dagger modules in your pipelines and across your teams, you can significantly speed up development.
+To make it easier to search and consume Dagger modules, the [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules. These might be Dagger modules developed by your team, your organization or the broader Dagger community. By importing and reusing these Dagger modules in your workflows and across your teams, you can significantly speed up development.
 
 ## Learn more
 

@@ -1,6 +1,6 @@
 ---
 slug: /features/visualization
-description: "Visualize pipelines in real-time"
+description: "Visualize workflows in real-time"
 ---
 
 import VideoPlayer from '../../src/components/VideoPlayer';
@@ -9,7 +9,7 @@ import VideoPlayer from '../../src/components/VideoPlayer';
 
 Dagger works by building up a DAG of operations and evaluating them, often in parallel. By nature, this is a difficult thing to display. It's easy to show the output of one operation at a time, but as soon as you have parallelism, you'll get jumbled output that's hard to understand.
 
-This quickly creates the need to visualize your pipelines to understand and measure what's going on. Dagger includes two features for this purpose - a [Terminal UI](#terminal-ui) and [Dagger Cloud's Traces](#traces).
+This quickly creates the need to visualize your workflows to understand and measure what's going on. Dagger includes two features for this purpose - a [Terminal UI](#terminal-ui) and [Dagger Cloud's Traces](#traces).
 
 ## Terminal UI
 
@@ -34,11 +34,11 @@ Error logs appear at the top, directly below the progress report. In most cases,
 
 ### Telemetry
 
-The TUI also provides real-time telemetry to give you a complete view of your pipeline's performance. It allows you to monitor:
+The TUI also provides real-time telemetry to give you a complete view of your workflow's performance. It allows you to monitor:
 
-- **State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your pipeline takes (including accounting for lazy effects installed by a Dagger Function).
+- **State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your workflow takes (including accounting for lazy effects installed by a Dagger Function).
 - **CPU resource usage**: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
-- **Network activity**: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your pipelines.
+- **Network activity**: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your workflows.
 - **Memory usage**: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
 
 :::info
@@ -61,13 +61,13 @@ Dagger automatically detects OpenTelemetry resource attributes. By utilizing the
 [Dagger Cloud](https://dagger.cloud) provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
 
 :::info
-Dagger Cloud is a hosted service to help visualize your pipelines in a friendly way. You can create a free account by visiting [dagger.cloud](https://dagger.cloud).
+Dagger Cloud is a hosted service to help visualize your workflows in a friendly way. You can create a free account by visiting [dagger.cloud](https://dagger.cloud).
 :::
 
 - Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened.
-- Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your pipeline and the associated telemetry.
+- Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your workflow and the associated telemetry.
 
-This is equally useful for debugging pipelines running on a developer's local environment and for pipelines in CI environments.
+This is equally useful for debugging workflows running on a developer's local environment and for workflows in CI environments.
 
 Here's an example of it in action:
 
@@ -102,7 +102,7 @@ You can drill down into the details of a specific group by clicking it. This dir
 
 With the timeline view you can:
 
-- **Duration**: See exactly how long each Dagger Function in your pipeline takes. This helps identify bottlenecks and optimize your workflows for faster execution.
+- **Duration**: See exactly how long each Dagger Function in your workflow takes. This helps identify bottlenecks and optimize your workflows for faster execution.
 - **Unified View**: See all Traces in a single unified view allowing you to easily drill down into individual Traces to understand their execution.
 - **View Failures**: Quickly pinpoint failed steps in the timeline and jump to their details immediately.
 
@@ -123,4 +123,4 @@ If there are any errors, they are now highlighted in a separate section in the T
 ## Learn more
 
 - [Create a Dagger Cloud account](https://dagger.cloud)
-- [Configure Traces for your Dagger pipelines](../configuration/cloud.mdx)
+- [Configure Traces for your Dagger workflows](../configuration/cloud.mdx)

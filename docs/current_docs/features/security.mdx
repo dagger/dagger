@@ -26,7 +26,7 @@ Dagger also natively supports the use of confidential information ("secrets") su
 Dagger has built-in safeguards to ensure that secrets are used without exposing them in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. This ensures that sensitive data does not leak - for example, in the event of a crash.
 :::
 
-Here's an example of a pipeline that receives and uses a GitHub personal access token as a secret:
+Here's an example of a workflow that receives and uses a GitHub personal access token as a secret:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">

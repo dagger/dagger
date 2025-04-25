@@ -6,7 +6,7 @@ slug: /api/internals
 
 If you're interested in how Dagger uses GraphQL, this page provides additional information on the Dagger API's internals.
 
-## Queries as pipelines
+## Queries as workflows
 
 Consider the following GraphQL query:
 
@@ -22,7 +22,7 @@ query {
 }
 ```
 
-This query represents a very simple Dagger pipeline. In plain English, it instructs Dagger to "download the latest `alpine` container image, run the command `apk info` in that image, and print the results of the command to the standard output device". It returns a list of the packages installed in the image:
+This query represents a very simple Dagger workflow. In plain English, it instructs Dagger to "download the latest `alpine` container image, run the command `apk info` in that image, and print the results of the command to the standard output device". It returns a list of the packages installed in the image:
 
 A GraphQL schema works by defining one or more object types, and then fields (and field arguments) on those object types. The fields of an object type can themselves be objects, allowing for different entities to be logically connected with each other. API users can then perform GraphQL queries to return all or some fields of an object.
 
@@ -142,7 +142,7 @@ As this example demonstrates, Dagger object IDs hold the state of their correspo
 
 ## Lazy evaluation
 
-GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger uses this feature of GraphQL to evaluate pipelines "lazily".
+GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger uses this feature of GraphQL to evaluate workflows "lazily".
 
 An example will make this clearer. First, navigate to [Webhook.site](https://webhook.site), a free online tool that lets you receive and log incoming HTTP requests. Obtain and copy your unique webhook URL, as shown below:
 

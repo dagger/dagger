@@ -262,7 +262,7 @@ entries:
     - hello
 ```
 
-This means that the build succeeded, and a `Directory` type representing the build directory was returned. This `Directory` is called a "just-in-time" directory: a dynamically-produced artifact of a Dagger pipeline.
+This means that the build succeeded, and a `Directory` type representing the build directory was returned. This `Directory` is called a "just-in-time" directory: a dynamically-produced artifact of a Dagger workflow.
 
 ## File return values
 
@@ -404,7 +404,7 @@ workdir: ""
 This means that the build succeeded, and a `Container` type representing the built container image was returned.
 
 :::note
-When calling Dagger Functions that produce a just-in-time artifact, you can use the Dagger CLI to add more functions to the pipeline for further processing - for example, inspecting the contents of a directory artifact, exporting a file artifact to the local filesystem, publishing a container artifact to a registry, and so on. This is called ["function chaining"](./index.mdx#chaining), and it is one of Dagger's most powerful features.
+When calling Dagger Functions that produce a just-in-time artifact, you can use the Dagger CLI to add more functions to the workflow for further processing - for example, inspecting the contents of a directory artifact, exporting a file artifact to the local filesystem, publishing a container artifact to a registry, and so on. This is called ["function chaining"](./index.mdx#chaining), and it is one of Dagger's most powerful features.
 :::
 
 ## Chaining

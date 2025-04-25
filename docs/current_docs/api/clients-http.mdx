@@ -20,7 +20,7 @@ Dagger protects the exposed API with an HTTP Basic authentication token which ca
 
 ## Command-line HTTP clients
 
-This example demonstrates how to connect to the Dagger API and run a simple pipeline using `curl`:
+This example demonstrates how to connect to the Dagger API and run a simple workflow using `curl`:
 
 ```shell
 echo '{"query":"{
@@ -40,7 +40,7 @@ echo '{"query":"{
 
 ## Language-native HTTP clients
 
-This example demonstrates how to connect to the Dagger API and run a simple pipeline in the following languages:
+This example demonstrates how to connect to the Dagger API and run a simple workflow in the following languages:
 
 - Rust, using the [gql_client library](https://github.com/arthurkhlghatyan/gql-client-rs) (MIT License)
 - PHP, using the [php-graphql-client library](https://github.com/mghoneimy/php-graphql-client) (MIT License)
@@ -93,7 +93,7 @@ Create a new file named `client.php` and add the following code to it:
 </TabItem>
 </Tabs>
 
-This code listing initializes the GraphQL client library and defines the Dagger pipeline to be executed as a Dagger API query. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
+This code listing initializes the GraphQL client library and defines the Dagger workflow to be executed as a Dagger API query. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
 
 Run the Dagger API client using the Dagger CLI as follows:
 

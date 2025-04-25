@@ -46,7 +46,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 </TabItem>
 </Tabs>
 
-An alternative option is to copy the target directory in the container. The difference between these two approaches is that mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+An alternative option is to copy the target directory in the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
 
 :::tip
 Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
@@ -522,7 +522,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
 </TabItem>
 </Tabs>
 
-An alternative option is to copy the target file to the container. The difference between these two approaches is that mounts only take effect within your pipeline invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+An alternative option is to copy the target file to the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
 
 :::tip
 Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
@@ -1513,7 +1513,7 @@ Build and publish an image with OCI labels:
 
 ### Invalidate cache
 
-The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent workflow steps, by introducing a volatile time variable at a specific point in the Dagger workflow.
 
 :::note
 * This is a temporary workaround until cache invalidation support is officially added to Dagger.
@@ -2668,7 +2668,7 @@ Execute a Dagger Function which performs different types of tests by executing o
 
 ### Terminate gracefully
 
-The following Dagger Function demonstrates how to handle errors in a pipeline.
+The following Dagger Function demonstrates how to handle errors in a workflow.
 
 
 <Tabs groupId="language" queryString="sdk">
@@ -2789,11 +2789,11 @@ Continue executing a Dagger Function even after a command within it fails. The D
 
 ## Debugging
 
-Dagger provides two features that can help greatly when trying to debug a pipeline - opening an interactive terminal session at the failure point, or at explicit breakpoints throughout your pipeline code. All context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
+Dagger provides two features that can help greatly when trying to debug a workflow - opening an interactive terminal session at the failure point, or at explicit breakpoints throughout your workflow code. All context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
 
 ### Debug container builds
 
-The following Dagger Function opens an interactive terminal session at different stages in a Dagger pipeline to debug a container build.
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger workflow to debug a container build.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
