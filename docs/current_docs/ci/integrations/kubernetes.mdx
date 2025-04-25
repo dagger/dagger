@@ -199,7 +199,7 @@ EOF
 
 - Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/helm/.dagger/main.go#L41) in CI
 - Dagger has run CI jobs at significant scale on AWS EKS using the [approach outlined here](https://dagger.io/blog/argo-cd-kubernetes)
-- Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in daemonset configuration. Recommend SLE Micro 6.1 with min 100GB SSD.
+- Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in DaemonSet configuration. The recommended configuration is SUSE Linux Enterprise Micro 6.1 with a 100 GB SSD (minimum).
 - Many other Kubernetes configurations should be compatible.
 
 ## Resources
