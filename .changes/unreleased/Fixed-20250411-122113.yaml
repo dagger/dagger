@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Ensure consistent git state in `Git.tree` checkouts
-time: 2025-04-11T12:21:13.154595152+01:00
-custom:
-    Author: jedevc\
-    PR: "9980"
