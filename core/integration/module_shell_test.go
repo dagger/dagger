@@ -413,14 +413,22 @@ func (Other) Version() string {
 		require.NotContains(t, out, "load-container-from-id")
 	})
 
-	t.Run("stdlib doc function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
+	t.Run("stdlib doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
 			With(daggerShell(".stdlib | .help git")).
 			Stdout(ctx)
+		require.Error(t, err)
+		requireErrRegexp(t, err, "command not found")
+	})
+
+	t.Run("stdlib doc with function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | .help llm")).
+			Stdout(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`^Queries a Git repository`), out)
-		require.Contains(t, out, "git <url> [options]")
-		require.Contains(t, out, "RETURNS")
+		require.Contains(t, out, "llm")
+		require.Contains(t, out, "Initialize a Large Language Model")
+		require.Contains(t, out, "--model string")
 	})
 
 	t.Run("core result", func(ctx context.Context, t *testctx.T) {
