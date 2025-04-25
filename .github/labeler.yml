@@ -1,8 +1,8 @@
 # Add 'area/documentation' label to any PR where
 # - any file in the `docs` directory is changed
-# - the head branch name starts with `docs` or has a `docs:` section in the name
+# - the head branch name starts with `docs` or has a `docs` section in the name
 area/documentation:
 - any:
   - changed-files:
     - any-glob-to-any-file: 'docs/*'
-  - head-branch: ['^docs', 'docs:']
+  - head-branch: ['^docs', 'docs']
