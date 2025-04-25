@@ -272,11 +272,11 @@ func (d Docs) Deploy(
 	ctx context.Context,
 	netlifyToken *dagger.Secret,
 ) (string, error) {
-	commit, err := dag.Version().Git().Head().Commit(ctx)
+	commit, err := dag.DaggerVersion().Git().Head().Commit(ctx)
 	if err != nil {
 		return "", err
 	}
-	dirty, err := dag.Version().Git().Dirty(ctx)
+	dirty, err := dag.DaggerVersion().Git().Dirty(ctx)
 	if err != nil {
 		return "", err
 	}

@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/version
+module github.com/dagger/dagger/dagger-version
 
 go 1.23.1
 

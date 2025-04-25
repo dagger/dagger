@@ -73,7 +73,7 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 			"**/_build",
 		},
 	})
-	v := dag.Version()
+	v := dag.DaggerVersion()
 	version, err := v.Version(ctx)
 	if err != nil {
 		return nil, err

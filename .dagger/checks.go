@@ -67,7 +67,7 @@ func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
 		{
 			Name: name + "/test-publish",
 			Check: func(ctx context.Context) error {
-				branches, err := dev.Git.Branches(ctx, dagger.VersionGitBranchesOpts{
+				branches, err := dev.Git.Branches(ctx, dagger.DaggerVersionGitBranchesOpts{
 					Commit: "HEAD",
 				})
 				if err != nil {
