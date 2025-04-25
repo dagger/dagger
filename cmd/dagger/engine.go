@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -62,6 +63,14 @@ func withEngine(
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+			if opts.Debug {
+				slog.Error("failed to emit telemetry", "error", err)
+			}
+			Frontend.Opts().TelemetryError = err
+		}))
+
 		defer func() { cleanupTelemetry(rerr) }()
 
 		if debug {

@@ -408,6 +408,9 @@ func (fe *frontendPlain) finalRender() {
 		// if we rendered anything, leave a newline
 		fmt.Fprintln(os.Stderr)
 	}
+
+	handleTelemetryErrorOutput(os.Stderr, fe.output, fe.TelemetryError)
+
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}

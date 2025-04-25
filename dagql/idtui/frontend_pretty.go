@@ -391,6 +391,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
 				fmt.Fprintln(os.Stderr)
+				handleTelemetryErrorOutput(os.Stderr, out, fe.TelemetryError)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
@@ -1939,6 +1940,13 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, message string
 	case val := <-result:
 		*dest = val
 		return nil
+	}
+}
+
+func handleTelemetryErrorOutput(w io.Writer, to *termenv.Output, err error) {
+	if err != nil {
+		fmt.Fprintf(w, "%s - %s\n(%s)\n", to.String("WARN").Foreground(termenv.ANSIYellow), "failures detected while emitting telemetry. trace information incomplete", err.Error())
+		fmt.Fprintln(w)
 	}
 }
 

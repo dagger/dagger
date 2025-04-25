@@ -51,6 +51,9 @@ type FrontendOpts struct {
 
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
+
+	// TelemetryError indicates if an error has occurred while sending telemetry
+	TelemetryError error
 }
 
 const (
