@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed regression for older modules still using `requirements.lock`, not vendoring the client library appropriately
-time: 2025-04-23T17:54:45.561384Z
-custom:
-    Author: helderco
-    PR: "10252"

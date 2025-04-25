@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    New `GitRef.ref` field for resolving the full ref string for a reference
-time: 2025-04-11T11:49:16.426371159+01:00
-custom:
-    Author: jedevc
-    PR: "9980"
