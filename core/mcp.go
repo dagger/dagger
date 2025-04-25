@@ -89,6 +89,10 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	}
 	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
+			objType := obj.Type().Name()
+			if expectedType != "" && objType != expectedType {
+				return nil, fmt.Errorf("type error: expected %q, got %q", expectedType, objType)
+			}
 			return obj, nil
 		}
 		return nil, fmt.Errorf("type error: %q exists but is not an object", key)
@@ -322,7 +326,7 @@ func (m *MCP) typeTools(srv *dagql.Server, schema *ast.Schema, typeName string) 
 			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, schema, typeName, field, args)
+				return m.call(ctx, srv, toolSchema, schema, typeName, field, args)
 			},
 		})
 	}
@@ -366,6 +370,7 @@ func displayArgs(args any) string {
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
+	toolSchema map[string]any,
 	schema *ast.Schema,
 	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
@@ -401,6 +406,7 @@ func (m *MCP) call(ctx context.Context,
 	if !ok {
 		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
+	toolProps := toolSchema["properties"].(map[string]any)
 	var target dagql.Object
 	if m.env.Root() != nil && selfType == schema.Query.Name {
 		target = m.env.Root()
@@ -425,7 +431,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
 		}
 	}
-	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
+	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap, toolProps)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -516,6 +522,8 @@ func (m *MCP) selectionToToolResult(
 				"original_size":  origSize,
 			})
 		}
+		// Return string content directly, without wrapping it in JSON.
+		return str.String(), nil
 	}
 
 	// Handle scalars or arrays of scalars.
@@ -530,6 +538,7 @@ func (m *MCP) toolCallToSelection(
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
+	propsSchema map[string]any,
 ) (dagql.Selector, error) {
 	sel := dagql.Selector{
 		Field: fieldDef.Name,
@@ -542,47 +551,46 @@ func (m *MCP) toolCallToSelection(
 			targetObjType.TypeName())
 	}
 	var unknownArgs error
-	for name := range argsMap {
-		if _, ok := field.Args.Lookup(name); !ok {
-			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", name))
-		}
-	}
-	if unknownArgs != nil {
-		return sel, unknownArgs
-	}
 	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
 		}
-		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
-			if idStr, ok := val.(string); ok {
-				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
-				envVal, err := m.GetObject(idStr, idType)
-				if err != nil {
-					return sel, err
-				}
-				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
-					enc, err := obj.ID().Encode()
-					if err != nil {
-						return sel, err
-					}
-					val = enc
-				} else {
-					return sel, fmt.Errorf("expected object, got %T", val)
-				}
-			} else {
-				return sel, fmt.Errorf("expected string, got %T", val)
+		argSchema, ok := propsSchema[arg.Name].(map[string]any)
+		if !ok {
+			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", arg.Name))
+			continue
+		}
+		if idType, ok := argSchema[jsonSchemaIDAttr].(string); ok {
+			idStr, ok := val.(string)
+			if !ok {
+				return sel, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
 			}
+			envVal, err := m.GetObject(idStr, idType)
+			if err != nil {
+				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
+			}
+			obj, ok := dagql.UnwrapAs[dagql.Object](envVal)
+			if !ok {
+				return sel, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
+			}
+			enc, err := obj.ID().Encode()
+			if err != nil {
+				return sel, err
+			}
+			val = enc
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+			return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
 			Value: input,
 		})
+	}
+	if unknownArgs != nil {
+		return sel, unknownArgs
 	}
 	return sel, nil
 }
@@ -1162,10 +1170,18 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 			return nil, err
 		}
 
-		// Add description if present
-		if arg.Description != "" {
-			argSchema["description"] = arg.Description
+		// Add description
+		desc := arg.Description
+		if idType, ok := argSchema[jsonSchemaIDAttr]; ok {
+			// If it's an object ID, be sure to mention the type. JSON schema doesn't
+			// help here since they're all type 'string'.
+			if desc == "" {
+				desc = fmt.Sprintf("(%s ID)", idType)
+			} else {
+				desc = fmt.Sprintf("(%s ID) %s", idType, desc)
+			}
 		}
+		argSchema["description"] = desc
 
 		// Add default value if present
 		if arg.DefaultValue != nil {
@@ -1219,7 +1235,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 		if !found {
 			return nil, fmt.Errorf("unknown type (impossible?): %q", t.NamedType)
 		}
-		desc := typeDef.Description
 		switch typeDef.Kind {
 		case ast.InputObject:
 			jsonSchema["type"] = "object"
@@ -1245,8 +1260,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 				jsonSchema["type"] = "string"
 				if ids := m.allIDs(typeName); len(ids) > 0 {
 					jsonSchema["enum"] = ids
-				} else {
-					desc += " (UNAVAILABLE)"
 				}
 				jsonSchema[jsonSchemaIDAttr] = typeName
 			} else {
@@ -1255,7 +1268,6 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 		default:
 			return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
 		}
-		jsonSchema["description"] = desc
 	}
 
 	return jsonSchema, nil
@@ -1270,9 +1282,12 @@ func (m *MCP) newState(target dagql.Object) (string, error) {
 }
 
 func toolStructuredResponse(val any) (string, error) {
-	pl, err := json.Marshal(val)
-	if err != nil {
+	str := new(strings.Builder)
+	enc := json.NewEncoder(str)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(val); err != nil {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
-	return string(pl), nil
+	return str.String(), nil
 }
