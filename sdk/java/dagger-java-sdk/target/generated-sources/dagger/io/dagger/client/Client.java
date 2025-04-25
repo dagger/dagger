@@ -133,6 +133,8 @@ public class Client {
 
     /**
      * <p>Initialize a new environment</p>
+     *
+     * @apiNote EXPERIMENTAL: Environments are not yet stabilized
      * @param optArgs env optional arguments
      */
     public Env env(EnvArguments optArgs) {
@@ -145,6 +147,8 @@ public class Client {
 
     /**
      * <p>Initialize a new environment</p>
+     *
+     * @apiNote EXPERIMENTAL: Environments are not yet stabilized
      */
     public Env env() {
         Arguments.Builder builder = Arguments.newBuilder();
@@ -252,6 +256,8 @@ public class Client {
 
     /**
      * <p>Initialize a Large Language Model (LLM)</p>
+     *
+     * @apiNote EXPERIMENTAL: LLM support is not yet stabilized
      * @param optArgs llm optional arguments
      */
     public LLM llm(LlmArguments optArgs) {
@@ -264,6 +270,8 @@ public class Client {
 
     /**
      * <p>Initialize a Large Language Model (LLM)</p>
+     *
+     * @apiNote EXPERIMENTAL: LLM support is not yet stabilized
      */
     public LLM llm() {
         Arguments.Builder builder = Arguments.newBuilder();

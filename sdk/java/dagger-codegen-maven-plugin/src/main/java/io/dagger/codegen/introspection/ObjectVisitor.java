@@ -257,6 +257,12 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder.addJavadoc("@deprecated $L\n", field.getDeprecationReason());
     }
 
+    if (field.isExperimental()) {
+      var reason = field.experimentalReason();
+      fieldMethodBuilder.addJavadoc(
+          "\n\n@apiNote EXPERIMENTAL" + (!reason.isBlank() ? ": " + reason : ""));
+    }
+
     classBuilder.addMethod(fieldMethodBuilder.build());
   }
 
