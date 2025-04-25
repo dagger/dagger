@@ -1945,7 +1945,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, message string
 
 func handleTelemetryErrorOutput(w io.Writer, to *termenv.Output, err error) {
 	if err != nil {
-		fmt.Fprintf(w, "%s - %s\n(%s)\n", to.String("WARN").Foreground(termenv.ANSIYellow), "failures detected while emitting telemetry. trace information inocomplete", err.Error())
+		fmt.Fprintf(w, "%s - %s\n(%s)\n", to.String("WARN").Foreground(termenv.ANSIYellow), "failures detected while emitting telemetry. trace information incomplete", err.Error())
 		fmt.Fprintln(w)
 	}
 }
