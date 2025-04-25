@@ -40,7 +40,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
 }
 
-type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (string, error)
+type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance[T], args A) (string, error)
 
 // DagOpFileWrapper caches a file field as a buildkit operation - this is
 // more specialized than DagOpWrapper, since that serializes the value to
@@ -48,7 +48,7 @@ type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (s
 func DagOpFileWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
@@ -69,7 +69,7 @@ func DagOpFile[T dagql.Typed, A any](
 	self dagql.Instance[T],
 	args A,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
@@ -81,7 +81,7 @@ func DagOpFile[T dagql.Typed, A any](
 		// NOTE: if set, the path function must be *somewhat* stable -
 		// since it becomes part of the op, then any changes to this
 		// invalidate the cache
-		filename, err = pfn(ctx, self)
+		filename, err = pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}
@@ -99,7 +99,7 @@ func DagOpFile[T dagql.Typed, A any](
 func DagOpDirectoryWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
@@ -118,7 +118,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	self dagql.Instance[T],
 	args A,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
@@ -127,7 +127,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 
 	filename := "/"
 	if pfn != nil {
-		filename, err = pfn(ctx, self)
+		filename, err = pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}

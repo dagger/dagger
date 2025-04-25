@@ -1771,7 +1771,7 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 }
 
-func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container]) (string, error) {
+func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container], _ containerAsTarballArgs) (string, error) {
 	return val.ID().Call().Digest + ".tar", nil
 }
 
