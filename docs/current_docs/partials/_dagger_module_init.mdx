@@ -85,9 +85,69 @@ In this structure:
 - `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
 - `package.json` manages the module dependencies.
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
-- `sdk/` contains the TypeScript SDK.
+- `sdk/` contains the bundled TypeScript SDK.
 
 For examples of modules written in Typescript, see [Daggerverse Modules in Typescript](https://daggerverse.dev/search?sdk=typescript).
+
+<a id="ts-configure-sdk-origin"></a>
+
+**Configure the SDK origin**
+
+By default, the SDK is installed as a bundled local dependency, so all SDK related dependencies are already pre-bundled in the module's code
+and it doesn't add extra dependencie to the module's `package.json` file.
+
+The `tsconfig.json` is configured to import the bundled SDK from the `sdk` directory and correctly maps imports paths:
+
+```json
+{
+    "paths": {
+      "@dagger.io/dagger": ["./sdk/index.ts"],
+      "@dagger.io/dagger/telemetry": ["./sdk/telemetry.ts"]
+    }
+}
+```
+
+The bundled SDK ensure better performances and compatibility with all the runtime without conflicting with the module's own dependencies.
+
+However, you can also configure the SDK as a local vendored dependency:
+
+```shell
+# Cleanup the current SDK module's directory
+rm -rf ./sdk 
+
+# Add `@dagger.io/dagger` as a local dependency
+npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
+
+# Re generate the module's directory
+dagger develop
+```
+
+This will generate a new `sdk` directory with the SDK as a vendored library and will update the `tsconfig.json` with the new imports paths.
+
+```json
+{
+    "paths": {
+      "@dagger.io/dagger": ["./sdk/src"],
+      "@dagger.io/dagger/telemetry": ["./sdk/src/telemetry"]
+    }
+}
+```
+
+This may be useful if you share common dependencies between your module and the Dagger Engine but it will impact
+performances.
+
+The migrate from the local vendored SDK dependency to the bundle SDK, you need to run the opposite commands:
+
+```shell
+# Cleanup the current SDK module's directory
+rm -rf ./sdk 
+
+# Remove `@dagger.io/dagger` from dependencies
+npm pkg delete "dependencies[@dagger.io/dagger]"
+
+# Re generate the module's directory
+dagger develop
+```
 
 </TabItem>
 <TabItem value="php" label="PHP">

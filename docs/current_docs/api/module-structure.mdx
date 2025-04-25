@@ -395,24 +395,29 @@ The runtime container is currently hardcoded to run in Node.js 22.11.0, but it c
 
 The TypeScript SDK is installed automatically, including dependencies, with a version that's tied to the currently running Dagger Engine container:
 
+By default, the SDK is installed as a bundled local dependency, so all SDK related dependencies are already pre-bundled in the module's code
+and it doesn't add extra dependencie to the module's `package.json` file.
+
 ```shell
 # executed by the runtime container
 yarn install
-npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
 ```
 
 The SDK files are mounted under `/sdk` in the Dagger Engine runtime container.
 
-This is why the initial `package.json` doesn't include any dependencies except a local link to the `sdk` generated directory.
+This is why the initial `package.json` doesn't include any dependencies except TypesScript.
 
 ```json
 {
   "dependencies": {
     "typescript": "^5.3.2"
-    "@dagger.io/dagger": "./sdk"
   }
 }
 ```
+
+:::note
+To configure the SDK as a local vendored dependency, read [configure SDK origin](#ts-configure-sdk-origin).
+:::
 
 [^1]:
 </TabItem>
