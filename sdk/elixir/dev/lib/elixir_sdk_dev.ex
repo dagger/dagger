@@ -5,7 +5,7 @@ defmodule ElixirSdkDev do
 
   use Dagger.Mod.Object, name: "ElixirSdkDev"
 
-  @base_image "hexpm/elixir:1.17.3-erlang-27.2-alpine-3.20.3@sha256:557156f12d23b0d2aa12d8955668cc3b9a981563690bb9ecabd7a5a951702afe"
+  @base_image "hexpm/elixir:1.18.3-erlang-27.3.3-alpine-3.21.3@sha256:854a84827d9758fcc6a6d7b1b233974c052d767c9929af31ef4b089320caae92"
 
   @doc """
   Test the SDK.
@@ -76,7 +76,11 @@ defmodule ElixirSdkDev do
       |> Dagger.File.contents()
 
     new_runtime_main_go =
-      Regex.replace(~r/elixirImage\s*=.*\n/, runtime_main_go, "elixirImage = \"#{@base_image}\"\n")
+      Regex.replace(
+        ~r/elixirImage\s*=.*\n/,
+        runtime_main_go,
+        "elixirImage = \"#{@base_image}\"\n"
+      )
 
     dag()
     |> Dagger.Client.container()
