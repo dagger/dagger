@@ -4,6 +4,7 @@ description: "Build powerful AI agents with Large Language Models"
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import VideoPlayer from '../../src/components/VideoPlayer';
 
 # LLM Integration
 
@@ -65,7 +66,7 @@ EOF
 
 </Tabs>
 
-![LLM bindings](/img/current_docs/features/llm-api.gif)
+<VideoPlayer src="/img/current_docs/features/llm-api.webm" alt="LLM bindings example" />
 
 Here, an instance of a `Container` is attached as an input to the `Env` environment. The `Container` is a core type with a number of useful functions, such as `withNewFile()` and `withExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
 
@@ -131,7 +132,7 @@ Does the application have unit tests?
 Find all the unit tests. Deduce what the application does. Describe it in one paragraph.
 ```
 
-![Prompt mode](/img/current_docs/features/llm-natural.gif)
+<VideoPlayer src="/img/current_docs/features/llm-natural.webm" alt="LLM prompt mode example" />
 
 ## Supported models
 
@@ -143,7 +144,7 @@ Dagger uses your system's standard environment variables to route LLM requests. 
 
 Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
 
-![LLM Observability](/img/current_docs/features/llm-cloud-trace.gif)
+<VideoPlayer src="/img/current_docs/features/llm-cloud-trace.webm" alt="LLM observability example" />
 
 ## Learn more
 

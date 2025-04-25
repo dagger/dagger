@@ -4,6 +4,7 @@ description: "Security-first design"
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import VideoPlayer from '../../src/components/VideoPlayer';
 
 # Security
 
@@ -52,11 +53,11 @@ Here's an example of a pipeline that receives and uses a GitHub personal access 
 
 The secret can be passed from the host environment via the `env` provider:
 
-![Secret from environment](/img/current_docs/features/secrets-env.gif)
+<VideoPlayer src="/img/current_docs/features/secrets-env.webm" alt="Secret from environment" />
 
 Secrets can also be passed from host files via the `file` provider (shown below) or from host command output via the `cmd` provider:
 
-![Secret from file](/img/current_docs/features/secrets-file.gif)
+<VideoPlayer src="/img/current_docs/features/secrets-file.webm" alt="Secret from file" />
 
 Secrets can also be read from external secret managers, such as Vault (`vault`):
 
@@ -70,7 +71,7 @@ dagger call github-api --token=vault://credentials.github
 dagger call github-api --token=op://infra/github/credential
 ```
 
-![Secret from 1Password](/img/current_docs/features/secrets-1password.gif)
+<VideoPlayer src="/img/current_docs/features/secrets-1password.webm" alt="Secret from 1Password" />
 
 ## Learn more
 

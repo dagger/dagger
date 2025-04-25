@@ -2,8 +2,10 @@
 slug: /features/services
 description: "Create services from containers at run-time"
 ---
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import VideoPlayer from '../../src/components/VideoPlayer';
 
 # Ephemeral Services
 
@@ -54,7 +56,7 @@ Here is an example of a Dagger Function that returns an HTTP service, which can 
 
 See it in action:
 
-![Container to host networking](/img/current_docs/features/service-container.gif)
+<VideoPlayer src="/img/current_docs/features/service-container.webm" alt="Container to host networking" />
 
 This also works in the opposite direction: containers in Dagger Functions can communicate with services running on the host. Here's an example of how a pipeline running in a Dagger Function can access and query a MariaDB database service running on the host:
 
@@ -83,7 +85,7 @@ This also works in the opposite direction: containers in Dagger Functions can co
 
 See it in action:
 
-![Host to container networking](/img/current_docs/features/service-host.gif)
+<VideoPlayer src="/img/current_docs/features/service-host.webm" alt="Host to container networking" />
 
 ## Learn more
 

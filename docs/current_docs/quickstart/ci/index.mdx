@@ -6,6 +6,7 @@ title: "Build a CI Pipeline"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import PartialIde from '../../partials/_ide.mdx';
+import VideoPlayer from '../../../src/components/VideoPlayer';
 
 # Build a CI Pipeline
 
@@ -182,15 +183,15 @@ publish
 
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
 
-![Publish](/img/current_docs/quickstart/ci/publish.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/publish.webm" alt="Publishing the container" />
 
 You can test the published container image by pulling and running it with `docker run`:
 
-![Docker run](/img/current_docs/quickstart/ci/docker.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/docker.webm" alt="Running the published container with Docker" />
 
 If you signed up for Dagger Cloud, the output of the previous command would have also included a link to visualize the workflow run on Dagger Cloud. Click the link in your browser to see a complete breakdown of the steps performed. Here's what you should see:
 
-![login](/img/current_docs/quickstart/ci/trace.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/trace.webm" alt="Visualizing the workflow in Dagger Cloud" />
 
 ## Interact with the build environment
 
@@ -204,7 +205,7 @@ build-env | terminal --cmd=bash
 
 This command builds the container image and then drops you into an interactive terminal running the `bash` shell. You can now directly execute commands in the running container, as shown below:
 
-![Build env with terminal](/img/current_docs/quickstart/ci/buildenv-terminal.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/buildenv-terminal.webm" alt="Interactive terminal in build environment" />
 
 ## Run a container as a local service
 
@@ -218,11 +219,11 @@ build | as-service | up --ports=8080:80
 
 By default, Dagger will map each exposed container service port to the same port on the host. Since NGINX operates on port 80, which is often a privileged port on the host, the additional `--ports 8080:80` argument re-maps container port 80 to unprivileged host port 8080.
 
-![Final container as service](/img/current_docs/quickstart/ci/build-service.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/build-service.webm" alt="Final container as service" />
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the Dagger host (replace `localhost` with your Dagger host's network name or IP address if accessing it remotely). You should see a "Hello from Dagger!" welcome page, served by NGINX.
 
-![Test service](/img/current_docs/quickstart/ci/curl.gif)
+<VideoPlayer src="/img/current_docs/quickstart/ci/curl.webm" alt="Testing the service" />
 
 ## Next steps
 
