@@ -130,6 +130,13 @@ The Dagger Engine cache is used to store intermediate build artifacts, which can
 
 Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the CI runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.
 
+### Tested Configurations
+
+- Dagger's Helm chart is continuously tested [on K3s via a Dagger pipeline](https://github.com/dagger/dagger/blob/main/helm/.dagger/main.go#L41) in CI
+- Dagger has run CI jobs at significant scale on AWS EKS using the [approach outlined here](https://dagger.io/blog/argo-cd-kubernetes)
+- Dagger has tested [SUSE RKE2](https://docs.rke2.io/install/quickstart) and Rancher Desktop Kubernetes using our Helm chart in DaemonSet configuration. The recommended configuration for RKE2 is SUSE Linux Enterprise (SLE) Micro 6.1 with 100GB storage per node (minimum).
+- Many other Kubernetes configurations should be compatible.
+
 ## Prerequisites
 
 - A running Kubernetes cluster with a pre-configured `kubectl` profile.
