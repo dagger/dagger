@@ -214,8 +214,6 @@ github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/cyphar/filepath-securejoin v0.4.1 h1:JyxxyPEaktOD+GAnqIqTf9A8tHyAG22rowi7HkoSU1s=
 github.com/cyphar/filepath-securejoin v0.4.1/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
-github.com/dagger/buildkit v0.0.0-20250418225557-9389ea772a3a h1:XFmYhL3Ho/0pWnO992xb9rsQS+PxWmR8oWDL0yizvYw=
-github.com/dagger/buildkit v0.0.0-20250418225557-9389ea772a3a/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/dagger/testctx v0.0.4 h1:In6AOkH1Q6LHWHAnMByViz9SFiXbYjKttGlO6GciE9s=
 github.com/dagger/testctx v0.0.4/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/dagger/testctx/oteltest v0.0.3 h1:3a4u7S2HhQtUvZbRs+1WC4qWNCLlbcm2KoEK/Lhck/4=
@@ -445,6 +443,8 @@ github.com/jackpal/gateway v1.0.16 h1:mTBRuHSW8qviVqX7kXnxKevqlfS/OA01ys6k6fxSX7
 github.com/jackpal/gateway v1.0.16/go.mod h1:IOn1OUbso/cGYmnCBZbCEqhNCLSz0xxdtIpUpri5/nA=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
+github.com/jedevc/buildkit v0.8.2-0.20250425124640-2a6777a56dea h1:59i7ubEEnJ5aZ/C0vDD7BTg5ORlxnGDnx+avH2xOUkg=
+github.com/jedevc/buildkit v0.8.2-0.20250425124640-2a6777a56dea/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f h1:AA4TqL5MbBQZRC1V+/0pjHXGbZIuYsR8YFWNRTVuh6o=
 github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f/go.mod h1:CadMq008qMk2051tDUQFFrWqm1qRFPX4rNUfR0guDr0=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
