@@ -20,6 +20,7 @@ The following table lists available types and what they represent:
 | `Engine` | The Dagger Engine configuration and state |
 | `Directory` | A directory (local path or Git reference) |
 | `EnvVariable` | An environment variable name and value |
+| `Env` | An environment variable name and value |
 | `File` | A file |
 | `GitRepository` | A Git repository |
 | `GitRef` | A Git reference (tag, branch, or commit) |
@@ -57,6 +58,16 @@ Some of the `Container` type's important fields are:
 | `withWorkdir` | Returns the container configured with a specific working directory |
 | `withServiceBinding` | Returns the container with runtime dependency on another `Service` |
 
+## CurrentModule
+
+The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `source` | Returns the directory containing the module's source code |
+| `workdir` | Loads and returns a directory from the module's working directory, including any changes that may have been made to it during function execution |
+| `workdirFile` | Loads and returns a file from the module's working directory, including any changes that may have been made to it during function execution |
+
 ## Directory
 
 The `Directory` type represents the state of a directory. This could be either a local directory path or a remote Git reference. Some of its important fields are:
@@ -69,6 +80,25 @@ The `Directory` type represents the state of a directory. This could be either a
 | `file` | Returns a file at the given path as a `File`  |
 | `withFile` / `withFiles` | Returns the directory plus the file(s) copied to the given path |
 
+## Env
+
+The `Env` type represents an environment consisting of inputs and desired outputs, for use by an LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a string variable as inputs, and request a `Container` as output. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `input` | Retrieves an input value by name |
+| `inputs` | Retrieves all input values |
+| `output` | Retrieves an output value by name |
+| `outputs` | Retrieves all output values |
+| `withContainerInput` | Creates or updates an input of type `Container` |
+| `withContainerOutput` | Declare a desired output of type `Container` |
+| `withDirectoryInput` | Creates or updates an input of type `Directory` |
+| `withDirectoryOutput` | Declare a desired output of type `Directory` |
+| `withFileInput` | Creates or updates an input of type `File` |
+| `withFileOutput` | Declare a desired output of type `File` |
+| `with[Object]Input` | Creates or updates an input of type `Object` |
+| `with[Object]Output` | Declare a desired output of type `Object` |
+
 ## File
 
 The `File` type represents a single file. Some of its important fields are:
@@ -77,6 +107,30 @@ The `File` type represents a single file. Some of its important fields are:
 |-------|-------------|
 | `contents` | Returns the contents of the file |
 | `export` | Writes the file to a path on the host |
+
+## LLM
+
+The `LLM` type initializes a Large Language Model (LLM). Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `model` | Returns the model used by the LLM |
+| `lastReply` | Returns the last reply from the LLM |
+| `history` | Returns the LLM message history |
+| `withEnv` | Allows the LLM to interact with an environment |
+| `withPrompt` | Appends a prompt to the LLM context |
+| `withPromptFile` | Appends a prompt file to the LLM context |
+| `withPromptVar` | Adds a string variable to the LLM context |
+| `withModel` | Sets the model used by the LLM |
+
+## Secret
+
+Dagger allows you to utilize confidential information ("secrets") such as passwords, API keys, SSH keys and so on, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. The `Secret` type is used to represent these secret values. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Returns the name of the secret |
+| `plaintext` | Returns the plaintext value of the secret |
 
 ## Service
 
@@ -88,36 +142,3 @@ The `Service` type represents a content-addressed service providing TCP connecti
 | `hostname` | Returns a hostname to reach the service |
 | `ports` | Returns the list of ports provided by the service |
 | `up` | Creates a tunnel that forwards traffic from the caller's network to the service  |
-
-## Secret
-
-Dagger allows you to utilize confidential information ("secrets") such as passwords, API keys, SSH keys and so on, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. The `Secret` type is used to represent these secret values. Some of its important fields are:
-
-| Field | Description |
-|-------|-------------|
-| `name` | Returns the name of the secret |
-| `plaintext` | Returns the plaintext value of the secret |
-
-## LLM
-
-The `LLM` type initializes a Large Language Model (LLM). Some of its important fields are:
-
-| Field | Description |
-|-------|-------------|
-| `model` | Returns the model used by the LLM |
-| `lastReply` | Returns the last reply from the LLM |
-| `history` | Returns the LLM message history |
-| `withPrompt` | Appends a prompt to the LLM context |
-| `withPromptFile` | Appends a prompt file to the LLM context |
-| `withPromptVar` | Adds a string variable to the LLM context |
-| `withModel` | Sets the model used by the LLM |
-
-## CurrentModule
-
-The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API. Some of its important fields are:
-
-| Field | Description |
-|-------|-------------|
-| `source` | Returns the directory containing the module's source code |
-| `workdir` | Loads and returns a directory from the module's working directory, including any changes that may have been made to it during function execution |
-| `workdirFile` | Loads and returns a file from the module's working directory, including any changes that may have been made to it during function execution |
