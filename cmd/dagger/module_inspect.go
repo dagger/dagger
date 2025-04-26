@@ -289,34 +289,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 		return fmt.Errorf("query module objects: %w", err)
 	}
 
-	name := gqlObjectName(m.Name)
-	if name == "" {
-		name = "Query"
-	}
-
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
 		case dagger.TypeDefKindObjectKind:
-			obj := typeDef.AsObject
-			// FIXME: we could get the real constructor's name through the field
-			// in Query which would avoid the need to convert the module name,
-			// but the Query TypeDef is loaded before the module so the module
-			// isn't available in its functions list.
-			if name == gqlObjectName(obj.Name) {
-				m.MainObject = typeDef
-
-				// There's always a constructor, even if the SDK didn't define one.
-				// Make sure one always exists to make it easier to reuse code while
-				// building out Cobra.
-				if obj.Constructor == nil {
-					obj.Constructor = &modFunction{ReturnType: typeDef}
-				}
-
-				if name != "Query" {
-					// Constructors have an empty function name in ObjectTypeDef.
-					obj.Constructor.Name = gqlFieldName(obj.Name)
-				}
-			}
 			m.Objects = append(m.Objects, typeDef)
 		case dagger.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
@@ -327,20 +302,36 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 		}
 	}
 
-	if m.MainObject == nil {
-		return fmt.Errorf("main object not found, check that your module's name and main object match")
-	}
+	rootType := m.GetTypeDef("Query")
 
-	m.LoadFunctionTypeDefs(m.MainObject.AsObject.Constructor)
-
-	// FIXME: the API doesn't return the module constructor in the Query object
-	rootObj := m.GetObject("Query")
-	if !rootObj.HasFunction(m.MainObject.AsObject.Constructor) {
-		rootObj.Functions = append(rootObj.Functions, m.MainObject.AsObject.Constructor)
-	}
-
-	for _, fn := range rootObj.Functions {
+	for _, fn := range rootType.AsObject.Functions {
 		m.LoadFunctionTypeDefs(fn)
+		if obj := fn.ReturnType.AsObject; obj != nil {
+			// FIXME: ideally CurrentTypeDefs would return the constructors
+			// with the right name matching the schema, even if module didn't
+			// define it. This would avoid any discrepancies on name conversion
+			// between engine and CLI. Then just compare with constructor's
+			// name.
+			if obj.SourceModuleName != "" && fn.Name == gqlFieldName(obj.SourceModuleName) {
+				obj.Constructor = fn
+				// module that corresponds to this moduleDef
+				if obj.SourceModuleName == m.Name {
+					m.MainObject = fn.ReturnType
+				}
+			}
+		}
+	}
+
+	// There's always a constructor, even for Query, to make it easier to reuse code.
+	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
+
+	// For core API only, main object is the Query type
+	if m.Name == "" {
+		m.MainObject = rootType
+	}
+
+	if m.Name != "" && m.MainObject == nil {
+		return fmt.Errorf("main object not found, check that your module's name and main object match")
 	}
 
 	return nil
@@ -426,11 +417,6 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
-	// This avoids an issue with module constructors overriding core functions.
-	// See https://github.com/dagger/dagger/issues/9122
-	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject.AsObject.Constructor.CmdName() == functionName {
-		return m.MainObject.AsObject.Constructor, nil
-	}
 	for _, fn := range fp.GetFunctions() {
 		if fn.Name == functionName || fn.CmdName() == functionName {
 			m.LoadFunctionTypeDefs(fn)
