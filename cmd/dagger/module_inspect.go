@@ -325,7 +325,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	// There's always a constructor, even for Query, to make it easier to reuse code.
 	rootType.AsObject.Constructor = &modFunction{ReturnType: rootType}
 
-	// For core API only, main object is the Query type
+	// For core API only, main object is the Query type.
 	if m.Name == "" {
 		m.MainObject = rootType
 	}

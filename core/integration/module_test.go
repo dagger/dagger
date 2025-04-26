@@ -733,7 +733,6 @@ func (m *D) Fn(foo string) Obj {
 		)
 
 	ctr = ctr.
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dint").
 		With(daggerExec("init", "--source=.", "--name=d", "--sdk=go")).
 		WithNewFile("main.go", `package main
@@ -820,11 +819,12 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"a":{"fn": "foo123"}}`, out)
 
-	// verify that no types from (transitive) deps show up
 	types := currentSchema(ctx, t, ctr).Types
 	require.NotNil(t, types.Get("A"))
-	require.Nil(t, types.Get("B"))
-	require.Nil(t, types.Get("C"))
+	require.NotNil(t, types.Get("B"))
+	require.NotNil(t, types.Get("C"))
+
+	// verify that no types from transitive deps show up (only direct ones)
 	require.Nil(t, types.Get("D"))
 }
 
@@ -948,10 +948,10 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
 
-			// cannot use transitive dependency directly
-			_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
-			require.Error(t, err)
-			requireErrOut(t, err, `Cannot query field \"dep\" on type \"Query\"`)
+			// can use direct dependency directly
+			out, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
 		})
 	}
 }
