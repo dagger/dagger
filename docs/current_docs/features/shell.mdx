@@ -90,56 +90,55 @@ container | from alpine | terminal
 </TabItem>
 </Tabs>
 
-## Modules
+## Loading Modules
 
-Dagger Shell can load [Dagger Modules](/features/modules), inspect their types, and run their functions. You can do this by either *executing* modules as functions, or *entering* them as environments.
-
-### Modules as functions
-
-Dagger Shell accepts module addresses as executable functions. For example, the command `github.com/dagger/dagger/docs@v0.18.3 | .help` will:
-
-- Load the module `github.com/dagger/dagger/docs` at version `v0.18.3`
-- Execute the module's constructor function, which returns a new instance of the module's main type
-- Inspect the returned object and print available functions
-
-When executing a module, you are actually executing the module's constructor function. Therefore, the same rules apply:
-
-- Executing the module constructor does not change the shell's environment. When execution is complete, the current directory and available commands remain the same.
-- A module constructor may accept arguments. You can inspect them with `.help <MODULE>`, and pass them with `<MODULE> --foo --bar`
-- The returned object may be inspected with `<MODULE> | .help`
-- The returned object may be the start of a pipeline: `<MODULE> | foo | bar`
-- The returned object may be passed as an argument to another function: `foo --bar=$(<MODULE> | baz)`
-- The returned object may be saved to a variable: `foo=$(<MODULE>)`
-
-### Modules as environments
-
-Dagger Shell can enter a module, and use it as a new execution environment, using the builtin command `.cd`. You can think of it as a combination of `cd` and `ssh`.
-
-For example, the command `.cd github.com/dagger/dagger@docs@v0.18.3; .help` will:
-
-- Load the module `github.com/dagger/dagger/docs` at version `v0.18.3`
-- Execute the module's constructor function, which returns a new instance of the module's main type
-- Inspect the returned object's functions, and add them to the shell's execution context
-- Inspect the module's dependencies, and add their constructor to the shell's execution context
-- Change the filesystem location to the module's source directory
-- Execute `.help` in the new context
+Dagger Shell can load [modules](/features/modules), inspect their types, and run their functions. This works for both local and remote modules.
 
 <VideoPlayer src="/img/current_docs/features/shell-module.webm" alt="Dagger Shell module loading" />
 
-#### Constructor arguments
+For example, try running this command:
 
-`.cd` executes the module constructor without arguments. To pass arguments, you can execute the special command `.` from within the module. For example:
-
-```
-# Enter the module
-.cd github.com/dagger/dagger/docs
-# Show arguments on the current module constructor
-.help .
-# Execute the constructor with arguments
-. --nginx-config=./nginx.conf | server | up
+```shell
+dagger -m github.com/dagger/dagger/docs@v0.18.5
 ```
 
-If a module has a constructor with required arguments, at the moment it cannot be used as an environment.
+This loads the module `github.com/dagger/dagger/docs` at version `v0.18.5`. Wait for the Dagger Shell interactive prompt, then:
+
+```shell
+.help
+```
+
+We see new commands available, loaded from the module. Let's try running one:
+
+```shell
+server | up
+```
+
+This builds the docs server defined in the module, and runs it as an ephemeral service [on your machine](http://localhost:8080).
+
+## Composing modules
+
+You can load multiple modules in the same session, each scoped to a single pipeline, then combine those pipelines into a bigger pipeline. For example:
+
+```shell
+dagger <<.
+github.com/dagger/dagger/modules/wolfi |
+ container --packages=nginx |
+ with-directory /var/www $(
+  github.com/dagger/dagger/docs | site
+ )
+.
+```
+
+This loads `github.com/dagger/dagger/docs` into one pipeline, `github.com/dagger/dagger/modules/wolfi` into another, then combines them.
+
+This works by executing the module's [constructor function](/api/constructor/). It works exactly like executing any other function:
+
+- You can inspect it for arguments: `.help MODULE`
+- You can pass arguments: `MODULE --foo=bar --baz`
+- You can save it to a variable: `foo=$(MODULE)`
+- You can use it in a pipeline: `MODULE | foo | bar`
+- You can use that pipeline as a sub-pipeline: `foo --bar=$(MODULE | foo | bar)`
 
 ## Variables
 
