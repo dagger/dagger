@@ -55,7 +55,7 @@ at `/etc/dagger/engine.json`. For example:
 {`    -v $HOME/.config/dagger/engine.json:/etc/dagger/engine.json \\\n`}
 {`    --name dagger-engine-custom \\\n`}
 {`    --privileged \\\n`}
-{`    registry.dagger.io/engine:${daggerVersion}`}
+{`    registry.dagger.io/engine:v${daggerVersion}`}
 </CodeBlock>
 
 </TabItem>
@@ -73,7 +73,7 @@ mounted to `/etc/dagger/engine.toml`. For example:
 {`    -v $PWD/engine.toml:/etc/dagger/engine.toml \\\n`}
 {`    --name dagger-engine-custom \\\n`}
 {`    --privileged \\\n`}
-{`    registry.dagger.io/engine:${daggerVersion}`}
+{`    registry.dagger.io/engine:v${daggerVersion}`}
 </CodeBlock>
 
 </TabItem>
