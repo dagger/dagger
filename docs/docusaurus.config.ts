@@ -72,24 +72,12 @@ const config: Config = {
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
     llmsTxtPlugin,
-    /*
-    [
-      path.resolve(__dirname, "plugins/docusaurus-plugin-guides/index.ts"),
-      {
-        versions: [
-          {
-            guidesPath: "./current_docs/guides",
-            versionName: "current",
-          },
-        ],
-      },
-    ],
-    */
     [
       "posthog-docusaurus",
       {
-        appUrl: "https://dagger.io/analytics",
         apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d",
+        appUrl: "https://us.i.posthog.com", // Changed to standard PostHog URL
+        enableInDevelopment: true, // Enable tracking in development
       },
     ],
     [

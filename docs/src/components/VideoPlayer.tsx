@@ -20,6 +20,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
+    // Add debug logging
+    // console.log('PostHog available:', !!window.posthog);
+    // console.log('PostHog object:', window.posthog);
+
     if (videoRef.current) {
       // Set initial frame when metadata is loaded
       videoRef.current.addEventListener('loadedmetadata', () => {
@@ -29,11 +33,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
     }
   }, [defaultFrame]);
 
+  // Helper function for event capture
+  const captureEvent = (eventName: string, properties: Record<string, any>) => {
+    if (!window.posthog) {
+      // console.warn('PostHog not initialized when capturing:', eventName);
+      return;
+    }
+
+    window.posthog.capture(eventName, properties);
+    // console.log('Event captured:', eventName, properties);
+  };
+
   const handlePlayPause = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
-        window.posthog?.capture('video_paused', {
+        captureEvent('video_paused', {
           video_src: src,
           video_alt: alt,
           current_time: videoRef.current.currentTime,
@@ -41,7 +56,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
         });
       } else {
         videoRef.current.play();
-        window.posthog?.capture('video_played', {
+        captureEvent('video_played', {
           video_src: src,
           video_alt: alt,
           current_time: videoRef.current.currentTime,
@@ -57,7 +72,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
       videoRef.current.pause();
       videoRef.current.currentTime = (defaultFrame / 24);
       setIsPlaying(false);
-      window.posthog?.capture('video_stopped', {
+      captureEvent('video_stopped', {
         video_src: src,
         video_alt: alt,
         current_time: videoRef.current.currentTime,
@@ -69,7 +84,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
   const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
     // Only handle click if it's directly on the video element, not on controls
     if (e.target === videoRef.current) {
-      window.posthog?.capture('video_link_clicked', {
+      captureEvent('video_link_clicked', {
         video_src: src,
         video_alt: alt
       });
