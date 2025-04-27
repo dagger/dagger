@@ -139,6 +139,10 @@ defmodule Dagger.Client do
 
   @doc """
   Initialize a new environment
+
+  > #### Experimental {: .warning}
+  >
+  > "Environments are not yet stabilized"
   """
   @spec env(t(), [{:privileged, boolean() | nil}, {:writable, boolean() | nil}]) :: Dagger.Env.t()
   def env(%__MODULE__{} = client, optional_args \\ []) do
@@ -260,6 +264,10 @@ defmodule Dagger.Client do
 
   @doc """
   Initialize a Large Language Model (LLM)
+
+  > #### Experimental {: .warning}
+  >
+  > "LLM support is not yet stabilized"
   """
   @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
           Dagger.LLM.t()
