@@ -31,12 +31,10 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
   Render the string.
   """
   def render_string(s) do
-    s = String.replace(s, "\\", "\\\\")
-
     [
       "\"\"\"",
       ?\n,
-      s,
+      escape(s),
       ?\n,
       "\"\"\""
     ]
@@ -73,9 +71,20 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
 
   def render_doc(%{description: ""}), do: ""
 
-  def render_doc(%{description: description}) do
-    ["@doc", ~c" ", render_string(description)]
+  def render_doc(%{description: description, directives: directives}) do
+    Enum.reduce(directives, description, &append_doc/2)
+    |> render_doc()
   end
+
+  def render_doc(text) do
+    ["@doc", ~c" ", render_string(text)]
+  end
+
+  defp append_doc(%{name: "experimental", args: [%{name: "reason", value: reason}]}, doc) do
+    [doc, ?\n, ?\n, render_warning("Experimental", escape(reason))]
+  end
+
+  defp append_doc(_, doc), do: doc
 
   @doc """
   Render function deprecation message.
@@ -88,4 +97,20 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
   def render_deprecated(%Field{deprecation_reason: reason}) do
     ["@deprecated", ~c" ", render_string(Formatter.format_doc(reason))]
   end
+
+  @doc """
+  Build the warning documentation block.
+  """
+  def render_warning(title, text) when is_binary(text) do
+    [
+      """
+      > #### #{title} {: .warning}
+      >
+      """,
+      text |> String.split("\n") |> Enum.map_intersperse(?\n, fn line -> "> #{line}" end)
+    ]
+  end
+
+  defp escape(iodata) when is_list(iodata), do: iodata |> IO.iodata_to_binary() |> escape
+  defp escape(s) when is_binary(s), do: String.replace(s, "\\", "\\\\")
 end
