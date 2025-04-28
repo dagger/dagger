@@ -17,6 +17,14 @@ This makes it possible to:
   - Use those services from the calling host (container-to-host networking)
 - Expose host services for use in a Dagger Function (host-to-container networking).
 
+## Use cases
+
+Some common scenarios for using services with Dagger Functions are:
+
+- Running a database service for local storage or testing
+- Running end-to-end integration tests against a service
+- Running sidecar services
+
 ## Service containers
 
 Services instantiated by a Dagger Function run in service containers, which have the following characteristics:
@@ -24,14 +32,6 @@ Services instantiated by a Dagger Function run in service containers, which have
 - Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
 - Service containers are started just-in-time, de-duplicated, and stopped when no longer needed.
 - Service containers are health checked prior to running clients.
-
-### Use cases
-
-Some common scenarios for using services with Dagger Functions are:
-
-- Running a database service for local storage or testing
-- Running end-to-end integration tests against a service
-- Running sidecar services
 
 ### Example
 
