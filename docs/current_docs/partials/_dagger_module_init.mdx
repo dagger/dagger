@@ -91,12 +91,12 @@ For examples of modules written in Typescript, see [Daggerverse Modules in Types
 
 <a id="ts-configure-sdk-origin"></a>
 
-**Configure the SDK origin**
+### Bundled or vendored SDK
 
 By default, the SDK is installed as a bundled local dependency, so all SDK related dependencies are already pre-bundled in the module's code
-and it doesn't add extra dependencie to the module's `package.json` file.
+and no extra dependencies are added to the module's `package.json` file.
 
-The `tsconfig.json` is configured to import the bundled SDK from the `sdk` directory and correctly maps imports paths:
+The `tsconfig.json` is configured to import the bundled SDK from the `sdk` directory and correctly map imports paths:
 
 ```json
 {
@@ -107,7 +107,7 @@ The `tsconfig.json` is configured to import the bundled SDK from the `sdk` direc
 }
 ```
 
-The bundled SDK ensure better performances and compatibility with all the runtime without conflicting with the module's own dependencies.
+The bundled SDK ensures better performance and compatibility with all the runtimes, without conflicting with the module's own dependencies.
 
 However, you can also configure the SDK as a local vendored dependency:
 
@@ -122,7 +122,7 @@ npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
 dagger develop
 ```
 
-This will generate a new `sdk` directory with the SDK as a vendored library and will update the `tsconfig.json` with the new imports paths.
+This will generate a new `sdk` directory with the SDK as a vendored library and will update the `tsconfig.json` with the new import paths.
 
 ```json
 {
@@ -134,9 +134,9 @@ This will generate a new `sdk` directory with the SDK as a vendored library and 
 ```
 
 This may be useful if you share common dependencies between your module and the Dagger Engine but it will impact
-performances.
+performance.
 
-The migrate from the local vendored SDK dependency to the bundle SDK, you need to run the opposite commands:
+To migrate from the local vendored SDK dependency back to the bundled SDK, reverse the process:
 
 ```shell
 # Cleanup the current SDK module's directory
