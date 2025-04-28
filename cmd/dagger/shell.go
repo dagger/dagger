@@ -216,15 +216,8 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	}
 
 	// silently attempt to initialize llm to populate $agent.
-	// swallow errors, we'll try again and error if the user attempts to use it.
-	agentInitCtx, span := Tracer().Start(
-		ctx,
-		"attempting to set $agent",
-		telemetry.Encapsulated(),
-		telemetry.Encapsulate(),
-	)
-	_, _ = h.llm(agentInitCtx)
-	span.End()
+	// swallow errors, discard logs.
+	_, _ = h.llm(context.Background())
 
 	h.initwd = *wd
 	h.wd = h.initwd
