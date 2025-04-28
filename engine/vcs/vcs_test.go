@@ -120,14 +120,16 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "git.apache.org/package-name_2.x.git",
 			},
 		},
-		{
-			"git.sr.ht/~jacqueline/tangara-fw/lib",
-			&RepoRoot{
-				VCS:  vcsGit,
-				Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
-				Root: "git.sr.ht/~jacqueline/tangara-fw",
-			},
-		},
+		// HACK: temporarily disabled because of go-away (https://drewdevault.com/2025/03/17/2025-03-17-Stop-externalizing-your-costs-on-me.html)
+		// this seems to accidentally catch go-get as well, e.g. `GOPRIVATE=git.sr.ht go get git.sr.ht/~jacqueline/tangara-fw/lib` fails with `403 Forbidden`
+		// {
+		// 	"git.sr.ht/~jacqueline/tangara-fw/lib",
+		// 	&RepoRoot{
+		// 		VCS:  vcsGit,
+		// 		Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
+		// 		Root: "git.sr.ht/~jacqueline/tangara-fw",
+		// 	},
+		// },
 		// { FAILS as returns 404 without tags
 		// 	"git.sr.ht/~jacqueline/tangara-fw.git/lib",
 		// 	&RepoRoot{
