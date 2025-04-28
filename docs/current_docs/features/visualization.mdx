@@ -25,8 +25,8 @@ Here's an example of it in action:
 
 The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A parent-child relationship means that the child call is being made by the parent call.
 
-- A red X or green check indicates whether the call succeeded or failed.
-- A call's duration is rendered after its name.
+- A red X or green check indicates whether the call succeeded or failed
+- A call's duration is rendered after its name
 
 ### Errors
 
@@ -36,10 +36,10 @@ Error logs appear at the top, directly below the progress report. In most cases,
 
 The TUI also provides real-time telemetry to give you a complete view of your workflow's performance. It allows you to monitor:
 
-- **State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your workflow takes (including accounting for lazy effects installed by a Dagger Function).
-- **CPU resource usage**: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
-- **Network activity**: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your workflows.
-- **Memory usage**: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
+- **State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your workflow takes (including accounting for lazy effects installed by a Dagger Function)
+- **CPU resource usage**: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints
+- **Network activity**: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your workflows
+- **Memory usage**: Keep an eye on current and peak memory consumption, helping you optimize resource utilization
 
 :::info
 The CLI has tiered verbosity: `-v`, `-vv`, `-vvv` (just like `curl`):
@@ -64,8 +64,8 @@ Dagger automatically detects OpenTelemetry resource attributes. By utilizing the
 Dagger Cloud is a hosted service to help visualize your workflows in a friendly way. You can create a free account by visiting [dagger.cloud](https://dagger.cloud).
 :::
 
-- Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened.
-- Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your workflow and the associated telemetry.
+- Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened
+- Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your workflow and the associated telemetry
 
 This is equally useful for debugging workflows running on a developer's local environment and for workflows in CI environments.
 
@@ -102,9 +102,9 @@ You can drill down into the details of a specific group by clicking it. This dir
 
 With the timeline view you can:
 
-- **Duration**: See exactly how long each Dagger Function in your workflow takes. This helps identify bottlenecks and optimize your workflows for faster execution.
-- **Unified View**: See all Traces in a single unified view allowing you to easily drill down into individual Traces to understand their execution.
-- **View Failures**: Quickly pinpoint failed steps in the timeline and jump to their details immediately.
+- **Duration**: See exactly how long each Dagger Function in your workflow takes. This helps identify bottlenecks and optimize your workflows for faster execution
+- **Unified View**: See all Traces in a single unified view allowing you to easily drill down into individual Traces to understand their execution
+- **View Failures**: Quickly pinpoint failed steps in the timeline and jump to their details immediately
 
 You can click any of the Traces in the list to see detailed logs for each Trace. The flame graph at the top of the Trace shows the operations performed by the Dagger Function, with a visual cue of how much time each operation represents of the total duration, as shown below:
 
