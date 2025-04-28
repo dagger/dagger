@@ -8664,16 +8664,24 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def secret(self, uri: str) -> "Secret":
+    def secret(
+        self,
+        uri: str,
+        *,
+        cache_key: str | None = None,
+    ) -> "Secret":
         """Creates a new secret.
 
         Parameters
         ----------
         uri:
             The URI of the secret store
+        cache_key:
+            TODO
         """
         _args = [
             Arg("uri", uri),
+            Arg("cacheKey", cache_key, None),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
@@ -8986,6 +8994,27 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
+
+    def with_cache_key(self, cache_key: str) -> Self:
+        """TODO.
+
+        Parameters
+        ----------
+        cache_key:
+            TODO
+        """
+        _args = [
+            Arg("cacheKey", cache_key),
+        ]
+        _ctx = self._select("withCacheKey", _args)
+        return Secret(_ctx)
+
+    def with_(self, cb: Callable[["Secret"], "Secret"]) -> "Secret":
+        """Call the provided callable with current Secret.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck

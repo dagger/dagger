@@ -970,10 +970,13 @@ defmodule Dagger.Client do
   @doc """
   Creates a new secret.
   """
-  @spec secret(t(), String.t()) :: Dagger.Secret.t()
-  def secret(%__MODULE__{} = client, uri) do
+  @spec secret(t(), String.t(), [{:cache_key, String.t() | nil}]) :: Dagger.Secret.t()
+  def secret(%__MODULE__{} = client, uri, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("secret") |> QB.put_arg("uri", uri)
+      client.query_builder
+      |> QB.select("secret")
+      |> QB.put_arg("uri", uri)
+      |> QB.maybe_put_arg("cacheKey", optional_args[:cache_key])
 
     %Dagger.Secret{
       query_builder: query_builder,

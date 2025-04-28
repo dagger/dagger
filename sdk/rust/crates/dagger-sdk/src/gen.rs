@@ -8177,6 +8177,12 @@ pub struct QueryModuleSourceOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub require_kind: Option<ModuleSourceKind>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySecretOpts<'a> {
+    /// TODO
+    #[builder(setter(into, strip_option), default)]
+    pub cache_key: Option<&'a str>,
+}
 impl Query {
     /// Constructs a cache volume for a given cache key.
     ///
@@ -9339,9 +9345,28 @@ impl Query {
     /// # Arguments
     ///
     /// * `uri` - The URI of the secret store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn secret(&self, uri: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a new secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The URI of the secret store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn secret_opts<'a>(&self, uri: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
+        let mut query = self.selection.select("secret");
+        query = query.arg("uri", uri.into());
+        if let Some(cache_key) = opts.cache_key {
+            query = query.arg("cacheKey", cache_key);
+        }
         Secret {
             proc: self.proc.clone(),
             selection: query,
@@ -9470,6 +9495,20 @@ impl Secret {
     pub async fn uri(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO.
+    ///
+    /// # Arguments
+    ///
+    /// * `cache_key` - TODO
+    pub fn with_cache_key(&self, cache_key: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("withCacheKey");
+        query = query.arg("cacheKey", cache_key.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]

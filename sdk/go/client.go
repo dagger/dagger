@@ -81,6 +81,15 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
+// TODO: doc
+// TODO: doc
+// TODO: doc
+func WithEnvironmentVariable(key, value string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ExtraEnv = append(cfg.ExtraEnv, key+"="+value)
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -180,6 +181,8 @@ type Server struct {
 	clientDBs        *clientdb.DBs
 
 	locker *locker.Locker
+
+	secretSalt []byte
 }
 
 type NewServerOpts struct {
@@ -559,6 +562,24 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
+
+	// initialize the secret salt
+	secretSaltPath := filepath.Join(srv.rootDir, "secret-salt")
+	srv.secretSalt, err = os.ReadFile(secretSaltPath)
+	if err != nil || len(srv.secretSalt) != 32 {
+		if err != nil && !os.IsNotExist(err) {
+			slog.Warn("failed to read secret salt", "error", err)
+		}
+		srv.secretSalt = make([]byte, 32)
+		_, err = cryptorand.Read(srv.secretSalt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
+		}
+		err = os.WriteFile(secretSaltPath, srv.secretSalt, 0600)
+		if err != nil {
+			slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
+		}
+	}
 
 	return srv, nil
 }

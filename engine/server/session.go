@@ -1491,6 +1491,11 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
 }
 
+// TODO: doc
+func (srv *Server) SecretSalt() []byte {
+	return srv.secretSalt
+}
+
 type httpError struct {
 	error
 	code int

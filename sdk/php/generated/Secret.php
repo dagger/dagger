@@ -48,4 +48,14 @@ class Secret extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
     }
+
+    /**
+     * TODO.
+     */
+    public function withCacheKey(string $cacheKey): Secret
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCacheKey');
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

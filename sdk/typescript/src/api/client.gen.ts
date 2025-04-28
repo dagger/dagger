@@ -1262,6 +1262,13 @@ export type ClientModuleSourceOpts = {
   requireKind?: ModuleSourceKind
 }
 
+export type ClientSecretOpts = {
+  /**
+   * TODO
+   */
+  cacheKey?: string
+}
+
 /**
  * Expected return type of an execution
  */
@@ -8096,9 +8103,10 @@ export class Client extends BaseClient {
   /**
    * Creates a new secret.
    * @param uri The URI of the secret store
+   * @param opts.cacheKey TODO
    */
-  secret = (uri: string): Secret => {
-    const ctx = this._ctx.select("secret", { uri })
+  secret = (uri: string, opts?: ClientSecretOpts): Secret => {
+    const ctx = this._ctx.select("secret", { uri, ...opts })
     return new Secret(ctx)
   }
 
@@ -8366,6 +8374,24 @@ export class Secret extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * TODO.
+   * @param cacheKey TODO
+   */
+  withCacheKey = (cacheKey: string): Secret => {
+    const ctx = this._ctx.select("withCacheKey", { cacheKey })
+    return new Secret(ctx)
+  }
+
+  /**
+   * Call the provided function with current Secret.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Secret) => Secret) => {
+    return arg(this)
   }
 }
 

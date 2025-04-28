@@ -27,6 +27,7 @@ type Config struct {
 	Conn            EngineConn
 	VersionOverride string
 	Verbosity       int
+	ExtraEnv        []string
 }
 
 type ConnectParams struct {

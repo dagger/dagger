@@ -2,12 +2,15 @@ package schema
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
+	"golang.org/x/crypto/argon2"
 )
 
 type secretSchema struct {
@@ -22,6 +25,8 @@ func (s *secretSchema) Install() {
 			Doc(`Creates a new secret.`).
 			Args(
 				dagql.Arg("uri").Doc(`The URI of the secret store`),
+				// TODO: doc, needs to be good
+				dagql.Arg("cacheKey").Doc(`TODO`),
 			),
 
 		dagql.NodeFuncWithCacheKey("setSecret", s.setSecret, dagql.CachePerCall).
@@ -39,17 +44,28 @@ func (s *secretSchema) Install() {
 	dagql.Fields[*core.Secret]{
 		dagql.NodeFunc("name", s.name).
 			Doc(`The name of this secret.`),
+
 		dagql.NodeFunc("uri", s.uri).
 			Doc(`The URI of this secret.`),
+
 		dagql.NodeFunc("plaintext", s.plaintext).
 			Sensitive().
 			DoNotCache("Do not include plaintext secret in the cache.").
 			Doc(`The value of this secret.`),
+
+		dagql.NodeFunc("withCacheKey", s.withCacheKey).
+			// TODO: doc
+			Doc(`TODO.`).
+			Args(
+				// TODO: doc
+				dagql.Arg("cacheKey").Doc("TODO"),
+			),
 	}.Install(s.srv)
 }
 
 type secretArgs struct {
-	URI string
+	URI      string
+	CacheKey dagql.Optional[dagql.String]
 }
 
 func (s *secretSchema) secret(
@@ -77,12 +93,22 @@ func (s *secretSchema) secret(
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, args.URI)
-	if err != nil {
-		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
+	if args.CacheKey.Valid {
+		i = i.WithDigest(dagql.HashFrom(string(args.CacheKey.Value)))
+	} else {
+		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
+		if err != nil {
+			return i, fmt.Errorf("failed to get secret plaintext: %w", err)
+		}
+		key := argon2.IDKey(
+			plaintext,
+			parent.Self.SecretSalt(),
+			10, 2*1024, 1, // TODO: doc, extrapolated from https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id
+			32,
+		)
+		b64Key := base64.RawStdEncoding.EncodeToString(key)
+		i = i.WithDigest(digest.Digest("argon2:" + b64Key))
 	}
-	dgst := dagql.HashFrom(args.URI, accessor)
-	i = i.WithDigest(dgst)
 
 	if err := secretStore.AddSecret(i); err != nil {
 		return i, fmt.Errorf("failed to add secret: %w", err)
@@ -181,4 +207,10 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.Instance[*cor
 	}
 
 	return dagql.NewString(string(plaintext)), nil
+}
+
+func (s *secretSchema) withCacheKey(ctx context.Context, secret dagql.Instance[*core.Secret], args struct {
+	CacheKey dagql.String
+}) (dagql.Instance[*core.Secret], error) {
+	return secret.WithDigest(dagql.HashFrom(string(args.CacheKey))), nil
 }

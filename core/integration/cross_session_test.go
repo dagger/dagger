@@ -1161,3 +1161,91 @@ func (*Test) Rand(
 
 	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
 }
+
+func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
+	tmpdir := t.TempDir()
+	initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (string, error) {
+	return secret.Plaintext(ctx)
+}
+
+func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
+	return dag.Container().From("alpine:3.20").
+		WithSecretVariable("TOPSECRET", secret).
+		WithExec([]string{"sh", "-c", "echo -n $(echo -n $TOPSECRET | base64)"})
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
+
+	err = c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	s1 := c1.Secret("env://FOO")
+	s1id, err := s1.ID(ctx)
+	require.NoError(t, err)
+	{
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn string
+			}
+		}](c1, t, `{test{fn(secret: "`+string(s1id)+`")}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, "1", res.Test.Fn)
+	}
+	{
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn2 struct {
+					Stdout string
+				}
+			}
+		}](c1, t, `{test{fn2(secret: "`+string(s1id)+`"){stdout}}}`, nil)
+		require.NoError(t, err)
+		out1, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+		require.NoError(t, err)
+		require.Equal(t, "1", string(out1))
+	}
+
+	s2 := c2.Secret("env://FOO")
+	s2id, err := s2.ID(ctx)
+	require.NoError(t, err)
+	{
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn string
+			}
+		}](c2, t, `{test{fn(secret: "`+string(s2id)+`")}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, "2", res.Test.Fn)
+	}
+	{
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn2 struct {
+					Stdout string
+				}
+			}
+		}](c2, t, `{test{fn2(secret: "`+string(s2id)+`"){stdout}}}`, nil)
+		require.NoError(t, err)
+		out2, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+		require.NoError(t, err)
+		require.Equal(t, "2", string(out2))
+	}
+}

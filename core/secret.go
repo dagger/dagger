@@ -159,12 +159,19 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
 	}
 
+	return store.GetSecretPlaintextDirect(ctx, secret.Self)
+}
+
+// TODO: doc
+// TODO: doc
+// TODO: doc
+func (store *SecretStore) GetSecretPlaintextDirect(ctx context.Context, secret *Secret) ([]byte, error) {
 	// If the secret is stored locally (setSecret), return the plaintext.
-	if secret.Self.URI == "" {
-		return secret.Self.Plaintext, nil
+	if secret.URI == "" {
+		return secret.Plaintext, nil
 	}
 
-	buildkitSessionID := secret.Self.BuildkitSessionID
+	buildkitSessionID := secret.BuildkitSessionID
 	if buildkitSessionID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
 	}
@@ -177,7 +184,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	}
 
 	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
-		ID: secret.Self.URI,
+		ID: secret.URI,
 	})
 	if err != nil {
 		return nil, err
