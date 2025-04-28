@@ -149,6 +149,17 @@ func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRef
 }
 
 func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
+	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+	if err != nil {
+		return nil, err
+	}
+	for i, tag := range tags {
+		tags[i] = strings.TrimPrefix(tag, "refs/tags/")
+	}
+	return tags, nil
+}
+
+func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
 	svcs, err := repo.Query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
@@ -161,10 +172,10 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 
 	queryArgs := []string{
 		"ls-remote",
-		"--tags", // we only want tags
 		"--refs", // we don't want to include ^{} entries for annotated tags
-		repo.URL.Remote(),
 	}
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, repo.URL.Remote())
 	if len(patterns) > 0 {
 		queryArgs = append(queryArgs, "--")
 		queryArgs = append(queryArgs, patterns...)
@@ -179,7 +190,7 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 		return nil, err
 	}
 
-	tags := []string{}
+	results := []string{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
@@ -187,18 +198,14 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 			continue
 		}
 
-		// this API is to fetch tags, not refs, so we can drop the `refs/tags/`
-		// prefix
-		tag := strings.TrimPrefix(fields[1], "refs/tags/")
-
-		tags = append(tags, tag)
+		results = append(results, fields[1])
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error scanning git output: %w", err)
 	}
 
-	return tags, nil
+	return results, nil
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
@@ -769,20 +776,53 @@ func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBack
 }
 
 func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	var tags []string
+	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+	if err != nil {
+		return nil, err
+	}
+	for i, tag := range tags {
+		tags[i] = strings.TrimPrefix(tag, "refs/tags/")
+	}
+	return tags, nil
+}
+
+func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
+	results := []string{}
 	err := repo.mount(ctx, func(src string) error {
-		git := gitutil.NewGitCLI(gitutil.WithDir(src))
-		out, err := git.Run(ctx, "tag", "-l")
+		queryArgs := []string{
+			"ls-remote",
+			"--refs", // we don't want to include ^{} entries for annotated tags
+		}
+		queryArgs = append(queryArgs, args...)
+		queryArgs = append(queryArgs, "file://"+src)
+		if len(patterns) > 0 {
+			queryArgs = append(queryArgs, "--")
+			queryArgs = append(queryArgs, patterns...)
+		}
+		git := gitutil.NewGitCLI()
+		out, err := git.Run(ctx, queryArgs...)
 		if err != nil {
 			return err
 		}
-		tags = strings.Split(string(out), "\n")
+
+		scanner := bufio.NewScanner(bytes.NewReader(out))
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) < 2 {
+				continue
+			}
+
+			results = append(results, fields[1])
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("error scanning git output: %w", err)
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return tags, nil
+	return results, nil
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error) error {
