@@ -29,7 +29,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
     }
   };
 
-  const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
+  const handleClick = (e: React.MouseEvent<HTMLVideoElement>) => {
     if (e.target === ref.current) {
       window.open(src, '_blank');
     }
@@ -40,7 +40,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
       <video
         ref={ref}
         className={styles.video}
-        onClick={handleVideoClick}
+        onClick={handleClick}
         onEnded={() => setIsPlaying(false)}
         style={{ cursor: 'pointer' }}
       >
@@ -51,7 +51,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
         <button
           onClick={handlePlayPause}
           className={styles.controlButton}
-          data-ph-capture-attribute-video-src={src}
+          data-ph-capture-attribute-video-file={src}
           data-ph-capture-attribute-video-title={alt}
         >
           {isPlaying ? "⏸" : "▶"}
@@ -59,8 +59,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, alt, defaultFrame = 5 })
         <button
           onClick={handleStop}
           className={styles.controlButton}
-          data-ph-capture-attribute-video-src={src}
-          data-ph-capture-attribute-video-title={alt}
         >
           ⏹
         </button>
