@@ -12,11 +12,11 @@
  * Depending on the target location of the SDK library, either paths will be set to:
  * - `./sdk` for the bundle SDK.
  * - `./sdk/src` for the local SDK.
- * - nothing is case of the remote SDK.
+ * - nothing in case of the remote SDK.
  *
  * If any value is already set but wrong, the script will update it to its expected value.
  *
- * If standalone client is set to true, the script expect output-dir to be set to, otherwise it's optional.
+ * If standalone client is set to true, the script expects output-dir to be set, otherwise it's optional.
  *
  * Usage:
  *   ts_config_updator --sdk-lib-origin=bundle|local|remote --standalone-client=true|false --output-dir=string

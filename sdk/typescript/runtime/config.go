@@ -89,7 +89,7 @@ type moduleConfig struct {
 
 // analyzeModuleConfig analyzes the module config and populates the moduleConfig field.
 //
-// It detect the module name, source subpath, runtime, package manager and their versions.
+// It detects the module name, source subpath, runtime, package manager and their versions.
 // It also populates the moduleConfig.entries map with the list of files present in the module source.
 //
 // It's a utility function that should be called before calling any other exposed function in this module.
