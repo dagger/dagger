@@ -67,13 +67,11 @@ Secrets can also be passed from host files via the `file` provider (shown below)
 
 ### Hashicorp Vault and 1Password
 
-Secrets can also be read from external secret managers, such as Vault (`vault`).
+Secrets can also be read from external secret managers, such as Vault (`vault`):
 
 ```shell
 dagger call github-api --token=vault://credentials.github
 ```
-
-### 1Password
 
 Here is the same example, but using 1Password as the secret provider. The secret is passed from 1Password via the `op` provider. This requires the Dagger CLI to be authenticated with 1Password, which can be done by running `op signin` in the terminal.
 
