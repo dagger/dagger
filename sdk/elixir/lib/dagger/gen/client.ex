@@ -173,6 +173,24 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Creates a file with the specified contents.
+  """
+  @spec file(t(), String.t(), String.t(), [{:permissions, integer() | nil}]) :: Dagger.File.t()
+  def file(%__MODULE__{} = client, name, contents, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("file")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("contents", contents)
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Creates a function.
   """
   @spec function(t(), String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()

@@ -38,6 +38,7 @@
               <li><a href="#query-engine">engine</a></li>
               <li><a href="#query-env">env</a></li>
               <li><a href="#query-error">error</a></li>
+              <li><a href="#query-file">file</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
               <li><a href="#query-git">git</a></li>
@@ -672,6 +673,77 @@
               <div class="doc-copy">
                 <div class="operation-example doc-copy-section">
                   <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-file" class="operation operation-query" data-traverse-target="query-file">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>file</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Creates a file with the specified contents.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-File"><code>File!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> Name of the new file. Example: "foo.txt" </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> Contents of the new file. Example: "Hello world!" </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span>
+                        </td>
+                        <td> Permissions of the new file. Example: 0600. Default = <code>420</code> </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
+  <span class="hljs-symbol">file<span class="hljs-tag">(id: &quot;eyJsbGIiOnsiZGVmIjpbIklqWVNOQWovLy8vLy8vLy8vLzhCRVAvLy8vLy8vLy8vL3dFcUhBb0VMMlp2YnhDa0F4b0dTR1ZzYkc4aEtQLy8vLy8vLy8vLy93RlNBRm9BIiwiQ2trS1IzTm9ZVEkxTmpwak1EQTVPV1U1TURrNFpEVmlObUkyWVdWaFpXWXpObVpsTnpsaU9UUTVOVEF4TnpoalptRmpPRGxsWVdKbE5XRmtZbUprTkdZeFptWXdNV0l3TkdWbSJdLCJtZXRhZGF0YSI6eyJzaGEyNTY6NWNjOGQ1M2VkZTRjYzUyODQ0OTIyYWFhZDlhYjIzMzc3MzY3NWMwMDJjOTM5NGZhYTk0OTg1OTZmNGFjMWRiNiI6eyJjYXBzIjp7ImNvbnN0cmFpbnRzIjp0cnVlLCJwbGF0Zm9ybSI6dHJ1ZX19LCJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6eyJjYXBzIjp7ImZpbGUuYmFzZSI6dHJ1ZX19fSwiU291cmNlIjp7ImxvY2F0aW9ucyI6eyJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6e319fX0sImZpbGUiOiJmb28iLCJwbGF0Zm9ybSI6eyJhcmNoaXRlY3R1cmUiOiIiLCJvcyI6IiJ9fQ==&quot;)</span> <span class="hljs-tag">{
+    <span class="hljs-symbol">contents</span>
+    <span class="hljs-symbol">export<span class="hljs-tag">(path: &quot;greeting&quot;)</span></span>
+  }</span></span>
+}</span></span>
+</code></pre>
                 </div>
               </div>
             </div>

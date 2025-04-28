@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -16,6 +17,16 @@ type fileSchema struct {
 var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.Func("file", s.file).
+			Doc(`Creates a file with the specified contents.`).
+			Args(
+				dagql.Arg("name").Doc(`Name of the new file. Example: "foo.txt"`),
+				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
+				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
+			),
+	}.Install(s.srv)
+
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
@@ -59,6 +70,14 @@ func (s *fileSchema) Install() {
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
 	}.Install(s.srv)
+}
+
+func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
+	Name        string
+	Contents    string
+	Permissions int `default:"0644"`
+}) (*core.File, error) {
+	return core.NewFileWithContents(ctx, parent, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {

@@ -15,10 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -29,85 +27,73 @@ func TestFile(t *testing.T) {
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID       core.FileID
-					Contents string
-				}
-			}
-		}
-	}](t,
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-						contents
-					}
-				}
-			}
-		}`, nil)
+	c := connect(ctx, t)
+
+	file := c.Directory().
+		WithNewFile("some-file", "some-content").
+		File("some-file")
+
+	id, err := file.ID(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithNewFile.File.Contents)
+	require.NotEmpty(t, id)
+
+	contents, err := file.Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
+func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	file := c.File("some-file", "some-content")
+
+	id, err := file.ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, id)
+
+	contents, err := file.Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
+func (FileSuite) TestNewFileInvalid(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	file := c.File("dir/some-file", "some-content")
+
+	_, err := file.ID(ctx)
+	require.ErrorContains(t, err, "not contain a directory")
 }
 
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
-		Directory struct {
-			WithNewFile struct {
-				Directory struct {
-					File struct {
-						ID       core.FileID
-						Contents string
-					}
-				}
-			}
-		}
-	}](t,
-		`{
-			directory {
-				withNewFile(path: "some-dir/some-file", contents: "some-content") {
-					directory(path: "some-dir") {
-						file(path: "some-file") {
-							id
-							contents
-						}
-					}
-				}
-			}
-		}`, nil)
+	c := connect(ctx, t)
+
+	file := c.Directory().
+		WithNewFile("some-dir/some-file", "some-content").
+		Directory("some-dir").
+		File("some-file")
+
+	id, err := file.ID(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.Directory.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithNewFile.Directory.File.Contents)
+	require.NotEmpty(t, id)
+
+	contents, err := file.Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
 }
 
 func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
-	res, err := testutil.Query[struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID   core.FileID
-					Size int
-				}
-			}
-		}
-	}](t,
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-						size
-					}
-				}
-			}
-		}`, nil)
+	c := connect(ctx, t)
+
+	file := c.Directory().WithNewFile("some-file", "some-content").File("some-file")
+
+	id, err := file.ID(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
-	require.Equal(t, len("some-content"), res.Directory.WithNewFile.File.Size)
+	require.NotEmpty(t, id)
+
+	size, err := file.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, len("some-content"), size)
 }
 
 func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
@@ -360,15 +346,12 @@ func (FileSuite) TestContents(ctx context.Context, t *testctx.T) {
 	for i, testFile := range testFiles {
 		filename := strconv.Itoa(i)
 		dest := filepath.Join(tempDir, filename)
-		var buf bytes.Buffer
-		for i := 0; i < testFile.size; i++ {
-			buf.WriteByte('a')
-		}
-		err := os.WriteFile(dest, buf.Bytes(), 0o600)
+		buf := bytes.Repeat([]byte{'a'}, testFile.size)
+		err := os.WriteFile(dest, buf, 0o600)
 		require.NoError(t, err)
 
 		// Compute and store hash for generated test data:
-		testFiles[i].hash = computeMD5FromReader(&buf)
+		testFiles[i].hash = computeMD5FromReader(bytes.NewReader(buf))
 	}
 
 	hostDir := c.Host().Directory(tempDir)

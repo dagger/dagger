@@ -1175,6 +1175,13 @@ export type ClientEnvOpts = {
   writable?: boolean
 }
 
+export type ClientFileOpts = {
+  /**
+   * Permissions of the new file. Example: 0600
+   */
+  permissions?: number
+}
+
 export type ClientGitOpts = {
   /**
    * DEPRECATED: Set to true to keep .git directory.
@@ -7598,6 +7605,17 @@ export class Client extends BaseClient {
   error = (message: string): Error => {
     const ctx = this._ctx.select("error", { message })
     return new Error(ctx)
+  }
+
+  /**
+   * Creates a file with the specified contents.
+   * @param name Name of the new file. Example: "foo.txt"
+   * @param contents Contents of the new file. Example: "Hello world!"
+   * @param opts.permissions Permissions of the new file. Example: 0600
+   */
+  file = (name: string, contents: string, opts?: ClientFileOpts): File => {
+    const ctx = this._ctx.select("file", { name, contents, ...opts })
+    return new File(ctx)
   }
 
   /**
