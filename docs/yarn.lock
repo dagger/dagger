@@ -4029,12 +4029,7 @@ core-js-pure@^3.30.2:
   resolved "https://registry.yarnpkg.com/core-js-pure/-/core-js-pure-3.38.1.tgz#e8534062a54b7221344884ba9b52474be495ada3"
   integrity sha512-BY8Etc1FZqdw1glX0XNOq2FDwfrg/VGqoZOZCdaL+UmdaqDwQwYXkMJT4t6In+zfEfOJDcM9T0KdbBeJg8KKCQ==
 
-core-js@^3.31.1:
-  version "3.38.1"
-  resolved "https://registry.yarnpkg.com/core-js/-/core-js-3.38.1.tgz#aa375b79a286a670388a1a363363d53677c0383e"
-  integrity sha512-OP35aUorbU3Zvlx7pjsFdu1rGNnD4pgw/CWoYzRY3t2EzoVT7shKHY1dlAy3f41cGIO7ZDPQimhGFTlEYkG/Hw==
-
-core-js@^3.38.1:
+core-js@^3.31.1, core-js@^3.38.1:
   version "3.41.0"
   resolved "https://registry.yarnpkg.com/core-js/-/core-js-3.41.0.tgz#57714dafb8c751a6095d028a7428f1fb5834a776"
   integrity sha512-SJ4/EHwS36QMJd6h/Rg+GyR4A5xE0FSI3eZ+iBVpfqf1x0eTSg1smWLHrA+2jQThZSh97fmSgFSU8B61nxosxA==
@@ -4758,10 +4753,12 @@ docusaurus-plugin-sass@^0.2.6:
   dependencies:
     sass-loader "^16.0.2"
 
-docusaurus-plugin-typedoc@^1.3.0:
-  version "1.3.0"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.3.0.tgz#a5d05d0e29766afe94e697128a95a0f316472244"
-  integrity sha512-AFVMjtTnbuOazWlLiIbkJuOAoKqVVVJCmEcgpnDBura7rr29cFsfLiaPVwklIOIC89YfTjmtKcQ98CSyqa+wVg==
+docusaurus-plugin-typedoc@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.4.0.tgz#9ca3bcdb21fe2302c5abf0e3aa53f37232f8bb6c"
+  integrity sha512-lRehUMevMHc40gy/bVuTzu/XwB46Tk342AG0UbpjIKkj3lvsG9rQZK5nnpWffvNalk8QHs3BlAb+xmG4FAUGcg==
+  dependencies:
+    typedoc-docusaurus-theme "^1.4.0"
 
 dom-converter@^0.2.0:
   version "0.2.0"
@@ -8412,10 +8409,10 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.236.6:
-  version "1.236.6"
-  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.236.6.tgz#f4d73d25773f4e4bafd7632717c97b27bd9f1b7c"
-  integrity sha512-IX4fkn3HCK+ObdHr/AuWd+Ks7bgMpRpOQB93b5rDJAWkG4if4xFVUn5pgEjyCNeOO2GM1ECnp08q9tYNYEfwbA==
+posthog-js@^1.236.7:
+  version "1.236.7"
+  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.236.7.tgz#6a071905d4466573b80fd52bad1d3478594805b7"
+  integrity sha512-HatTinqAt/6aAraCgbnP+2MTeVTChdf6TDsQkef4/yUnXeA4tsHmXnGGJ3vnzQk7N//R6lIHN189BZDO9kuKAg==
   dependencies:
     core-js "^3.38.1"
     fflate "^0.4.8"
@@ -9057,10 +9054,10 @@ sass-loader@^16.0.2:
   dependencies:
     neo-async "^2.6.2"
 
-sass@^1.86.3:
-  version "1.86.3"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.86.3.tgz#0a0d9ea97cb6665e73f409639f8533ce057464c9"
-  integrity sha512-iGtg8kus4GrsGLRDLRBRHY9dNVA78ZaS7xr01cWnS7PEMQyFtTqBiyCrfpTYTZXRWM94akzckYjh8oADfFNTzw==
+sass@^1.87.0:
+  version "1.87.0"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.87.0.tgz#8cceb36fa63fb48a8d5d7f2f4c13b49c524b723e"
+  integrity sha512-d0NoFH4v6SjEK7BoX810Jsrhj7IQSYHAHLi/iSpgqKc7LaIDshFRlSg5LOymf9FqQhxEHs2W5ZQXlvy0KD45Uw==
   dependencies:
     chokidar "^4.0.0"
     immutable "^5.0.2"
@@ -9724,6 +9721,11 @@ typedarray-to-buffer@^3.1.5:
   dependencies:
     is-typedarray "^1.0.0"
 
+typedoc-docusaurus-theme@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/typedoc-docusaurus-theme/-/typedoc-docusaurus-theme-1.4.0.tgz#87c2e3bb1d82964067ccfee251b3006e25e26ba8"
+  integrity sha512-L8etzGUfGv1nxcdzw/s/0MUgfiIetTMttdqCY2ZpTnK26pDB8GsBi+9hHwl8cgDrMz+FF+mIyPKNDKhqDeGvTA==
+
 typedoc-plugin-frontmatter@^1.3.0:
   version "1.3.0"
   resolved "https://registry.yarnpkg.com/typedoc-plugin-frontmatter/-/typedoc-plugin-frontmatter-1.3.0.tgz#cdea6925620aa3ae1798cd46b863e5ddb115ddba"
@@ -9731,10 +9733,10 @@ typedoc-plugin-frontmatter@^1.3.0:
   dependencies:
     yaml "^2.7.0"
 
-typedoc-plugin-markdown@^4.6.2:
-  version "4.6.2"
-  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.2.tgz#e3c0681c2d3f24beceb8fb73470216b843bb50ec"
-  integrity sha512-JVCIoK7FDN3t3PSLkwDyrBFyjtDznqDCJotP9evxhLyb6bEZTqhAGB0tPy1RmgHuY2WoAONMrsWs8LfLsD+A6A==
+typedoc-plugin-markdown@^4.6.3:
+  version "4.6.3"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.3.tgz#eb3cfda8ef7f66b6fc6be1fc7f0f037880355287"
+  integrity sha512-86oODyM2zajXwLs4Wok2mwVEfCwCnp756QyhLGX2IfsdRYr1DXLCgJgnLndaMUjJD7FBhnLk2okbNE9PdLxYRw==
 
 typedoc@^0.28.3:
   version "0.28.3"
