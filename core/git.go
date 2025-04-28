@@ -47,6 +47,7 @@ type GitRepositoryBackend interface {
 
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
 	Tags(ctx context.Context, patterns []string) (tags []string, err error)
+	Branches(ctx context.Context, patterns []string) (branches []string, err error)
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -74,6 +75,10 @@ func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error
 
 func (repo *GitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
 	return repo.Backend.Tags(ctx, patterns)
+}
+
+func (repo *GitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
+	return repo.Backend.Branches(ctx, patterns)
 }
 
 type GitRef struct {
@@ -157,6 +162,17 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 		tags[i] = strings.TrimPrefix(tag, "refs/tags/")
 	}
 	return tags, nil
+}
+
+func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+	if err != nil {
+		return nil, err
+	}
+	for i, branch := range branches {
+		branches[i] = strings.TrimPrefix(branch, "refs/heads/")
+	}
+	return branches, nil
 }
 
 func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
@@ -784,6 +800,17 @@ func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]
 		tags[i] = strings.TrimPrefix(tag, "refs/tags/")
 	}
 	return tags, nil
+}
+
+func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+	if err != nil {
+		return nil, err
+	}
+	for i, branch := range branches {
+		branches[i] = strings.TrimPrefix(branch, "refs/heads/")
+	}
+	return branches, nil
 }
 
 func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {

@@ -955,6 +955,13 @@ export type GitRefTreeOpts = {
  */
 export type GitRefID = string & { __GitRefID: never }
 
+export type GitRepositoryBranchesOpts = {
+  /**
+   * Glob patterns (e.g., "refs/tags/v*").
+   */
+  patterns?: string[]
+}
+
 export type GitRepositoryTagsOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -5568,6 +5575,18 @@ export class GitRepository extends BaseClient {
   branch = (name: string): GitRef => {
     const ctx = this._ctx.select("branch", { name })
     return new GitRef(ctx)
+  }
+
+  /**
+   * branches that match any of the given glob patterns.
+   * @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
+   */
+  branches = async (opts?: GitRepositoryBranchesOpts): Promise<string[]> => {
+    const ctx = this._ctx.select("branches", { ...opts })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 
   /**

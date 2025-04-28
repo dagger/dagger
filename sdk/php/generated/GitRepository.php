@@ -24,6 +24,18 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * branches that match any of the given glob patterns.
+     */
+    public function branches(?array $patterns = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('branches');
+        if (null !== $patterns) {
+        $leafQueryBuilder->setArgument('patterns', $patterns);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'branches');
+    }
+
+    /**
      * Returns details of a commit.
      */
     public function commit(string $id): GitRef

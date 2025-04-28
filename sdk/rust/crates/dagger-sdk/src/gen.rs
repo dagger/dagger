@@ -6695,6 +6695,12 @@ pub struct GitRepository {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryBranchesOpts<'a> {
+    /// Glob patterns (e.g., "refs/tags/v*").
+    #[builder(setter(into, strip_option), default)]
+    pub patterns: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
@@ -6714,6 +6720,30 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// branches that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn branches(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("branches");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// branches that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn branches_opts<'a>(
+        &self,
+        opts: GitRepositoryBranchesOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("branches");
+        if let Some(patterns) = opts.patterns {
+            query = query.arg("patterns", patterns);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Returns details of a commit.
     ///

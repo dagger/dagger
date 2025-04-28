@@ -5771,6 +5771,38 @@ class GitRepository(Type):
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
 
+    async def branches(
+        self,
+        *,
+        patterns: list[str] | None = None,
+    ) -> list[str]:
+        """branches that match any of the given glob patterns.
+
+        Parameters
+        ----------
+        patterns:
+            Glob patterns (e.g., "refs/tags/v*").
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("patterns", patterns, None),
+        ]
+        _ctx = self._select("branches", _args)
+        return await _ctx.execute(list[str])
+
     def commit(self, id: str) -> GitRef:
         """Returns details of a commit.
 

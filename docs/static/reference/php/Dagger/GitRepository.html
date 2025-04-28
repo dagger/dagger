@@ -153,6 +153,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_branches">branches</a>(array|null $patterns = null)
+        
+                                            <p><p>branches that match any of the given glob patterns.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -369,8 +379,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_commit">
+                    <h3 id="method_branches">
         <div class="location">at line 29</div>
+        <code>                    array
+    <strong>branches</strong>(array|null $patterns = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>branches that match any of the given glob patterns.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array|null</td>
+                <td>$patterns</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_commit">
+        <div class="location">at line 41</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>commit</strong>(string $id)
         </code>
@@ -412,7 +464,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_head">
-        <div class="location">at line 39</div>
+        <div class="location">at line 51</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>head</strong>()
         </code>
@@ -444,7 +496,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 48</div>
+        <div class="location">at line 60</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -476,7 +528,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 57</div>
+        <div class="location">at line 69</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>ref</strong>(string $name)
         </code>
@@ -518,7 +570,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tag">
-        <div class="location">at line 67</div>
+        <div class="location">at line 79</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>tag</strong>(string $name)
         </code>
@@ -560,7 +612,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tags">
-        <div class="location">at line 77</div>
+        <div class="location">at line 89</div>
         <code>                    array
     <strong>tags</strong>(array|null $patterns = null)
         </code>
@@ -602,7 +654,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withAuthHeader">
-        <div class="location">at line 89</div>
+        <div class="location">at line 101</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>withAuthHeader</strong>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $header)
         </code>
@@ -644,7 +696,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withAuthToken">
-        <div class="location">at line 99</div>
+        <div class="location">at line 111</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>withAuthToken</strong>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $token)
         </code>
