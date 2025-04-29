@@ -508,7 +508,9 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 
 		// skip fetch if commit already exists
 		doFetch := true
-		if res, err := git.Run(ctx, "rev-parse", ref.FullRef); err == nil && string(res) == ref.Commit {
+		if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.FullRef+"^{commit}"); err != nil {
+			return fmt.Errorf("failed to rev-parse: %w", err)
+		} else if strings.TrimSpace(string(res)) == ref.Commit {
 			doFetch = false
 		}
 
