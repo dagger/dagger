@@ -3,6 +3,7 @@ slug: /api/constructor
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import PartialComplexConstructorOutput from '../partials/_complex_constructor_output.mdx';
 
 # Constructors
 
@@ -34,9 +35,10 @@ Here is an example module with a custom constructor:
 ```python file=./snippets/constructors/python/simple/main.py
 ```
 
-:::info
-In the Python SDK, the [`@dagger.object_type`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type) decorator wraps [`@dataclasses.dataclass`](https://docs.python.org/3/library/dataclasses.html), which means that an `__init__()` method is automatically generated, with parameters that match the declared class attributes.
+:::important
+Dagger `@object_type` classes are Python data classes that become exposed to the Dagger API. This means that you can adjust the generation of the constructor using standard data class features, such as [fields](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) and [post-init processing](https://docs.python.org/3/library/dataclasses.html#post-init-processing). Refer to the [official `dataclasses` documentation](https://docs.python.org/3/library/dataclasses.html) to learn more.
 :::
+
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
@@ -111,17 +113,19 @@ Here is an example of a Dagger module with a default constructor argument of typ
 ```go file=./snippets/constructors/go/default-object/main.go
 ```
 
+<PartialComplexConstructorOutput />
+
 </TabItem>
 <TabItem value="python" label="Python">
 
 ```python file=./snippets/constructors/python/default-object/main.py
 ```
 
-:::important
-Dagger `@object_type` classes are Python data classes that become exposed to the Dagger API. This means that you can adjust the generation of the constructor using standard data class features, such as [fields](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) and [post-init processing](https://docs.python.org/3/library/dataclasses.html#post-init-processing). Refer to the [official `dataclasses` documentation](https://docs.python.org/3/library/dataclasses.html) to learn more.
-:::
+<PartialComplexConstructorOutput />
 
-Here's an example:
+#### Multiple complex types
+
+Here is another, more complex example:
 
 ```python file=./snippets/constructors/python/complex/main.py
 ```
@@ -135,11 +139,15 @@ A few important notes:
   - `dagger.field()` is used to expose the attribute as a Dagger Function in the API (a simple getter), but it also becomes a part of the object's state.
   - Not all arguments from `dataclasses.field()` can be set with `dagger.field()` which sets opinionated defaults, but you can specify both simple values and factory functions via the same `default` argument while with `dataclasses.field()` you need to use separate `default` and `default_factory` arguments.
 
+#### Factory function
+
 For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values), use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
 [`dataclasses.field(default_factory=...)`](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) or [`dagger.field(default=...)`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field):
 
 ```python file=./snippets/constructors/python/factory/main.py
 ```
+
+#### Asynchronous usage
 
 If a constructor argument needs an asynchronous call to set the default value, it's
 possible to replace the default constructor function from `__init__()` to
@@ -166,11 +174,15 @@ This default value can also be assigned directly in the field:
 When assigning default values to complex types in TypeScript, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
 :::
 
+<PartialComplexConstructorOutput />
+
 </TabItem>
 <TabItem value="php" label="PHP">
 
 ```php file=./snippets/constructors/php/default-object/src/MyModule.php
 ```
+
+<PartialComplexConstructorOutput />
 
 </TabItem>
 <TabItem value="java" label="Java">
@@ -178,31 +190,7 @@ When assigning default values to complex types in TypeScript, it is necessary to
 ```java file=./snippets/constructors/java/default-object/MyModule.java
 ```
 
+<PartialComplexConstructorOutput />
+
 </TabItem>
 </Tabs>
-
-Here is an example call for this Dagger Function:
-
-<Tabs groupId="shell">
-<TabItem value="System shell">
-```shell
-dagger -c version
-```
-</TabItem>
-<TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-version
-```
-</TabItem>
-<TabItem value="Dagger CLI">
-```shell
-dagger call version
-```
-</TabItem>
-</Tabs>
-
-The result will be:
-
-```shell
-VERSION_ID=3.14.0
-```
