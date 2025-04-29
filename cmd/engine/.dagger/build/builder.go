@@ -14,8 +14,8 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 
-	"github.com/dagger/dagger/.dagger/consts"
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/cmd/engine/.dagger/consts"
+	"github.com/dagger/dagger/cmd/engine/.dagger/internal/dagger"
 )
 
 var dag = dagger.Connect()
@@ -303,6 +303,15 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 }
 
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
+	return build.Go(version, race).
+		Binary(pkg, dagger.GoBinaryOpts{
+			Platform:  build.platform,
+			NoSymbols: true,
+			NoDwarf:   true,
+		})
+}
+
+func (build *Builder) Go(version bool, race bool) *dagger.Go {
 	var values []string
 	if version && build.version != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
@@ -313,10 +322,6 @@ func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 	return dag.Go(build.source, dagger.GoOpts{
 		Values: values,
 		Race:   race,
-	}).Binary(pkg, dagger.GoBinaryOpts{
-		Platform:  build.platform,
-		NoSymbols: true,
-		NoDwarf:   true,
 	})
 }
 

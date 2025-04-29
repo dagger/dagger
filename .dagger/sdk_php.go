@@ -65,28 +65,20 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 
 // Test the PHP SDK
 func (t PHPSDK) Test(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	src := t.Dagger.Source.Directory(phpSDKPath)
 	base := dag.PhpSDKDev().Base().
 		With(installer).
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
 
 	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: src})
-	_, err = dev.Test().Sync(ctx)
+	_, err := dev.Test().Sync(ctx)
 	return err
 }
 
 // Regenerate the PHP SDK API
 func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	generated := dag.PhpSDKDev().Base().
 		With(installer).
 		WithoutDirectory(phpSDKGeneratedDir).

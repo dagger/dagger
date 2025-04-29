@@ -16,14 +16,8 @@ func (t DotnetSDK) Lint(ctx context.Context) error {
 }
 
 func (t DotnetSDK) Test(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
-	if err != nil {
-		return err
-	}
+	installer := t.Dagger.installer("sdk")
+	introspection := t.Dagger.introspection(installer)
 	src := t.Dagger.Source.Directory("sdk/dotnet")
 	return dag.DotnetSDKDev(dagger.DotnetSDKDevOpts{Source: src}).Test(ctx, introspection)
 }
@@ -34,14 +28,8 @@ func (t DotnetSDK) TestPublish(ctx context.Context, tag string) error {
 }
 
 func (t DotnetSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
-	if err != nil {
-		return nil, err
-	}
+	installer := t.Dagger.installer("sdk")
+	introspection := t.Dagger.introspection(installer)
 	src := t.Dagger.Source.Directory("sdk/dotnet")
 
 	return dag.

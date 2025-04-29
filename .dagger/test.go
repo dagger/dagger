@@ -544,14 +544,11 @@ func (t *Test) test(
 }
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
-	engine := t.Dagger.Engine().
+	engine := dag.DaggerEngine().
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
-	devEngine, err := engine.Container(ctx, "", nil, false)
-	if err != nil {
-		return nil, "", err
-	}
+	devEngine := engine.Container()
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
 	// during our test suite
@@ -593,7 +590,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 		})
 
 	// manually starting service to ensure it's not reaped between benchmark prewarm & run
-	devEngineSvc, err = devEngineSvc.Start(ctx)
+	devEngineSvc, err := devEngineSvc.Start(ctx)
 	if err != nil {
 		return nil, "", err
 	}

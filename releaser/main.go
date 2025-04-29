@@ -177,7 +177,7 @@ func (r *Releaser) Publish(
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := r.Dagger.Engine().Publish(ctx, tags, dagger.DaggerDevDaggerEnginePublishOpts{
+	err := dag.DaggerEngine().Publish(ctx, tags, dagger.DaggerEnginePublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
