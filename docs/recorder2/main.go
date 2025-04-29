@@ -36,7 +36,7 @@ func New(
 				WithExec([]string{"sh", "-c", "install -m 0755 -d /etc/apt/keyrings"}).
 				WithExec([]string{"sh", "-c", `curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc`}).
 				WithExec([]string{"sh", "-c", "chmod a+r /etc/apt/keyrings/docker.asc"}).
-				WithExec([]string{"sh", "-c", `echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list`}).
+				WithExec([]string{"sh", "-c", `echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null`}).
 				WithExec([]string{"apt-get", "update"}).
 				WithExec([]string{"apt-get", "-y", "install", "docker-ce-cli"}).
 				WithoutEnvVariable("DEBIAN_FRONTEND").
@@ -52,6 +52,10 @@ func New(
 				WithExec([]string{"dagger", "--command", ".help"}),
 		}),
 	}
+}
+
+func (r *Recorder) Container() *dagger.Container {
+	return r.Vhs.Container()
 }
 
 func (r *Recorder) Render(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
@@ -74,7 +78,7 @@ func includeWithDefaults(tapes ...string) dagger.DirectoryFilterOpts {
 }
 
 func includeWithShell(tapes ...string) dagger.DirectoryFilterOpts {
-	return includeWithDefaults(append([]string{"shell.tape"}, tapes...)...)
+	return includeWithDefaults(append([]string{"shell.tape", "shell-nomod.tape"}, tapes...)...)
 }
 
 func (r *Recorder) filteredVhs(filter dagger.DirectoryFilterOpts) *dagger.VhsWithSource {

@@ -1,5 +1,6 @@
 Hide
-Type "dagger"
+
+Type "dagger --no-mod"
 Sleep 1s
 Enter
 
