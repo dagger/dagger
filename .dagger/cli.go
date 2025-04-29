@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/.dagger/util"
 )
 
+// TODO: move all this to cmd/dagger
 type CLI struct {
 	Dagger *DaggerDev // +private
 }

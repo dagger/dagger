@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/dagger/dagger/.dagger/consts"
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/cmd/engine/.dagger/consts"
+	"github.com/dagger/dagger/cmd/engine/.dagger/internal/dagger"
 )
 
 const (

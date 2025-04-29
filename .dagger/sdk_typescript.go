@@ -11,7 +11,6 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/.dagger/build"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
@@ -114,10 +113,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 
 // Test the Typescript SDK
 func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
+	installer := t.Dagger.installer("sdk")
 
 	eg := errgroup.Group{}
 
@@ -134,7 +130,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 	}
 
 	eg.Go(func() error {
-		_, err = t.bunJsBase().
+		_, err := t.bunJsBase().
 			With(installer).
 			WithExec([]string{"bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"}).
 			Sync(ctx)
@@ -146,18 +142,10 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Typescript SDK API
 func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	build, err := build.NewBuilder(ctx, t.Dagger.Source)
-	if err != nil {
-		return nil, err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	generated := t.nodeJsBase().
 		With(installer).
-		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
+		WithFile("/usr/local/bin/codegen", t.Dagger.codegenBinary()).
 		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
 		WithExec([]string{"yarn", "fmt", typescriptGeneratedAPIPath}).
 		File(typescriptGeneratedAPIPath)

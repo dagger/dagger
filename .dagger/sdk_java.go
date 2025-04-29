@@ -30,12 +30,8 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 
 // Test the Java SDK
 func (t JavaSDK) Test(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-
-	_, err = t.Maven(ctx).
+	installer := t.Dagger.installer("sdk")
+	_, err := t.Maven(ctx).
 		With(installer).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
