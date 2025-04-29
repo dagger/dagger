@@ -1826,7 +1826,7 @@ jobs:
         timeout-minutes: 30
     testdev-container:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-5-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
         name: testdev-container
         steps:
             - name: Checkout
@@ -2090,7 +2090,7 @@ jobs:
         timeout-minutes: 30
     testdev-everything-else:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-5-32c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
         name: testdev-everything-else
         steps:
             - name: Checkout
@@ -2882,7 +2882,7 @@ jobs:
         timeout-minutes: 30
     testdev-modules:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-5-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
         name: testdev-modules
         steps:
             - name: Checkout
