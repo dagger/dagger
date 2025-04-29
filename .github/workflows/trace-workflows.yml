@@ -6,6 +6,7 @@ on:
       - "Alternative CI Runners 1"
       - "Alternative CI Runners 2"
       - "Alternative CI Runners 3"
+      - "Alternative CI Runners 4"
       - "Benchmark"
       - "daggerverse-preview"
       - "docs"
