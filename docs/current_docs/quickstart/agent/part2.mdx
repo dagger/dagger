@@ -85,6 +85,10 @@ To give the agent a specialized set of tools to edit files, create a Dagger subm
         ```typescript file=./snippets/part2/workspace/src/index.ts
         ```
     </TabItem>
+    <TabItem value="java" label="Java">
+    </TabItem>
+    <TabItem value="php" label="PHP">
+    </TabItem>
 </Tabs>
 
 Now install the new submodule as a dependency to the main module:
@@ -100,11 +104,14 @@ This agent will be used to make changes to the application and use the existing 
 
 <Tabs groupId="language" queryString="sdk">
     <TabItem value="go" label="Go">
-        Start by opening `.dagger/main.go` and add the following new function:
-
-        ```go
-        func (m *HelloDagger) Develop(assignment string) *dagger.Container {}
-        ```
+    </TabItem>
+    <TabItem value="python" label="Python">
+    </TabItem>
+    <TabItem value="typescript" label="Typescript">
+    </TabItem>
+    <TabItem value="java" label="Java">
+    </TabItem>
+    <TabItem value="php" label="PHP">
     </TabItem>
 </Tabs>
 
