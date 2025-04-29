@@ -168,7 +168,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scripts", "check --targets=scripts")).
-		WithJob(runner.Job("cli-test-publish", "cli test-publish", dagger.GhaJobOpts{
+		WithJob(runner.Job("cli-test-publish", "test-publish", dagger.GhaJobOpts{
 			Module: "cmd/dagger",
 			Runner: []string{GoldRunner(false)},
 		})).
