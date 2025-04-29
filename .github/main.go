@@ -183,13 +183,13 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
 				Runner: []string{GoldRunner(true)},
@@ -201,7 +201,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{GoldRunner(true)},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltPlatinumRunner()},
 			}},
 		}))
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
