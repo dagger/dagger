@@ -15,7 +15,15 @@ Dagger Cloud requires a GitHub or Google account for identity verification. If y
 Dagger Cloud requires Dagger v0.11 or higher.
 :::
 
-## Traces
+## Organizations
+
+A Dagger Cloud "organization" refers to a group of member accounts linked to a single team.
+
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+
+:::important
+You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role.
+:::
 
 ### Create a Dagger Cloud organization
 
@@ -35,7 +43,7 @@ Dagger Cloud requires Dagger v0.11 or higher.
 
     1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
 
-1. Click `Go to dashboard`. The next step walks you through how to send telemetry to Dagger Cloud.
+## Traces
 
 ### Connect to Dagger Cloud
 
@@ -204,13 +212,9 @@ To modify this default setting, navigate to the organization settings page using
 
 ![public traces](/img/current_docs/api/public-traces.png)
 
-## Organizations
+## Modules
 
-A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
 
-:::important
-You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
-:::
 
 ## Roles and permissions
 
