@@ -32,7 +32,7 @@ var (
 	}
 
 	moduleURL         string
-	moduleFlags       = pflag.NewFlagSet("module", pflag.ContinueOnError)
+	moduleNoURL       bool
 	allowedLLMModules []string
 
 	sdk           string
@@ -94,30 +94,41 @@ func getCompatVersion() string {
 	return compatVersion
 }
 
-func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
+func moduleAddFlags(cmd *cobra.Command, persistent bool) {
+	var flags *pflag.FlagSet
+	if persistent {
+		flags = cmd.PersistentFlags()
+	} else {
+		flags = cmd.Flags()
+	}
+	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path or a remote git repo (defaults to current directory)")
+	flags.BoolVarP(&moduleNoURL, "no-mod", "M", false, "Don't automatically load a module (mutually exclusive with --mod)")
+	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
+
 	var defaultAllowLLM []string
 	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
-	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+}
 
+func init() {
 	for _, fc := range funcCmds {
 		if !fc.DisableModuleLoad {
-			fc.Command().PersistentFlags().AddFlagSet(moduleFlags)
+			moduleAddFlags(fc.Command(), true)
 		}
 	}
 
-	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	moduleAddFlags(funcListCmd, true)
+	moduleAddFlags(listenCmd, true)
+	moduleAddFlags(queryCmd, true)
+	moduleAddFlags(configCmd, true)
 
-	mcpCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	moduleAddFlags(mcpCmd, true)
 
-	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	rootCmd.Flags().AddFlagSet(moduleFlags)
+	moduleAddFlags(shellCmd, true)
 	shellAddFlags(shellCmd)
+	moduleAddFlags(rootCmd, false)
 	shellAddFlags(rootCmd)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
@@ -127,17 +138,17 @@ func init() {
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
-	modFlag := *moduleFlags.Lookup("mod")
-	modFlag.Usage = modFlag.Usage[:strings.Index(modFlag.Usage, " Either local path")-1]
-	modulePublishCmd.Flags().AddFlag(&modFlag)
+	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
+	moduleAddFlags(moduleInstallCmd, true)
 
 	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(moduleUnInstallCmd, true)
 
 	moduleUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(moduleUpdateCmd, true)
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
@@ -145,7 +156,7 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
-	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	moduleAddFlags(moduleDevelopCmd, true)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -290,7 +301,11 @@ var moduleInstallCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only install dependencies to a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
@@ -399,7 +414,11 @@ var moduleUpdateCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only update dependencies on a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
@@ -445,7 +464,11 @@ var moduleUnInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only uninstall dependencies on a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
@@ -506,7 +529,10 @@ This command is idempotent: you can run it at any time, any number of times. It 
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modRef := getModuleSourceRefWithDefault()
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only export updated generated files for a local modules
 				RequireKind: dagger.ModuleSourceKindLocalSource,
@@ -692,7 +718,11 @@ forced), to avoid mistakenly depending on uncommitted files.
 			slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// can only publish modules that also exist locally for now
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
@@ -819,6 +849,9 @@ func originToPath(origin string) (string, error) {
 }
 
 func getExplicitModuleSourceRef() (string, bool) {
+	if moduleNoURL {
+		return "", false
+	}
 	if moduleURL != "" {
 		return moduleURL, true
 	}
@@ -831,11 +864,14 @@ func getExplicitModuleSourceRef() (string, bool) {
 	return "", false
 }
 
-func getModuleSourceRefWithDefault() string {
+func getModuleSourceRefWithDefault() (string, error) {
 	if v, ok := getExplicitModuleSourceRef(); ok {
-		return v
+		return v, nil
 	}
-	return moduleURLDefault
+	if moduleNoURL {
+		return "", fmt.Errorf("cannot use default module source with --no-mod")
+	}
+	return moduleURLDefault, nil
 }
 
 // Wraps a command with optional module loading. If a module was explicitly specified by the user,
@@ -859,9 +895,16 @@ func optionalModCmdWrapper(
 				}
 				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
+			if moduleNoURL {
+				return fn(ctx, engineClient, nil, cmd, cmdArgs)
+			}
 
 			dag := engineClient.Dagger()
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				AllowNotExists: true,
 			})
 			configExists, err := modSrc.ConfigExists(ctx)

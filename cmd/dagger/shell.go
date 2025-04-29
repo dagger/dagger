@@ -28,17 +28,14 @@ import (
 
 // shellCode is the code to be executed in the shell command
 var (
-	shellCode         string
-	shellNoLoadModule bool
+	shellCode string
 
 	llmModel string
 )
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
-	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "M", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
-	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
 var shellCmd = &cobra.Command{
@@ -189,7 +186,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var def *moduleDef
 	var cfg *configuredModule
 
-	if !shellNoLoadModule {
+	if !moduleNoURL {
 		def, cfg, err = h.maybeLoadModuleAndDeps(ctx, ref)
 		if err != nil {
 			return err
