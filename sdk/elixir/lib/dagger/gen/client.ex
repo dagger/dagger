@@ -212,7 +212,9 @@ defmodule Dagger.Client do
           {:keep_git_dir, boolean() | nil},
           {:experimental_service_host, Dagger.ServiceID.t() | nil},
           {:ssh_known_hosts, String.t() | nil},
-          {:ssh_auth_socket, Dagger.SocketID.t() | nil}
+          {:ssh_auth_socket, Dagger.SocketID.t() | nil},
+          {:http_auth_token, Dagger.SecretID.t() | nil},
+          {:http_auth_header, Dagger.SecretID.t() | nil}
         ]) :: Dagger.GitRepository.t()
   def git(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
@@ -223,6 +225,8 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
       |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      |> QB.maybe_put_arg("httpAuthToken", optional_args[:http_auth_token])
+      |> QB.maybe_put_arg("httpAuthHeader", optional_args[:http_auth_header])
 
     %Dagger.GitRepository{
       query_builder: query_builder,

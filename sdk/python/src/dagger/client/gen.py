@@ -5879,11 +5879,19 @@ class GitRepository(Type):
     def with_auth_header(self, header: "Secret") -> Self:
         """Header to authenticate the remote with.
 
+        .. deprecated::
+            Use "httpAuthHeader" in the constructor instead.
+
         Parameters
         ----------
         header:
             Secret used to populate the Authorization HTTP header
         """
+        warnings.warn(
+            'Method "with_auth_header" is deprecated: Use "httpAuthHeader" in the constructor instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("header", header),
         ]
@@ -5893,12 +5901,20 @@ class GitRepository(Type):
     def with_auth_token(self, token: "Secret") -> Self:
         """Token to authenticate the remote with.
 
+        .. deprecated::
+            Use "httpAuthToken" in the constructor instead.
+
         Parameters
         ----------
         token:
             Secret used to populate the password during basic HTTP
             Authorization
         """
+        warnings.warn(
+            'Method "with_auth_token" is deprecated: Use "httpAuthToken" in the constructor instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("token", token),
         ]
@@ -8079,6 +8095,8 @@ class Client(Root):
         experimental_service_host: "Service | None" = None,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
+        http_auth_token: "Secret | None" = None,
+        http_auth_header: "Secret | None" = None,
     ) -> GitRepository:
         """Queries a Git repository.
 
@@ -8097,6 +8115,11 @@ class Client(Root):
             Set SSH known hosts
         ssh_auth_socket:
             Set SSH auth socket
+        http_auth_token:
+            Secret used to populate the password during basic HTTP
+            Authorization
+        http_auth_header:
+            Secret used to populate the Authorization HTTP header
         """
         _args = [
             Arg("url", url),
@@ -8104,6 +8127,8 @@ class Client(Root):
             Arg("experimentalServiceHost", experimental_service_host, None),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),
+            Arg("httpAuthToken", http_auth_token, None),
+            Arg("httpAuthHeader", http_auth_header, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)

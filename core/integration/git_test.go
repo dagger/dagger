@@ -431,8 +431,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://github.com/grouville/daggerverse-private.git").
-			WithAuthToken(c.SetSecret("github_pat", token)).
+		_, err = c.Git("https://github.com/grouville/daggerverse-private.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("github_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("LICENSE").
@@ -446,8 +447,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git").
-			WithAuthToken(c.SetSecret("bitbucket_pat", token)).
+		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -461,8 +463,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git").
-			WithAuthToken(c.SetSecret("gitlab_pat", token)).
+		_, err = c.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("gitlab_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -507,8 +510,10 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthToken(c.SetSecret("token-wrong", "wrong")).
+		_, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthToken:           c.SetSecret("token-wrong", "wrong"),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -518,8 +523,10 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthToken(c.SetSecret("token", "foobar")).
+		dt, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthToken:           c.SetSecret("token", "foobar"),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -529,8 +536,43 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar")))).
+		dt, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthHeader:          c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))),
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
+}
+
+func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
+	// these were deprecated in dagger/dagger#10248
+
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
+
+	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
+		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+		//nolint:staticcheck // SA1019 deprecated
+		git = git.WithAuthToken(c.SetSecret("token", "foobar"))
+		dt, err := git.
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
+
+	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
+		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+		//nolint:staticcheck // SA1019 deprecated
+		git = git.WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))))
+		dt, err := git.
 			Branch("main").
 			Tree().
 			File("README.md").

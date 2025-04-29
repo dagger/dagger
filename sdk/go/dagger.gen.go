@@ -5666,6 +5666,8 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 }
 
 // Header to authenticate the remote with.
+//
+// Deprecated: Use "httpAuthHeader" in the constructor instead.
 func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	assertNotNil("header", header)
 	q := r.query.Select("withAuthHeader")
@@ -5677,6 +5679,8 @@ func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 }
 
 // Token to authenticate the remote with.
+//
+// Deprecated: Use "httpAuthToken" in the constructor instead.
 func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 	assertNotNil("token", token)
 	q := r.query.Select("withAuthToken")
@@ -8068,6 +8072,10 @@ type GitOpts struct {
 	SSHKnownHosts string
 	// Set SSH auth socket
 	SSHAuthSocket *Socket
+	// Secret used to populate the password during basic HTTP Authorization
+	HTTPAuthToken *Secret
+	// Secret used to populate the Authorization HTTP header
+	HTTPAuthHeader *Secret
 }
 
 // Queries a Git repository.
@@ -8089,6 +8097,14 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `sshAuthSocket` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
 			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+		}
+		// `httpAuthToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HTTPAuthToken) {
+			q = q.Arg("httpAuthToken", opts[i].HTTPAuthToken)
+		}
+		// `httpAuthHeader` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HTTPAuthHeader) {
+			q = q.Arg("httpAuthHeader", opts[i].HTTPAuthHeader)
 		}
 	}
 	q = q.Arg("url", url)

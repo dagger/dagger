@@ -162,7 +162,10 @@ public class CodeRenderer : ICodeRenderer
 
     private static string RenderObsolete(Field field)
     {
-        return !field.IsDeprecated ? "" : $"[Obsolete(\"{field.DeprecationReason}\")]";
+        if (!field.IsDeprecated)
+            return "";
+        string escapedReason = SymbolDisplay.FormatLiteral(field.DeprecationReason, true);
+        return $"[Obsolete({escapedReason})]";
     }
 
     private static string RenderDocComment(Type type)
