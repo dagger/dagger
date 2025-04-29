@@ -214,7 +214,47 @@ To modify this default setting, navigate to the organization settings page using
 
 ## Modules
 
+Dagger Cloud lets you see all your organization's modules in one place, with metadata like engine versions, descriptions, and linked repositories. Module information and activity is automatically synced from GitHub.
 
+### Add modules
+
+Dagger Cloud will scan the repository sources for Dagger modules, showing them automatically in Dagger Cloud.
+
+FIXME steps
+
+### Manage and inspect modules
+
+Once your modules have been added, you can start using Dagger Cloud to manage them.
+
+Access the modules dashboard from the `Modules` menu item in the top navigation bar to see a list of available modules.
+
+![Module list](/img/current_docs/configuration/cloud-modules-list.png)
+
+Modules are automatically categorized by their source repository. However, it is possible to create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
+
+![Module filter](/img/current_docs/configuration/cloud-modules-filter.png)
+
+Select a module to see detailed information on its activity and API.
+
+- Traces: List traces triggered by a module
+
+![Module traces](/img/current_docs/configuration/cloud-modules-traces.png)
+
+- Activity: See a list of commits, sorted by date
+
+![Module activity](/img/current_docs/configuration/cloud-modules-activity.png)
+
+- API: View detailed API documentation for each module, including its installation command, functions, arguments and return values
+
+![Module API](/img/current_docs/configuration/cloud-modules-api.png)
+
+- Dependencies and dependents: Trace dependencies and dependents of your module
+
+FIXME image
+
+::tip
+This information is available for all versions of the module; use the version selector in the top bar to switch between versions.
+:::
 
 ## Roles and permissions
 
