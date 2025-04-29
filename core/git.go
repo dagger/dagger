@@ -703,10 +703,6 @@ func doGitCheckout(
 }
 
 func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit string, fullref string, err error) {
-	if gitutil.IsCommitSHA(refstr) {
-		return refstr, refstr, nil
-	}
-
 	svcs, err := ref.Repo.Query.Services(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get services: %w", err)
@@ -723,15 +719,26 @@ func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit str
 	}
 	defer cleanup()
 
+	target := refstr
+	if gitutil.IsCommitSHA(refstr) {
+		// even when we already know the commit, we should still access the
+		// remote ref, to confirm it's actually real
+		target = "HEAD"
+	}
+
 	out, err := git.Run(ctx,
 		"ls-remote",
 		"--symref",
 		ref.Repo.URL.Remote(),
-		refstr,
-		refstr+"^{}",
+		target,
+		target+"^{}",
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("cannot resolve %q: %w", ref.Repo.URL.Remote(), err)
+	}
+
+	if gitutil.IsCommitSHA(refstr) {
+		return refstr, refstr, nil
 	}
 
 	return parseGitRefOutput(refstr, string(out), "\t")
