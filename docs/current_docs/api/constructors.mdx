@@ -100,7 +100,7 @@ If you plan to use constructor fields in other module functions, ensure that the
 Constructors can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
 
 :::important
-Explicitly declare the type even when a default value is assigned, so that the Dagger SDK can extend the GraphQL schema correctly.
+Explicitly declare the type even when it can be inferred, so that the Dagger SDK can extend the GraphQL schema correctly.
 :::
 
 Here is an example of a Dagger module with a default constructor argument of type `Container`:
@@ -118,7 +118,7 @@ Here is an example of a Dagger module with a default constructor argument of typ
 ```
 
 :::important
-Dagger `@object_type` classes are Python [data classes](https://docs.python.org/3/library/dataclasses.html) with the Dagger API exposed. This means that you can adjust the generation of the constructor using standard data class features, such as attributes and post-init processing.
+Dagger `@object_type` classes are Python data classes that become exposed to the Dagger API. This means that you can adjust the generation of the constructor using standard data class features, such as [fields](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) and [post-init processing](https://docs.python.org/3/library/dataclasses.html#post-init-processing). Refer to the [official `dataclasses` documentation](https://docs.python.org/3/library/dataclasses.html) to learn more.
 :::
 
 Here's an example:
@@ -128,16 +128,15 @@ Here's an example:
 
 A few important notes:
 
-- Class attributes become constructor arguments by default, unless specified as `field(init=False)`.
-- Attributes are both fields and constructor arguments by default. So by setting `init=False` on the container argument, it's no longer added as a constructor argument but is still a required field that must be initialized if there's no default value.
+- Data class fields become constructor arguments by default unless specified as `field(init=False)`. So, even though the `container` field is not added as a constructor argument it's still a required field that must be initialized  either with a default value or in post-init processing.
 - The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor which can be used, for example, to initialize field values that depend on other field values.
 - Setting a default value like `None` in an attribute is the same as setting `dataclasses.field(default=None)`. `dataclasses.field()` is only required to specify other non-default values, like `init` or to set the default using a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions).
-- There are two important differences between `dataclasses.field()` and `dagger.field()`
-  - `dagger.field()` exposes the attribute as a Dagger Function in the API. However, `dagger.field()` doesn't expose everything in `dataclasses.field()`.
-  - With `dataclass.field()`, you can specify separate `default` and `default_factory` arguments for either a simple value or a default using a callable respectively. However, with `dagger.field()`, the same `default` argument supports both cases.
+- The `dagger.field` descriptor wraps `dataclasses.field`, adding two important differences:
+  - `dagger.field()` is used to expose the attribute as a Dagger Function in the API (a simple getter), but it also becomes a part of the object's state.
+  - Not all arguments from `dataclasses.field()` can be set with `dagger.field()` which sets opinionated defaults, but you can specify both simple values and factory functions via the same `default` argument while with `dataclasses.field()` you need to use separate `default` and `default_factory` arguments.
 
 For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values), use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
-[`dataclasses.field(default_factory=...)`](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) or `dagger.field(default=...)`:
+[`dataclasses.field(default_factory=...)`](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) or [`dagger.field(default=...)`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field):
 
 ```python file=./snippets/constructors/python/factory/main.py
 ```
