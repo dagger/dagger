@@ -1,7 +1,7 @@
 .videoPlayerContainer {
   position: relative;
   width: 100%;
-  max-width: 800px;
+  max-width: 100%;
   margin: 0 auto;
 }
 
@@ -12,7 +12,7 @@
 
 .controls {
   position: absolute;
-  bottom: 10px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(0, 0, 0, 0.6);
