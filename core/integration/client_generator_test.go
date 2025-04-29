@@ -415,37 +415,39 @@ main()
 						With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
 						WithNewFile(".dagger/main.go", `package main
 		
-		type Test struct{}
+import "context"
+
+type Test struct{}
 		
-		func (t *Test) Hello() string {
-			return "hello"
-		}
+func (t *Test) Hello(ctx context.Context) (string, error) {
+	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+}
 					`).
 						WithExec([]string{"go", "mod", "init", "test.com/test"}).
 						WithNewFile("main.go", `package main
 		
-		import (
-			"context"
-			"fmt"
-		
-			"test.com/test/dagger"
-		)
-		
-		func main() {
-			ctx := context.Background()
-		
-			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  panic(err)
-      }
-		
-			res, err := dag.Test().Hello(ctx)
-			if err != nil {
-				panic(err)
-			}
-		
-			fmt.Println("result:", res)
-		}
+import (
+  "context"
+  "fmt"
+
+  "test.com/test/dagger"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := dagger.Connect(ctx)
+  if err != nil {
+    panic(err)
+  }
+
+  res, err := dag.Test().Hello(ctx)
+  if err != nil {
+    panic(err)
+  }
+
+  fmt.Println("result:", res)
+}
 		`,
 						)
 				},
@@ -459,13 +461,13 @@ main()
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
-						WithNewFile(".dagger/src/index.ts", `import { object, func } from '@dagger.io/dagger'
+						WithNewFile(".dagger/src/index.ts", `import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
 export class Test {
   @func()
-  hello(): string {
-    return 'hello'
+  async hello(): Promise<string> {
+    return dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
   }
 }
 				`).
@@ -476,11 +478,11 @@ export class Test {
 						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
 
 async function main() {
-    await connection(async () => {
-      const res = await dag.test().hello()
+  await connection(async () => {
+    const res = await dag.test().hello()
 
-      console.log("result:", res)
-    })
+    console.log("result:", res)
+  })
 }
 
 main()
