@@ -31,7 +31,7 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Stitch in the given module to the list being served to the current client
-	ServeModule(context.Context, *Module) error
+	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (*Module, error)

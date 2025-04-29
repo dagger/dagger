@@ -197,7 +197,7 @@ type Go struct{}
 // Go version
 func (Go) Version() string {
 	return "go version"
-} 
+}
 `,
 		)).
 		With(withModInitAt("other", "go", `// A local module
@@ -208,7 +208,7 @@ type Other struct{}
 
 func (Other) Version() string {
 	return "other function"
-} 
+}
 `,
 		)).
 		With(daggerExec("install", "./modules/dep")).
@@ -398,9 +398,10 @@ func (Other) Version() string {
 			With(daggerShell(".stdlib")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "version")
+		require.Contains(t, out, "- version")
 		require.NotContains(t, out, "Get the current Dagger Engine version")
-		require.NotContains(t, out, "load-container-from-id")
+		require.NotContains(t, out, "- load-container-from-id")
+		require.NotContains(t, out, "- git") // replaced by dependency
 	})
 
 	t.Run("stdlib doc", func(ctx context.Context, t *testctx.T) {
@@ -411,15 +412,24 @@ func (Other) Version() string {
 		require.Contains(t, out, "version")
 		require.Contains(t, out, "Get the current Dagger Engine version")
 		require.NotContains(t, out, "load-container-from-id")
+		require.NotContains(t, out, "Git repository") // replaced by dependency
 	})
 
-	t.Run("stdlib doc function", func(ctx context.Context, t *testctx.T) {
-		out, err := setup.
+	t.Run("stdlib doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
 			With(daggerShell(".stdlib | .help git")).
 			Stdout(ctx)
+		require.Error(t, err)
+		requireErrRegexp(t, err, "command not found")
+	})
+
+	t.Run("stdlib doc with function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | .help http")).
+			Stdout(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`^Queries a Git repository`), out)
-		require.Contains(t, out, "git <url> [options]")
+		require.Contains(t, out, "an http remote url content")
+		require.Contains(t, out, "http <url> [options]")
 		require.Contains(t, out, "RETURNS")
 	})
 
@@ -429,7 +439,8 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "- load-container-from-id")
-		require.NotContains(t, out, "Load a Container")
+		require.NotContains(t, out, "Load a Container") // no descriptions
+		require.NotContains(t, out, "- git")            // replaced by dependency
 	})
 
 	t.Run("core doc", func(ctx context.Context, t *testctx.T) {
@@ -439,6 +450,7 @@ func (Other) Version() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "load-container-from-id")
 		require.Contains(t, out, "Load a Container from its ID")
+		require.NotContains(t, out, "- git") // replaced by dependency
 	})
 
 	t.Run("core doc function", func(ctx context.Context, t *testctx.T) {
@@ -449,6 +461,34 @@ func (Other) Version() string {
 		require.Regexp(t, regexp.MustCompile(`^Load a Container from its ID`), out)
 		require.Contains(t, out, "load-container-from-id <id>")
 		require.Contains(t, out, "RETURNS")
+	})
+
+	t.Run("stdlib with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
+			With(daggerShell(".stdlib | git")).
+			Sync(ctx)
+		requireErrOut(t, err, `command not found: "git"`)
+	})
+
+	t.Run("stdlib doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
+			With(daggerShell(".stdlib | .help git")).
+			Sync(ctx)
+		requireErrOut(t, err, `command not found: "git"`)
+	})
+
+	t.Run("core with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
+			With(daggerShell(".core | git")).
+			Sync(ctx)
+		requireErrOut(t, err, `"git" not found`)
+	})
+
+	t.Run("core doc with function overridden by module constructor", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
+			With(daggerShell(".core | .help git")).
+			Sync(ctx)
+		requireErrOut(t, err, `"git" not found`)
 	})
 
 	t.Run("types result", func(ctx context.Context, t *testctx.T) {

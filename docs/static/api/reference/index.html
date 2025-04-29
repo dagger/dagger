@@ -9165,11 +9165,24 @@
                         <td data-property-name=""><a class="property-name" id="Module-sdk" href="#Module-sdk"><code>sdk</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
                         <td> The SDK config used by this module. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Module-serve" href="#Module-serve"><code>serve</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td>
                           <p>Serve a module&#39;s API in the current session.</p>
                           <p>Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includeDependencies</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Expose the dependencies of this module to the client</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       <tr>

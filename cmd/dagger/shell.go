@@ -190,7 +190,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var cfg *configuredModule
 
 	if !shellNoLoadModule {
-		def, cfg, err = h.maybeLoadModuleAndDeps(ctx, ref)
+		def, cfg, err = h.maybeLoadModule(ctx, ref)
 		if err != nil {
 			return err
 		}
@@ -214,6 +214,10 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("initial context: %w", err)
 	}
+
+	// silently attempt to initialize llm to populate $agent.
+	// swallow errors, discard logs.
+	_, _ = h.llm(context.Background())
 
 	h.initwd = *wd
 	h.wd = h.initwd

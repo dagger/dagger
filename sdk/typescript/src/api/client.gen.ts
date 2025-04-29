@@ -1067,6 +1067,13 @@ export type LabelID = string & { __LabelID: never }
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
+export type ModuleServeOpts = {
+  /**
+   * Expose the dependencies of this module to the client
+   */
+  includeDependencies?: boolean
+}
+
 /**
  * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
  */
@@ -6511,13 +6518,14 @@ export class Module_ extends BaseClient {
    * Serve a module's API in the current session.
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+   * @param opts.includeDependencies Expose the dependencies of this module to the client
    */
-  serve = async (): Promise<void> => {
+  serve = async (opts?: ModuleServeOpts): Promise<void> => {
     if (this._serve) {
       return
     }
 
-    const ctx = this._ctx.select("serve")
+    const ctx = this._ctx.select("serve", { ...opts })
 
     await ctx.execute()
   }

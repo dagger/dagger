@@ -1247,7 +1247,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client
-func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
+func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
@@ -1256,6 +1256,23 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	err = srv.serveModule(client, mod)
+	if err != nil {
+		return err
+	}
+	if includeDependencies {
+		for _, depMod := range mod.Deps.Mods {
+			err = srv.serveModule(client, depMod)
+			if err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// not threadsafe, client.stateMu must be held when calling
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
 	// don't add the same module twice
 	// This can happen with generated clients since all remote dependencies are added
 	// on each connection and this could happen multiple times.
