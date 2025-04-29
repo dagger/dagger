@@ -1,0 +1,154 @@
+---
+slug: /quickstart/agent-part-2
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import PartialIde from '../../partials/_ide.mdx';
+
+# Build an AI Agent: Part 2
+
+Now that you've learned the basics of creating an AI Agent with Dagger in [Part 1](./agent), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI Agent that builds features for an existing project.
+
+For this guide you will start with a Daggerized project. The agent will use the Dagger functions in this project that are already used locally and in CI for testing the project.
+
+## Requirements
+
+- You have [installed](TODO) Dagger
+- You have [configured](TODO) an LLM provider to use with Dagger
+- You have completed the first [AI Agent quickstart](./agent)
+
+## Initialize the example application
+
+FIXME create and clone a repo from the [template repository](TODO)
+
+```shell
+TODO: create repo from template
+git clone https://github.com/<username>/<new-repo>
+```
+
+This example project is a Vue.js project that has already been Daggerized.
+
+Check out the existing Dagger functions:
+
+```shell
+dagger functions
+```
+
+This should show:
+
+```shell
+Name        Description
+build       Build the application container
+build-env   Build a ready-to-use development environment
+publish     Publish the application container after building and testing it on-the-fly
+test        Return the result of running unit tests
+```
+
+## Create a workspace for the Agent
+
+To give the agent a specialized set of tools to edit files, create a Dagger submodule called `Workspace`. This module will have functions to read, write, and list files. Modules like this are useful for agents to accomplish tasks like file editing without too much room for error.
+
+<Tabs groupId="language" queryString="sdk">
+    <TabItem value="go" label="Go">
+        Start by creating the submodule:
+
+        ```shell
+        dagger init --sdk go --path .dagger/workspace
+        ```
+
+        Now replace the main file in the workspace with the following content.
+        Edit `.dagger/workspace/main.go`:
+        ```go file=./snippets/part2/workspace/go/main.go
+        ```
+    </TabItem>
+    <TabItem value="python" label="Python">
+        Start by creating the submodule:
+
+        ```shell
+        dagger init --sdk python --path .dagger/workspace
+        ```
+
+        Now replace the main file in the workspace with the following content.
+        Edit `.dagger/workspace/src/workspace/main.py`:
+        ```python file=./snippets/part2/workspace/src/workspace/main.py
+        ```
+    </TabItem>
+    <TabItem value="typescript" label="Typescript">
+        Start by creating the submodule:
+
+        ```shell
+        dagger init --sdk typescript --path .dagger/workspace
+        ```
+
+        Now replace the main file in the workspace with the following content.
+        Edit `.dagger/workspace/src/index.ts`:
+        ```typescript file=./snippets/part2/workspace/src/index.ts
+        ```
+    </TabItem>
+</Tabs>
+
+Now install the new submodule as a dependency to the main module:
+
+```shell
+dagger install ./.dagger/workspace
+```
+
+## Create an Agentic function
+
+This agent will be used to make changes to the application and use the existing `Test` function to validate the changes.
+
+
+<Tabs groupId="language" queryString="sdk">
+    <TabItem value="go" label="Go">
+        Start by opening `.dagger/main.go` and add the following new function:
+
+        ```go
+        func (m *HelloDagger) Develop(assignment string) *dagger.Container {}
+        ```
+    </TabItem>
+</Tabs>
+
+This new function `Develop` is the new agent. Because you installed the `Workspace` submodule, `Env` has generated functions for `WithWorkspaceInput` and `WithWorkspaceOutput`. Using these, you've created an environment with a `Workspace` input and output.
+
+The `Env` in this agent is privileged, which means the environment will also include the current module and core Dagger APIs. This allows the agent to use the existing `Test` function.
+
+Notice the LLM references a prompt file instead of an inline prompt. The final step is to add this prompt file. Create a file `.dagger/develop_prompt.md` with the following content:
+
+```
+TODO
+```
+
+## Run the agent
+
+Now its time to run the new agent. Enter Dagger shell by running `dagger`, and then:
+
+```shell
+develop "make the main page green"
+```
+
+If all goes well, the agent will explore the project to find the correct place to make the changes, write the appropriate changes, and then validate them by calling the `Test` function.
+
+If the agent misbehaves, try providing more guidance in the prompt file!
+
+TODO gif of output
+
+Since the agent returns a `Directory`, we can use Dagger shell to do more things with that `Directory`. First, save the output to a variable:
+
+```shell
+completed=$(develop "make the main page green")
+```
+
+With that completed assignment in a variable, you can use it just like any other Dagger object in shell:
+
+```shell
+# Get a terminal in the build container with the directory
+build-env --source $completed | terminal
+# Run the app with the updated source code
+build --source $completed | as-service | up --ports 8080:80
+# Save the changes to your filesystem
+$completed | export .
+```
+
+## Next steps
+
+TODO
