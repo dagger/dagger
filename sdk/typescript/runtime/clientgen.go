@@ -63,11 +63,24 @@ func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *
 func (c *clientGenContainer) withBundledSDK() *clientGenContainer {
 	switch c.cfg.sdkLibOrigin {
 	case Bundle:
+		staticBundledDirectory := c.sdkSourceDir.Directory("/bundled_lib")
+
+		// If the SDK is a module implementing function and the source are at the
+		// root directory. The static bundle should also
+		// export the `dag` object from the generated client of that module
+		// because they both use the same `sdk` directory.
+		if c.cfg.sdk != "" && c.cfg.subPath == "." {
+			staticBundledDirectory = staticBundledDirectory.
+				WithDirectory("/", bundledStaticDirectoryForModule())
+		} else {
+			staticBundledDirectory = staticBundledDirectory.
+				WithDirectory("/", bundledStaticDirectoryForClientOnly())
+		}
+
 		c.ctr = c.ctr.
 			WithDirectory(
 				GenDir,
-				c.sdkSourceDir.Directory("/bundled_lib").
-					WithDirectory("/", bundledStaticDirectoryForClient()),
+				staticBundledDirectory,
 			)
 	case Local:
 		c.ctr = c.ctr.WithDirectory(
