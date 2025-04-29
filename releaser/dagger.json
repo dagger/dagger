@@ -6,6 +6,10 @@
   },
   "dependencies": [
     {
+      "name": "dagger-cli",
+      "source": "../cmd/dagger"
+    },
+    {
       "name": "dagger-dev",
       "source": ".."
     },

@@ -6,6 +6,10 @@
   },
   "dependencies": [
     {
+      "name": "alpine",
+      "source": "../../modules/alpine"
+    },
+    {
       "name": "go",
       "source": "../../modules/go"
     },
