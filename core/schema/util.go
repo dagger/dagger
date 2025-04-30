@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
