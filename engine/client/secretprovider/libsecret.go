@@ -18,6 +18,8 @@ import (
 // - libsecret://<collection>/<id>
 // - libsecret://<collection>/<label>
 // - libsecret://<collection>?<key>=<value>
+//
+//nolint:gocyclo
 func libsecretProvider(_ context.Context, key string) ([]byte, error) {
 	uri, err := url.Parse("libsecret://" + key)
 	if err != nil {
@@ -59,6 +61,21 @@ func libsecretProvider(_ context.Context, key string) ([]byte, error) {
 	items, err := collection.Items()
 	if err != nil {
 		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no items found in collection %s", uri.Hostname())
+	}
+	for _, item := range items {
+		locked, err := item.Locked()
+		if err != nil {
+			return nil, err
+		}
+		if locked {
+			// something has gone *wrong* - we've just called Unlock on the
+			// collection, so nothing should be locked (but this does seem to
+			// happen, Unlock doesn't seem to always return an error on failure)
+			return nil, fmt.Errorf("item %s is locked", item.Path())
+		}
 	}
 
 	// filter items using the path
