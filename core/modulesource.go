@@ -2,19 +2,26 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -526,4 +533,253 @@ func (s SchemeType) Prefix() string {
 
 func (s SchemeType) IsSSH() bool {
 	return s == SchemeSSH
+}
+
+// ResolveDepToSource given a parent module source, load a dependency of it
+// from the given depSrcRef, depPin and depName.
+func ResolveDepToSource(
+	ctx context.Context,
+	bk *buildkit.Client,
+	dag *dagql.Server,
+	parentSrc *ModuleSource,
+	depSrcRef string,
+	depPin string,
+	depName string,
+) (inst dagql.Instance[*ModuleSource], err error) {
+	// sanity checks
+	if parentSrc != nil {
+		if parentSrc.SourceRootSubpath == "" {
+			return inst, fmt.Errorf("source root path must be set")
+		}
+		if parentSrc.ModuleName == "" {
+			return inst, fmt.Errorf("module name must be set")
+		}
+	}
+
+	parsedDepRef, err := ParseRefString(
+		ctx,
+		ModuleSourceStatFS{bk, parentSrc},
+		depSrcRef,
+		depPin,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to parse dep ref string: %w", err)
+	}
+
+	switch parsedDepRef.Kind {
+	case ModuleSourceKindLocal:
+		if parentSrc == nil {
+			// it's okay if there's no parent when the dep is git, but we can't find a local dep relative to nothing
+			return inst, fmt.Errorf("local module dep source path %q must be relative to a parent module", depSrcRef)
+		}
+
+		if filepath.IsAbs(depSrcRef) {
+			// they need to be relative to the parent module's source root
+			return inst, fmt.Errorf("local module dep source path %q is absolute", depSrcRef)
+		}
+
+		switch parentSrc.Kind {
+		case ModuleSourceKindLocal:
+			// parent=local, dep=local
+			// load the dep relative to the parent's source root, from the caller's filesystem
+			depPath := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath, depSrcRef)
+			depRelPath, err := pathutil.LexicalRelativePath(parentSrc.Local.ContextDirectoryPath, depPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get relative path from context to dep: %w", err)
+			}
+			if !filepath.IsLocal(depRelPath) {
+				return inst, fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, parentSrc.Local.ContextDirectoryPath)
+			}
+
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
+			if err != nil {
+				if errors.Is(err, cache.ErrCacheRecursiveCall) {
+					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
+				}
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		case ModuleSourceKindGit:
+			// parent=git, dep=local
+			// load the dep relative to the parent's source root, from the parent source's git repo
+			refString := GitRefString(
+				parentSrc.Git.CloneRef,
+				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
+				parentSrc.Git.Version,
+			)
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(refString)},
+					{Name: "refPin", Value: dagql.String(parentSrc.Git.Commit)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := dag.Select(ctx, dag.Root(), &inst, selectors...)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		case ModuleSourceKindDir:
+			// parent=dir, dep=local
+			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			selectors := []dagql.Selector{{
+				Field: "asModuleSource",
+				Args: []dagql.NamedInput{
+					{Name: "sourceRootPath", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		default:
+			return inst, fmt.Errorf("unsupported parent module source kind: %s", parentSrc.Kind)
+		}
+
+	case ModuleSourceKindGit:
+		// parent=*, dep=git
+		selectors := []dagql.Selector{{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(depSrcRef)},
+				{Name: "refPin", Value: dagql.String(depPin)},
+			},
+		}}
+		if depName != "" {
+			selectors = append(selectors, dagql.Selector{
+				Field: "withName",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(depName)},
+				},
+			})
+		}
+		err := dag.Select(ctx, dag.Root(), &inst, selectors...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load git dep: %w", err)
+		}
+		return inst, nil
+
+	default:
+		return inst, fmt.Errorf("unsupported module source kind: %s", parsedDepRef.Kind)
+	}
+}
+
+type StatFS interface {
+	Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error)
+}
+
+type StatFSFunc func(ctx context.Context, path string) (*fsutiltypes.Stat, error)
+
+func (f StatFSFunc) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	return f(ctx, path)
+}
+
+type CallerStatFS struct {
+	bk *buildkit.Client
+}
+
+func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
+	return &CallerStatFS{bk}
+}
+
+func (fs CallerStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	stat, err := fs.bk.StatCallerHostPath(ctx, path, true)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+	return stat, nil
+}
+
+type CoreDirStatFS struct {
+	dir *Directory
+	bk  *buildkit.Client
+}
+
+func NewCoreDirStatFS(dir *Directory, bk *buildkit.Client) *CoreDirStatFS {
+	return &CoreDirStatFS{dir, bk}
+}
+
+func (fs CoreDirStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
+	if err != nil {
+		return nil, err
+	}
+	stat.Path = path // otherwise stat.Path is just the basename
+	return stat, nil
+}
+
+
+type ModuleSourceStatFS struct {
+	bk  *buildkit.Client
+	src *ModuleSource
+}
+
+func NewModuleSourceStatFS(bk *buildkit.Client, src *ModuleSource) *ModuleSourceStatFS {
+	return &ModuleSourceStatFS{bk, src}
+}
+
+func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	if fs.src == nil {
+		return nil, os.ErrNotExist
+	}
+
+	switch fs.src.Kind {
+	case ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return CallerStatFS{fs.bk}.Stat(ctx, path)
+	case ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CoreDirStatFS{
+			dir: fs.src.Git.UnfilteredContextDir.Self,
+			bk:  fs.bk,
+		}.Stat(ctx, path)
+	case ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CoreDirStatFS{
+			dir: fs.src.ContextDirectory.Self,
+			bk:  fs.bk,
+		}.Stat(ctx, path)
+	default:
+		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
 }

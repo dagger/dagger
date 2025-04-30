@@ -1,16 +1,16 @@
-package schema
+package core
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
@@ -19,91 +19,91 @@ import (
 func fastModuleSourceKindCheck(
 	refString string,
 	refPin string,
-) core.ModuleSourceKind {
+) ModuleSourceKind {
 	switch {
 	case refPin != "":
-		return core.ModuleSourceKindGit
+		return ModuleSourceKindGit
 	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
-		return core.ModuleSourceKindLocal
+		return ModuleSourceKindLocal
 	case len(refString) > 1 && refString[0:2] == "..":
-		return core.ModuleSourceKindLocal
-	case strings.HasPrefix(refString, core.SchemeHTTP.Prefix()):
-		return core.ModuleSourceKindGit
-	case strings.HasPrefix(refString, core.SchemeHTTPS.Prefix()):
-		return core.ModuleSourceKindGit
-	case strings.HasPrefix(refString, core.SchemeSSH.Prefix()):
-		return core.ModuleSourceKindGit
+		return ModuleSourceKindLocal
+	case strings.HasPrefix(refString, SchemeHTTP.Prefix()):
+		return ModuleSourceKindGit
+	case strings.HasPrefix(refString, SchemeHTTPS.Prefix()):
+		return ModuleSourceKindGit
+	case strings.HasPrefix(refString, SchemeSSH.Prefix()):
+		return ModuleSourceKindGit
 	case !strings.Contains(refString, "."):
 		// technically host names can not have any dot, but we can save a lot of work
 		// by assuming a dot-free ref string is a local path. Users can prefix
 		// args with a scheme:// to disambiguate these obscure corner cases.
-		return core.ModuleSourceKindLocal
+		return ModuleSourceKindLocal
 	default:
 		return ""
 	}
 }
 
-type parsedRefString struct {
-	kind  core.ModuleSourceKind
-	local *parsedLocalRefString
-	git   *parsedGitRefString
+type ParsedRefString struct {
+	Kind  ModuleSourceKind
+	Local *ParsedLocalRefString
+	Git   *ParsedGitRefString
 }
 
-func parseRefString(
+func ParseRefString(
 	ctx context.Context,
-	statFS statFS,
+	statFS StatFS,
 	refString string,
 	refPin string,
-) (_ *parsedRefString, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
+) (_ *ParsedRefString, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer telemetry.End(span, func() error { return rerr })
 
 	kind := fastModuleSourceKindCheck(refString, refPin)
 	switch kind {
-	case core.ModuleSourceKindLocal:
-		return &parsedRefString{
-			kind: kind,
-			local: &parsedLocalRefString{
-				modPath: refString,
+	case ModuleSourceKindLocal:
+		return &ParsedRefString{
+			Kind: kind,
+			Local: &ParsedLocalRefString{
+				ModPath: refString,
 			},
 		}, nil
-	case core.ModuleSourceKindGit:
-		parsedGitRef, err := parseGitRefString(ctx, refString)
+	case ModuleSourceKindGit:
+		parsedGitRef, err := ParseGitRefString(ctx, refString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
 		}
-		return &parsedRefString{
-			kind: kind,
-			git:  &parsedGitRef,
+		return &ParsedRefString{
+			Kind: kind,
+			Git:  &parsedGitRef,
 		}, nil
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
-	if stat, err := statFS.stat(ctx, refString); err != nil {
+	if stat, err := statFS.Stat(ctx, refString); err != nil {
 		slog.Debug("parseRefString stat error", "error", err)
 	} else if stat.IsDir() {
-		return &parsedRefString{
-			kind: core.ModuleSourceKindLocal,
-			local: &parsedLocalRefString{
-				modPath: refString,
+		return &ParsedRefString{
+			Kind: ModuleSourceKindLocal,
+			Local: &ParsedLocalRefString{
+				ModPath: refString,
 			},
 		}, nil
 	}
 
 	// Parse scheme and attempt to parse as git endpoint
-	parsedGitRef, err := parseGitRefString(ctx, refString)
+	parsedGitRef, err := ParseGitRefString(ctx, refString)
 	switch {
 	case err == nil:
-		return &parsedRefString{
-			kind: core.ModuleSourceKindGit,
-			git:  &parsedGitRef,
+		return &ParsedRefString{
+			Kind: ModuleSourceKindGit,
+			Git:  &parsedGitRef,
 		}, nil
 	case errors.As(err, &gitEndpointError{}):
 		// couldn't connect to git endpoint, fallback to local
-		return &parsedRefString{
-			kind: core.ModuleSourceKindLocal,
-			local: &parsedLocalRefString{
-				modPath: refString,
+		return &ParsedRefString{
+			Kind: ModuleSourceKindLocal,
+			Local: &ParsedLocalRefString{
+				ModPath: refString,
 			},
 		}, nil
 	default:
@@ -111,37 +111,37 @@ func parseRefString(
 	}
 }
 
-type parsedLocalRefString struct {
-	modPath string
+type ParsedLocalRefString struct {
+	ModPath string
 }
 
-type parsedGitRefString struct {
+type ParsedGitRefString struct {
 	modPath string
 
-	modVersion string
+	ModVersion string
 	hasVersion bool
 
-	repoRoot       *vcs.RepoRoot
-	repoRootSubdir string
+	RepoRoot       *vcs.RepoRoot
+	RepoRootSubdir string
 
-	scheme core.SchemeType
+	scheme SchemeType
 
 	sourceUser     string
 	cloneUser      string
-	sourceCloneRef string // original user-provided username
+	SourceCloneRef string // original user-provided username
 	cloneRef       string // resolved username
 }
 
 type gitEndpointError struct{ error }
 
-func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefString, rerr error) {
-	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
+func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefString, rerr error) {
+	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
 	defer telemetry.End(span, func() error { return rerr })
 
 	scheme, schemelessRef := parseScheme(refString)
 
-	if scheme == core.NoScheme && isSCPLike(schemelessRef) {
-		scheme = core.SchemeSCPLike
+	if scheme == NoScheme && isSCPLike(schemelessRef) {
+		scheme = SchemeSCPLike
 		// transform the ":" into a "/" to rely on a unified logic after
 		// works because "git@github.com:user" is equivalent to "ssh://git@ref/user"
 		schemelessRef = strings.Replace(schemelessRef, ":", "/", 1)
@@ -155,10 +155,10 @@ func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefStr
 	// and delegate the logic to parse the host / path and user to the library
 	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
 	if err != nil {
-		return parsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
+		return ParsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
 	}
 
-	gitParsed := parsedGitRefString{
+	gitParsed := ParsedGitRefString{
 		modPath: endpoint.Host + endpoint.Path,
 		scheme:  scheme,
 	}
@@ -166,7 +166,7 @@ func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefStr
 	parts := strings.SplitN(endpoint.Path, "@", 2)
 	if len(parts) == 2 {
 		gitParsed.modPath = endpoint.Host + parts[0]
-		gitParsed.modVersion = parts[1]
+		gitParsed.ModVersion = parts[1]
 		gitParsed.hasVersion = true
 	}
 
@@ -175,30 +175,30 @@ func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefStr
 	// would be compatible with this function to benefit from the repo URL and root splitting
 	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
 	if err != nil {
-		return parsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
+		return ParsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
 	}
 	if repoRoot == nil || repoRoot.VCS == nil {
-		return parsedGitRefString{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.modPath)
+		return ParsedGitRefString{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.modPath)
 	}
 	if repoRoot.VCS.Name != "Git" {
-		return parsedGitRefString{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.modPath)
+		return ParsedGitRefString{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.modPath)
 	}
 
-	gitParsed.repoRoot = repoRoot
+	gitParsed.RepoRoot = repoRoot
 
 	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-	gitParsed.repoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
-	if gitParsed.repoRootSubdir == "" {
-		gitParsed.repoRootSubdir = "/"
+	gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
+	if gitParsed.RepoRootSubdir == "" {
+		gitParsed.RepoRootSubdir = "/"
 	}
-	gitParsed.repoRootSubdir = filepath.Clean(gitParsed.repoRootSubdir)
-	if !filepath.IsAbs(gitParsed.repoRootSubdir) && !filepath.IsLocal(gitParsed.repoRootSubdir) {
-		return parsedGitRefString{}, fmt.Errorf("git module source subpath points out of root: %q", gitParsed.repoRootSubdir)
+	gitParsed.RepoRootSubdir = filepath.Clean(gitParsed.RepoRootSubdir)
+	if !filepath.IsAbs(gitParsed.RepoRootSubdir) && !filepath.IsLocal(gitParsed.RepoRootSubdir) {
+		return ParsedGitRefString{}, fmt.Errorf("git module source subpath points out of root: %q", gitParsed.RepoRootSubdir)
 	}
 
 	// Restore SCPLike ref format
-	if gitParsed.scheme == core.SchemeSCPLike {
-		gitParsed.repoRoot.Root = strings.Replace(gitParsed.repoRoot.Root, "/", ":", 1)
+	if gitParsed.scheme == SchemeSCPLike {
+		gitParsed.RepoRoot.Root = strings.Replace(gitParsed.RepoRoot.Root, "/", ":", 1)
 	}
 
 	gitParsed.sourceUser, gitParsed.cloneUser = endpoint.User, endpoint.User
@@ -214,8 +214,8 @@ func parseGitRefString(ctx context.Context, refString string) (_ parsedGitRefStr
 		cloneUser += "@"
 	}
 
-	gitParsed.sourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.repoRoot.Root
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.repoRoot.Root
+	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.RepoRoot.Root
+	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.RepoRoot.Root
 
 	return gitParsed, nil
 }
@@ -224,11 +224,11 @@ func isSCPLike(ref string) bool {
 	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
 }
 
-func parseScheme(refString string) (core.SchemeType, string) {
-	schemes := []core.SchemeType{
-		core.SchemeHTTP,
-		core.SchemeHTTPS,
-		core.SchemeSSH,
+func parseScheme(refString string) (SchemeType, string) {
+	schemes := []SchemeType{
+		SchemeHTTP,
+		SchemeHTTPS,
+		SchemeSSH,
 	}
 
 	for _, scheme := range schemes {
@@ -238,18 +238,18 @@ func parseScheme(refString string) (core.SchemeType, string) {
 		}
 	}
 
-	return core.NoScheme, refString
+	return NoScheme, refString
 }
 
-func (p *parsedGitRefString) getGitRefAndModVersion(
+func (p *ParsedGitRefString) GetGitRefAndModVersion(
 	ctx context.Context,
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
-) (inst dagql.Instance[*core.GitRef], _ string, rerr error) {
+) (inst dagql.Instance[*GitRef], _ string, rerr error) {
 	commitRef := pinCommitRef
 	var modVersion string
 	if p.hasVersion {
-		modVersion = p.modVersion
+		modVersion = p.ModVersion
 		if isSemver(modVersion) {
 			var tags dagql.Array[dagql.String]
 			err := dag.Select(ctx, dag.Root(), &tags,
@@ -272,7 +272,7 @@ func (p *parsedGitRefString) getGitRefAndModVersion(
 				allTags[i] = tag.String()
 			}
 
-			matched, err := matchVersion(allTags, modVersion, p.repoRootSubdir)
+			matched, err := matchVersion(allTags, modVersion, p.RepoRootSubdir)
 			if err != nil {
 				return inst, "", fmt.Errorf("matching version to tags: %w", err)
 			}
@@ -298,7 +298,7 @@ func (p *parsedGitRefString) getGitRefAndModVersion(
 		}
 	}
 
-	var gitRef dagql.Instance[*core.GitRef]
+	var gitRef dagql.Instance[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",
@@ -313,4 +313,33 @@ func (p *parsedGitRefString) getGitRefAndModVersion(
 	}
 
 	return gitRef, modVersion, nil
+}
+
+// Match a version string in a list of versions with optional subPath
+// e.g. github.com/foo/daggerverse/mod@mod/v1.0.0
+// e.g. github.com/foo/mod@v1.0.0
+// TODO smarter matching logic, e.g. v1 == v1.0.0
+func matchVersion(versions []string, match, subPath string) (string, error) {
+	// If theres a subPath, first match on {subPath}/{match} for monorepo tags
+	if subPath != "/" {
+		rawSubPath, _ := strings.CutPrefix(subPath, "/")
+		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", rawSubPath, match), "/")
+		// no error means there's a match with subpath/match
+		if err == nil {
+			return matched, nil
+		}
+	}
+
+	for _, v := range versions {
+		if v == match {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("unable to find version %s", match)
+}
+
+
+func isSemver(ver string) bool {
+	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	return re.MatchString(ver)
 }

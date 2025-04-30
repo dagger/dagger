@@ -661,68 +661,6 @@ type Mod interface {
 	GetSource() *ModuleSource
 }
 
-// ClientGenerator is an interface that a module can implements to give client generation capabilities.
-//
-// The generated client is standalone and can be used in any project, even if no source code module is
-// available.
-type ClientGenerator interface {
-	// RequiredClientGenerationFiles returns the list of files that are required from the host
-	// to generate the client.
-	RequiredClientGenerationFiles(ctx context.Context) (dagql.Array[dagql.String], error)
-
-	// Generate client binding for the module and its dependencies at the given output directory.
-	// The generated client will be placed in the same directory as the module source root dir
-	// and contains bindings for all of the module's dependencies in addition to the
-	// core API and the module itself if it got source code.
-	//
-	// It's up to that function to update the source root directory with additional
-	// configurations if needed.
-	// For example (executing go mod tidy, updating tsconfig.json etc...)
-	//
-	// The generated client should use the published library version of the SDK.
-	// However, if the last parameter is set to true, a copy of the current SDK library
-	// should be copied to test the generated client with latest changes.
-	// NOTE: this should only be used for testing purposes.
-	GenerateClient(context.Context, dagql.Instance[*ModuleSource], *ModDeps, string, bool) (dagql.Instance[*Directory], error)
-}
-
-/*
-An SDK is an implementation of the functionality needed to generate code for and execute a module.
-
-There is one special SDK, the Go SDK, which is implemented in `goSDK` below. It's used as the "seed" for all
-other SDK implementations.
-
-All other SDKs are themselves implemented as Modules, with Functions matching the two defined in this SDK interface.
-
-An SDK Module needs to choose its own SDK for its implementation. This can be "well-known" built-in SDKs like "go",
-"python", etc. Or it can be any external module as specified with a module source ref string.
-
-You can thus think of SDK Modules as a DAG of dependencies, with each SDK using a different SDK to implement its Module,
-with the Go SDK as the root of the DAG and the only one without any dependencies.
-
-Built-in SDKs are also a bit special in that they come bundled w/ the engine container image, which allows them
-to be used without hard dependencies on the internet. They are loaded w/ the `loadBuiltinSDK` function below, which
-loads them as modules from the engine container.
-*/
-type SDK interface {
-	ClientGenerator
-
-	/* Codegen generates code for the module at the given source directory and subpath.
-
-	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
-	in the case where that's different than the root of the sourceDir.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
-	*/
-	Codegen(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
-
-	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
-	*/
-	Runtime(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Container, error)
-}
-
 var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
