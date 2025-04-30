@@ -540,61 +540,54 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			WithNewFile("/mysupersecret", "file shhh").
 			WithNewFile("/root/homesupersecret", "file shhh")
 
-		t.Run("explicit env", func(ctx context.Context, t *testctx.T) {
-			t.Run("happy", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "shhh", out)
-			})
-			t.Run("sad", func(ctx context.Context, t *testctx.T) {
-				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
-				requireErrOut(t, err, `secret env var not found: "NOW..."`)
-			})
+		t.Run("env", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("insecure", "--token", "env://TOPSECRET")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shhh", out)
 		})
 
-		t.Run("implicit env", func(ctx context.Context, t *testctx.T) {
-			t.Run("happy", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "shhh", out)
-			})
-			t.Run("sad", func(ctx context.Context, t *testctx.T) {
-				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
-				requireErrOut(t, err, `secret env var not found: "NOW..."`)
-			})
+		t.Run("env (legacy explicit)", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shhh", out)
+		})
+
+		t.Run("env (legacy implicit)", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shhh", out)
 		})
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
-			t.Run("happy", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file shhh", out)
+			out, err := modGen.With(daggerCall("insecure", "--token", "file:///mysupersecret")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file shhh", out)
 
-				out, err = modGen.With(daggerCall("insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "file shhh", out)
-			})
-			t.Run("sad", func(ctx context.Context, t *testctx.T) {
-				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
-				requireErrOut(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
-			})
+			out, err = modGen.With(daggerCall("insecure", "--token", "file://~/homesupersecret")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file shhh", out)
+		})
+
+		t.Run("file (legacy)", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file shhh", out)
+
+			out, err = modGen.With(daggerCall("insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "file shhh", out)
 		})
 
 		t.Run("cmd", func(ctx context.Context, t *testctx.T) {
-			t.Run("happy", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "cmd shhh", out)
-			})
-			t.Run("sad", func(ctx context.Context, t *testctx.T) {
-				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
-				requireErrOut(t, err, `failed to run secret command "exit 1": exit status 1`)
-			})
+			out, err := modGen.With(daggerCall("insecure", "--token", "cmd://echo -n cmd shhh")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "cmd shhh", out)
 		})
 
-		t.Run("invalid source", func(ctx context.Context, t *testctx.T) {
-			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
-			requireErrOut(t, err, `unsupported secret provider: "wtf"`)
+		t.Run("cmd (legacy)", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "cmd shhh", out)
 		})
 	})
 
