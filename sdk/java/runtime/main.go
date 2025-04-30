@@ -33,6 +33,7 @@ type JavaSdk struct {
 type moduleConfig struct {
 	name    string
 	subPath string
+	dirPath string
 }
 
 func (c *moduleConfig) modulePath() string {
@@ -141,7 +142,7 @@ func (m *JavaSdk) buildJavaDependencies(
 	}
 	return ctr.
 		// Cache maven dependencies
-		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
+		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2"), dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
@@ -386,9 +387,14 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	if err != nil {
 		return err
 	}
+	dirPath, err := modSource.LocalContextDirectoryPath(ctx)
+	if err != nil {
+		return err
+	}
 	m.moduleConfig = moduleConfig{
 		name:    modName,
 		subPath: subPath,
+		dirPath: dirPath,
 	}
 
 	return nil
