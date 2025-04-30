@@ -7,10 +7,10 @@
     "skipLibCheck": true,
     "paths": {
       "@dagger.io/dagger": [
-        "./sdk/src"
+        "./sdk/index.ts"
       ],
       "@dagger.io/dagger/telemetry": [
-        "./sdk/src/telemetry"
+        "./sdk/telemetry.ts"
       ]
     }
   }
