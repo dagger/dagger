@@ -23,11 +23,11 @@ func (DirectiveLocation) Type() *ast.Type {
 	}
 }
 
-func (d DirectiveSpec) DirectiveDefinition() *ast.DirectiveDefinition {
+func (d DirectiveSpec) DirectiveDefinition(view View) *ast.DirectiveDefinition {
 	def := &ast.DirectiveDefinition{
 		Name:         d.Name,
 		Description:  d.Description,
-		Arguments:    d.Args.ArgumentDefinitions(),
+		Arguments:    d.Args.ArgumentDefinitions(view),
 		IsRepeatable: d.IsRepeatable,
 	}
 	for _, loc := range d.Locations {

@@ -195,9 +195,10 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.Object,
 	args map[string]dagql.Input,
+	view dagql.View,
 	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
-	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, inputCfg)
+	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, inputCfg)
 	if err != nil {
 		return nil, err
 	}

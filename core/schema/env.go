@@ -17,10 +17,12 @@ var _ SchemaResolvers = &environmentSchema{}
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("env", s.environment).
+			Doc(`Initialize a new environment`).
 			Experimental("Environments are not yet stabilized").
-			ArgDoc("privileged", "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies").
-			ArgDoc("writable", "Allow new outputs to be declared and saved in the environment").
-			Doc(`Initialize a new environment`),
+			Args(
+				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
+				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
+			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
@@ -32,14 +34,18 @@ func (s environmentSchema) Install() {
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
 		dagql.Func("withStringInput", s.withStringInput).
-			ArgDoc("name", "The name of the binding").
-			ArgDoc("value", "The string value to assign to the binding").
-			ArgDoc("description", "The description of the input").
-			Doc("Create or update an input value of type string"),
+			Doc("Create or update an input value of type string").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("value").Doc("The string value to assign to the binding"),
+				dagql.Arg("description").Doc("The description of the input"),
+			),
 		dagql.Func("withStringOutput", s.withStringOutput).
-			ArgDoc("name", "The name of the binding").
-			ArgDoc("description", "The description of the output").
-			Doc("Create or update an input value of type string"),
+			Doc("Create or update an input value of type string").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("description").Doc("The description of the output"),
+			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).

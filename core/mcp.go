@@ -123,7 +123,7 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
-func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Context, any) (any, error) {
+func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)) func(context.Context, any) (any, error) {
 	return func(ctx context.Context, args any) (any, error) {
 		vals, ok := args.(map[string]any)
 		if !ok {
@@ -135,7 +135,7 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 			return nil, err
 		}
 		inputs := map[string]dagql.Input{}
-		for _, spec := range specs {
+		for _, spec := range specs.Inputs(srv.View) {
 			var input dagql.Input
 			if arg, provided := vals[spec.Name]; provided {
 				input, err = spec.Type.Decoder().DecodeInput(arg)
@@ -149,7 +149,7 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 			}
 			inputs[spec.Name] = input
 		}
-		if err := specs.Decode(inputs, &t); err != nil {
+		if err := specs.Decode(inputs, &t, srv.View); err != nil {
 			return nil, err
 		}
 		return fn(ctx, t)
@@ -431,7 +431,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
 		}
 	}
-	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap, toolProps)
+	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, argsMap, toolProps)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -452,7 +452,7 @@ func (m *MCP) selectionToToolResult(
 	sels := []dagql.Selector{fieldSel}
 
 	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
-		if sync, ok := retObjType.FieldSpec("sync"); ok {
+		if sync, ok := retObjType.FieldSpec("sync", srv.View); ok {
 			// If the Object supports "sync", auto-select it.
 			//
 			syncSel := dagql.Selector{
@@ -534,6 +534,7 @@ func (m *MCP) selectionToToolResult(
 }
 
 func (m *MCP) toolCallToSelection(
+	srv *dagql.Server,
 	target dagql.Object,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
@@ -544,14 +545,14 @@ func (m *MCP) toolCallToSelection(
 		Field: fieldDef.Name,
 	}
 	targetObjType := target.ObjectType()
-	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
+	field, ok := targetObjType.FieldSpec(fieldDef.Name, dagql.View(engine.Version))
 	if !ok {
 		return sel, fmt.Errorf("field %q not found in object type %q",
 			fieldDef.Name,
 			targetObjType.TypeName())
 	}
 	var unknownArgs error
-	for _, arg := range field.Args {
+	for _, arg := range field.Args.Inputs(srv.View) {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
@@ -798,7 +799,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				},
 				"required": []string{"thought"},
 			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
+			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Thought string
 			}) (_ any, rerr error) {
 				ctx, span := Tracer(ctx).Start(ctx, "think",
@@ -860,7 +861,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				},
 				"required": []string{"name", "description"},
 			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
+			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Name        string
 				Type        string
 				Description string
@@ -910,7 +911,7 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 				},
 				"required": []string{"tools"},
 			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
+			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Tools []string `json:"tools"`
 			}) (any, error) {
 				toolCounts := make(map[string]int)

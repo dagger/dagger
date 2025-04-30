@@ -275,13 +275,14 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 		if err != nil {
 			return nil, err
 		}
+		inputs := fieldspec.Args.Inputs(sdk.dag.View)
 
 		// check if there are any unknown config keys provided
 		var unusedKeys = []string{}
 		for configKey := range rawConfig {
 			found := false
-			for _, arg := range fieldspec.Args {
-				if arg.Name == configKey {
+			for _, input := range inputs {
+				if input.Name == configKey {
 					found = true
 					break
 				}
@@ -296,20 +297,20 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 			return nil, fmt.Errorf("unknown sdk config keys found %v", unusedKeys)
 		}
 		args := []dagql.NamedInput{}
-		for _, arg := range fieldspec.Args {
-			var valInput = arg.Default
+		for _, input := range inputs {
+			var valInput = input.Default
 
 			// override if the argument with same name exists in dagger.json -> sdk.config
-			val, ok := rawConfig[arg.Name]
+			val, ok := rawConfig[input.Name]
 			if ok {
-				valInput, err = arg.Type.Decoder().DecodeInput(val)
+				valInput, err = input.Type.Decoder().DecodeInput(val)
 				if err != nil {
-					return nil, fmt.Errorf("parsing value for arg %q: %w", arg.Name, err)
+					return nil, fmt.Errorf("parsing value for arg %q: %w", input.Name, err)
 				}
 			}
 
 			args = append(args, dagql.NamedInput{
-				Name:  arg.Name,
+				Name:  input.Name,
 				Value: valInput,
 			})
 		}

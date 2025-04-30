@@ -176,7 +176,7 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_service">service</a>(string|null $host = &#039;localhost&#039;, array $ports)
+                    <a href="#method_service">service</a>(array $ports, string|null $host = &#039;localhost&#039;)
         
                                             <p><p>Creates a service that forwards traffic to a specified address via the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -196,7 +196,7 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_tunnel">tunnel</a>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, array|null $ports = null, bool|null $native = false)
+                    <a href="#method_tunnel">tunnel</a>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
         
                                             <p><p>Creates a tunnel that forwards traffic from the host to a service.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -436,7 +436,7 @@
                     <h3 id="method_service">
         <div class="location">at line 54</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>service</strong>(string|null $host = &#039;localhost&#039;, array $ports)
+    <strong>service</strong>(array $ports, string|null $host = &#039;localhost&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -451,13 +451,13 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td>string|null</td>
-                <td>$host</td>
+                <td>array</td>
+                <td>$ports</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>array</td>
-                <td>$ports</td>
+                <td>string|null</td>
+                <td>$host</td>
                 <td></td>
             </tr>
             </table>
@@ -530,7 +530,7 @@
                     <h3 id="method_tunnel">
         <div class="location">at line 80</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, array|null $ports = null, bool|null $native = false)
+    <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
         </code>
     </h3>
     <div class="details">    
@@ -550,13 +550,13 @@
                 <td></td>
             </tr>
                     <tr>
-                <td>array|null</td>
-                <td>$ports</td>
+                <td>bool|null</td>
+                <td>$native</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>bool|null</td>
-                <td>$native</td>
+                <td>array|null</td>
+                <td>$ports</td>
                 <td></td>
             </tr>
             </table>

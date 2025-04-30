@@ -102,10 +102,10 @@ defmodule Dagger.Directory do
   Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
   """
   @spec docker_build(t(), [
-          {:platform, Dagger.Platform.t() | nil},
           {:dockerfile, String.t() | nil},
-          {:target, String.t() | nil},
+          {:platform, Dagger.Platform.t() | nil},
           {:build_args, [Dagger.BuildArg.t()]},
+          {:target, String.t() | nil},
           {:secrets, [Dagger.SecretID.t()]},
           {:no_init, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -113,10 +113,10 @@ defmodule Dagger.Directory do
     query_builder =
       directory.query_builder
       |> QB.select("dockerBuild")
-      |> QB.maybe_put_arg("platform", optional_args[:platform])
       |> QB.maybe_put_arg("dockerfile", optional_args[:dockerfile])
-      |> QB.maybe_put_arg("target", optional_args[:target])
+      |> QB.maybe_put_arg("platform", optional_args[:platform])
       |> QB.maybe_put_arg("buildArgs", optional_args[:build_args])
+      |> QB.maybe_put_arg("target", optional_args[:target])
       |> QB.maybe_put_arg(
         "secrets",
         if(optional_args[:secrets],
@@ -248,22 +248,22 @@ defmodule Dagger.Directory do
   Opens an interactive terminal in new container with this directory mounted inside.
   """
   @spec terminal(t(), [
+          {:container, Dagger.ContainerID.t() | nil},
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
-          {:insecure_root_capabilities, boolean() | nil},
-          {:container, Dagger.ContainerID.t() | nil}
+          {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def terminal(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("terminal")
+      |> QB.maybe_put_arg("container", optional_args[:container])
       |> QB.maybe_put_arg("cmd", optional_args[:cmd])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
-      |> QB.maybe_put_arg("container", optional_args[:container])
 
     %Dagger.Directory{
       query_builder: query_builder,

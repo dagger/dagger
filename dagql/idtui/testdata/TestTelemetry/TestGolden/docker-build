@@ -35,6 +35,7 @@ Expected stderr:
 ✔ .withExec(args: ["echo", "hey"]): Container! X.Xs
 ┃ hey
 ✔ .stdout: String! X.Xs
+┃ hey
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

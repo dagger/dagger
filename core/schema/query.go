@@ -57,9 +57,11 @@ func (s *querySchema) Install() {
 			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc("Creates a named sub-pipeline.").
-			ArgDoc("name", "Name of the sub-pipeline.").
-			ArgDoc("description", "Description of the sub-pipeline.").
-			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
+			Args(
+				dagql.Arg("name").Doc("Name of the sub-pipeline."),
+				dagql.Arg("description").Doc("Description of the sub-pipeline."),
+				dagql.Arg("labels").Doc("Labels to apply to the sub-pipeline."),
+			),
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),

@@ -148,19 +148,16 @@ class Client extends Client\AbstractClient
     public function git(
         string $url,
         ?bool $keepGitDir = true,
-        ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
         SecretId|Secret|null $httpAuthToken = null,
         SecretId|Secret|null $httpAuthHeader = null,
+        ServiceId|Service|null $experimentalServiceHost = null,
     ): GitRepository {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $keepGitDir) {
         $innerQueryBuilder->setArgument('keepGitDir', $keepGitDir);
-        }
-        if (null !== $experimentalServiceHost) {
-        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
         if (null !== $sshKnownHosts) {
         $innerQueryBuilder->setArgument('sshKnownHosts', $sshKnownHosts);
@@ -173,6 +170,9 @@ class Client extends Client\AbstractClient
         }
         if (null !== $httpAuthHeader) {
         $innerQueryBuilder->setArgument('httpAuthHeader', $httpAuthHeader);
+        }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

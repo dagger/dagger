@@ -168,9 +168,9 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 // Regenerate the API schema and CLI reference docs
 func (d Docs) Generate() *dagger.Directory {
 	return dag.Directory().
-		WithDirectory("", d.GenerateSchema()).
+		WithDirectory("", d.GenerateSchema("")).
+		WithDirectory("", d.GenerateSchemaReference("")).
 		WithDirectory("", d.GenerateCli()).
-		WithDirectory("", d.GenerateSchemaReference()).
 		WithDirectory("", d.GenerateConfigSchemas()).
 		WithDirectory("", d.GeneratePhp())
 }
@@ -199,32 +199,38 @@ func (d Docs) GeneratePhp() *dagger.Directory {
 }
 
 // Regenerate the API schema
-func (d Docs) GenerateSchema() *dagger.Directory {
+func (d Docs) GenerateSchema(
+	version string, // +optional
+) *dagger.Directory {
 	schema := dag.
 		Go(d.Source).
 		Env().
-		WithExec([]string{"go", "run", "./cmd/introspect", "schema"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "schema"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "schema.graphqls",
 		}).
 		File("schema.graphqls")
 	return dag.Directory().WithFile(generatedSchemaPath, schema)
 }
 
-func (d Docs) Introspection() *dagger.File {
+func (d Docs) Introspection(
+	version string, // +optional
+) *dagger.File {
 	return dag.
 		Go(d.Source).
 		Env().
-		WithExec([]string{"go", "run", "./cmd/introspect", "introspect"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "introspection.json",
 		}).
 		File("introspection.json")
 }
 
 // Regenerate the API Reference documentation
-func (d Docs) GenerateSchemaReference() *dagger.Directory {
+func (d Docs) GenerateSchemaReference(
+	version string, // +optional
+) *dagger.Directory {
 	generatedHTML := dag.Container().
 		From("node:18").
-		WithMountedDirectory("/src", d.Source.WithDirectory(".", d.GenerateSchema())).
+		WithMountedDirectory("/src", d.Source.WithDirectory(".", d.GenerateSchema(version))).
 		WithWorkdir("/src/docs").
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
 		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).

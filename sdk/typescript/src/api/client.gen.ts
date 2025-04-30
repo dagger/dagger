@@ -241,16 +241,16 @@ export type ContainerTerminalOpts = {
 
 export type ContainerUpOpts = {
   /**
+   * Bind each tunnel port to a random port on the host.
+   */
+  random?: boolean
+
+  /**
    * List of frontend/backend port mappings to forward.
    *
    * Frontend is the port accepting traffic on the host, backend is the service port.
    */
   ports?: PortForward[]
-
-  /**
-   * Bind each tunnel port to a random port on the host.
-   */
-  random?: boolean
 
   /**
    * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
@@ -679,24 +679,24 @@ export type DirectoryAsModuleSourceOpts = {
 
 export type DirectoryDockerBuildOpts = {
   /**
-   * The platform to build.
-   */
-  platform?: Platform
-
-  /**
    * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
    */
   dockerfile?: string
 
   /**
-   * Target build stage to build.
+   * The platform to build.
    */
-  target?: string
+  platform?: Platform
 
   /**
    * Build arguments to use in the build.
    */
   buildArgs?: BuildArg[]
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
 
   /**
    * Secrets to pass to the build.
@@ -741,6 +741,11 @@ export type DirectoryFilterOpts = {
 
 export type DirectoryTerminalOpts = {
   /**
+   * If set, override the default container used for the terminal.
+   */
+  container?: Container
+
+  /**
    * If set, override the container's default terminal command and invoke these command arguments instead.
    */
   cmd?: string[]
@@ -754,11 +759,6 @@ export type DirectoryTerminalOpts = {
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
-
-  /**
-   * If set, override the default container used for the terminal.
-   */
-  container?: Container
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -904,6 +904,10 @@ export type FunctionWithArgOpts = {
    * Patterns to ignore when loading the contextual argument value.
    */
   ignore?: string[]
+
+  /**
+   * The source map for the argument definition.
+   */
   sourceMap?: SourceMap
 }
 
@@ -980,18 +984,16 @@ export type HostServiceOpts = {
    * Upstream host to forward traffic to.
    */
   host?: string
-
-  /**
-   * Ports to expose via the service, forwarding through the host network.
-   *
-   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   *
-   * An empty set of ports is not valid; an error will be returned.
-   */
-  ports: PortForward[]
 }
 
 export type HostTunnelOpts = {
+  /**
+   * Map each service port to the same port on the host, as if the service were running natively.
+   *
+   * Note: enabling may result in port conflicts.
+   */
+  native?: boolean
+
   /**
    * Configure explicit port forwarding rules for the tunnel.
    *
@@ -1002,13 +1004,6 @@ export type HostTunnelOpts = {
    * If ports are given and native is true, the ports are additive.
    */
   ports?: PortForward[]
-
-  /**
-   * Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   */
-  native?: boolean
 }
 
 /**
@@ -1187,11 +1182,6 @@ export type ClientGitOpts = {
   keepGitDir?: boolean
 
   /**
-   * A service which must be started before the repo is fetched.
-   */
-  experimentalServiceHost?: Service
-
-  /**
    * Set SSH known hosts
    */
   sshKnownHosts?: string
@@ -1210,6 +1200,11 @@ export type ClientGitOpts = {
    * Secret used to populate the Authorization HTTP header
    */
   httpAuthHeader?: Secret
+
+  /**
+   * A service which must be started before the repo is fetched.
+   */
+  experimentalServiceHost?: Service
 }
 
 export type ClientHttpOpts = {
@@ -2259,10 +2254,10 @@ export class Container extends BaseClient {
    * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
    *
    * Be sure to set any exposed ports before calling this api.
+   * @param opts.random Bind each tunnel port to a random port on the host.
    * @param opts.ports List of frontend/backend port mappings to forward.
    *
    * Frontend is the port accepting traffic on the host, backend is the service port.
-   * @param opts.random Bind each tunnel port to a random port on the host.
    * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
    *
    * If empty, the container's default command is used.
@@ -3103,10 +3098,10 @@ export class Directory extends BaseClient {
 
   /**
    * Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
-   * @param opts.platform The platform to build.
    * @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-   * @param opts.target Target build stage to build.
+   * @param opts.platform The platform to build.
    * @param opts.buildArgs Build arguments to use in the build.
+   * @param opts.target Target build stage to build.
    * @param opts.secrets Secrets to pass to the build.
    *
    * They will be mounted at /run/secrets/[secret-name].
@@ -3210,10 +3205,10 @@ export class Directory extends BaseClient {
 
   /**
    * Opens an interactive terminal in new container with this directory mounted inside.
+   * @param opts.container If set, override the default container used for the terminal.
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.container If set, override the default container used for the terminal.
    */
   terminal = (opts?: DirectoryTerminalOpts): Directory => {
     const ctx = this._ctx.select("terminal", { ...opts })
@@ -4985,6 +4980,7 @@ export class Function_ extends BaseClient {
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
    * @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
    * @param opts.ignore Patterns to ignore when loading the contextual argument value.
+   * @param opts.sourceMap The source map for the argument definition.
    */
   withArg = (
     name: string,
@@ -5696,15 +5692,15 @@ export class Host extends BaseClient {
 
   /**
    * Creates a service that forwards traffic to a specified address via the host.
-   * @param opts.host Upstream host to forward traffic to.
-   * @param opts.ports Ports to expose via the service, forwarding through the host network.
+   * @param ports Ports to expose via the service, forwarding through the host network.
    *
    * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
    *
    * An empty set of ports is not valid; an error will be returned.
+   * @param opts.host Upstream host to forward traffic to.
    */
-  service = (opts?: HostServiceOpts): Service => {
-    const ctx = this._ctx.select("service", { ...opts })
+  service = (ports: PortForward[], opts?: HostServiceOpts): Service => {
+    const ctx = this._ctx.select("service", { ports, ...opts })
     return new Service(ctx)
   }
 
@@ -5724,6 +5720,9 @@ export class Host extends BaseClient {
   /**
    * Creates a tunnel that forwards traffic from the host to a service.
    * @param service Service to send traffic from the tunnel.
+   * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
+   *
+   * Note: enabling may result in port conflicts.
    * @param opts.ports Configure explicit port forwarding rules for the tunnel.
    *
    * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
@@ -5731,9 +5730,6 @@ export class Host extends BaseClient {
    * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
    *
    * If ports are given and native is true, the ports are additive.
-   * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
    */
   tunnel = (service: Service, opts?: HostTunnelOpts): Service => {
     const ctx = this._ctx.select("tunnel", { service, ...opts })
@@ -7630,11 +7626,11 @@ export class Client extends BaseClient {
    *
    * Suffix ".git" is optional.
    * @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
-   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    * @param opts.sshKnownHosts Set SSH known hosts
    * @param opts.sshAuthSocket Set SSH auth socket
    * @param opts.httpAuthToken Secret used to populate the password during basic HTTP Authorization
    * @param opts.httpAuthHeader Secret used to populate the Authorization HTTP header
+   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git = (url: string, opts?: ClientGitOpts): GitRepository => {
     const ctx = this._ctx.select("git", { url, ...opts })

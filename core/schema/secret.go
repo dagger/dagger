@@ -20,14 +20,20 @@ func (s *secretSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
 			Doc(`Creates a new secret.`).
-			ArgDoc("uri", `The URI of the secret store`),
+			Args(
+				dagql.Arg("uri").Doc(`The URI of the secret store`),
+			),
 
 		dagql.NodeFuncWithCacheKey("setSecret", s.setSecret, dagql.CachePerCall).
 			Doc(`Sets a secret given a user defined name to its plaintext and returns the secret.`,
 				`The plaintext value is limited to a size of 128000 bytes.`).
-			ArgDoc("name", `The user defined name for this secret`).
-			ArgDoc("plaintext", `The plaintext of the secret`).
-			ArgSensitive("plaintext"),
+			Args(
+				dagql.Arg("name").
+					Doc(`The user defined name for this secret`),
+				dagql.Arg("plaintext").
+					Sensitive().
+					Doc(`The plaintext of the secret`),
+			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{

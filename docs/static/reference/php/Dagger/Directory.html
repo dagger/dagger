@@ -206,7 +206,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_dockerBuild">dockerBuild</a>(<abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null, string|null $dockerfile = &#039;Dockerfile&#039;, string|null $target = &#039;&#039;, array|null $buildArgs = null, array|null $secrets = null, bool|null $noInit = false)
+                    <a href="#method_dockerBuild">dockerBuild</a>(string|null $dockerfile = &#039;Dockerfile&#039;, <abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null, array|null $buildArgs = null, string|null $target = &#039;&#039;, array|null $secrets = null, bool|null $noInit = false)
         
                                             <p><p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -296,7 +296,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_terminal">terminal</a>(array|null $cmd = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, <abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr> $container = null)
+                    <a href="#method_terminal">terminal</a>(<abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr> $container = null, array|null $cmd = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
         
                                             <p><p>Opens an interactive terminal in new container with this directory mounted inside.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -722,7 +722,7 @@
                     <h3 id="method_dockerBuild">
         <div class="location">at line 81</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>dockerBuild</strong>(<abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null, string|null $dockerfile = &#039;Dockerfile&#039;, string|null $target = &#039;&#039;, array|null $buildArgs = null, array|null $secrets = null, bool|null $noInit = false)
+    <strong>dockerBuild</strong>(string|null $dockerfile = &#039;Dockerfile&#039;, <abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null, array|null $buildArgs = null, string|null $target = &#039;&#039;, array|null $secrets = null, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -737,23 +737,23 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\Dagger\Platform">Platform</abbr>|null</td>
-                <td>$platform</td>
-                <td></td>
-            </tr>
-                    <tr>
                 <td>string|null</td>
                 <td>$dockerfile</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>string|null</td>
-                <td>$target</td>
+                <td><abbr title="Dagger\Dagger\Platform">Platform</abbr>|null</td>
+                <td>$platform</td>
                 <td></td>
             </tr>
                     <tr>
                 <td>array|null</td>
                 <td>$buildArgs</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$target</td>
                 <td></td>
             </tr>
                     <tr>
@@ -1105,7 +1105,7 @@
                     <h3 id="method_terminal">
         <div class="location">at line 201</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>terminal</strong>(array|null $cmd = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, <abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr> $container = null)
+    <strong>terminal</strong>(<abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr> $container = null, array|null $cmd = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
         </code>
     </h3>
     <div class="details">    
@@ -1120,6 +1120,11 @@
 
                     <table class="table table-condensed">
                     <tr>
+                <td><abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr></td>
+                <td>$container</td>
+                <td></td>
+            </tr>
+                    <tr>
                 <td>array|null</td>
                 <td>$cmd</td>
                 <td></td>
@@ -1132,11 +1137,6 @@
                     <tr>
                 <td>bool|null</td>
                 <td>$insecureRootCapabilities</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr></td>
-                <td>$container</td>
                 <td></td>
             </tr>
             </table>

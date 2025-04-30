@@ -838,12 +838,6 @@
                       </tr>
                       <tr>
                         <td>
-                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID</code></a></span>
-                        </td>
-                        <td> A service which must be started before the repo is fetched. </td>
-                      </tr>
-                      <tr>
-                        <td>
                           <span class="property-name"><code>sshKnownHosts</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
                         </td>
                         <td> Set SSH known hosts. Default = <code>""</code> </td>
@@ -865,6 +859,12 @@
                           <span class="property-name"><code>httpAuthHeader</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
                         </td>
                         <td> Secret used to populate the Authorization HTTP header </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID</code></a></span>
+                        </td>
+                        <td> A service which must be started before the repo is fetched. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -4504,13 +4504,13 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>random</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Bind each tunnel port to a random port on the host.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]</code></a></span></h6>
                                 <p>List of frontend/backend port mappings to forward.</p>
                                 <p>Frontend is the port accepting traffic on the host, backend is the service port.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>random</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Bind each tunnel port to a random port on the host.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -5713,20 +5713,20 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span></h6>
-                                <p>The platform to build.</p>
-                              </div>
-                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>dockerfile</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Path to the Dockerfile to use (e.g., &quot;frontend.Dockerfile&quot;).</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Target build stage to build.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span></h6>
+                                <p>The platform to build.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>buildArgs</code></span> - <span class="property-type"><a href="#definition-BuildArg"><code>[BuildArg!]</code></a></span></h6>
                                 <p>Build arguments to use in the build.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Target build stage to build.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
@@ -5857,6 +5857,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>container</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span></h6>
+                                <p>If set, override the default container used for the terminal.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>cmd</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>If set, override the container&#39;s default terminal command and invoke these command arguments instead.</p>
                               </div>
@@ -5867,10 +5871,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>container</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span></h6>
-                                <p>If set, override the default container used for the terminal.</p>
                               </div>
                             </div>
                           </div>
@@ -7686,6 +7686,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the argument definition.</p>
                               </div>
                             </div>
                           </div>
@@ -8377,14 +8378,14 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Upstream host to forward traffic to.</p>
-                              </div>
-                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]!</code></a></span></h6>
                                 <p>Ports to expose via the service, forwarding through the host network.</p>
                                 <p>If a port&#39;s frontend is unspecified or 0, it defaults to the same as the backend port.</p>
                                 <p>An empty set of ports is not valid; an error will be returned.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Upstream host to forward traffic to.</p>
                               </div>
                             </div>
                           </div>
@@ -8429,16 +8430,16 @@
                                 <p>Service to send traffic from the tunnel.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>native</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Map each service port to the same port on the host, as if the service were running natively.</p>
+                                <p>Note: enabling may result in port conflicts.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]</code></a></span></h6>
                                 <p>Configure explicit port forwarding rules for the tunnel.</p>
                                 <p>If a port&#39;s frontend is unspecified or 0, a random port will be chosen by the host.</p>
                                 <p>If no ports are given, all of the service&#39;s ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.</p>
                                 <p>If ports are given and native is true, the ports are additive.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>native</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Map each service port to the same port on the host, as if the service were running natively.</p>
-                                <p>Note: enabling may result in port conflicts.</p>
                               </div>
                             </div>
                           </div>
