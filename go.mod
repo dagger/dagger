@@ -13,7 +13,7 @@ require (
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
-	github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20250418225557-9389ea772a3a
+	github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20250502012343-c2b4992517e8
 )
 
 require (
