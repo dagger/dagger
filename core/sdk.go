@@ -7,14 +7,14 @@ import (
 )
 
 /*
-	ClientGenerator is an interface that a module can implements to give
-	client generation capabilities.
+ClientGenerator is an interface that a module can implements to give
+client generation capabilities.
 
-	The generated client is standalone and can be used in any project,
-	even if no source code module is available.
+The generated client is standalone and can be used in any project,
+even if no source code module is available.
 
-	This interface MUST be implemented to support standalone client oriented
-	features (`dagger client install`).
+This interface MUST be implemented to support standalone client oriented
+features (`dagger client install`).
 */
 type ClientGenerator interface {
 	/*
@@ -84,16 +84,16 @@ type ClientGenerator interface {
 }
 
 /*
-	CodeGenerator is an interface that a SDK may implements to generate code
-	for a module.
+CodeGenerator is an interface that a SDK may implements to generate code
+for a module.
 
-	This can include multiple things, such as a generated client to interact
-	with the Dagger Engine but also any changes in the module's code to run
-	it in the Dagger Engine like dependency configuration, package manager
-	settings etc...
+This can include multiple things, such as a generated client to interact
+with the Dagger Engine but also any changes in the module's code to run
+it in the Dagger Engine like dependency configuration, package manager
+settings etc...
 
-	This interface MUST be implemented to support language oriented SDKs
-	(`dagger develop`).
+This interface MUST be implemented to support language oriented SDKs
+(`dagger develop`).
 */
 type CodeGenerator interface {
 	/*
@@ -129,23 +129,23 @@ type CodeGenerator interface {
 }
 
 /*
-	Runtime is an interface that a SDK may implements to provide an executable
-	container to run the module's code at runtime.
+Runtime is an interface that a SDK may implements to provide an executable
+container to run the module's code at runtime.
 
-	This include setup of the runtime environment, dependencies installation,
-	and entrypoint setup.
+This include setup of the runtime environment, dependencies installation,
+and entrypoint setup.
 
-	The returned container should have as entrypoint the execution of an
-	entrypoint function that will register the module typedefs in the Dagger
-	engine or execute a function of that module depending on the argument
-	forwarded to that entrypoint:
-	- If the called object is empty, the script should register type definitions
-	  by sending a new ModuleID to the Dagger engine.
-	- If the called object is set, the script should execute the corresponding
-		function and send the result to the Dagger engine.
+The returned container should have as entrypoint the execution of an
+entrypoint function that will register the module typedefs in the Dagger
+engine or execute a function of that module depending on the argument
+forwarded to that entrypoint:
+  - If the called object is empty, the script should register type definitions
+    by sending a new ModuleID to the Dagger engine.
+  - If the called object is set, the script should execute the corresponding
+    function and send the result to the Dagger engine.
 
-	This interface MUST be implemented to support callable SDKs
-	(`dagger call`).
+This interface MUST be implemented to support callable SDKs
+(`dagger call`).
 */
 type Runtime interface {
 	/*
@@ -177,13 +177,13 @@ type Runtime interface {
 }
 
 /*
-  SDK aggregates all the interfaces that a SDK may implement.
+	  SDK aggregates all the interfaces that a SDK may implement.
 
-	It provides conversion functions to get a specific interface if
-	it's implemented.
-	Otherwise, the function will return false.
+		It provides conversion functions to get a specific interface if
+		it's implemented.
+		Otherwise, the function will return false.
 
-	It works the same as type conversion in Go.
+		It works the same as type conversion in Go.
 */
 type SDK interface {
 	// Transform the SDK into a Runtime if it implements it.

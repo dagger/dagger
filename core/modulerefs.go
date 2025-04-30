@@ -338,7 +338,6 @@ func matchVersion(versions []string, match, subPath string) (string, error) {
 	return "", fmt.Errorf("unable to find version %s", match)
 }
 
-
 func isSemver(ver string) bool {
 	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 	return re.MatchString(ver)

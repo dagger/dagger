@@ -748,7 +748,6 @@ func (fs CoreDirStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Sta
 	return stat, nil
 }
 
-
 type ModuleSourceStatFS struct {
 	bk  *buildkit.Client
 	src *ModuleSource

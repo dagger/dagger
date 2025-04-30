@@ -2350,11 +2350,6 @@ func rebasePatterns(patterns []string, base string) ([]string, error) {
 	return rebased, nil
 }
 
-func isSemver(ver string) bool {
-	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-	return re.MatchString(ver)
-}
-
 // Match a version string in a list of versions with optional subPath
 // e.g. github.com/foo/daggerverse/mod@mod/v1.0.0
 // e.g. github.com/foo/mod@v1.0.0
