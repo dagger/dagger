@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/base64"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/crypto/argon2"
 )
@@ -98,7 +100,12 @@ func (s *secretSchema) secret(
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
-			return i, fmt.Errorf("failed to get secret plaintext: %w", err)
+			// secret wasn't found, but since it may be available later at use, tolerate the error and just use a random cache key
+			slog.Warn("secret not found, falling back to random cache key", "uri", args.URI)
+			plaintext = make([]byte, 32)
+			if _, err := cryptorand.Read(plaintext); err != nil {
+				return i, fmt.Errorf("failed to read random bytes: %w", err)
+			}
 		}
 		key := argon2.IDKey(
 			plaintext,
