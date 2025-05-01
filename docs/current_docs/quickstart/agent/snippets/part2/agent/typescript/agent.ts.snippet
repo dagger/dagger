@@ -7,33 +7,28 @@
 @func()
 async develop(
     assignment: string,
-    @argument({ defaultPath: "/" }) source: Directory
+    @argument({ defaultPath: '/' }) source: Directory
 ): Promise<Directory> {
     // Environment with agent inputs and outputs
-    const environment = dag.env({ privileged: true })
-        .withStringInput("assignment", assignment, "the assignment to complete")
+    const environment = dag
+        .env({ privileged: true })
+        .withStringInput('assignment', assignment, 'the assignment to complete')
         .withWorkspaceInput(
-        "workspace",
+        'workspace',
         dag.workspace(source),
-        "the workspace with tools to edit code")
-        .withWorkspaceOutput(
-        "completed",
-        "the workspace with the completed assignment")
+        'the workspace with tools to edit code'
+        )
+        .withWorkspaceOutput('completed', 'the workspace with the completed assignment')
 
     // Detailed prompt stored in markdown file
-    const promptFile = dag.currentModule().source().file("develop_prompt.md")
+    const promptFile = dag.currentModule().source().file('develop_prompt.md')
 
     // Put it all together to form the agent
-    const work = dag.llm()
-        .withEnv(environment)
-        .withPromptFile(promptFile)
+    const work = dag.llm().withEnv(environment).withPromptFile(promptFile)
 
     // Get the output from the agent
-    const completed = work
-        .env()
-        .output("completed")
-        .asWorkspace()
-    const completedDirectory = completed.getSource().withoutDirectory("node_modules")
+    const completed = work.env().output('completed').asWorkspace()
+    const completedDirectory = completed.getSource().withoutDirectory('node_modules')
 
     // Make sure the tests really pass
     await this.test(completedDirectory)
