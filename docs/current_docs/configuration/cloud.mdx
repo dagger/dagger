@@ -80,7 +80,7 @@ export DAGGER_CLOUD_TOKEN={your token}
 
 To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
 
-To find your token, navigate to the organization settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
+To find your token, navigate to the settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
 
     ![Get token](/img/current_docs/configuration/get-token.png)
 
@@ -208,7 +208,7 @@ Dagger Cloud automatically detects if the traces produced by your workflows orig
 a CI system and a public repository. When both conditions are met, Dagger Cloud allows
 public access to these traces without requiring an invitation to the organization.
 
-To modify this default setting, navigate to the organization settings page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
+To modify this default setting, navigate to the organization page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
 
 ![public traces](/img/current_docs/api/public-traces.png)
 
@@ -218,9 +218,23 @@ Dagger Cloud lets you see all your organization's modules in one place, with met
 
 ### Add modules
 
-Dagger Cloud will scan the repository sources for Dagger modules, showing them automatically in Dagger Cloud.
+Dagger Cloud scans your specified repositories for Dagger modules, showing them automatically in Dagger Cloud.
 
-FIXME steps
+To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Integrations` sub-menu. Click `Add new target` to add a GitHub account or organization.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-target.png)
+
+You will be directed to install the Dagger Cloud GitHub application and select the GitHub accounts and repositories to add.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-install-app.png)
+
+Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Map to this organization` to have Dagger Cloud begin scanning for Dagger modules.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-map.png)
+
+The `Scan Results` section at the bottom of the page maintains a record of scans and their status.
+
+![Module scans](/img/current_docs/configuration/cloud-modules-scans.png)
 
 ### Manage and inspect modules
 
@@ -252,7 +266,7 @@ Select a module to see detailed information on its activity and API.
 
 FIXME image
 
-::tip
+:::tip
 This information is available for all versions of the module; use the version selector in the top bar to switch between versions.
 :::
 
@@ -271,6 +285,6 @@ You cannot change a member's role at this time. Please contact Dagger via the su
 
 ## Cache pruning
 
-Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization settings page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
+Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
 
 ![Get token](/img/current_docs/configuration/prune-cache.png)
