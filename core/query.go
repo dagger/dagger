@@ -108,7 +108,7 @@ type Server interface {
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
 
-	// TODO: doc
+	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
 }
 

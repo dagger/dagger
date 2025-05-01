@@ -162,9 +162,9 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	return store.GetSecretPlaintextDirect(ctx, secret.Self)
 }
 
-// TODO: doc
-// TODO: doc
-// TODO: doc
+// GetSecretPlaintextDirect returns the plaintext of the given secret, even if it's not in the store yet.
+// Public to support retrieving the plaintext while deriving the cache key for it (after which it will be
+// put in the store).
 func (store *SecretStore) GetSecretPlaintextDirect(ctx context.Context, secret *Secret) ([]byte, error) {
 	// If the secret is stored locally (setSecret), return the plaintext.
 	if secret.URI == "" {

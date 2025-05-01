@@ -81,9 +81,7 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
-// TODO: doc
-// TODO: doc
-// TODO: doc
+// Set this additional environment variable in the CLI subprocess for the session
 func WithEnvironmentVariable(key, value string) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.ExtraEnv = append(cfg.ExtraEnv, key+"="+value)

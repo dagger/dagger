@@ -1491,7 +1491,7 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
 }
 
-// TODO: doc
+// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
 }

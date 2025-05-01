@@ -27,8 +27,13 @@ func (s *secretSchema) Install() {
 			Doc(`Creates a new secret.`).
 			Args(
 				dagql.Arg("uri").Doc(`The URI of the secret store`),
-				// TODO: doc, needs to be good
-				dagql.Arg("cacheKey").Doc(`TODO`),
+				dagql.Arg("cacheKey").Doc(
+					`If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will `,
+					`be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values. For example, two secrets `,
+					`with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs `,
+					`hitting the cache for each other. If not set, the cache key for the secret will be derived from its plaintext value as looked up `,
+					`when the secret is constructed.`,
+				),
 			),
 
 		dagql.NodeFuncWithCacheKey("setSecret", s.setSecret, dagql.CachePerCall).
@@ -99,11 +104,33 @@ func (s *secretSchema) secret(
 				return i, fmt.Errorf("failed to read random bytes: %w", err)
 			}
 		}
+
+		/* Derive the cache key from the plaintext value using argon2.
+		We avoid a simple xxh3/sha256/etc. hash since the cache key is public; it's sent around in IDs and stored on the local disk unencrypted.
+
+		This is similar to the problems a web-server avoids when hashing passwords in that we want to make brute-forcing the secret from its hash
+		infeasible, even in offline attacks. This argon2 hash takes on the order of 1-100ms, which is 10s of millions of times slower than the
+		time to compute e.g. a sha256 hash on a modern GPU, but not slow enough to be a noticeable bottleneck in our execution.
+
+		The main difference from the more typical password-hashing use-case is that we *don't* want a unique salt per secret since we need deterministic
+		cache keys. Instead, we use a salt unique to the engine instance as a whole (stored on the local disk along-side the cache).
+		*/
+		const (
+			// Argon2 is flexible in terms of time+memory tradeoffs, tuned by these parameters. We use a relatively low memory cost here and in exchange
+			// increase the number of time (aka passes).
+			time    = 10       // 10 passes
+			memory  = 2 * 1024 // 2MB
+			threads = 1        // no parallelism
+
+			// byte size of the returned key; this is mostly arbitrarily chosen right now, with the only consideration being it should be large enough
+			// to avoid collisions. 32 bytes should be more than enough.
+			keySize = 32
+		)
 		key := argon2.IDKey(
 			plaintext,
 			parent.Self.SecretSalt(),
-			10, 2*1024, 1, // TODO: doc, extrapolated from https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id
-			32,
+			time, memory, threads,
+			keySize,
 		)
 		b64Key := base64.RawStdEncoding.EncodeToString(key)
 		i = i.WithDigest(digest.Digest("argon2:" + b64Key))
