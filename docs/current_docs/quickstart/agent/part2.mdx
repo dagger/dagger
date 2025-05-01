@@ -5,7 +5,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import PartialIde from '../../partials/_ide.mdx';
 
-# Build an AI Agent: Part 2
+# Build a Contextual Agent
 
 Now that you've learned the basics of creating an AI Agent with Dagger in [Part 1](./agent), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI Agent that builds features for an existing project.
 
@@ -13,13 +13,13 @@ For this guide you will start with a Daggerized project. The agent will use the 
 
 ## Requirements
 
-- You have [installed](TODO) Dagger
-- You have [configured](TODO) an LLM provider to use with Dagger
+- you have [installed the Dagger CLI](../../install.mdx).
+- You have [configured](../../configuration/llm.mdx) an LLM provider to use with Dagger
 - You have completed the first [AI Agent quickstart](./agent)
 
 ## Initialize the example application
 
-FIXME create and clone a repo from the [template repository](TODO)
+FIXME create and clone a repo from the TODO template repository
 
 ```shell
 TODO: create repo from template
@@ -36,7 +36,7 @@ dagger functions
 
 This should show:
 
-```shell
+```
 Name        Description
 build       Build the application container
 build-env   Build a ready-to-use development environment
@@ -70,7 +70,7 @@ To give the agent a specialized set of tools to edit files, create a Dagger subm
 
         Now replace the main file in the workspace with the following content.
         Edit `.dagger/workspace/src/workspace/main.py`:
-        ```python file=./snippets/part2/workspace/src/workspace/main.py
+        ```python file=./snippets/part2/workspace/python/src/workspace/main.py
         ```
     </TabItem>
     <TabItem value="typescript" label="Typescript">
@@ -82,12 +82,14 @@ To give the agent a specialized set of tools to edit files, create a Dagger subm
 
         Now replace the main file in the workspace with the following content.
         Edit `.dagger/workspace/src/index.ts`:
-        ```typescript file=./snippets/part2/workspace/src/index.ts
+        ```typescript file=./snippets/part2/workspace/typescript/src/index.ts
         ```
     </TabItem>
     <TabItem value="java" label="Java">
+    TODO
     </TabItem>
     <TabItem value="php" label="PHP">
+    TODO
     </TabItem>
 </Tabs>
 
@@ -104,14 +106,28 @@ This agent will be used to make changes to the application and use the existing 
 
 <Tabs groupId="language" queryString="sdk">
     <TabItem value="go" label="Go">
+        Add the following new function to the main dagger module in `.dagger/main.go`:
+
+        ```go file=./snippets/part2/agent/go/agent.go.snippet
+        ```
     </TabItem>
     <TabItem value="python" label="Python">
+        Add the following new function to the main dagger module in `.dagger/src/hello-dagger/main.py`:
+
+        ```python file=./snippets/part2/agent/python/agent.py.snippet
+        ```
     </TabItem>
     <TabItem value="typescript" label="Typescript">
+        Add the following new function to the main dagger module in `.dagger/src/index.ts`:
+
+        ```typescript file=./snippets/part2/agent/typescript/agent.ts.snippet
+        ```
     </TabItem>
     <TabItem value="java" label="Java">
+    TODO
     </TabItem>
     <TabItem value="php" label="PHP">
+    TODO
     </TabItem>
 </Tabs>
 
@@ -122,8 +138,20 @@ The `Env` in this agent is privileged, which means the environment will also inc
 Notice the LLM references a prompt file instead of an inline prompt. The final step is to add this prompt file. Create a file `.dagger/develop_prompt.md` with the following content:
 
 ```
-TODO
+You are a developer on the HelloDagger Vue.js project.
+You will be given an assignment and the tools to complete the assignment.
+Your assignment is: $assignment
+
+## Constraints
+- Before writing code, analyze the Workspace to understand the project.
+- Do not make unneccessary changes.
+- Run tests with the HelloDagger Test tool.
+- You must pass the Directory from the Workspace_get_source to the Test tool.
+- Always run tests to validate your code changes.
+- Do not stop until you have completed the assignment and the tests pass.
 ```
+
+This prompt is longer and more structured than the prompt from the first quickstart. The tasks the agent will be asked to complete will be more complex because its making modifications to an existing codebase and will need to understand more context. To create a reliable agent that can operate with more complexity, the prompt structure and tools are extremely important.
 
 ## Run the agent
 
