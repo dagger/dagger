@@ -56,20 +56,6 @@ defmodule Dagger.Secret do
 
     Client.execute(secret.client, query_builder)
   end
-
-  @doc """
-  TODO.
-  """
-  @spec with_cache_key(t(), String.t()) :: Dagger.Secret.t()
-  def with_cache_key(%__MODULE__{} = secret, cache_key) do
-    query_builder =
-      secret.query_builder |> QB.select("withCacheKey") |> QB.put_arg("cacheKey", cache_key)
-
-    %Dagger.Secret{
-      query_builder: query_builder,
-      client: secret.client
-    }
-  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Secret do

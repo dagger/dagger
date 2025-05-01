@@ -54,14 +54,6 @@ func (s *secretSchema) Install() {
 			Sensitive().
 			DoNotCache("Do not include plaintext secret in the cache.").
 			Doc(`The value of this secret.`),
-
-		dagql.NodeFunc("withCacheKey", s.withCacheKey).
-			// TODO: doc
-			Doc(`TODO.`).
-			Args(
-				// TODO: doc
-				dagql.Arg("cacheKey").Doc("TODO"),
-			),
 	}.Install(s.srv)
 }
 
@@ -214,10 +206,4 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.Instance[*cor
 	}
 
 	return dagql.NewString(string(plaintext)), nil
-}
-
-func (s *secretSchema) withCacheKey(ctx context.Context, secret dagql.Instance[*core.Secret], args struct {
-	CacheKey dagql.String
-}) (dagql.Instance[*core.Secret], error) {
-	return secret.WithDigest(dagql.HashFrom(string(args.CacheKey))), nil
 }

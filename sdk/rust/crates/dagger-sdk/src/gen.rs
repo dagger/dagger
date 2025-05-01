@@ -9496,20 +9496,6 @@ impl Secret {
         let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO.
-    ///
-    /// # Arguments
-    ///
-    /// * `cache_key` - TODO
-    pub fn with_cache_key(&self, cache_key: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("withCacheKey");
-        query = query.arg("cacheKey", cache_key.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
 }
 #[derive(Clone)]
 pub struct Service {

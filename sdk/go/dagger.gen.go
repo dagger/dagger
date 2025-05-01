@@ -8959,14 +8959,6 @@ type Secret struct {
 	plaintext *string
 	uri       *string
 }
-type WithSecretFunc func(r *Secret) *Secret
-
-// With calls the provided function with current Secret.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Secret) With(f WithSecretFunc) *Secret {
-	return f(r)
-}
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	return &Secret{
@@ -9051,16 +9043,6 @@ func (r *Secret) URI(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// TODO.
-func (r *Secret) WithCacheKey(cacheKey string) *Secret {
-	q := r.query.Select("withCacheKey")
-	q = q.Arg("cacheKey", cacheKey)
-
-	return &Secret{
-		query: q,
-	}
 }
 
 // A content-addressed service providing TCP connectivity.

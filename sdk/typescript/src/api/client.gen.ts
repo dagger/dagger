@@ -8375,24 +8375,6 @@ export class Secret extends BaseClient {
 
     return response
   }
-
-  /**
-   * TODO.
-   * @param cacheKey TODO
-   */
-  withCacheKey = (cacheKey: string): Secret => {
-    const ctx = this._ctx.select("withCacheKey", { cacheKey })
-    return new Secret(ctx)
-  }
-
-  /**
-   * Call the provided function with current Secret.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Secret) => Secret) => {
-    return arg(this)
-  }
 }
 
 /**

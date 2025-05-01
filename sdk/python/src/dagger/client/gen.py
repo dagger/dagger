@@ -8995,27 +8995,6 @@ class Secret(Type):
         _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
-    def with_cache_key(self, cache_key: str) -> Self:
-        """TODO.
-
-        Parameters
-        ----------
-        cache_key:
-            TODO
-        """
-        _args = [
-            Arg("cacheKey", cache_key),
-        ]
-        _ctx = self._select("withCacheKey", _args)
-        return Secret(_ctx)
-
-    def with_(self, cb: Callable[["Secret"], "Secret"]) -> "Secret":
-        """Call the provided callable with current Secret.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
 
 @typecheck
 class Service(Type):
