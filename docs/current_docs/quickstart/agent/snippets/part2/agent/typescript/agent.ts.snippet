@@ -1,19 +1,22 @@
 /**
-   * A coding agent for developing new features
-   */
-  @func()
-  async develop(
+* A coding agent for developing new features
+*
+* @params assignment Assignment to complete
+* @params source Optional Directory to develop on
+*/
+@func()
+async develop(
     assignment: string,
-    source: Directory = dag.directory()
-  ): Promise<Directory> {
+    @argument({ defaultPath: "/" }) source: Directory
+): Promise<Directory> {
     // Environment with agent inputs and outputs
     const environment = dag.env({ privileged: true })
-      .withStringInput("assignment", assignment, "the assignment to complete")
-      .withWorkspaceInput(
+        .withStringInput("assignment", assignment, "the assignment to complete")
+        .withWorkspaceInput(
         "workspace",
         dag.workspace(source),
         "the workspace with tools to edit code")
-      .withWorkspaceOutput(
+        .withWorkspaceOutput(
         "completed",
         "the workspace with the completed assignment")
 
@@ -22,19 +25,19 @@
 
     // Put it all together to form the agent
     const work = dag.llm()
-      .withEnv(environment)
-      .withPromptFile(promptFile)
+        .withEnv(environment)
+        .withPromptFile(promptFile)
 
     // Get the output from the agent
     const completed = work
-      .env()
-      .output("completed")
-      .asWorkspace()
-    const completedDirectory = completed.source().withoutDirectory("node_modules")
+        .env()
+        .output("completed")
+        .asWorkspace()
+    const completedDirectory = completed.getSource().withoutDirectory("node_modules")
 
     // Make sure the tests really pass
     await this.test(completedDirectory)
 
     // Return the Directory with the assignment completed
     return completedDirectory
-  }
+}

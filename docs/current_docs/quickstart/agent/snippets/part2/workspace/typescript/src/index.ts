@@ -8,13 +8,11 @@ export class Workspace {
     this.source = source
   }
 
-  @func()
-  static new(
-    source: Directory,
-  ): Workspace {
-    return new Workspace(source)
-  }
-
+  /**
+  * Read a file in the Workspace
+  *
+  * @param path The path to the file in the workspace
+  */
   @func()
   async readFile(
     path: string,
@@ -22,6 +20,12 @@ export class Workspace {
     return await this.source.file(path).contents()
   }
 
+  /**
+  * Write a file to the Workspace
+  *
+  * @param path The path to the file in the workspace
+  * @param contents The new contents of the file
+  */
   @func()
   writeFile(
     path: string,
@@ -31,6 +35,9 @@ export class Workspace {
     return this
   }
 
+  /**
+  * List all of the files in the Workspace
+  */
   @func()
   async listFiles(): Promise<string> {
     return await dag
@@ -42,6 +49,9 @@ export class Workspace {
       .stdout()
   }
 
+  /**
+  * Get the source code directory from the Workspace
+  */
   @func()
   getSource(): Directory {
     return this.source

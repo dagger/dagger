@@ -23,7 +23,7 @@ func New(
 // Read a file in the Workspace
 func (w *Workspace) ReadFile(
 	ctx context.Context,
-	// the path to the file in the workspace
+	// The path to the file in the workspace
 	path string,
 ) (string, error) {
 	return w.Source.File(path).Contents(ctx)

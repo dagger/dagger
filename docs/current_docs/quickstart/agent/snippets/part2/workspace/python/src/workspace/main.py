@@ -1,26 +1,34 @@
+from typing import Annotated
 
 import dagger
-from dagger import dag, function, object_type
+from dagger import dag, Doc, function, object_type
 
 @object_type
 class Workspace:
+    """A module for editing code"""
     source: dagger.Directory
 
     @function
-    def __init__(self, source: dagger.Directory):
-        self.source = source
-
-    @function
-    async def read_file(self, path: str) -> str:
+    async def read_file(
+        self,
+        path: Annotated[str, Doc("The path to the file in the workspace")],
+    ) -> str:
+        """Read a file in the Workspace"""
         return await self.source.file(path).contents()
 
     @function
-    def write_file(self, path: str, contents: str) -> "Workspace":
+    def write_file(
+        self,
+        path: Annotated[str, Doc("The path to the file in the workspace")],
+        contents: Annotated[str, Doc("The new contents of the file")]
+    ) -> "Workspace":
+        """Write a file to the Workspace"""
         self.source = self.source.with_new_file(path, contents)
         return self
 
     @function
     async def list_files(self) -> str:
+        """List all of the files in the Workspace"""
         return await (
             dag.container()
             .from_("alpine:3")
@@ -32,4 +40,5 @@ class Workspace:
 
     @function
     def get_source(self) -> dagger.Directory:
+        """Get the source code directory from the Workspace"""
         return self.source
