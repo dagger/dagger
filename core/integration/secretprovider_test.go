@@ -161,7 +161,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		WithServiceBinding("vault", vaultServer).
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithEnvVariable("VAULT_TOKEN", "myroot")
-	require.NoError(t, err)
 
 	out, err := fetchSecret(
 		ctx,
@@ -178,7 +177,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		"vault://testsecret.bar",
 		true,
 	)
-	requireErrOut(t, err, `error reading from server`)
+	requireErrOut(t, err, `secret "bar" not found in path "testsecret"`)
 
 	_, err = fetchSecret(
 		ctx,

@@ -213,6 +213,8 @@ func startSessionSubprocess() error {
 
 	// start the session subprocess
 	cmd := exec.Command("/proc/self/exe")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{w}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,

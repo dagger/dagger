@@ -93,7 +93,7 @@ func (s *secretSchema) secret(
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
 			// secret wasn't found, but since it may be available later at use, tolerate the error and just use a random cache key
-			slog.Warn("secret not found, falling back to random cache key", "uri", args.URI)
+			slog.Warn("failed to get secret plaintext, falling back to random cache key", "uri", args.URI, "error", err)
 			plaintext = make([]byte, 32)
 			if _, err := cryptorand.Read(plaintext); err != nil {
 				return i, fmt.Errorf("failed to read random bytes: %w", err)
