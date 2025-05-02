@@ -5,8 +5,6 @@ package main
 import (
 	"context"
 	"dagger/workspace/internal/dagger"
-
-	"dagger.io/dagger/dag"
 )
 
 type Workspace struct {
