@@ -185,6 +185,13 @@ type Container {
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    
+    Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    """
+    rewriteTimestamp: Boolean = false
   ): File!
 
   """Initializes this container from a Dockerfile build."""
@@ -327,6 +334,13 @@ type Container {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    """
+    Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    
+    Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    """
+    rewriteTimestamp: Boolean = false
   ): String!
 
   """
@@ -434,6 +448,13 @@ type Container {
     "Docker" may be needed for older registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    
+    Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    """
+    rewriteTimestamp: Boolean = false
   ): String!
 
   """

@@ -707,6 +707,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        rewrite_timestamp: bool | None = False,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
         archive
@@ -729,6 +730,10 @@ class Container(Type):
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        rewrite_timestamp:
+            Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+            Defaults to false. See build reproducibility for how to specify
+            the SOURCE_DATE_EPOCH value.
         """
         _args = [
             Arg(
@@ -738,6 +743,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("rewriteTimestamp", rewrite_timestamp, False),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -955,6 +961,7 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
+        rewrite_timestamp: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
@@ -986,6 +993,10 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        rewrite_timestamp:
+            Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+            Defaults to false. See build reproducibility for how to specify
+            the SOURCE_DATE_EPOCH value.
 
         Returns
         -------
@@ -1011,6 +1022,7 @@ class Container(Type):
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("expand", expand, False),
+            Arg("rewriteTimestamp", rewrite_timestamp, False),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
@@ -1220,6 +1232,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        rewrite_timestamp: bool | None = False,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -1249,6 +1262,10 @@ class Container(Type):
             Defaults to "OCI", which is compatible with most recent
             registries, but "Docker" may be needed for older registries
             without OCI support.
+        rewrite_timestamp:
+            Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+            Defaults to false. See build reproducibility for how to specify
+            the SOURCE_DATE_EPOCH value.
 
         Returns
         -------
@@ -1273,6 +1290,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("rewriteTimestamp", rewrite_timestamp, False),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)

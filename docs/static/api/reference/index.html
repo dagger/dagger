@@ -4198,6 +4198,11 @@
                                 <p>Use the specified media types for the image&#39;s layers.</p>
                                 <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>rewriteTimestamp</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.</p>
+                                <p>Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -4367,6 +4372,11 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>rewriteTimestamp</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.</p>
+                                <p>Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -4508,6 +4518,11 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
                                 <p>Use the specified media types for the published image&#39;s layers.</p>
                                 <p>Defaults to &quot;OCI&quot;, which is compatible with most recent registries, but &quot;Docker&quot; may be needed for older registries without OCI support.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>rewriteTimestamp</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.</p>
+                                <p>Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.</p>
                               </div>
                             </div>
                           </div>

@@ -115,6 +115,13 @@ export type ContainerAsTarballOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+   */
+  rewriteTimestamp?: boolean
 }
 
 export type ContainerBuildOpts = {
@@ -183,6 +190,13 @@ export type ContainerExportOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+   */
+  rewriteTimestamp?: boolean
 }
 
 export type ContainerFileOpts = {
@@ -220,6 +234,13 @@ export type ContainerPublishOpts = {
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+   */
+  rewriteTimestamp?: boolean
 }
 
 export type ContainerTerminalOpts = {
@@ -1855,6 +1876,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   * @param opts.rewriteTimestamp Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
@@ -2012,6 +2036,9 @@ export class Container extends BaseClient {
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.rewriteTimestamp Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
    */
   export = async (
     path: string,
@@ -2173,6 +2200,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
    *
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
+   * @param opts.rewriteTimestamp Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+   *
+   * Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
    */
   publish = async (
     address: string,
