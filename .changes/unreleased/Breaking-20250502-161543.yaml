@@ -1,0 +1,26 @@
+kind: Breaking
+body: |
+  Cache URI-based secrets based on their plaintext value rather than the URI.
+
+  Previously, the "cache key" for URI-based secrets (e.g. `env://FOO`, `file:///some/path`, etc.) was the URI string. This meant that operations including the secret (e.g. as an environment variable in a Container) would be cached based on the URI value. If two secrets from different clients had the same URI but different plaintext values, cache for operations that include them would be shared.
+
+  In many cases, even when URIs were the same, the plaintext of secrets could be meaningfully different, which made this behavior surprising and lead to unexpected results.
+
+  Now, URI-based secrets are cached based on secure hashes of their plaintext value. Two secrets that have the same URI but different plaintext values will be cached separately, and operations that include them will not share cache.
+
+  However, there are cases where users do want secrets with different plaintexts to share cache, e.g. secrets that rotate in plaintext value frequently but aren't meaningfully different and thus shouldn't bust the cache of operations that include them.
+
+  To continue supporting those use cases, there is a new optional `cacheKey` argument to `Secret` that can be used to specify a custom cache key. If provided, the cache key will be used instead of the default plaintext-based cache key, allowing any secrets sharing that cache-key to be cached together.
+
+  SDKs can provide this as an optional argument to the `Secret` constructor. Other example usages:
+
+  dagger shell:
+    - `dagger shell -c "some-function --secret-arg $(secret env://FOO --cache-key my-cache-key)"`
+
+  dagger call (supports a special syntax that sets the cache key via a query param in the URI):
+    - `dagger call some-function --secret-arg env://FOO?cacheKey=my-cache-key`
+
+time: 2025-05-02T16:15:43.250999164-07:00
+custom:
+  Author: sipsma
+  PR: "10311"
