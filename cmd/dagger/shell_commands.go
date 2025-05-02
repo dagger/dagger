@@ -631,6 +631,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			"env",
 			"http",
 			"set-secret",
+			"secret",
 			"version",
 		}
 
