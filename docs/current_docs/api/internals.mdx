@@ -144,150 +144,150 @@ As this example demonstrates, Dagger object IDs hold the state of their correspo
 
 GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger uses this feature of GraphQL to evaluate workflows "lazily".
 
-In practice, this means that if you create a Dagger object (like a container or a directory) but never access its state - either by returning it to the Dagger CLI or using it in a different Dagger Function - Dagger automatically skips it as part of its  optimization process, thinking it's not needed. This is analogous to running a build command but never using the output binary; since the output is never used, Dagger optimizes away the build step.
+In practice, this means that if you create a Dagger object (like a container or a directory) but never access its state - either by returning it to the Dagger CLI, reading data from it, or using it in a different Dagger Function - Dagger automatically skips it as part of its optimization process, thinking it's not needed. This is analogous to running a build command but never using the output binary; since the output is never used, Dagger optimizes away the build step.
 
-There are some cases where this behavior causes unexpected results, such as when the command run has external effects. In this case, the optimization can be forcefully disabled with the `sync` field.
+There are some cases where this behavior causes unexpected results, such as when the command to be run has external effects. In this case, the optimization can be forcefully disabled with the `sync` field.
 
-Here are two examples to make this clearer:
+Here are two examples to make this clearer.
 
 1. Navigate to [Webhook.site](https://webhook.site), a free online tool that lets you receive and log incoming HTTP requests. Obtain and copy your unique webhook URL, as shown below:
 
-![Webhook.site URL](/img/current_docs/api/webhook-1.png)
+    ![Webhook.site URL](/img/current_docs/api/webhook-1.png)
 
-Then, execute the following query, replacing the placeholder with your unique webhook URL:
+    Then, execute the following query, replacing the placeholder with your unique webhook URL:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["apk", "add", "curl"]) {
-        withExec(args: ["curl", "YOUR-WEBHOOK-URL"]) {
-          id
-        }
-      }
-    }
-  }
-}
-```
-
-This query instructs Dagger to:
-
-- initialize a container from the `alpine:latest` image (this resolves the `from` field);
-- add the `curl` command-line tool to the image via `apk add` (this resolves the `withExec` field);
-- send an HTTP request to your webhook URL using `curl` (this resolves the second `withExec` field);
-- return an ID representing the container state (this resolves the final `id` field).
-
-The query returns a base64-encoded block, as explained in the previous section.
-
-However, check the Webhook.site dashboard and you will notice that no HTTP request was sent when this query was executed. The reason is laziness: the query requests only an ID and, since resolving this does not require the commands to be executed, Dagger does not do so. It merely returns the container state and execution plan without actually executing the plan or running the `curl` command.
-
-Now, update and execute the query again as follows:
-
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["apk", "add", "curl"]) {
-        withExec(args: ["curl", "YOUR-WEBHOOK-URL-HERE"]) {
-          stdout
-        }
-      }
-    }
-  }
-}
-```
-
-This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
-
-![Webhook.site request](/img/current_docs/api/webhook-2.png)
-
-1. Clone the Go examples repository and make it the working directory:
-
-```shell
-git clone https://github.com/golang/example
-cd example
-```
-
-Next, execute the following query:
-
-```graphql
-query {
-  host {
-    directory(path: "./hello") {
-      id
-    }
-  }
-}
-```
-
-The return value of this query is an ID representing the state of the `hello` repository sub-directory on the host
-
-Next, execute the following query, replacing the placeholder with the contents of the `id` field from the previous query:
-
-```graphql
-query {
-  container {
-    from(address: "golang:latest") {
-      withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
-        withWorkdir(path: "/src") {
-          withExec(args: ["go", "build"]) {
-            id
+    ```graphql
+    query {
+      container {
+        from(address: "alpine:latest") {
+          withExec(args: ["apk", "add", "curl"]) {
+            withExec(args: ["curl", "YOUR-WEBHOOK-URL"]) {
+              id
+            }
           }
         }
       }
     }
-  }
-}
-```
+    ```
 
-This query instructs Dagger to:
+    This query instructs Dagger to:
 
-- initialize a container from the `golang:latest` image (this resolves the `from` field);
-- copy the `hello` directory from the host to `/src` in the container (this resolves the `withDirectory` field);
-- make the `/src/hello` directory in the container the current working directory (this resolves the `withWorkdir` field);
-- build the source code in the working directory (this resolves the `withExec` field);
+    - initialize a container from the `alpine:latest` image (this resolves the `from` field);
+    - add the `curl` command-line tool to the image via `apk add` (this resolves the `withExec` field);
+    - send an HTTP request to your webhook URL using `curl` (this resolves the second `withExec` field);
+    - return an ID representing the container state (this resolves the final `id` field).
 
-However, when you run this query, you will notice that the binary is not actually built. Again, this is because the build result is not being used (neither executed or transferred back to the host), Dagger optimizes away that step.
+    The query returns a base64-encoded block, as explained in the previous section.
 
-To forcefully execute the step, update the query to use the `sync` field:
+    However, check the Webhook.site dashboard and you will notice that no HTTP request was sent when this query was executed. The reason is laziness: the query requests only an ID and, since resolving this does not require the commands to be executed, Dagger does not do so. It merely returns the container state and execution plan without actually executing the plan or running the `curl` command.
 
-```graphql
-query {
-  container {
-    from(address: "golang:latest") {
-      withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
-        withWorkdir(path: "/src") {
-          withExec(args: ["go", "build"]) {
-            sync
-          }
-        }
-      }
-    }
-  }
-}
-```
+    Now, update and execute the query again as follows:
 
-Alternatively, update the query to actually use the build output, such as running the compiled binary and returning the output:
-
-```graphql
-query {
-  container {
-    from(address: "golang:latest") {
-      withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
-        withWorkdir(path: "/src") {
-          withExec(args: ["go", "build"]) {
-            withExec(args: ["./hello"]) {
+    ```graphql
+    query {
+      container {
+        from(address: "alpine:latest") {
+          withExec(args: ["apk", "add", "curl"]) {
+            withExec(args: ["curl", "YOUR-WEBHOOK-URL-HERE"]) {
               stdout
             }
           }
         }
       }
     }
-  }
-}
-```
+    ```
 
-In both these cases, Dagger will execute all the steps: in the first case, because execution is forced with `sync` and in the second case, because output is requested and that output depends on a specific container state.
+    This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
+
+    ![Webhook.site request](/img/current_docs/api/webhook-2.png)
+
+1. Clone the Go examples repository and make it your working directory:
+
+    ```shell
+    git clone https://github.com/golang/example
+    cd example
+    ```
+
+    Next, execute the following query:
+
+    ```graphql
+    query {
+      host {
+        directory(path: "./hello") {
+          id
+        }
+      }
+    }
+    ```
+
+    The return value of this query is an ID representing the state of the `hello` sub-directory of the repository.
+
+    Next, execute the following query, replacing the placeholder with the contents of the `id` field from the previous query:
+
+    ```graphql
+    query {
+      container {
+        from(address: "golang:latest") {
+          withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
+            withWorkdir(path: "/src") {
+              withExec(args: ["go", "build"]) {
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    This query instructs Dagger to:
+
+    - initialize a container from the `golang:latest` image (this resolves the `from` field);
+    - copy the `hello` directory from the host to `/src` in the container (this resolves the `withDirectory` field);
+    - make the `/src/hello` directory in the container the current working directory (this resolves the `withWorkdir` field);
+    - build the source code in the working directory (this resolves the `withExec` field);
+
+    However, when you run this query, you will notice that the binary is not actually built. Again, this is because the build result is not being used (neither executed or transferred back to the host), Dagger optimizes away that step.
+
+    To forcefully execute the step, update the query to use the `sync` field:
+
+    ```graphql
+    query {
+      container {
+        from(address: "golang:latest") {
+          withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
+            withWorkdir(path: "/src") {
+              withExec(args: ["go", "build"]) {
+                sync
+              }
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    Alternatively, update the query to actually use the build output, such as running the compiled binary and returning the output:
+
+    ```graphql
+    query {
+      container {
+        from(address: "golang:latest") {
+          withDirectory(path: "/src", directory: "YOUR-ID-HERE") {
+            withWorkdir(path: "/src") {
+              withExec(args: ["go", "build"]) {
+                withExec(args: ["./hello"]) {
+                  stdout
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    In both these cases, Dagger will execute all the steps: in the first case, because execution is forced with `sync` and in the second case, because output is requested and that output depends on a specific container state.
 
 These examples demonstrate the lazy evaluation model in action. The client requests data and, if executing a command is necessary to return that data, Dagger will do so; if not, it will not.
 
