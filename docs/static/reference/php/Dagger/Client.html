@@ -798,7 +798,7 @@
                     <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_secret">secret</a>(string $uri)
+                    <a href="#method_secret">secret</a>(string $uri, string|null $cacheKey = null)
         
                                             <p><p>Creates a new secret.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -3637,7 +3637,7 @@
                     <h3 id="method_secret">
         <div class="location">at line 711</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
-    <strong>secret</strong>(string $uri)
+    <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
     </h3>
     <div class="details">    
@@ -3654,6 +3654,11 @@
                     <tr>
                 <td>string</td>
                 <td>$uri</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$cacheKey</td>
                 <td></td>
             </tr>
             </table>
@@ -3677,7 +3682,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 723</div>
+        <div class="location">at line 726</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -3724,7 +3729,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 734</div>
+        <div class="location">at line 737</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -3776,7 +3781,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 746</div>
+        <div class="location">at line 749</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -3808,7 +3813,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 755</div>
+        <div class="location">at line 758</div>
         <code>                    string
     <strong>version</strong>()
         </code>
