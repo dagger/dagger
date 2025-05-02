@@ -359,30 +359,37 @@ func NoopDone(res Typed, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	inputArgs, newID, doNotCache, skipDedupe, err := r.preselect(ctx, s, sel)
+	preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, nil, err
 	}
-	return r.call(ctx, s, newID, inputArgs, doNotCache, skipDedupe)
+	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache, preselectResult.skipDedupe)
 }
 
 func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	_, newID, _, _, err := r.preselect(ctx, s, sel) //nolint:dogsled
+	preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, nil, err
 	}
-	returnType, err := r.returnType(newID)
+	returnType, err := r.returnType(preselectResult.newID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return returnType, newID, nil
+	return returnType, preselectResult.newID, nil
 }
 
-func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (map[string]Input, *call.ID, bool, bool, error) {
+type preselectResult struct {
+	inputArgs  map[string]Input
+	newID      *call.ID
+	doNotCache bool
+	skipDedupe bool
+}
+
+func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
-		return nil, nil, false, false, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -417,7 +424,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, false, false, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 	// TODO: it's better DX if it matches schema order
@@ -451,7 +458,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 			Digest: origDgst,
 		})
 		if err != nil {
-			return nil, nil, false, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
+			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
 		}
 
 		if len(cacheCfg.UpdatedArgs) > 0 {
@@ -489,7 +496,12 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (ma
 		}
 	}
 
-	return inputArgs, newID, doNotCache, skipDedupe, nil
+	return &preselectResult{
+		inputArgs:  inputArgs,
+		newID:      newID,
+		doNotCache: doNotCache,
+		skipDedupe: skipDedupe,
+	}, nil
 }
 
 // Call calls the field on the instance specified by the ID.
