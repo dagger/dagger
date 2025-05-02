@@ -449,10 +449,22 @@ func (v *secretValue) Set(s string) error {
 		s = secretSource + "://" + val
 	}
 
-	const cacheKeyPrefix = ",cacheKey="
-	if i := strings.LastIndex(s, cacheKeyPrefix); i != -1 {
-		v.cacheKey = s[i+len(cacheKeyPrefix):]
-		s = s[:i]
+	sWithoutQuery, queryValsStr, ok := strings.Cut(s, "?")
+	if ok && len(queryValsStr) > 0 {
+		queryVals, err := url.ParseQuery(queryValsStr)
+		if err != nil {
+			return err
+		}
+		if cacheKey := queryVals.Get("cacheKey"); cacheKey != "" {
+			v.cacheKey = cacheKey
+			queryVals.Del("cacheKey")
+			queryValsStr = queryVals.Encode()
+			if len(queryValsStr) > 0 {
+				s = fmt.Sprintf("%s?%s", sWithoutQuery, queryValsStr)
+			} else {
+				s = sWithoutQuery
+			}
+		}
 	}
 
 	v.uri = s
