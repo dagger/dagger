@@ -38,8 +38,8 @@ By default, the TypeScript SDK executes functions using the Node.js runtime, but
 
 To change the TypeScript SDK runtime, refer to the sections below.
 
-<Tabs groupId="ts_runtime">
-<TabItem value="Node.js">
+<Tabs groupId="ts_runtime" queryString="ts_runtime">
+<TabItem value="nodejs" label="Node.js">
 Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
 
 ```json
@@ -56,7 +56,7 @@ You can also set a specific version with a suffix (e.g., `node@20.15.0`).
   }
 ```
 </TabItem>
-<TabItem value="Bun">
+<TabItem value="bun" label="Bun">
 
 :::warning
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
@@ -90,7 +90,7 @@ dagger init --sdk=typescript --name=example --source=.
 The module's `source` field must reference the same directory as the `bun.lock` or `bun.lockb` file.
 :::
 </TabItem>
-<TabItem value="Deno">
+<TabItem value="deno" label="Deno">
 
 :::warning
 Deno runtime support is still experimental. Unexpected results may occur in some cases.
@@ -240,7 +240,7 @@ However, you can also configure the SDK as a local vendored dependency:
 
 ```shell
 # Cleanup the current SDK module's directory
-rm -rf ./sdk 
+rm -rf ./sdk
 
 # Add `@dagger.io/dagger` as a local dependency
 npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
@@ -267,7 +267,7 @@ To migrate from the local vendored SDK dependency back to the bundled SDK, rever
 
 ```shell
 # Cleanup the current SDK module's directory
-rm -rf ./sdk 
+rm -rf ./sdk
 
 # Remove `@dagger.io/dagger` from dependencies
 npm pkg delete "dependencies[@dagger.io/dagger]"
