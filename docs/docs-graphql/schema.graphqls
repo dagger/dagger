@@ -2417,6 +2417,12 @@ type GitRepository {
     name: String!
   ): GitRef!
 
+  """branches that match any of the given glob patterns."""
+  branches(
+    """Glob patterns (e.g., "refs/tags/v*")."""
+    patterns: [String!]
+  ): [String!]!
+
   """Returns details of a commit."""
   commit(
     """

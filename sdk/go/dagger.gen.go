@@ -5564,6 +5564,28 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	}
 }
 
+// GitRepositoryBranchesOpts contains options for GitRepository.Branches
+type GitRepositoryBranchesOpts struct {
+	// Glob patterns (e.g., "refs/tags/v*").
+	Patterns []string
+}
+
+// branches that match any of the given glob patterns.
+func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranchesOpts) ([]string, error) {
+	q := r.query.Select("branches")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `patterns` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Patterns) {
+			q = q.Arg("patterns", opts[i].Patterns)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Returns details of a commit.
 func (r *GitRepository) Commit(id string) *GitRef {
 	q := r.query.Select("commit")

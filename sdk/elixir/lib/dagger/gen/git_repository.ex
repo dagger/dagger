@@ -28,6 +28,19 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  branches that match any of the given glob patterns.
+  """
+  @spec branches(t(), [{:patterns, [String.t()]}]) :: {:ok, [String.t()]} | {:error, term()}
+  def branches(%__MODULE__{} = git_repository, optional_args \\ []) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("branches")
+      |> QB.maybe_put_arg("patterns", optional_args[:patterns])
+
+    Client.execute(git_repository.client, query_builder)
+  end
+
+  @doc """
   Returns details of a commit.
   """
   @spec commit(t(), String.t()) :: Dagger.GitRef.t()

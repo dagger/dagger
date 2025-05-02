@@ -96,6 +96,11 @@ func (s *gitSchema) Install() {
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
+		dagql.NodeFuncWithCacheKey("branches", s.branches, dagql.CachePerSession).
+			Doc(`branches that match any of the given glob patterns.`).
+			Args(
+				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
+			),
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
 			Deprecated(`Use "httpAuthToken" in the constructor instead.`).
@@ -513,6 +518,25 @@ func (s *gitSchema) tags(ctx context.Context, parent dagql.Instance[*core.GitRep
 
 type withAuthTokenArgs struct {
 	Token core.SecretID
+}
+
+type branchesArgs struct {
+	Patterns dagql.Optional[dagql.ArrayInput[dagql.String]] `name:"patterns"`
+}
+
+func (s *gitSchema) branches(ctx context.Context, parent dagql.Instance[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
+	if !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.branches)
+	}
+
+	var patterns []string
+	if args.Patterns.Valid {
+		for _, pattern := range args.Patterns.Value {
+			patterns = append(patterns, pattern.String())
+		}
+	}
+	res, err := parent.Self.Branches(ctx, patterns)
+	return dagql.NewStringArray(res...), err
 }
 
 func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
