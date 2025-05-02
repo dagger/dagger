@@ -3216,6 +3216,22 @@ type Query {
     message: String!
   ): Error!
 
+  """Creates a file with the specified contents."""
+  file(
+    """
+    Name of the new file. Example: "foo.txt"
+    """
+    name: String!
+
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
+    contents: String!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
+  ): File!
+
   """Creates a function."""
   function(
     """

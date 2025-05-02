@@ -112,6 +112,12 @@ func Error(message string) *dagger.Error {
 	return client.Error(message)
 }
 
+// Creates a file with the specified contents.
+func File(name string, contents string, opts ...dagger.FileOpts) *dagger.File {
+	client := initClient()
+	return client.File(name, contents, opts...)
+}
+
 // Creates a function.
 func Function(name string, returnType *dagger.TypeDef) *dagger.Function {
 	client := initClient()

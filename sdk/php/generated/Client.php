@@ -122,6 +122,20 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Creates a file with the specified contents.
+     */
+    public function file(string $name, string $contents, ?int $permissions = 420): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a function.
      */
     public function function(string $name, TypeDefId|TypeDef $returnType): Function_

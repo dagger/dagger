@@ -8071,6 +8071,32 @@ class Client(Root):
         _ctx = self._select("error", _args)
         return Error(_ctx)
 
+    def file(
+        self,
+        name: str,
+        contents: str,
+        *,
+        permissions: int | None = 420,
+    ) -> File:
+        """Creates a file with the specified contents.
+
+        Parameters
+        ----------
+        name:
+            Name of the new file. Example: "foo.txt"
+        contents:
+            Contents of the new file. Example: "Hello world!"
+        permissions:
+            Permissions of the new file. Example: 0600
+        """
+        _args = [
+            Arg("name", name),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
     def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
 

@@ -8091,6 +8091,12 @@ pub struct QueryEnvOpts {
     pub writable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryFileOpts {
+    /// Permissions of the new file. Example: 0600
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
@@ -8302,6 +8308,48 @@ impl Query {
         let mut query = self.selection.select("error");
         query = query.arg("message", message.into());
         Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a file with the specified contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "foo.txt"
+    /// * `contents` - Contents of the new file. Example: "Hello world!"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file(&self, name: impl Into<String>, contents: impl Into<String>) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a file with the specified contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "foo.txt"
+    /// * `contents` - Contents of the new file. Example: "Hello world!"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file_opts(
+        &self,
+        name: impl Into<String>,
+        contents: impl Into<String>,
+        opts: QueryFileOpts,
+    ) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents.into());
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
