@@ -8664,16 +8664,32 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def secret(self, uri: str) -> "Secret":
+    def secret(
+        self,
+        uri: str,
+        *,
+        cache_key: str | None = None,
+    ) -> "Secret":
         """Creates a new secret.
 
         Parameters
         ----------
         uri:
             The URI of the secret store
+        cache_key:
+            If set, the given string will be used as the cache key for this
+            secret. This means that any secrets with the same cache key will
+            be considered equivalent in terms of cache lookups, even if they
+            have different URIs or plaintext values.
+            For example, two secrets with the same cache key provided as
+            secret env vars to other wise equivalent containers will result in
+            the container withExecs hitting the cache for each other.
+            If not set, the cache key for the secret will be derived from its
+            plaintext value as looked up when the secret is constructed.
         """
         _args = [
             Arg("uri", uri),
+            Arg("cacheKey", cache_key, None),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)

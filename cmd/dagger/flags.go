@@ -430,7 +430,8 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
 // plaintext value.
 type secretValue struct {
-	uri string
+	uri      string
+	cacheKey string
 }
 
 func (v *secretValue) Type() string {
@@ -448,6 +449,24 @@ func (v *secretValue) Set(s string) error {
 		s = secretSource + "://" + val
 	}
 
+	sWithoutQuery, queryValsStr, ok := strings.Cut(s, "?")
+	if ok && len(queryValsStr) > 0 {
+		queryVals, err := url.ParseQuery(queryValsStr)
+		if err != nil {
+			return err
+		}
+		if cacheKey := queryVals.Get("cacheKey"); cacheKey != "" {
+			v.cacheKey = cacheKey
+			queryVals.Del("cacheKey")
+			queryValsStr = queryVals.Encode()
+			if len(queryValsStr) > 0 {
+				s = fmt.Sprintf("%s?%s", sWithoutQuery, queryValsStr)
+			} else {
+				s = sWithoutQuery
+			}
+		}
+	}
+
 	v.uri = s
 
 	return nil
@@ -458,7 +477,13 @@ func (v *secretValue) String() string {
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Secret(v.uri), nil
+	var opts []dagger.SecretOpts
+	if v.cacheKey != "" {
+		opts = append(opts, dagger.SecretOpts{
+			CacheKey: v.cacheKey,
+		})
+	}
+	return c.Secret(v.uri, opts...), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port

@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix panic in vault secret provider when path exists but secret doesn't.
+time: 2025-05-02T16:33:42.692421277-07:00
+custom:
+  Author: sipsma
+  PR: "10311"

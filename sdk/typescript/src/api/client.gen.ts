@@ -1262,6 +1262,17 @@ export type ClientModuleSourceOpts = {
   requireKind?: ModuleSourceKind
 }
 
+export type ClientSecretOpts = {
+  /**
+   * If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+   *
+   * For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+   *
+   * If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
+   */
+  cacheKey?: string
+}
+
 /**
  * Expected return type of an execution
  */
@@ -8096,9 +8107,14 @@ export class Client extends BaseClient {
   /**
    * Creates a new secret.
    * @param uri The URI of the secret store
+   * @param opts.cacheKey If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+   *
+   * For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+   *
+   * If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
    */
-  secret = (uri: string): Secret => {
-    const ctx = this._ctx.select("secret", { uri })
+  secret = (uri: string, opts?: ClientSecretOpts): Secret => {
+    const ctx = this._ctx.select("secret", { uri, ...opts })
     return new Secret(ctx)
   }
 

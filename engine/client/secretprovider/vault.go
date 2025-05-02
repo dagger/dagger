@@ -86,7 +86,15 @@ func vaultProvider(ctx context.Context, pathWithQuery string) ([]byte, error) {
 		vaultCache[key] = data
 	}
 
-	return []byte(vaultCache[key].data[secretField].(string)), nil
+	secretDataAny := vaultCache[key].data[secretField]
+	if secretDataAny == nil {
+		return nil, fmt.Errorf("secret %q not found in path %q", secretField, secretPath)
+	}
+	secretData, ok := secretDataAny.(string)
+	if !ok {
+		return nil, fmt.Errorf("secret %q in path %q is not a string", secretField, secretPath)
+	}
+	return []byte(secretData), nil
 }
 
 func hasExpired(data dataWithTTL) bool {

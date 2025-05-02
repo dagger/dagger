@@ -107,6 +107,9 @@ type Server interface {
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
+
+	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
+	SecretSalt() []byte
 }
 
 func NewRoot(srv Server) *Query {
