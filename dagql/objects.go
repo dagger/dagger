@@ -363,7 +363,7 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 	if err != nil {
 		return nil, nil, err
 	}
-	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache, preselectResult.skipDedupe)
+	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
 }
 
 func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
@@ -382,7 +382,6 @@ type preselectResult struct {
 	inputArgs  map[string]Input
 	newID      *call.ID
 	doNotCache bool
-	skipDedupe bool
 }
 
 func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
@@ -448,7 +447,6 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 	)
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
-	skipDedupe := field.CacheSpec.SkipDedupe
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
@@ -500,7 +498,6 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 		inputArgs:  inputArgs,
 		newID:      newID,
 		doNotCache: doNotCache,
-		skipDedupe: skipDedupe,
 	}, nil
 }
 
@@ -544,8 +541,7 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 	}
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
-	skipDedupe := field.CacheSpec.SkipDedupe
-	return r.call(ctx, s, newID, inputArgs, doNotCache, skipDedupe)
+	return r.call(ctx, s, newID, inputArgs, doNotCache)
 }
 
 func (r Instance[T]) call(
@@ -554,7 +550,6 @@ func (r Instance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 	doNotCache bool,
-	skipDedupe bool,
 ) (Typed, *call.ID, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
@@ -569,7 +564,7 @@ func (r Instance[T]) call(
 			return s.telemetry(ctx, r, newID)
 		}))
 	}
-	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, skipDedupe, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, true, func(ctx context.Context) (*CacheValWithCallbacks, error) {
 		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), View(newID.View()), inputArgs)
 		if err != nil {
 			return nil, err
@@ -1151,9 +1146,6 @@ type CacheSpec struct {
 	// If set, the result of this field will never be cached and not have concurrent equal
 	// calls deduped. The string value is a reason why the field should not be cached.
 	DoNotCache string
-
-	// TODO: doc
-	SkipDedupe bool
 }
 
 type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, View, CacheConfig) (*CacheConfig, error)
