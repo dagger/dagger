@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
@@ -345,4 +346,74 @@ func TestCacheResultRelease(t *testing.T) {
 		err = res2.Release(ctx)
 		assert.ErrorContains(t, err, "oh no")
 	})
+}
+
+func TestSkipDedupe(t *testing.T) {
+	t.Parallel()
+
+	c := NewCache[int, int]()
+	ctx := context.Background()
+
+	var eg errgroup.Group
+
+	valCh1 := make(chan int, 1)
+	started1 := make(chan struct{})
+	stop1 := make(chan struct{})
+	eg.Go(func() error {
+		_, err := c.GetOrInitializeWithCallbacks(ctx, 1, true, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+			defer close(valCh1)
+			close(started1)
+			valCh1 <- 1
+			<-stop1
+			return &ValueWithCallbacks[int]{Value: 1}, nil
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	valCh2 := make(chan int, 1)
+	started2 := make(chan struct{})
+	stop2 := make(chan struct{})
+	eg.Go(func() error {
+		_, err := c.GetOrInitializeWithCallbacks(ctx, 1, true, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+			defer close(valCh2)
+			close(started2)
+			valCh2 <- 2
+			<-stop2
+			return &ValueWithCallbacks[int]{Value: 2}, nil
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	select {
+	case <-started1:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for started1")
+	}
+	select {
+	case <-started2:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for started2")
+	}
+
+	close(stop1)
+	close(stop2)
+
+	select {
+	case val := <-valCh1:
+		assert.Equal(t, 1, val)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for resCh1")
+	}
+	select {
+	case val := <-valCh2:
+		assert.Equal(t, 2, val)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for resCh2")
+	}
 }
