@@ -90,7 +90,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	err := run(cmd, args)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Fprintln(os.Stderr, "run canceled")
+			fmt.Fprintln(stderr, "run canceled")
 			return ExitError{Code: 2}
 		}
 		var exitErr *exec.ExitError
@@ -141,7 +141,7 @@ func run(cmd *cobra.Command, args []string) error {
 		subCmd.Env = env
 
 		// allow piping to the command
-		subCmd.Stdin = os.Stdin
+		subCmd.Stdin = stdin
 
 		// NB: go run lets its child process roam free when you interrupt it, so
 		// make sure they all get signalled. (you don't normally notice this in a
@@ -162,19 +162,19 @@ func run(cmd *cobra.Command, args []string) error {
 			if stdoutIsTTY {
 				subCmd.Stdout = cmd.OutOrStdout()
 			} else {
-				subCmd.Stdout = os.Stdout
+				subCmd.Stdout = stdout
 			}
 
 			if stderrIsTTY {
 				subCmd.Stderr = cmd.ErrOrStderr()
 			} else {
-				subCmd.Stderr = os.Stderr
+				subCmd.Stderr = stderr
 			}
 
 			cmdErr = subCmd.Run()
 		} else {
-			subCmd.Stdout = os.Stdout
-			subCmd.Stderr = os.Stderr
+			subCmd.Stdout = stdout
+			subCmd.Stderr = stderr
 			cmdErr = subCmd.Run()
 		}
 

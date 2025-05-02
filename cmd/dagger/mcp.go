@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -33,9 +32,9 @@ var mcpCmd = &cobra.Command{
 		}
 
 		if progress == "auto" && hasTTY {
-			fmt.Fprintln(os.Stderr, "overriding 'auto' progress mode to 'plain' to avoid interference with mcp stdio")
+			fmt.Fprintln(stderr, "overriding 'auto' progress mode to 'plain' to avoid interference with mcp stdio")
 
-			Frontend = idtui.NewPlain()
+			Frontend = idtui.NewPlain(stderr)
 		}
 
 		return nil
@@ -43,7 +42,10 @@ var mcpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
-		return withEngine(ctx, client.Params{}, mcpStart)
+		return withEngine(ctx, client.Params{
+			Stdin:  stdin,
+			Stdout: stdout,
+		}, mcpStart)
 	},
 	Hidden: true,
 	Annotations: map[string]string{
@@ -102,7 +104,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("error making environment: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, logMsg)
+	fmt.Fprintln(stderr, logMsg)
 	q = q.Root().
 		Select("llm").
 		Select("withEnv").
