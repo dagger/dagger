@@ -78,11 +78,47 @@ var (
 	Frontend idtui.Frontend
 )
 
+var (
+	stdin          io.Reader
+	stdout, stderr io.Writer
+)
+
+func logFileFromEnv(envName string) *os.File {
+	if logFileName := os.Getenv(envName); logFileName != "" {
+		f, err := os.Create(logFileName)
+		if err != nil {
+			panic(err)
+		}
+		return f
+	}
+	return nil
+}
+
+func maybeWrapReader(r io.Reader, envName string) io.Reader {
+	f := logFileFromEnv(envName)
+	if f == nil {
+		return r
+	}
+	return io.TeeReader(r, f)
+}
+
+func maybeWrapWriter(w io.Writer, envName string) io.Writer {
+	f := logFileFromEnv(envName)
+	if f == nil {
+		return w
+	}
+	return io.MultiWriter(w, f)
+}
+
 func init() {
 	// Disable logrus output, which only comes from the docker
 	// commandconn library that is used by buildkit's connhelper
 	// and prints unneeded warning logs.
 	logrus.StandardLogger().SetOutput(io.Discard)
+
+	stdin = maybeWrapReader(os.Stdin, "DAGGER_LOG_STDIN")
+	stdout = maybeWrapWriter(os.Stdout, "DAGGER_LOG_STDOUT")
+	stderr = maybeWrapWriter(os.Stderr, "DAGGER_LOG_STDERR")
 
 	rootCmd.AddCommand(
 		listenCmd,
@@ -297,7 +333,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 		"dot-show-internal",
 	} {
 		if err := flags.MarkHidden(fl); err != nil {
-			fmt.Println("Error hiding flag: "+fl, err)
+			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
 			os.Exit(1)
 		}
 	}
@@ -318,7 +354,7 @@ func parseGlobalFlags() {
 	flags.ParseErrorsWhitelist.UnknownFlags = true
 	installGlobalFlags(flags)
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
 }
@@ -395,24 +431,24 @@ func main() {
 	}
 	switch progress {
 	case "plain":
-		Frontend = idtui.NewPlain()
+		Frontend = idtui.NewPlain(stderr)
 	case "tty":
 		if !hasTTY {
-			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
+			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
 			os.Exit(1)
 		}
-		Frontend = idtui.NewPretty()
+		Frontend = idtui.NewPretty(stderr)
 	case "report":
-		Frontend = idtui.NewReporter()
+		Frontend = idtui.NewReporter(stderr)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
+		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)
 	}
 
 	// Parse the interactive command to support shell-like syntax
 	parsedCommand, err := shlex.Split(interactiveCommand)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot parse interactive command: %s", err)
+		fmt.Fprintf(stderr, "cannot parse interactive command: %s", err)
 		os.Exit(1)
 	}
 	interactiveCommandParsed = parsedCommand
@@ -434,7 +470,7 @@ func main() {
 		} else if errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted) {
 			os.Exit(2)
 		} else {
-			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			os.Exit(1)
 		}
 	}

@@ -97,9 +97,6 @@ func withEngine(
 
 		params.WithTerminal = withTerminal
 
-		params.Stdin = os.Stdin
-		params.Stdout = os.Stdout
-
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 

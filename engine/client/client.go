@@ -358,8 +358,12 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// Git attachable
 		session.NewGitAttachable(ctx),
 		// pipe
-		session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout),
 	}
+
+	if c.Params.Stdin != nil && c.Params.Stdout != nil {
+		attachables = append(attachables, session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout))
+	}
+
 	// filesync
 	if !c.DisableHostRW {
 		filesyncer, err := NewFilesyncer()
