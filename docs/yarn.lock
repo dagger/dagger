@@ -8409,10 +8409,10 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.236.7:
-  version "1.236.7"
-  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.236.7.tgz#6a071905d4466573b80fd52bad1d3478594805b7"
-  integrity sha512-HatTinqAt/6aAraCgbnP+2MTeVTChdf6TDsQkef4/yUnXeA4tsHmXnGGJ3vnzQk7N//R6lIHN189BZDO9kuKAg==
+posthog-js@^1.239.1:
+  version "1.239.1"
+  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.239.1.tgz#871c734a438f2ead1529deba26031d689819d587"
+  integrity sha512-4cN3A02e9uyyTVQ/9+bGVfvoAmpM1mlVXlq2DsujCQjloMMSbEb+6Uwv6fro3Q5qk7NEU62kQqZHyvqQIqv9zA==
   dependencies:
     core-js "^3.38.1"
     fflate "^0.4.8"
@@ -9738,10 +9738,10 @@ typedoc-plugin-markdown@^4.6.3:
   resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.3.tgz#eb3cfda8ef7f66b6fc6be1fc7f0f037880355287"
   integrity sha512-86oODyM2zajXwLs4Wok2mwVEfCwCnp756QyhLGX2IfsdRYr1DXLCgJgnLndaMUjJD7FBhnLk2okbNE9PdLxYRw==
 
-typedoc@^0.28.3:
-  version "0.28.3"
-  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.28.3.tgz#2332a61848d6f64e5cecf86500d8510d0bb6401c"
-  integrity sha512-5svOCTfXvVSh6zbZKSQluZhR8yN2tKpTeHZxlmWpE6N5vc3R8k/jhg9nnD6n5tN9/ObuQTojkONrOxFdUFUG9w==
+typedoc@^0.28.4:
+  version "0.28.4"
+  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.28.4.tgz#015958b6c9cbf6ec70e77ca73ec6b65c74c8af02"
+  integrity sha512-xKvKpIywE1rnqqLgjkoq0F3wOqYaKO9nV6YkkSat6IxOWacUCc/7Es0hR3OPmkIqkPoEn7U3x+sYdG72rstZQA==
   dependencies:
     "@gerrit0/mini-shiki" "^3.2.2"
     lunr "^2.3.9"
