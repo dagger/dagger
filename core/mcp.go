@@ -863,7 +863,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				},
 			},
 		},
-		Call: ToolFunc(func(ctx context.Context, args struct {
+		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
 		}) (any, error) {
 			desc := "Available objects:"
