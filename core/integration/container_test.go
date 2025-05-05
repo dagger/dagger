@@ -389,6 +389,16 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		require.NoError(t, err)
 		require.Equal(t, "bay-contents", content)
 	})
+
+	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM scratch
+`)
+
+		_, err := c.Container().Build(src).Sync(ctx)
+		require.NoError(t, err)
+	})
 }
 
 func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
