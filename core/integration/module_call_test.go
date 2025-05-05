@@ -33,24 +33,29 @@ func (CallSuite) TestHelp(ctx context.Context, t *testctx.T) {
 	modGen := modInit(t, c, "go", `package main
 
 import (
+	"context"
 	"dagger/test/internal/dagger"
 )
 
 func New(source *dagger.Directory) *Test {
-    return &Test{
-        Source: source,
-    }
+	return &Test{
+		Source: source,
+	}
 }
 
 type Test struct {
-    Source *dagger.Directory
+	Source *dagger.Directory
 }
 
 func (m *Test) Container() *dagger.Container {
-    return dag.
-        Container().
-        From("`+alpineImage+`").
-        WithDirectory("/src", m.Source)
+	return dag.
+		Container().
+		From("`+alpineImage+`").
+		WithDirectory("/src", m.Source)
+}
+
+func (m *Test) Conflict(ctx context.Context, mod *dagger.Module) (string, error) {
+	return mod.Name(ctx)
 }
 `,
 	)
@@ -67,6 +72,11 @@ func (m *Test) Container() *dagger.Container {
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
 		require.Contains(t, out, "dagger call container directory [arguments] <function>")
+	})
+
+	t.Run("flag conflict", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(daggerCall("conflict", "--help")).Sync(ctx)
+		requireErrOut(t, err, "flag already exists: mod")
 	})
 }
 
