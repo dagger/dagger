@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"golang.org/x/mod/semver"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -250,7 +250,7 @@ func (p *ParsedGitRefString) GetGitRefAndModVersion(
 	var modVersion string
 	if p.hasVersion {
 		modVersion = p.ModVersion
-		if isSemver(modVersion) {
+		if semver.IsValid(modVersion) {
 			var tags dagql.Array[dagql.String]
 			err := dag.Select(ctx, dag.Root(), &tags,
 				dagql.Selector{
@@ -336,9 +336,4 @@ func matchVersion(versions []string, match, subPath string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unable to find version %s", match)
-}
-
-func isSemver(ver string) bool {
-	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-	return re.MatchString(ver)
 }

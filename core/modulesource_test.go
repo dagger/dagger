@@ -74,15 +74,6 @@ func TestMatchVersion(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestIsSemver(t *testing.T) {
-	require.True(t, isSemver("v1.0.0"))
-	require.True(t, isSemver("v2.0.1"))
-	require.False(t, isSemver("1.0.0"))
-	require.False(t, isSemver("v1.0"))
-	require.False(t, isSemver("v1"))
-	require.False(t, isSemver("foo"))
-}
-
 // Test ParseRefString using an interface to control Host side effect
 func TestParseRefString(t *testing.T) {
 	ctx := context.Background()
