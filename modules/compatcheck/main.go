@@ -124,7 +124,7 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 	deviceName, cidr := getUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", dag.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithExec([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			// // avoid network conflicts with other tests

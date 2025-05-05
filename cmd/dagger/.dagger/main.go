@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"dagger/dagger/internal/dagger"
+
+	"github.com/dagger/dagger/cmd/dagger/.dagger/internal/dagger"
 )
 
 func New(
@@ -21,11 +22,12 @@ func New(
 ) (*DaggerCli, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
-	version, err := dag.Version().Version(ctx)
+	v := dag.Version()
+	version, err := v.Version(ctx)
 	if err != nil {
 		return nil, err
 	}
-	imageTag, err := dag.Version().ImageTag(ctx)
+	imageTag, err := v.ImageTag(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +39,12 @@ func New(
 	if runnerHost != "" {
 		values = append(values, "main.RunnerHost="+runnerHost)
 	}
+
 	return &DaggerCli{
-		Gomod: dag.Go(source, dagger.GoOpts{
+		Version: version,
+		Tag:     version,
+		Git:     v.Git(),
+		Go: dag.Go(source, dagger.GoOpts{
 			Base:   base,
 			Values: values,
 		}),
@@ -46,7 +52,11 @@ func New(
 }
 
 type DaggerCli struct {
-	Gomod *dagger.Go // +private
+	Version string
+	Tag     string
+	Git     *dagger.VersionGit // +private
+
+	Go *dagger.Go // +private
 }
 
 // Build the dagger CLI binary for a single platform
@@ -54,7 +64,7 @@ func (cli DaggerCli) Binary(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
-	return cli.Gomod.Binary("./cmd/dagger", dagger.GoBinaryOpts{
+	return cli.Go.Binary("./cmd/dagger", dagger.GoBinaryOpts{
 		Platform:  platform,
 		NoSymbols: true,
 		NoDwarf:   true,
@@ -76,7 +86,7 @@ func (cli DaggerCli) Reference(
 	if frontmatter != "" {
 		cmd = append(cmd, "--frontmatter="+frontmatter)
 	}
-	return cli.Gomod.
+	return cli.Go.
 		Env().
 		WithExec(cmd).
 		File("cli.mdx")

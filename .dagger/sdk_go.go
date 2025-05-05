@@ -50,11 +50,7 @@ func (t GoSDK) Lint(ctx context.Context) (rerr error) {
 
 // Test the Go SDK
 func (t GoSDK) Test(ctx context.Context) (rerr error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	output, err := t.Dagger.Go().Env().
 		With(installer).
 		WithWorkdir("sdk/go").
@@ -68,11 +64,7 @@ func (t GoSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Go SDK API
 func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	generated := t.Dagger.Go().Env().
 		With(installer).
 		WithWorkdir("sdk/go").

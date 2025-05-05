@@ -177,7 +177,7 @@ func (r *Releaser) Publish(
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := r.Dagger.Engine().Publish(ctx, tags, dagger.DaggerDevDaggerEnginePublishOpts{
+	err := dag.DaggerEngine().Publish(ctx, tags, dagger.DaggerEnginePublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -193,8 +193,8 @@ func (r *Releaser) Publish(
 		Tag:  tag,
 	}
 	if !dryRun {
-		_, err := r.Dagger.Cli().
-			Publish(tag, goreleaserKey, githubOrgName, dagger.DaggerDevCliPublishOpts{
+		_, err := dag.DaggerCli().
+			Publish(tag, goreleaserKey, githubOrgName, dagger.DaggerCliPublishOpts{
 				GithubToken:        githubToken,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
@@ -206,12 +206,12 @@ func (r *Releaser) Publish(
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = r.Dagger.Cli().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+		err = dag.DaggerCli().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		err = r.Dagger.Cli().TestPublish(ctx)
+		err = dag.DaggerCli().TestPublish(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}

@@ -164,18 +164,19 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 	w := runner.
 		Workflow(name).
-		WithJob(runner.Job("engine-lint", "engine lint", dagger.GhaJobOpts{
+		WithJob(runner.Job("lint", "lint", dagger.GhaJobOpts{
 			Runner: []string{GoldRunner(false)},
 		})).
 		WithJob(runner.Job("scripts", "check --targets=scripts")).
-		WithJob(runner.Job("cli-test-publish", "cli test-publish")).
-		WithJob(runner.Job("cli-test-publish", "cli test-publish", dagger.GhaJobOpts{
+		WithJob(runner.Job("cli-test-publish", "test-publish", dagger.GhaJobOpts{
+			Module: "cmd/dagger",
 			Runner: []string{GoldRunner(false)},
 		})).
-		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
+		WithJob(runner.Job("engine-test-publish", "publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
+			Module: "cmd/engine",
 			Runner: []string{GoldRunner(false)},
 		})).
-		WithJob(runner.Job("scan-engine", "engine scan")).
+		WithJob(runner.Job("scan-engine", "scan")).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
 				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
