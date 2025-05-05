@@ -67,7 +67,7 @@ func (d *ModDeps) LookupDep(name string) (Mod, bool) {
 
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx)
+	schema, _, err := d.lazilyLoadSchema(ctx, []string{})
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +76,8 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
-func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context) (inst dagql.Instance[*File], _ error) {
-	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx)
+func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Instance[*File], _ error) {
+	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes)
 	if err != nil {
 		return inst, err
 	}
@@ -97,7 +97,7 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 	return typeDefs, nil
 }
 
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
+func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 	loadedSchema *dagql.Server,
 	loadedSchemaJSONFile dagql.Instance[*File],
 	rerr error,
@@ -203,7 +203,15 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	if err := dag.Select(ctx, dag.Root(), &loadedSchemaJSONFile,
-		dagql.Selector{Field: "__schemaJSONFile"},
+		dagql.Selector{
+			Field: "__schemaJSONFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "hiddenTypes",
+					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
+				},
+			},
+		},
 	); err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
 	}

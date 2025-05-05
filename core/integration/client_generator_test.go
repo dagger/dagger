@@ -1241,3 +1241,101 @@ func main() {
 		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger2"}]`, out)
 	})
 }
+
+func (ClientGeneratorTest) TestHostCall(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		baseImage string
+		generator string
+		callCmd   []string
+		setup     dagger.WithContainerFunc
+		postSetup dagger.WithContainerFunc
+		expected  string
+	}
+
+	testCases := []testCase{
+		{
+			baseImage: golangImage,
+			generator: "go",
+			callCmd:   []string{"go", "run", "main.go"},
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					WithExec([]string{"go", "mod", "init", "test.com/test"}).
+					WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger/dag"
+)
+
+func main() {
+	ctx := context.Background()
+	result, err := dag.Host().Directory("files").Entries(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(result)
+}`)
+			},
+			postSetup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr
+			},
+			expected: "[file1.txt]\n",
+		},
+		{
+			baseImage: nodeImage,
+			generator: "typescript",
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+					WithExec([]string{"npm", "init", "-y"}).
+					WithExec([]string{"npm", "pkg", "set", "type=module"}).
+					WithExec([]string{"npm", "install", "-D", "typescript"}).
+					WithNewFile("index.ts", `import { dag, connection } from "@dagger.io/client"
+
+async function main() {
+  await connection(async () => {
+    const result = await dag.host().directory("files").entries()
+    console.log(result)
+  })
+}
+
+main()`)
+			},
+			postSetup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					WithExec([]string{"npm", "install"})
+			},
+			callCmd:  []string{"tsx", "index.ts"},
+			expected: "[ 'file1.txt' ]\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			moduleSrc := c.Container().From(tc.baseImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+				With(nonNestedDevEngine(c)).
+				With(daggerNonNestedExec("init")).
+				With(tc.setup).
+				With(daggerClientInstall(tc.generator)).
+				With(tc.postSetup).
+				WithDirectory("files", c.Directory().WithNewFile("file1.txt", "hello world"))
+
+			out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, out)
+		})
+	}
+
+}

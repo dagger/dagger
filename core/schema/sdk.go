@@ -376,7 +376,7 @@ func (sdk *moduleSDK) GenerateClient(
 	outputDir string,
 	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -423,7 +423,7 @@ func (sdk *moduleSDK) GenerateClient(
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -452,7 +452,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -576,7 +576,7 @@ func (sdk *goSDK) GenerateClient(
 	outputDir string,
 	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -840,7 +840,7 @@ func (sdk *goSDK) baseWithCodegen(
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
