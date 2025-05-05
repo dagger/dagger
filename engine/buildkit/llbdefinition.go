@@ -165,6 +165,11 @@ var SkipInputs = fmt.Errorf("skip inputs") //nolint:stylecheck // Err prefix isn
 // Marshal will convert the dag back to a flat pb.Definition, updating all digests
 // based on any modifications made to the dag.
 func (dag *OpDAG) Marshal() (*pb.Definition, error) {
+	if dag == nil {
+		// empty "scratch"
+		return nil, nil
+	}
+
 	def, _, err := dag.marshal(&pb.Definition{
 		Metadata: map[digest.Digest]pb.OpMetadata{},
 	}, map[digest.Digest]digest.Digest{})
