@@ -249,6 +249,9 @@ type ContainerMount struct {
 
 	// Configure the mount as read-only.
 	Readonly bool
+
+	// Configure the mount as a file mount.
+	File bool
 }
 
 // SourceState returns the state of the source of the mount.
@@ -657,13 +660,13 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Dir, dir.Services, owner, readonly, false)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly, true)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -985,6 +988,7 @@ func (container *Container) withMounted(
 	svcs ServiceBindings,
 	owner string,
 	readonly bool,
+	file bool,
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1001,6 +1005,7 @@ func (container *Container) withMounted(
 		SourcePath: srcPath,
 		Target:     target,
 		Readonly:   readonly,
+		File:       file,
 	})
 
 	container.Services.Merge(svcs)
@@ -1114,7 +1119,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
+	return container.withMounted(ctx, mount.Target, dir.LLB, mount.SourcePath, nil, "", false, mount.File)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {

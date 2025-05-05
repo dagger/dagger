@@ -280,6 +280,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if mnt.Readonly {
 			mountOpts = append(mountOpts, llb.Readonly)
 		}
+		if mnt.File {
+			fmt.Println("mounting with content cache forced on")
+			mountOpts = append(mountOpts, llb.ContentCache(llb.MountContentCacheOn))
+		}
 
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
