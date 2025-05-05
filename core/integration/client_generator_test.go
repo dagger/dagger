@@ -1337,5 +1337,4 @@ main()`)
 			require.Equal(t, tc.expected, out)
 		})
 	}
-
 }
