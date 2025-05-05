@@ -630,6 +630,10 @@ func IDTypeNameFor(t Typed) string {
 	return t.Type().Name() + "ID"
 }
 
+func IDTypeNameForRawType(t string) string {
+	return t + "ID"
+}
+
 // TypeName returns the name of the type with "ID" appended, e.g. `FooID`.
 func (i ID[T]) TypeName() string {
 	return IDTypeNameFor(i.inner)

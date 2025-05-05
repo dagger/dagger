@@ -28,7 +28,10 @@ func (s *querySchema) Install() {
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
 		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, dagql.CachePerCall).
-			Doc("Get the current schema as a JSON file."),
+			Doc("Get the current schema as a JSON file.").
+			Args(
+				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
+			),
 	}.Install(s.srv)
 
 	s.srv.InstallScalar(core.JSON{})
@@ -82,7 +85,13 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 	return engine.Version, nil
 }
 
-func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[*core.Query], args struct{}) (inst dagql.Instance[*core.File], rerr error) {
+func (s *querySchema) schemaJSONFile(
+	ctx context.Context,
+	parent dagql.Instance[*core.Query],
+	args struct {
+		HiddenTypes []string `default:"[]"`
+	},
+) (inst dagql.Instance[*core.File], rerr error) {
 	data, err := s.srv.Query(ctx, codegenintrospection.Query, nil)
 	if err != nil {
 		return inst, fmt.Errorf("introspection query failed: %w", err)
@@ -100,6 +109,12 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 		introspection.Schema.ScrubType(typed.Type().Name())
 		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
 	}
+
+	for _, rawType := range args.HiddenTypes {
+		introspection.Schema.ScrubType(rawType)
+		introspection.Schema.ScrubType(dagql.IDTypeNameForRawType(rawType))
+	}
+
 	moduleSchemaJSON, err := json.Marshal(introspection)
 	if err != nil {
 		return inst, fmt.Errorf("failed to marshal introspection JSON: %w", err)

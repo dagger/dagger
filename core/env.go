@@ -364,8 +364,6 @@ type EnvHook struct {
 // internal usage. So we use this list to scrub them from
 // the introspection JSON that module SDKs use for codegen.
 var TypesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-
 	&Engine{},
 	&EngineCache{},
 	&EngineCacheEntry{},
@@ -514,7 +512,7 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
 	// FIXME: in principle LLM should be able to refer to these types, so this should
 	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
 	// hidden, don't codegen the field.
-	for _, hiddenType := range TypesHiddenFromModuleSDKs {
+	for _, hiddenType := range append(TypesHiddenFromModuleSDKs, &Host{}) {
 		if hiddenType.Type().Name() == typename {
 			return
 		}
