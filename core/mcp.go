@@ -512,16 +512,6 @@ func (m *MCP) selectionToToolResult(
 				"digest": digest.FromBytes(bytes),
 			})
 		}
-		origSize := len(str)
-		if origSize > maxStr {
-			str = str[:maxStr]
-			return toolStructuredResponse(map[string]any{
-				"result":         str,
-				"truncated":      true,
-				"truncated_size": maxStr,
-				"original_size":  origSize,
-			})
-		}
 		// Return string content directly, without wrapping it in JSON.
 		return str.String(), nil
 	}
@@ -595,8 +585,6 @@ func (m *MCP) toolCallToSelection(
 	}
 	return sel, nil
 }
-
-const maxStr = 80 * 1024
 
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (string, bool) {
 	var tool *LLMTool
