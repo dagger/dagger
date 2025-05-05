@@ -331,14 +331,14 @@ func (v *Viztest) UseExecService(ctx context.Context) error {
 
 func (*Viztest) NoExecService() *dagger.Service {
 	return dag.Container().
-		From("redis").
+		From("redis:7.4.3").
 		WithExposedPort(6379). // TODO: would be great to infer this
 		AsService()
 }
 
 func (v *Viztest) UseNoExecService(ctx context.Context) (string, error) {
 	return dag.Container().
-		From("redis").
+		From("redis:7.4.3").
 		WithServiceBinding("redis", v.NoExecService()).
 		WithEnvVariable("NOW", time.Now().String()).
 		WithExec([]string{"redis-cli", "-h", "redis", "ping"}).
