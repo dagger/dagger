@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    `GitRepository.tags` `patterns` arg is now respected for local git repositories
-time: 2025-04-28T12:32:31.038577224+01:00
-custom:
-    Author: jedevc
-    PR: "10250"

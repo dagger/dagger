@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Fix panic when using `Container.build` with a Dockerfile that is `FROM scratch`.
-time: 2025-05-05T15:32:59.701973366-07:00
-custom:
-  Author: sipsma
-  PR: "10332"

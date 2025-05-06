@@ -1,6 +1,0 @@
-kind: Added
-body: Add the `Req` GrapqhQL HTTP client backend.
-time: 2025-04-28T23:36:43.100410583+07:00
-custom:
-    Author: wingyplus
-    PR: "10104"
