@@ -1192,7 +1192,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
 		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
-		err = c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
 		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
@@ -1255,7 +1255,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
 		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
 
-		err = c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
 		require.NoError(t, err)
 
 		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
