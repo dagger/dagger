@@ -5,36 +5,32 @@
 * @param source The source directory
 */
 @Function
-public Directory develop(String assignment, Directory source) throws ExecutionException, DaggerQueryException, InterruptedException {
-    // Environment with agent inputs and outputs
-    var environment = dag().env(new Client.EnvArguments().withPrivileged(true))
-        .withStringInput("assignment", assignment, "the assignment to complete")
-        .withWorkspaceInput(
-            "workspace",
-            dag().workspace(source),
-            "the workspace with tools to edit code")
-        .withWorkspaceOutput(
-            "completed",
-            "the workspace with the completed assignment");
+public Directory develop(String assignment, @DefaultPath("/") Directory source)
+throws ExecutionException, DaggerQueryException, InterruptedException {
+// Environment with agent inputs and outputs
+Env environment = dag()
+    .env(new Client.EnvArguments().withPrivileged(true))
+    .withStringInput("assignment", assignment, "the assignment to complete")
+    .withWorkspaceInput(
+    "workspace",
+    dag().workspace(source),
+    "the workspace with tools to edit code"
+    )
+    .withWorkspaceOutput("completed", "the workspace with the completed assignment");
 
-    // Detailed prompt stored in markdown file
-    var promptFile = dag().currentModule().source().file("develop_prompt.md");
+// Detailed prompt stored in markdown file
+File promptFile = dag().currentModule().source().file("develop_prompt.md");
 
-    // Put it all together to form the agent
-    var work = dag().llm()
-        .withEnv(environment)
-        .withPromptFile(promptFile);
+// Put it all together to form the agent
+LLM work = dag().llm().withEnv(environment).withPromptFile(promptFile);
 
-    // Get the output from the agent
-    var completed = work
-        .env()
-        .output("completed")
-        .asWorkspace();
-    var completedDirectory = completed.source().withoutDirectory("node_modules");
+// Get the output from the agent
+Workspace completed = work.env().output("completed").asWorkspace();
+Directory completedDirectory = completed.getSource().withoutDirectory("node_modules");
 
-    // Make sure the tests really pass
-    test(completedDirectory);
+// Make sure the tests really pass
+test(completedDirectory);
 
-    // Return the Directory with the assignment completed
-    return completedDirectory;
+// Return the Directory with the assignment completed
+return completedDirectory;
 }

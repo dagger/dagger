@@ -8,25 +8,19 @@ import io.dagger.client.Directory;
 import io.dagger.client.File;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
-
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @Object
 public class Workspace {
+
   private Directory source;
 
-  // Add a public no-argument constructor as required by the error message.
-  public Workspace() {
-  }
+  // Add a public no-argument constructor as required by the Java SDK
+  public Workspace() {}
 
-  // Add a method to set the source directory, mirroring the Go New function.
-  // This method returns a new Workspace object to maintain immutability.
-  @Function
-  public Workspace withSource(Directory source) {
-    Workspace newWorkspace = new Workspace();
-    newWorkspace.source = source;
-    return newWorkspace;
+  public Workspace(Directory source) {
+    this.source = source;
   }
 
   /**
@@ -35,7 +29,8 @@ public class Workspace {
    * @param path The path to the file in the workspace
    */
   @Function
-  public String readFile(String path) throws ExecutionException, DaggerQueryException, InterruptedException {
+  public String readFile(String path)
+    throws ExecutionException, DaggerQueryException, InterruptedException {
     return source.file(path).contents();
   }
 
@@ -47,10 +42,8 @@ public class Workspace {
    */
   @Function
   public Workspace writeFile(String path, String contents) {
-    // Return a new Workspace object with the updated source to maintain immutability.
-    Workspace newWorkspace = new Workspace();
-    newWorkspace.source = this.source.withNewFile(path, contents);
-    return newWorkspace;
+    this.source = source.withNewFile(path, contents);
+    return this;
   }
 
   /**
@@ -58,12 +51,13 @@ public class Workspace {
    */
   @Function
   public String listFiles() throws ExecutionException, DaggerQueryException, InterruptedException {
-    return dag().container()
-        .from("alpine:3")
-        .withDirectory("/src", source)
-        .withWorkdir("/src")
-        .withExec(List.of("tree", "/src"))
-        .stdout();
+    return dag()
+      .container()
+      .from("alpine:3")
+      .withDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(List.of("tree", "/src"))
+      .stdout();
   }
 
   /**

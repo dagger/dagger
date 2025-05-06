@@ -105,6 +105,12 @@ To give the agent a specialized set of tools to edit files, create a Dagger subm
     </TabItem>
 </Tabs>
 
+See the functions of the new workspace module:
+
+```shell
+dagger -m .dagger/workspace functions
+```
+
 Now install the new submodule as a dependency to the main module:
 
 ```shell
@@ -138,6 +144,16 @@ This agent will be used to make changes to the application and use the existing 
         Add the following new function to the main dagger module in `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java`:
 
         ```java file=./snippets/part2/agent/java/agent.java.snippet
+        ```
+
+        Be sure to add imports for the following:
+
+        ```Java
+import io.dagger.client.Client;
+import io.dagger.client.Env;
+import io.dagger.client.File;
+import io.dagger.client.LLM;
+import io.dagger.client.Workspace;
         ```
     </TabItem>
     <TabItem value="php" label="PHP">
