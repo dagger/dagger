@@ -1,7 +1,10 @@
+import anyio
+from opentelemetry import trace
 
-from dagger import dag, function, object_type, trace
+from dagger import dag, function, object_type
 
 tracer = trace.get_tracer(__name__)
+
 
 @object_type
 class MyModule:
@@ -13,9 +16,7 @@ class MyModule:
         # list versions to test against
         versions = ["20", "22", "23"]
 
-        # run tests concurrently
-        # emit a span for each
-        for version in versions:
+        async def _test(version: str):
             with tracer.start_as_current_span(
                 f"running unit tests with Node {version}"
             ):
@@ -28,3 +29,9 @@ class MyModule:
                     .with_exec(["npm", "run", "test:unit", "run"])
                     .sync()
                 )
+
+        # run tests concurrently
+        # emit a span for each
+        async with anyio.create_task_group() as tg:
+            for version in versions:
+                tg.start_soon(_test, version)
