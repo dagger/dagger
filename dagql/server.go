@@ -51,7 +51,7 @@ type Server struct {
 	installHooks []InstallHook
 
 	// View is the view that is applied to all queries on this server
-	View string
+	View View
 
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
@@ -134,8 +134,8 @@ var coreDirectives = []DirectiveSpec{
 			definition language to indicate deprecated portions of a GraphQL
 			service's schema, such as deprecated fields on a type, arguments on a
 			field, input fields on an input type, or values of an enum type.`),
-		Args: []InputSpec{
-			{
+		Args: NewInputSpecs(
+			InputSpec{
 				Name: "reason",
 				Description: FormatDescription(
 					`Explains why this element was deprecated, usually also including a
@@ -144,7 +144,7 @@ var coreDirectives = []DirectiveSpec{
 				Type:    String(""),
 				Default: String("No longer supported"),
 			},
-		},
+		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 			DirectiveLocationArgumentDefinition,
@@ -157,14 +157,14 @@ var coreDirectives = []DirectiveSpec{
 		Description: FormatDescription(
 			`Explains why this element is marked experimental.
 			Formatted in [Markdown](https://daringfireball.net/projects/markdown/).`),
-		Args: []InputSpec{
-			{
+		Args: NewInputSpecs(
+			InputSpec{
 				Name:        "reason",
 				Description: FormatDescription(`Explains why this element was marked experimental.`),
 				Type:        String(""),
 				Default:     String("Not stabilized"),
 			},
-		},
+		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 			DirectiveLocationArgumentDefinition,
@@ -175,23 +175,24 @@ var coreDirectives = []DirectiveSpec{
 	{
 		Name:        "sourceMap",
 		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
-		Args: []InputSpec{
-			{
+		Args: NewInputSpecs(
+			InputSpec{
 				Name: "module",
 				Type: String(""),
 			},
-			{
+			InputSpec{
 				Name: "filename",
 				Type: String(""),
 			},
-			{
+			InputSpec{
 				Name: "line",
 				Type: Int(0),
-			}, {
+			},
+			InputSpec{
 				Name: "column",
 				Type: Int(0),
 			},
-		},
+		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationScalar,
 			DirectiveLocationObject,
@@ -234,12 +235,12 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
 				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
 				Type:        class.Typed(),
-				Args: []InputSpec{
-					{
+				Args: NewInputSpecs(
+					InputSpec{
 						Name: "id",
 						Type: idType,
 					},
-				},
+				),
 			},
 			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
 				idable, ok := args["id"].(IDable)
@@ -367,7 +368,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {
-		schema.Directives[n] = d.DirectiveDefinition()
+		schema.Directives[n] = d.DirectiveDefinition(s.View)
 	}
 	return schema
 }
@@ -965,7 +966,7 @@ type Selector struct {
 	Field string
 	Args  []NamedInput
 	Nth   int
-	View  string
+	View  View
 }
 
 func (sel Selector) String() string {

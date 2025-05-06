@@ -877,7 +877,7 @@ func optionalModCmdWrapper(
 			switch {
 			case configExists:
 				mod := modSrc.AsModule()
-				err := mod.Serve(ctx)
+				err := mod.Serve(ctx, dagger.ModuleServeOpts{IncludeDependencies: true})
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}

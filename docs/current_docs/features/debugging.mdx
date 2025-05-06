@@ -12,6 +12,8 @@ Workflow failures can be both frustrating and lead to wasted resources as the te
 
 Dagger lets users drop in to an interactive shell when a workflow run fails, with all the context at the point of failure. This is similar to a debugger experience, but without needing to set breakpoints explicitly. No changes are required to your code.
 
+## Example broken workflow
+
 Here's an example of a workflow run failing, and Dagger opening an interactive terminal at the point of failure:
 
 <Tabs groupId="language" queryString="sdk">
@@ -41,7 +43,12 @@ See it in action:
 
 <VideoPlayer src="/img/current_docs/features/debug-interactive.webm" alt="Interactive debugging" />
 
+
+## Breakpoints
+
 You can also set one or more explicit breakpoints in your workflow, which then starts an interactive terminal session at each breakpoint. This lets you inspect a directory or a container at any point in your workflow run, with all the necessary context available to you.
+
+### Example
 
 Here's another example, which opens an interactive terminal at two different points in a workflow run to inspect the built container:
 

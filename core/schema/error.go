@@ -21,7 +21,9 @@ func (s *errorSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("error", s.error).
 			Doc(`Create a new error.`).
-			ArgDoc("message", `A brief description of the error.`),
+			Args(
+				dagql.Arg("message").Doc(`A brief description of the error.`),
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Error]{

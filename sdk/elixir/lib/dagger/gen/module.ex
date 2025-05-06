@@ -181,10 +181,12 @@ defmodule Dagger.Module do
 
   Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
   """
-  @spec serve(t()) :: :ok | {:error, term()}
-  def serve(%__MODULE__{} = module) do
+  @spec serve(t(), [{:include_dependencies, boolean() | nil}]) :: :ok | {:error, term()}
+  def serve(%__MODULE__{} = module, optional_args \\ []) do
     query_builder =
-      module.query_builder |> QB.select("serve")
+      module.query_builder
+      |> QB.select("serve")
+      |> QB.maybe_put_arg("includeDependencies", optional_args[:include_dependencies])
 
     case Client.execute(module.client, query_builder) do
       {:ok, _} -> :ok

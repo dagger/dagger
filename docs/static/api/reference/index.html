@@ -38,6 +38,7 @@
               <li><a href="#query-engine">engine</a></li>
               <li><a href="#query-env">env</a></li>
               <li><a href="#query-error">error</a></li>
+              <li><a href="#query-file">file</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
               <li><a href="#query-git">git</a></li>
@@ -676,6 +677,77 @@
               </div>
             </div>
           </section>
+          <section id="query-file" class="operation operation-query" data-traverse-target="query-file">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>file</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Creates a file with the specified contents.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-File"><code>File!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> Name of the new file. Example: "foo.txt" </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> Contents of the new file. Example: "Hello world!" </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span>
+                        </td>
+                        <td> Permissions of the new file. Example: 0600. Default = <code>420</code> </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
+  <span class="hljs-symbol">file<span class="hljs-tag">(id: &quot;eyJsbGIiOnsiZGVmIjpbIklqWVNOQWovLy8vLy8vLy8vLzhCRVAvLy8vLy8vLy8vL3dFcUhBb0VMMlp2YnhDa0F4b0dTR1ZzYkc4aEtQLy8vLy8vLy8vLy93RlNBRm9BIiwiQ2trS1IzTm9ZVEkxTmpwak1EQTVPV1U1TURrNFpEVmlObUkyWVdWaFpXWXpObVpsTnpsaU9UUTVOVEF4TnpoalptRmpPRGxsWVdKbE5XRmtZbUprTkdZeFptWXdNV0l3TkdWbSJdLCJtZXRhZGF0YSI6eyJzaGEyNTY6NWNjOGQ1M2VkZTRjYzUyODQ0OTIyYWFhZDlhYjIzMzc3MzY3NWMwMDJjOTM5NGZhYTk0OTg1OTZmNGFjMWRiNiI6eyJjYXBzIjp7ImNvbnN0cmFpbnRzIjp0cnVlLCJwbGF0Zm9ybSI6dHJ1ZX19LCJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6eyJjYXBzIjp7ImZpbGUuYmFzZSI6dHJ1ZX19fSwiU291cmNlIjp7ImxvY2F0aW9ucyI6eyJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6e319fX0sImZpbGUiOiJmb28iLCJwbGF0Zm9ybSI6eyJhcmNoaXRlY3R1cmUiOiIiLCJvcyI6IiJ9fQ==&quot;)</span> <span class="hljs-tag">{
+    <span class="hljs-symbol">contents</span>
+    <span class="hljs-symbol">export<span class="hljs-tag">(path: &quot;greeting&quot;)</span></span>
+  }</span></span>
+}</span></span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-function" class="operation operation-query" data-traverse-target="query-function">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -838,12 +910,6 @@
                       </tr>
                       <tr>
                         <td>
-                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID</code></a></span>
-                        </td>
-                        <td> A service which must be started before the repo is fetched. </td>
-                      </tr>
-                      <tr>
-                        <td>
                           <span class="property-name"><code>sshKnownHosts</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
                         </td>
                         <td> Set SSH known hosts. Default = <code>""</code> </td>
@@ -853,6 +919,24 @@
                           <span class="property-name"><code>sshAuthSocket</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID</code></a></span>
                         </td>
                         <td> Set SSH auth socket </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>httpAuthToken</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
+                        </td>
+                        <td> Secret used to populate the password during basic HTTP Authorization </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>httpAuthHeader</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID</code></a></span>
+                        </td>
+                        <td> Secret used to populate the Authorization HTTP header </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>experimentalServiceHost</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID</code></a></span>
+                        </td>
+                        <td> A service which must be started before the repo is fetched. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -3536,6 +3620,16 @@
                         </td>
                         <td> The URI of the secret store </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>cacheKey</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td>
+                          <p>If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.</p>
+                          <p>For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.</p>
+                          <p>If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.</p>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -4492,13 +4586,13 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>random</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Bind each tunnel port to a random port on the host.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]</code></a></span></h6>
                                 <p>List of frontend/backend port mappings to forward.</p>
                                 <p>Frontend is the port accepting traffic on the host, backend is the service port.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>random</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Bind each tunnel port to a random port on the host.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -5701,20 +5795,20 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span></h6>
-                                <p>The platform to build.</p>
-                              </div>
-                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>dockerfile</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Path to the Dockerfile to use (e.g., &quot;frontend.Dockerfile&quot;).</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Target build stage to build.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span></h6>
+                                <p>The platform to build.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>buildArgs</code></span> - <span class="property-type"><a href="#definition-BuildArg"><code>[BuildArg!]</code></a></span></h6>
                                 <p>Build arguments to use in the build.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Target build stage to build.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
@@ -5845,6 +5939,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>container</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span></h6>
+                                <p>If set, override the default container used for the terminal.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>cmd</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>If set, override the container&#39;s default terminal command and invoke these command arguments instead.</p>
                               </div>
@@ -5855,10 +5953,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>container</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span></h6>
-                                <p>If set, override the default container used for the terminal.</p>
                               </div>
                             </div>
                           </div>
@@ -7674,6 +7768,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the argument definition.</p>
                               </div>
                             </div>
                           </div>
@@ -8157,6 +8252,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRepository-branches" href="#GitRepository-branches"><code>branches</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> branches that match any of the given glob patterns. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patterns</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Glob patterns (e.g., &quot;refs/tags/v*&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRepository-commit" href="#GitRepository-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
                         <td> Returns details of a commit. </td>
                       </tr>
@@ -8233,8 +8345,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Header to authenticate the remote with. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Header to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthHeader" in the constructor instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8250,8 +8363,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Token to authenticate the remote with. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Token to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthToken" in the constructor instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8363,14 +8477,14 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Upstream host to forward traffic to.</p>
-                              </div>
-                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]!</code></a></span></h6>
                                 <p>Ports to expose via the service, forwarding through the host network.</p>
                                 <p>If a port&#39;s frontend is unspecified or 0, it defaults to the same as the backend port.</p>
                                 <p>An empty set of ports is not valid; an error will be returned.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Upstream host to forward traffic to.</p>
                               </div>
                             </div>
                           </div>
@@ -8415,16 +8529,16 @@
                                 <p>Service to send traffic from the tunnel.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>native</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Map each service port to the same port on the host, as if the service were running natively.</p>
+                                <p>Note: enabling may result in port conflicts.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]</code></a></span></h6>
                                 <p>Configure explicit port forwarding rules for the tunnel.</p>
                                 <p>If a port&#39;s frontend is unspecified or 0, a random port will be chosen by the host.</p>
                                 <p>If no ports are given, all of the service&#39;s ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.</p>
                                 <p>If ports are given and native is true, the ports are additive.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>native</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Map each service port to the same port on the host, as if the service were running natively.</p>
-                                <p>Note: enabling may result in port conflicts.</p>
                               </div>
                             </div>
                           </div>
@@ -9151,11 +9265,24 @@
                         <td data-property-name=""><a class="property-name" id="Module-sdk" href="#Module-sdk"><code>sdk</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
                         <td> The SDK config used by this module. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Module-serve" href="#Module-serve"><code>serve</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td>
                           <p>Serve a module&#39;s API in the current session.</p>
                           <p>Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includeDependencies</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Expose the dependencies of this module to the client</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                       <tr>

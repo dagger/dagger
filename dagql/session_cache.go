@@ -76,7 +76,7 @@ func (c *SessionCache) GetOrInitialize(
 	fn func(context.Context) (CacheValueType, error),
 	opts ...CacheCallOpt,
 ) (CacheResult, error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, false, func(ctx context.Context) (*CacheValWithCallbacks, error) {
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -88,6 +88,7 @@ func (c *SessionCache) GetOrInitialize(
 func (c *SessionCache) GetOrInitializeWithCallbacks(
 	ctx context.Context,
 	key CacheKeyType,
+	skipDedupe bool,
 	fn func(context.Context) (*CacheValWithCallbacks, error),
 	opts ...CacheCallOpt,
 ) (res CacheResult, err error) {
@@ -114,7 +115,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 		ctx = telemetryCtx
 	}
 
-	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
+	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, skipDedupe, fn)
 	if err != nil {
 		return nil, err
 	}

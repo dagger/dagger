@@ -208,7 +208,7 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 	return typeDefs, nil
 }
 
-func (mod *Module) View() (string, bool) {
+func (mod *Module) View() (dagql.View, bool) {
 	return "", false
 }
 
@@ -216,6 +216,7 @@ func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
 	_ dagql.Object,
 	_ map[string]dagql.Input,
+	_ dagql.View,
 	cacheCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
 	// Function calls on a module should be cached based on the module's content hash, not
@@ -638,7 +639,7 @@ type Mod interface {
 	Name() string
 
 	// View gets the name of the module's view of its underlying schema
-	View() (string, bool)
+	View() (dagql.View, bool)
 
 	// Install modifies the provided server to install the contents of the
 	// modules declared fields.

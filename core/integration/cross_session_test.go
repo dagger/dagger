@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	fs "github.com/tonistiigi/fsutil/copy"
+	"golang.org/x/sync/errgroup"
 )
 
 // TODO: add more tests for longer chains of cache hits that then diverge (i.e. constructor + some function cache hit, then diverge)
@@ -1160,4 +1161,429 @@ func (*Test) Rand(
 	require.NotEmpty(t, res3.Test.Rand)
 
 	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
+}
+
+func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
+	tmpdir := t.TempDir()
+	initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (string, error) {
+	return secret.Plaintext(ctx)
+}
+
+func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
+	return dag.Container().From("alpine:3.20").
+		WithSecretVariable("TOPSECRET", secret).
+		WithExec([]string{"sh", "-c", "echo -n $(echo -n $TOPSECRET | base64)"})
+}
+`), 0644)
+	require.NoError(t, err)
+
+	t.Run("default plaintext based cache key", func(ctx context.Context, t *testctx.T) {
+		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
+
+		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		s1 := c1.Secret("env://FOO")
+		s1id, err := s1.ID(ctx)
+		require.NoError(t, err)
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn string
+				}
+			}](c1, t, `{test{fn(secret: "`+string(s1id)+`")}}`, nil)
+			require.NoError(t, err)
+			require.Equal(t, "1", res.Test.Fn)
+		}
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn2 struct {
+						Stdout string
+					}
+				}
+			}](c1, t, `{test{fn2(secret: "`+string(s1id)+`"){stdout}}}`, nil)
+			require.NoError(t, err)
+			out1, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+			require.NoError(t, err)
+			require.Equal(t, "1", string(out1))
+		}
+
+		s2 := c2.Secret("env://FOO")
+		s2id, err := s2.ID(ctx)
+		require.NoError(t, err)
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn string
+				}
+			}](c2, t, `{test{fn(secret: "`+string(s2id)+`")}}`, nil)
+			require.NoError(t, err)
+			require.Equal(t, "2", res.Test.Fn)
+		}
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn2 struct {
+						Stdout string
+					}
+				}
+			}](c2, t, `{test{fn2(secret: "`+string(s2id)+`"){stdout}}}`, nil)
+			require.NoError(t, err)
+			out2, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+			require.NoError(t, err)
+			require.Equal(t, "2", string(out2))
+		}
+	})
+
+	t.Run("custom cache key", func(ctx context.Context, t *testctx.T) {
+		c1 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "1"))
+		c2 := connect(ctx, t, dagger.WithEnvironmentVariable("FOO", "2"))
+
+		err := c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		cacheKey := identity.NewID()
+
+		s1 := c1.Secret("env://FOO", dagger.SecretOpts{CacheKey: cacheKey})
+		s1id, err := s1.ID(ctx)
+		require.NoError(t, err)
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn string
+				}
+			}](c1, t, `{test{fn(secret: "`+string(s1id)+`")}}`, nil)
+			require.NoError(t, err)
+			require.Equal(t, "1", res.Test.Fn)
+		}
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn2 struct {
+						Stdout string
+					}
+				}
+			}](c1, t, `{test{fn2(secret: "`+string(s1id)+`"){stdout}}}`, nil)
+			require.NoError(t, err)
+			out1, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+			require.NoError(t, err)
+			require.Equal(t, "1", string(out1))
+		}
+
+		s2 := c2.Secret("env://FOO", dagger.SecretOpts{CacheKey: cacheKey})
+		s2id, err := s2.ID(ctx)
+		require.NoError(t, err)
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn string
+				}
+			}](c2, t, `{test{fn(secret: "`+string(s2id)+`")}}`, nil)
+			require.NoError(t, err)
+			require.Equal(t, "1", res.Test.Fn)
+		}
+		{
+			res, err := testutil.QueryWithClient[struct {
+				Test struct {
+					Fn2 struct {
+						Stdout string
+					}
+				}
+			}](c2, t, `{test{fn2(secret: "`+string(s2id)+`"){stdout}}}`, nil)
+			require.NoError(t, err)
+			out2, err := base64.StdEncoding.DecodeString(res.Test.Fn2.Stdout)
+			require.NoError(t, err)
+			require.Equal(t, "1", string(out2))
+		}
+	})
+
+	t.Run("dagger call default cache key", func(ctx context.Context, t *testctx.T) {
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+				"fn-2", "--secret", "env://FOO",
+				"stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=1")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "1", string(outDecoded))
+		}
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+				"fn-2", "--secret", "env://FOO",
+				"stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=2")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "2", string(outDecoded))
+		}
+	})
+
+	t.Run("dagger shell default cache key", func(ctx context.Context, t *testctx.T) {
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "-c",
+				"fn-2 env://FOO | stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=1")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "1", string(outDecoded))
+		}
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "-c",
+				"fn-2 env://FOO | stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=2")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "2", string(outDecoded))
+		}
+	})
+
+	t.Run("dagger call custom cache key", func(ctx context.Context, t *testctx.T) {
+		t.Run("env", func(ctx context.Context, t *testctx.T) {
+			cacheKey := identity.NewID()
+			plaintext := identity.NewID()
+			{
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "env://FOO?cacheKey="+cacheKey,
+					"stdout",
+				)
+				cmd.Env = append(cmd.Env, "FOO="+plaintext)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+			{
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "env://FOO?cacheKey="+cacheKey,
+					"stdout",
+				)
+				cmd.Env = append(cmd.Env, "FOO="+identity.NewID())
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+		})
+
+		// run some more to ensure that other providers parse correctly
+
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
+			cacheKey := identity.NewID()
+			plaintext := identity.NewID()
+			secretDir := t.TempDir()
+			{
+				p := filepath.Join(secretDir, "foo.txt")
+				err := os.WriteFile(p, []byte(plaintext), 0644)
+				require.NoError(t, err)
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "file://"+p+"?cacheKey="+cacheKey,
+					"stdout",
+				)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+			{
+				p := filepath.Join(secretDir, "bar.txt")
+				err := os.WriteFile(p, []byte(identity.NewID()), 0644)
+				require.NoError(t, err)
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "file://"+p+"?cacheKey="+cacheKey,
+					"stdout",
+				)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+		})
+
+		t.Run("cmd", func(ctx context.Context, t *testctx.T) {
+			cacheKey := identity.NewID()
+			plaintext := identity.NewID()
+			{
+				secretCommand := "echo -n " + plaintext
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey,
+					"stdout",
+				)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+			{
+				secretCommand := "echo -n " + identity.NewID()
+				cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+					"fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey,
+					"stdout",
+				)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+				outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+				require.NoError(t, err, string(out))
+				require.Equal(t, plaintext, string(outDecoded))
+			}
+		})
+	})
+
+	t.Run("dagger shell custom cache key", func(ctx context.Context, t *testctx.T) {
+		cacheKey := identity.NewID()
+		plaintext := identity.NewID()
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "-c",
+				"fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO="+plaintext)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, plaintext, string(outDecoded))
+		}
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "-c",
+				"fn-2 $(secret env://FOO --cache-key "+cacheKey+") | stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO="+identity.NewID())
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, plaintext, string(outDecoded))
+		}
+	})
+
+	t.Run("dagger call custom cache key, different keys", func(ctx context.Context, t *testctx.T) {
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+				"fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(),
+				"stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=1")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "1", string(outDecoded))
+		}
+		{
+			cmd := hostDaggerCommand(ctx, t, tmpdir, "-s", "call",
+				"fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(),
+				"stdout",
+			)
+			cmd.Env = append(cmd.Env, "FOO=2")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			outDecoded, err := base64.StdEncoding.DecodeString(string(out))
+			require.NoError(t, err, string(out))
+			require.Equal(t, "2", string(outDecoded))
+		}
+	})
+}
+
+func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *testctx.T) {
+	callMod := func(c *dagger.Client) error {
+		_, err := goGitBase(t, c).
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+)
+
+type Test struct {}
+
+func (Test) Fn(ctx context.Context) error {
+	ctr, err := dag.Container().
+		From("alpine:3.20").
+		WithExec([]string{"sh", "-c", "echo "+strconv.Itoa(int(time.Now().UnixNano()))+"> /foo.txt"}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("sleeping", time.Now().UnixNano())
+	time.Sleep(20 * time.Second)
+	fmt.Println("awoken", time.Now().UnixNano())
+
+	ctr, err = ctr.WithExec([]string{"true"}).Sync(ctx)
+	return err
+}
+	`,
+			).
+			With(daggerCall("fn")).
+			Sync(ctx)
+		return err
+	}
+
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	var eg errgroup.Group
+
+	eg.Go(func() error {
+		time.Sleep(10 * time.Second)
+		t.Log("closing c1")
+		c1.Close()
+		t.Log("closed c1")
+		return nil
+	})
+
+	eg.Go(func() error {
+		callMod(c1)
+		t.Log("c1 call complete")
+		return nil
+	})
+
+	eg.Go(func() error {
+		time.Sleep(5 * time.Second)
+		return callMod(c2)
+	})
+
+	err := eg.Wait()
+	require.NoError(t, err)
 }

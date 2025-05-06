@@ -2732,11 +2732,11 @@ impl Container {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("up");
-        if let Some(ports) = opts.ports {
-            query = query.arg("ports", ports);
-        }
         if let Some(random) = opts.random {
             query = query.arg("random", random);
+        }
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
         }
         if let Some(args) = opts.args {
             query = query.arg("args", args);
@@ -4505,17 +4505,17 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build_opts<'a>(&self, opts: DirectoryDockerBuildOpts<'a>) -> Container {
         let mut query = self.selection.select("dockerBuild");
-        if let Some(platform) = opts.platform {
-            query = query.arg("platform", platform);
-        }
         if let Some(dockerfile) = opts.dockerfile {
             query = query.arg("dockerfile", dockerfile);
         }
-        if let Some(target) = opts.target {
-            query = query.arg("target", target);
+        if let Some(platform) = opts.platform {
+            query = query.arg("platform", platform);
         }
         if let Some(build_args) = opts.build_args {
             query = query.arg("buildArgs", build_args);
+        }
+        if let Some(target) = opts.target {
+            query = query.arg("target", target);
         }
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
@@ -4673,6 +4673,9 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal_opts<'a>(&self, opts: DirectoryTerminalOpts<'a>) -> Directory {
         let mut query = self.selection.select("terminal");
+        if let Some(container) = opts.container {
+            query = query.arg("container", container);
+        }
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
         }
@@ -4684,9 +4687,6 @@ impl Directory {
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
-        }
-        if let Some(container) = opts.container {
-            query = query.arg("container", container);
         }
         Directory {
             proc: self.proc.clone(),
@@ -6276,6 +6276,7 @@ pub struct FunctionWithArgOpts<'a> {
     /// Patterns to ignore when loading the contextual argument value.
     #[builder(setter(into, strip_option), default)]
     pub ignore: Option<Vec<&'a str>>,
+    /// The source map for the argument definition.
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<SourceMapId>,
 }
@@ -6694,6 +6695,12 @@ pub struct GitRepository {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryBranchesOpts<'a> {
+    /// Glob patterns (e.g., "refs/tags/v*").
+    #[builder(setter(into, strip_option), default)]
+    pub patterns: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
@@ -6713,6 +6720,30 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// branches that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn branches(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("branches");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// branches that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn branches_opts<'a>(
+        &self,
+        opts: GitRepositoryBranchesOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("branches");
+        if let Some(patterns) = opts.patterns {
+            query = query.arg("patterns", patterns);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Returns details of a commit.
     ///
@@ -7023,11 +7054,11 @@ impl Host {
                 Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
-        if let Some(ports) = opts.ports {
-            query = query.arg("ports", ports);
-        }
         if let Some(native) = opts.native {
             query = query.arg("native", native);
+        }
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
         }
         Service {
             proc: self.proc.clone(),
@@ -7381,6 +7412,12 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleServeOpts {
+    /// Expose the dependencies of this module to the client
+    #[builder(setter(into, strip_option), default)]
+    pub include_dependencies: Option<bool>,
+}
 impl Module {
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
@@ -7462,8 +7499,25 @@ impl Module {
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn serve(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("serve");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Serve a module's API in the current session.
+    /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("serve");
+        if let Some(include_dependencies) = opts.include_dependencies {
+            query = query.arg("includeDependencies", include_dependencies);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The source for the module.
@@ -8067,10 +8121,22 @@ pub struct QueryEnvOpts {
     pub writable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryFileOpts {
+    /// Permissions of the new file. Example: 0600
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
+    /// Secret used to populate the Authorization HTTP header
+    #[builder(setter(into, strip_option), default)]
+    pub http_auth_header: Option<SecretId>,
+    /// Secret used to populate the password during basic HTTP Authorization
+    #[builder(setter(into, strip_option), default)]
+    pub http_auth_token: Option<SecretId>,
     /// DEPRECATED: Set to true to keep .git directory.
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
@@ -8110,6 +8176,14 @@ pub struct QueryModuleSourceOpts<'a> {
     /// If set, error out if the ref string is not of the provided requireKind.
     #[builder(setter(into, strip_option), default)]
     pub require_kind: Option<ModuleSourceKind>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySecretOpts<'a> {
+    /// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+    /// For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+    /// If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
+    #[builder(setter(into, strip_option), default)]
+    pub cache_key: Option<&'a str>,
 }
 impl Query {
     /// Constructs a cache volume for a given cache key.
@@ -8277,6 +8351,48 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Creates a file with the specified contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "foo.txt"
+    /// * `contents` - Contents of the new file. Example: "Hello world!"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file(&self, name: impl Into<String>, contents: impl Into<String>) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a file with the specified contents.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new file. Example: "foo.txt"
+    /// * `contents` - Contents of the new file. Example: "Hello world!"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file_opts(
+        &self,
+        name: impl Into<String>,
+        contents: impl Into<String>,
+        opts: QueryFileOpts,
+    ) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("name", name.into());
+        query = query.arg("contents", contents.into());
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a function.
     ///
     /// # Arguments
@@ -8354,14 +8470,20 @@ impl Query {
         if let Some(keep_git_dir) = opts.keep_git_dir {
             query = query.arg("keepGitDir", keep_git_dir);
         }
-        if let Some(experimental_service_host) = opts.experimental_service_host {
-            query = query.arg("experimentalServiceHost", experimental_service_host);
-        }
         if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
             query = query.arg("sshKnownHosts", ssh_known_hosts);
         }
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        if let Some(http_auth_token) = opts.http_auth_token {
+            query = query.arg("httpAuthToken", http_auth_token);
+        }
+        if let Some(http_auth_header) = opts.http_auth_header {
+            query = query.arg("httpAuthHeader", http_auth_header);
+        }
+        if let Some(experimental_service_host) = opts.experimental_service_host {
+            query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         GitRepository {
             proc: self.proc.clone(),
@@ -9225,9 +9347,28 @@ impl Query {
     /// # Arguments
     ///
     /// * `uri` - The URI of the secret store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn secret(&self, uri: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a new secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The URI of the secret store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn secret_opts<'a>(&self, uri: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
+        let mut query = self.selection.select("secret");
+        query = query.arg("uri", uri.into());
+        if let Some(cache_key) = opts.cache_key {
+            query = query.arg("cacheKey", cache_key);
+        }
         Secret {
             proc: self.proc.clone(),
             selection: query,

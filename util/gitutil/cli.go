@@ -30,6 +30,8 @@ type GitCLI struct {
 
 	sshAuthSock   string
 	sshKnownHosts string
+
+	ignoreError bool
 }
 
 // Option provides a variadic option for configuring the git client.
@@ -97,6 +99,13 @@ func WithSSHAuthSock(sshAuthSock string) Option {
 func WithSSHKnownHosts(sshKnownHosts string) Option {
 	return func(b *GitCLI) {
 		b.sshKnownHosts = sshKnownHosts
+	}
+}
+
+// WithIgnoreError ignores all errors from the command.
+func WithIgnoreError() Option {
+	return func(b *GitCLI) {
+		b.ignoreError = true
 	}
 }
 
@@ -225,6 +234,10 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	}
 
 	if err != nil {
+		if cli.ignoreError {
+			return buf.Bytes(), nil
+		}
+
 		select {
 		case <-ctx.Done():
 			cerr := context.Cause(ctx)
@@ -233,9 +246,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			}
 		default:
 		}
-		// NB: break glass
 		return buf.Bytes(), fmt.Errorf("git error: %w\nstderr:\n%s", err, errbuf.String())
-		// return buf.Bytes(), fmt.Errorf("git error: %w", err)
 	}
 	return buf.Bytes(), nil
 }

@@ -18,8 +18,10 @@ func (s llmSchema) Install() {
 		dagql.FuncWithCacheKey("llm", s.llm, dagql.CachePerSession).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a Large Language Model (LLM)`).
-			ArgDoc("model", "Model to use").
-			ArgDoc("maxAPICalls", "Cap the number of API calls for this LLM"),
+			Args(
+				dagql.Arg("model").Doc("Model to use"),
+				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM"),
+			),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLM]{
 		dagql.Func("model", s.model).
@@ -42,20 +44,28 @@ func (s llmSchema) Install() {
 			Doc("return the LLM's current environment"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
-			ArgDoc("model", "The model to use"),
+			Args(
+				dagql.Arg("model").Doc("The model to use"),
+			),
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("append a prompt to the llm context").
-			ArgDoc("prompt", "The prompt to send"),
+			Args(
+				dagql.Arg("prompt").Doc("The prompt to send"),
+			),
 		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
 			return dagql.Null[core.Void](), self.Self.MCP(ctx, s.srv)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
-			ArgDoc("file", "The file to read the prompt from"),
+			Args(
+				dagql.Arg("file").Doc("The file to read the prompt from"),
+			),
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
-			ArgDoc("prompt", "The system prompt to send"),
+			Args(
+				dagql.Arg("prompt").Doc("The system prompt to send"),
+			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {

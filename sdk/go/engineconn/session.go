@@ -100,6 +100,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+cfg.RunnerHost)
 	}
 
+	if len(cfg.ExtraEnv) > 0 {
+		env = append(env, cfg.ExtraEnv...)
+	}
+
 	// detect $TRACEPARENT set by 'dagger run'
 	ctx = fallbackSpanContext(ctx)
 

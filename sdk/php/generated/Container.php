@@ -417,8 +417,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      * Be sure to set any exposed ports before calling this api.
      */
     public function up(
-        ?array $ports = null,
         ?bool $random = false,
+        ?array $ports = null,
         ?array $args = null,
         ?bool $useEntrypoint = false,
         ?bool $experimentalPrivilegedNesting = false,
@@ -427,11 +427,11 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?bool $noInit = false,
     ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
-        if (null !== $ports) {
-        $leafQueryBuilder->setArgument('ports', $ports);
-        }
         if (null !== $random) {
         $leafQueryBuilder->setArgument('random', $random);
+        }
+        if (null !== $ports) {
+        $leafQueryBuilder->setArgument('ports', $ports);
         }
         if (null !== $args) {
         $leafQueryBuilder->setArgument('args', $args);

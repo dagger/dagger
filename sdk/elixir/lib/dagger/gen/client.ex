@@ -173,6 +173,24 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Creates a file with the specified contents.
+  """
+  @spec file(t(), String.t(), String.t(), [{:permissions, integer() | nil}]) :: Dagger.File.t()
+  def file(%__MODULE__{} = client, name, contents, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("file")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("contents", contents)
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Creates a function.
   """
   @spec function(t(), String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
@@ -210,9 +228,11 @@ defmodule Dagger.Client do
   """
   @spec git(t(), String.t(), [
           {:keep_git_dir, boolean() | nil},
-          {:experimental_service_host, Dagger.ServiceID.t() | nil},
           {:ssh_known_hosts, String.t() | nil},
-          {:ssh_auth_socket, Dagger.SocketID.t() | nil}
+          {:ssh_auth_socket, Dagger.SocketID.t() | nil},
+          {:http_auth_token, Dagger.SecretID.t() | nil},
+          {:http_auth_header, Dagger.SecretID.t() | nil},
+          {:experimental_service_host, Dagger.ServiceID.t() | nil}
         ]) :: Dagger.GitRepository.t()
   def git(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
@@ -220,9 +240,11 @@ defmodule Dagger.Client do
       |> QB.select("git")
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("keepGitDir", optional_args[:keep_git_dir])
-      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
       |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      |> QB.maybe_put_arg("httpAuthToken", optional_args[:http_auth_token])
+      |> QB.maybe_put_arg("httpAuthHeader", optional_args[:http_auth_header])
+      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
     %Dagger.GitRepository{
       query_builder: query_builder,
@@ -948,10 +970,13 @@ defmodule Dagger.Client do
   @doc """
   Creates a new secret.
   """
-  @spec secret(t(), String.t()) :: Dagger.Secret.t()
-  def secret(%__MODULE__{} = client, uri) do
+  @spec secret(t(), String.t(), [{:cache_key, String.t() | nil}]) :: Dagger.Secret.t()
+  def secret(%__MODULE__{} = client, uri, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("secret") |> QB.put_arg("uri", uri)
+      client.query_builder
+      |> QB.select("secret")
+      |> QB.put_arg("uri", uri)
+      |> QB.maybe_put_arg("cacheKey", optional_args[:cache_key])
 
     %Dagger.Secret{
       query_builder: query_builder,

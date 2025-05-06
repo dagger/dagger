@@ -81,6 +81,13 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
+// Set this additional environment variable in the CLI subprocess for the session
+func WithEnvironmentVariable(key, value string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ExtraEnv = append(cfg.ExtraEnv, key+"="+value)
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}

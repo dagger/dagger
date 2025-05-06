@@ -13,8 +13,12 @@ It's the simplest and fastest way to run Dagger workflows directly from the comm
 
 You can use it for builds, tests, ephemeral environments, deployments, or any other task you want to automate from the terminal.
 
+## Sandboxing
+
 Dagger Shell commands run as sandboxed functions, accessing host resources (files, secrets, services) only when explicitly provided as arguments.
 This can make commands slightly more verbose, but also more repeatable, giving you confidence to iterate quickly without second-guessing.
+
+### Example
 
 Here's an example of Dagger Shell in action:
 
@@ -43,13 +47,13 @@ container |
 
 Dagger Shell uses the Bash syntax as a frontend, but its behavior is quite different in the backend:
 
-- Instead of executing UNIX commands, you execute Dagger Functions
-- Instead of passing text streams from command to command, you pass typed objects from function to function
-- Instead of available commands being the same everywhere in the pipeline, each command is executed in the context of the previous command's output object. For example, `foo | bar` really means `foo().bar()`
-- Instead of using the local host as an execution environment, you use containerized runtimes
-- Instead of being mixed with regular commands, shell builtins are prefixed with `.` (similar to SQLite)
+- Instead of executing UNIX commands, you _execute Dagger Functions_
+- Instead of passing text streams from command to command, you _pass typed objects from function to function_
+- Instead of available commands being the same everywhere in the pipeline, _each command is executed in the context of the previous command's output object_. For example, `foo | bar` really means `foo().bar()`
+- Instead of using the local host as an execution environment, you _use containerized runtimes_
+- Instead of being mixed with regular commands, _shell builtins are prefixed with `.` (similar to SQLite)_
 
-Besides these differences, all the features of the Bash *syntax* are available in Dagger Shell, including:
+Besides these differences, **all the features** of the Bash *syntax* are available in Dagger Shell, including:
 
 - Shell variables: `container=$(container | from alpine)`
 - Shell functions: `container() { container | from alpine; }`

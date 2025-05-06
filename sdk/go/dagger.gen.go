@@ -1300,12 +1300,12 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 
 // ContainerUpOpts contains options for Container.Up
 type ContainerUpOpts struct {
+	// Bind each tunnel port to a random port on the host.
+	Random bool
 	// List of frontend/backend port mappings to forward.
 	//
 	// Frontend is the port accepting traffic on the host, backend is the service port.
 	Ports []PortForward
-	// Bind each tunnel port to a random port on the host.
-	Random bool
 	// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
 	//
 	// If empty, the container's default command is used.
@@ -1333,13 +1333,13 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 	}
 	q := r.query.Select("up")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
 		// `random` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Random) {
 			q = q.Arg("random", opts[i].Random)
+		}
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
 		}
 		// `args` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Args) {
@@ -2565,16 +2565,16 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
-	// The platform to build.
-	Platform Platform
 	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
 	//
 	// Default: "Dockerfile"
 	Dockerfile string
-	// Target build stage to build.
-	Target string
+	// The platform to build.
+	Platform Platform
 	// Build arguments to use in the build.
 	BuildArgs []BuildArg
+	// Target build stage to build.
+	Target string
 	// Secrets to pass to the build.
 	//
 	// They will be mounted at /run/secrets/[secret-name].
@@ -2589,21 +2589,21 @@ type DirectoryDockerBuildOpts struct {
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.query.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
 		// `dockerfile` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
 		}
-		// `target` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Target) {
-			q = q.Arg("target", opts[i].Target)
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
 		}
 		// `buildArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
+		}
+		// `target` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Target) {
+			q = q.Arg("target", opts[i].Target)
 		}
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
@@ -2784,20 +2784,24 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 
 // DirectoryTerminalOpts contains options for Directory.Terminal
 type DirectoryTerminalOpts struct {
+	// If set, override the default container used for the terminal.
+	Container *Container
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
-	// If set, override the default container used for the terminal.
-	Container *Container
 }
 
 // Opens an interactive terminal in new container with this directory mounted inside.
 func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `container` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Container) {
+			q = q.Arg("container", opts[i].Container)
+		}
 		// `cmd` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
 			q = q.Arg("cmd", opts[i].Cmd)
@@ -2809,10 +2813,6 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-		// `container` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Container) {
-			q = q.Arg("container", opts[i].Container)
 		}
 	}
 
@@ -4881,7 +4881,7 @@ type FunctionWithArgOpts struct {
 	DefaultPath string
 	// Patterns to ignore when loading the contextual argument value.
 	Ignore []string
-
+	// The source map for the argument definition.
 	SourceMap *SourceMap
 }
 
@@ -5564,6 +5564,28 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	}
 }
 
+// GitRepositoryBranchesOpts contains options for GitRepository.Branches
+type GitRepositoryBranchesOpts struct {
+	// Glob patterns (e.g., "refs/tags/v*").
+	Patterns []string
+}
+
+// branches that match any of the given glob patterns.
+func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranchesOpts) ([]string, error) {
+	q := r.query.Select("branches")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `patterns` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Patterns) {
+			q = q.Arg("patterns", opts[i].Patterns)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Returns details of a commit.
 func (r *GitRepository) Commit(id string) *GitRef {
 	q := r.query.Select("commit")
@@ -5666,6 +5688,8 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 }
 
 // Header to authenticate the remote with.
+//
+// Deprecated: Use "httpAuthHeader" in the constructor instead.
 func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	assertNotNil("header", header)
 	q := r.query.Select("withAuthHeader")
@@ -5677,6 +5701,8 @@ func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 }
 
 // Token to authenticate the remote with.
+//
+// Deprecated: Use "httpAuthToken" in the constructor instead.
 func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 	assertNotNil("token", token)
 	q := r.query.Select("withAuthToken")
@@ -5819,6 +5845,10 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 
 // HostTunnelOpts contains options for Host.Tunnel
 type HostTunnelOpts struct {
+	// Map each service port to the same port on the host, as if the service were running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
 	// Configure explicit port forwarding rules for the tunnel.
 	//
 	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
@@ -5827,10 +5857,6 @@ type HostTunnelOpts struct {
 	//
 	// If ports are given and native is true, the ports are additive.
 	Ports []PortForward
-	// Map each service port to the same port on the host, as if the service were running natively.
-	//
-	// Note: enabling may result in port conflicts.
-	Native bool
 }
 
 // Creates a tunnel that forwards traffic from the host to a service.
@@ -5838,13 +5864,13 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	assertNotNil("service", service)
 	q := r.query.Select("tunnel")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
 		// `native` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Native) {
 			q = q.Arg("native", opts[i].Native)
+		}
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
 		}
 	}
 	q = q.Arg("service", service)
@@ -6850,14 +6876,26 @@ func (r *Module) SDK() *SDKConfig {
 	}
 }
 
+// ModuleServeOpts contains options for Module.Serve
+type ModuleServeOpts struct {
+	// Expose the dependencies of this module to the client
+	IncludeDependencies bool
+}
+
 // Serve a module's API in the current session.
 //
 // Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context) error {
+func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) error {
 	if r.serve != nil {
 		return nil
 	}
 	q := r.query.Select("serve")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeDependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeDependencies) {
+			q = q.Arg("includeDependencies", opts[i].IncludeDependencies)
+		}
+	}
 
 	return q.Execute(ctx)
 }
@@ -8033,6 +8071,31 @@ func (r *Client) Error(message string) *Error {
 	}
 }
 
+// FileOpts contains options for Client.File
+type FileOpts struct {
+	// Permissions of the new file. Example: 0600
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Creates a file with the specified contents.
+func (r *Client) File(name string, contents string, opts ...FileOpts) *File {
+	q := r.query.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("contents", contents)
+
+	return &File{
+		query: q,
+	}
+}
+
 // Creates a function.
 func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
@@ -8062,12 +8125,16 @@ type GitOpts struct {
 	//
 	// Default: true
 	KeepGitDir bool
-	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Service
 	// Set SSH known hosts
 	SSHKnownHosts string
 	// Set SSH auth socket
 	SSHAuthSocket *Socket
+	// Secret used to populate the password during basic HTTP Authorization
+	HTTPAuthToken *Secret
+	// Secret used to populate the Authorization HTTP header
+	HTTPAuthHeader *Secret
+	// A service which must be started before the repo is fetched.
+	ExperimentalServiceHost *Service
 }
 
 // Queries a Git repository.
@@ -8078,10 +8145,6 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
 		}
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
-		}
 		// `sshKnownHosts` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
 			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
@@ -8089,6 +8152,18 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `sshAuthSocket` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
 			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+		}
+		// `httpAuthToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HTTPAuthToken) {
+			q = q.Arg("httpAuthToken", opts[i].HTTPAuthToken)
+		}
+		// `httpAuthHeader` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HTTPAuthHeader) {
+			q = q.Arg("httpAuthHeader", opts[i].HTTPAuthHeader)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 	}
 	q = q.Arg("url", url)
@@ -8647,9 +8722,25 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
+// SecretOpts contains options for Client.Secret
+type SecretOpts struct {
+	// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
+	//
+	// For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
+	//
+	// If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
+	CacheKey string
+}
+
 // Creates a new secret.
-func (r *Client) Secret(uri string) *Secret {
+func (r *Client) Secret(uri string, opts ...SecretOpts) *Secret {
 	q := r.query.Select("secret")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cacheKey` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheKey) {
+			q = q.Arg("cacheKey", opts[i].CacheKey)
+		}
+	}
 	q = q.Arg("uri", uri)
 
 	return &Secret{

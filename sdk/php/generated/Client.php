@@ -122,6 +122,20 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Creates a file with the specified contents.
+     */
+    public function file(string $name, string $contents, ?int $permissions = 420): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a function.
      */
     public function function(string $name, TypeDefId|TypeDef $returnType): Function_
@@ -148,23 +162,31 @@ class Client extends Client\AbstractClient
     public function git(
         string $url,
         ?bool $keepGitDir = true,
-        ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
+        SecretId|Secret|null $httpAuthToken = null,
+        SecretId|Secret|null $httpAuthHeader = null,
+        ServiceId|Service|null $experimentalServiceHost = null,
     ): GitRepository {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $keepGitDir) {
         $innerQueryBuilder->setArgument('keepGitDir', $keepGitDir);
         }
-        if (null !== $experimentalServiceHost) {
-        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
-        }
         if (null !== $sshKnownHosts) {
         $innerQueryBuilder->setArgument('sshKnownHosts', $sshKnownHosts);
         }
         if (null !== $sshAuthSocket) {
         $innerQueryBuilder->setArgument('sshAuthSocket', $sshAuthSocket);
+        }
+        if (null !== $httpAuthToken) {
+        $innerQueryBuilder->setArgument('httpAuthToken', $httpAuthToken);
+        }
+        if (null !== $httpAuthHeader) {
+        $innerQueryBuilder->setArgument('httpAuthHeader', $httpAuthHeader);
+        }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -686,10 +708,13 @@ class Client extends Client\AbstractClient
     /**
      * Creates a new secret.
      */
-    public function secret(string $uri): Secret
+    public function secret(string $uri, ?string $cacheKey = null): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
         $innerQueryBuilder->setArgument('uri', $uri);
+        if (null !== $cacheKey) {
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        }
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

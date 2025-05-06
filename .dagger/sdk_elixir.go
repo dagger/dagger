@@ -15,17 +15,8 @@ import (
 
 const (
 	elixirSDKPath            = "sdk/elixir"
-	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
 	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/version.ex"
 )
-
-var elixirVersions = map[string]string{
-	"1.15": "hexpm/elixir:1.15.8-erlang-26.2.5.2-debian-bookworm-20240701-slim@sha256:7f282f3b1a50d795375f5bb95250aeec36d21dc2b56f6fba45b88243ac001e52",
-	"1.16": "hexpm/elixir:1.16.2-erlang-26.2.5-debian-bookworm-20240513-slim@sha256:4c3bcf223c896bd817484569164357a49c473556e8773d74a591a3c565e8b8b9",
-	"1.17": "hexpm/elixir:1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim@sha256:0e4234e482dd487c78d0f0b73fa9bc9b03ccad0d964ef0e7a5e92a6df68ab289",
-}
-
-const elixirLatestVersion = "1.17"
 
 type ElixirSDK struct {
 	Dagger *DaggerDev // +private
@@ -48,9 +39,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 			return err
 		}
 
-		sdkDev, ctr := t.base(installer)
-		_, err = sdkDev.Lint(ctr).Sync(ctx)
-		return err
+		return t.sdkDevWithInstaller(installer).Lint(ctx)
 	})
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
@@ -77,9 +66,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	sdkDev, ctr := t.base(installer)
-	_, err = sdkDev.Test(ctr).Sync(ctx)
-	return err
+	return t.sdkDevWithInstaller(installer).Test(ctx)
 }
 
 // Regenerate the Elixir SDK API
@@ -93,9 +80,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 
-	sdkDev, _ := t.base(installer)
-	ctr := sdkDev.WithBase(t.Dagger.Source.Directory(elixirSDKPath)).With(installer)
-	return sdkDev.Generate(ctr, introspection), nil
+	return t.sdkDevWithInstaller(installer).Generate(introspection), nil
 }
 
 // Test the publishing process
@@ -115,7 +100,7 @@ func (t ElixirSDK) Publish(
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/elixir/")
 
-	ctr := t.elixirBase(elixirVersions[elixirLatestVersion])
+	ctr := t.sdkDev().Container()
 
 	if semver.IsValid(version) {
 		mixFile := "/sdk/elixir/mix.exs"
@@ -137,11 +122,7 @@ func (t ElixirSDK) Publish(
 			WithExec([]string{"mix", "hex.publish", "--yes"})
 	}
 	_, err := ctr.Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
@@ -159,21 +140,16 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
 }
 
-func (t ElixirSDK) base(installer func(*dagger.Container) *dagger.Container) (*dagger.ElixirSDKDev, *dagger.Container) {
-	sdkDev := dag.ElixirSDKDev()
-	ctr := sdkDev.WithBase(t.Dagger.Source.Directory(elixirSDKPath)).With(installer)
-	return sdkDev, ctr
+func (t ElixirSDK) sdkDev() *dagger.ElixirSDKDev {
+	return dag.ElixirSDKDev().Init()
 }
 
-func (t ElixirSDK) elixirBase(baseImage string) *dagger.Container {
-	src := t.Dagger.Source.Directory(elixirSDKPath)
-	mountPath := "/" + elixirSDKPath
-
-	return dag.Container().
-		From(baseImage).
-		WithWorkdir(mountPath).
-		WithDirectory(mountPath, src).
-		WithExec([]string{"mix", "local.hex", "--force"}).
-		WithExec([]string{"mix", "local.rebar", "--force"}).
-		WithExec([]string{"mix", "deps.get"})
+func (t ElixirSDK) sdkDevWithInstaller(
+	installer func(*dagger.Container) *dagger.Container,
+) *dagger.ElixirSDKDev {
+	return t.sdkDev().
+		With(func(sdkDev *dagger.ElixirSDKDev) *dagger.ElixirSDKDev {
+			ctr := sdkDev.Container().With(installer)
+			return dag.ElixirSDKDev().Init(dagger.ElixirSDKDevInitOpts{Container: ctr})
+		})
 }

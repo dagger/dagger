@@ -415,6 +415,7 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 				skipped = append(skipped, arg.FlagName())
 				continue
 			}
+			return err
 		}
 		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())

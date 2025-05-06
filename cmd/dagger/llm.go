@@ -82,6 +82,9 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 	}
 
 	s.reset()
+	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
+		return nil, err
+	}
 
 	// figure out what the model resolved to
 	model, err := s.llm.Model(ctx)

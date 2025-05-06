@@ -212,7 +212,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			}
 		}
 
-		fieldDef := dagql.FieldSpec{
+		fieldDef := &dagql.FieldSpec{
 			Name:        fnName,
 			Description: formatGqlDescription(fnTypeDef.Description),
 			Type:        fnTypeDef.ReturnType.ToTyped(),
@@ -252,12 +252,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			if argMetadata.SourceMap != nil {
 				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.TypeDirective())
 			}
-			fieldDef.Args = append(fieldDef.Args, inputSpec)
+			fieldDef.Args.Add(inputSpec)
 		}
 
 		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{
 			Spec: fieldDef,
-			Func: func(ctx context.Context, self dagql.Instance[*InterfaceAnnotatedValue], args map[string]dagql.Input) (dagql.Typed, error) {
+			Func: func(ctx context.Context, self dagql.Instance[*InterfaceAnnotatedValue], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 				runtimeVal := self.Self
 
 				// TODO: support core types too
@@ -327,6 +327,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					ctx context.Context,
 					parentObj dagql.Object,
 					args map[string]dagql.Input,
+					view dagql.View,
 					cacheCfg dagql.CacheConfig,
 				) (*dagql.CacheConfig, error) {
 					parent, ok := parentObj.(dagql.Instance[*InterfaceAnnotatedValue])
@@ -346,7 +347,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 						return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
 					}
 
-					return callable.CacheConfigForCall(ctx, parentObj, args, cacheCfg)
+					return callable.CacheConfigForCall(ctx, parentObj, args, view, cacheCfg)
 				},
 			},
 		})
@@ -365,12 +366,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
 			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
 			Type:        class.Typed(),
-			Args: []dagql.InputSpec{
-				{
+			Args: dagql.NewInputSpecs(
+				dagql.InputSpec{
 					Name: "id",
 					Type: idScalar,
 				},
-			},
+			),
 			Module: iface.mod.IDModule(),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
@@ -452,7 +453,7 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 	return iface.TypeDef.Description
 }
 
-func (iface *InterfaceAnnotatedValue) TypeDefinition(views ...string) *ast.Definition {
+func (iface *InterfaceAnnotatedValue) TypeDefinition(view dagql.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: iface.Type().Name(),

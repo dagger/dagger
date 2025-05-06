@@ -583,7 +583,7 @@ func (srv *Server) initializeDaggerClient(
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
+	coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
@@ -599,7 +599,7 @@ func (srv *Server) initializeDaggerClient(
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
 		engineVersion := client.mod.Source.Self.EngineVersion
-		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
+		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can
 		// use the new typedefs api - but at this point we likely would
@@ -1247,7 +1247,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client
-func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
+func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
@@ -1256,6 +1256,23 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	err = srv.serveModule(client, mod)
+	if err != nil {
+		return err
+	}
+	if includeDependencies {
+		for _, depMod := range mod.Deps.Mods {
+			err = srv.serveModule(client, depMod)
+			if err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// not threadsafe, client.stateMu must be held when calling
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
 	// don't add the same module twice
 	// This can happen with generated clients since all remote dependencies are added
 	// on each connection and this could happen multiple times.
@@ -1472,6 +1489,11 @@ func (srv *Server) DNS() *oci.DNSConfig {
 // The lease manager for the engine as a whole
 func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
+}
+
+// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
+func (srv *Server) SecretSalt() []byte {
+	return srv.secretSalt
 }
 
 type httpError struct {

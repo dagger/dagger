@@ -625,11 +625,13 @@ Without arguments, the current working directory is replaced by the initial cont
 			"container",
 			"directory",
 			"engine",
+			"file",
 			"git",
 			"host",
 			"env",
 			"http",
 			"set-secret",
+			"secret",
 			"version",
 		}
 

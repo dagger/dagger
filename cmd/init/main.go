@@ -213,6 +213,11 @@ func startSessionSubprocess() error {
 
 	// start the session subprocess
 	cmd := exec.Command("/proc/self/exe")
+
+	// forwarding our stdio ensures that a panic in the child process won't get hidden and any other logging works too
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	cmd.ExtraFiles = []*os.File{w}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,

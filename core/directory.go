@@ -867,5 +867,5 @@ func SupportsDirSlash(ctx context.Context, query *Query) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return engine.CheckVersionCompatibility(srv.View, "v0.17.0"), nil
+	return engine.CheckVersionCompatibility(string(srv.View), "v0.17.0"), nil
 }

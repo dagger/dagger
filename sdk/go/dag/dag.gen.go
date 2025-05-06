@@ -112,6 +112,12 @@ func Error(message string) *dagger.Error {
 	return client.Error(message)
 }
 
+// Creates a file with the specified contents.
+func File(name string, contents string, opts ...dagger.FileOpts) *dagger.File {
+	client := initClient()
+	return client.File(name, contents, opts...)
+}
+
 // Creates a function.
 func Function(name string, returnType *dagger.TypeDef) *dagger.Function {
 	client := initClient()
@@ -427,9 +433,9 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 }
 
 // Creates a new secret.
-func Secret(uri string) *dagger.Secret {
+func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
-	return client.Secret(uri)
+	return client.Secret(uri, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

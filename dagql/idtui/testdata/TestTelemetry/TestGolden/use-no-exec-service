@@ -22,7 +22,7 @@ Expected stderr:
 ✔ .useNoExecService: String! X.Xs
 ┃ PONG
 │ ✔ container: Container! X.Xs
-│ $ .from(address: "redis"): Container! X.Xs CACHED
+│ $ .from(address: "redis:7.4.3"): Container! X.Xs CACHED
 │ ✔ .withExposedPort(port: 6379): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
@@ -41,6 +41,7 @@ Expected stderr:
 │ ✔ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
 │ ┃ PONG
 │ ✔ .stdout: String! X.Xs
+│ ┃ PONG
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

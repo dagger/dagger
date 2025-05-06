@@ -171,7 +171,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.Object, map[string]dagql.Input, dagql.CacheConfig) (*dagql.CacheConfig, error)
+	CacheConfigForCall(context.Context, dagql.Object, map[string]dagql.Input, dagql.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -254,7 +254,7 @@ func (obj *ModuleObject) TypeDescription() string {
 	return formatGqlDescription(obj.TypeDef.Description)
 }
 
-func (obj *ModuleObject) TypeDefinition(views ...string) *ast.Definition {
+func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
@@ -345,19 +345,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to get field spec: %w", err)
 	}
-
 	spec.Name = gqlFieldName(mod.Name())
-
 	spec.Module = obj.Module.IDModule()
-
-	if fn.metadata.SourceMap != nil {
-		spec.Directives = append(spec.Directives, fn.metadata.SourceMap.TypeDirective())
-	}
-	for i, arg := range fn.metadata.Args {
-		if arg.SourceMap != nil {
-			spec.Args[i].Directives = append(spec.Args[i].Directives, arg.SourceMap.TypeDirective())
-		}
-	}
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -405,7 +394,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 }
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
-	spec := dagql.FieldSpec{
+	spec := &dagql.FieldSpec{
 		Name:        field.Name,
 		Description: field.Description,
 		Type:        field.TypeDef.ToTyped(),
@@ -419,7 +408,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input) (dagql.Typed, error) {
+		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
@@ -459,18 +448,10 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
 	spec.Module = mod.IDModule()
-	if fun.SourceMap != nil {
-		spec.Directives = append(spec.Directives, fun.SourceMap.TypeDirective())
-	}
-	for i, arg := range fun.Args {
-		if arg.SourceMap != nil {
-			spec.Args[i].Directives = append(spec.Args[i].Directives, arg.SourceMap.TypeDirective())
-		}
-	}
 
 	return dagql.Field[*ModuleObject]{
-		Spec: spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input) (dagql.Typed, error) {
+		Spec: &spec,
+		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
 			opts := &CallOpts{
 				ParentTyped:  obj,
 				ParentFields: obj.Self.Fields,
@@ -529,7 +510,8 @@ func (f *CallableField) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.Object,
 	args map[string]dagql.Input,
+	view dagql.View,
 	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, inputCfg)
+	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)
 }

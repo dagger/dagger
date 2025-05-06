@@ -11,8 +11,8 @@
     },
     {
       "name": "k3s",
-      "source": "github.com/marcosnils/daggerverse/k3s@f4851a9c308410d58c5199dfd1b65e4f3ccae813",
-      "pin": "f4851a9c308410d58c5199dfd1b65e4f3ccae813"
+      "source": "github.com/marcosnils/daggerverse/k3s@k3s/v0.1.10",
+      "pin": "28eea1fcf3b6ecb38a628186107760acd717442f"
     },
     {
       "name": "wolfi",

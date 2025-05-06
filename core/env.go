@@ -364,8 +364,6 @@ type EnvHook struct {
 // internal usage. So we use this list to scrub them from
 // the introspection JSON that module SDKs use for codegen.
 var TypesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-
 	&Engine{},
 	&EngineCache{},
 	&EngineCacheEntry{},
@@ -417,23 +415,23 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Name:        "with" + typeName + "Input",
 			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typeName),
 			Type:        envType.Typed(),
-			Args: dagql.InputSpecs{
-				{
+			Args: dagql.NewInputSpecs(
+				dagql.InputSpec{
 					Name:        "name",
 					Description: "The name of the binding",
 					Type:        dagql.NewString(""),
 				},
-				{
+				dagql.InputSpec{
 					Name:        "value",
 					Description: fmt.Sprintf("The %s value to assign to the binding", typeName),
 					Type:        idType,
 				},
-				{
+				dagql.InputSpec{
 					Name:        "description",
 					Description: "The purpose of the input",
 					Type:        dagql.NewString(""),
 				},
-			},
+			),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			env := self.(dagql.Instance[*Env]).Self
@@ -454,18 +452,18 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Name:        "with" + typeName + "Output",
 			Description: fmt.Sprintf("Declare a desired %s output to be assigned in the environment", typeName),
 			Type:        envType.Typed(),
-			Args: dagql.InputSpecs{
-				{
+			Args: dagql.NewInputSpecs(
+				dagql.InputSpec{
 					Name:        "name",
 					Description: "The name of the binding",
 					Type:        dagql.NewString(""),
 				},
-				{
+				dagql.InputSpec{
 					Name:        "description",
 					Description: "A description of the desired value of the binding",
 					Type:        dagql.NewString(""),
 				},
-			},
+			),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			env := self.(dagql.Instance[*Env]).Self
@@ -514,7 +512,7 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
 	// FIXME: in principle LLM should be able to refer to these types, so this should
 	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
 	// hidden, don't codegen the field.
-	for _, hiddenType := range TypesHiddenFromModuleSDKs {
+	for _, hiddenType := range append(TypesHiddenFromModuleSDKs, &Host{}) {
 		if hiddenType.Type().Name() == typename {
 			return
 		}

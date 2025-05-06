@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"time"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -97,6 +98,9 @@ func NewFileWithContents(
 	ownership *Ownership,
 	platform Platform,
 ) (*File, error) {
+	if dir, _ := filepath.Split(name); dir != "" {
+		return nil, fmt.Errorf("file name %q must not contain a directory", name)
+	}
 	dir, err := NewScratchDirectory(ctx, query, platform)
 	if err != nil {
 		return nil, err

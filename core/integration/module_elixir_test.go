@@ -193,6 +193,18 @@ func (ElixirSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "bar", out)
 }
 
+// Ensure the module is working properly with the `Req` adapter.
+func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := elixirModule(t, c, "req-adapter").
+		With(daggerCall("container-echo", "--string-arg", "hello-from-req-adapter", "stdout")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "hello-from-req-adapter\n", out)
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))

@@ -493,15 +493,15 @@ type Container {
   Be sure to set any exposed ports before calling this api.
   """
   up(
+    """Bind each tunnel port to a random port on the host."""
+    random: Boolean = false
+
     """
     List of frontend/backend port mappings to forward.
     
     Frontend is the port accepting traffic on the host, backend is the service port.
     """
     ports: [PortForward!] = []
-
-    """Bind each tunnel port to a random port on the host."""
-    random: Boolean = false
 
     """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
@@ -1324,17 +1324,17 @@ type Directory {
   features.
   """
   dockerBuild(
-    """The platform to build."""
-    platform: Platform
-
     """Path to the Dockerfile to use (e.g., "frontend.Dockerfile")."""
     dockerfile: String = "Dockerfile"
 
-    """Target build stage to build."""
-    target: String = ""
+    """The platform to build."""
+    platform: Platform
 
     """Build arguments to use in the build."""
     buildArgs: [BuildArg!] = []
+
+    """Target build stage to build."""
+    target: String = ""
 
     """
     Secrets to pass to the build.
@@ -1415,6 +1415,9 @@ type Directory {
   Opens an interactive terminal in new container with this directory mounted inside.
   """
   terminal(
+    """If set, override the default container used for the terminal."""
+    container: ContainerID
+
     """
     If set, override the container's default terminal command and invoke these command arguments instead.
     """
@@ -1431,9 +1434,6 @@ type Directory {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
-
-    """If set, override the default container used for the terminal."""
-    container: ContainerID
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -2230,6 +2230,7 @@ type Function {
     """Patterns to ignore when loading the contextual argument value."""
     ignore: [String!] = []
 
+    """The source map for the argument definition."""
     sourceMap: SourceMapID
   ): Function!
 
@@ -2416,6 +2417,12 @@ type GitRepository {
     name: String!
   ): GitRef!
 
+  """branches that match any of the given glob patterns."""
+  branches(
+    """Glob patterns (e.g., "refs/tags/v*")."""
+    patterns: [String!]
+  ): [String!]!
+
   """Returns details of a commit."""
   commit(
     """
@@ -2454,13 +2461,13 @@ type GitRepository {
   withAuthHeader(
     """Secret used to populate the Authorization HTTP header"""
     header: SecretID!
-  ): GitRepository!
+  ): GitRepository! @deprecated(reason: "Use \"httpAuthHeader\" in the constructor instead.")
 
   """Token to authenticate the remote with."""
   withAuthToken(
     """Secret used to populate the password during basic HTTP Authorization"""
     token: SecretID!
-  ): GitRepository!
+  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
 }
 
 """
@@ -2499,9 +2506,6 @@ type Host {
   Creates a service that forwards traffic to a specified address via the host.
   """
   service(
-    """Upstream host to forward traffic to."""
-    host: String = "localhost"
-
     """
     Ports to expose via the service, forwarding through the host network.
     
@@ -2510,6 +2514,9 @@ type Host {
     An empty set of ports is not valid; an error will be returned.
     """
     ports: [PortForward!]!
+
+    """Upstream host to forward traffic to."""
+    host: String = "localhost"
   ): Service!
 
   """
@@ -2531,6 +2538,13 @@ type Host {
     service: ServiceID!
 
     """
+    Map each service port to the same port on the host, as if the service were running natively.
+    
+    Note: enabling may result in port conflicts.
+    """
+    native: Boolean = false
+
+    """
     Configure explicit port forwarding rules for the tunnel.
     
     If a port's frontend is unspecified or 0, a random port will be chosen by the host.
@@ -2542,13 +2556,6 @@ type Host {
     If ports are given and native is true, the ports are additive.
     """
     ports: [PortForward!] = []
-
-    """
-    Map each service port to the same port on the host, as if the service were running natively.
-    
-    Note: enabling may result in port conflicts.
-    """
-    native: Boolean = false
   ): Service!
 
   """Accesses a Unix socket on the host."""
@@ -2795,7 +2802,10 @@ type Module {
   Note: this can only be called once per session. In the future, it could return
   a stream or service to remove the side effect.
   """
-  serve: Void
+  serve(
+    """Expose the dependencies of this module to the client"""
+    includeDependencies: Boolean
+  ): Void
 
   """The source for the module."""
   source: ModuleSource!
@@ -3212,6 +3222,22 @@ type Query {
     message: String!
   ): Error!
 
+  """Creates a file with the specified contents."""
+  file(
+    """
+    Name of the new file. Example: "foo.txt"
+    """
+    name: String!
+
+    """
+    Contents of the new file. Example: "Hello world!"
+    """
+    contents: String!
+
+    """Permissions of the new file. Example: 0600"""
+    permissions: Int = 420
+  ): File!
+
   """Creates a function."""
   function(
     """
@@ -3242,14 +3268,20 @@ type Query {
     """DEPRECATED: Set to true to keep .git directory."""
     keepGitDir: Boolean = true
 
-    """A service which must be started before the repo is fetched."""
-    experimentalServiceHost: ServiceID
-
     """Set SSH known hosts"""
     sshKnownHosts: String = ""
 
     """Set SSH auth socket"""
     sshAuthSocket: SocketID
+
+    """Secret used to populate the password during basic HTTP Authorization"""
+    httpAuthToken: SecretID
+
+    """Secret used to populate the Authorization HTTP header"""
+    httpAuthHeader: SecretID
+
+    """A service which must be started before the repo is fetched."""
+    experimentalServiceHost: ServiceID
   ): GitRepository!
 
   """Queries the host environment."""
@@ -3439,6 +3471,21 @@ type Query {
   secret(
     """The URI of the secret store"""
     uri: String!
+
+    """
+    If set, the given string will be used as the cache key for this secret. This
+    means that any secrets with the same cache key will be considered equivalent
+    in terms of cache lookups, even if they have different URIs or plaintext
+    values.
+    
+    For example, two secrets with the same cache key provided as secret env vars
+    to other wise equivalent containers will result in the container withExecs
+    hitting the cache for each other.
+    
+    If not set, the cache key for the secret will be derived from its plaintext
+    value as looked up when the secret is constructed.
+    """
+    cacheKey: String
   ): Secret!
 
   """

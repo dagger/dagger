@@ -536,7 +536,9 @@ func (container *Container) Build(
 		return nil, err
 	}
 	container.FS = newDef
-	container.FS.Source = nil
+	if container.FS != nil {
+		container.FS.Source = nil
+	}
 
 	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
 	if found {

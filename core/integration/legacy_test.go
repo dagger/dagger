@@ -276,10 +276,11 @@ func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	modGen := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", fmt.Sprintf(`package main
+	for _, version := range []string{"v0.11.9", "v0.12.6"} {
+		modGen := daggerCliBase(t, c).
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)).
+			WithNewFile("main.go", fmt.Sprintf(`package main
 
 import "dagger/test/internal/dagger"
 
@@ -306,16 +307,17 @@ func (m *Test) Skip() *dagger.Container {
     })
 }
 `, alpineImage),
-		)
+			)
 
-	out, err := modGen.With(daggerCall("use", "stdout")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello\n", out)
+		out, err := modGen.With(daggerCall("use", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
 
-	out, err = modGen.With(daggerCall("skip", "stdout")).Stdout(ctx)
-	require.NoError(t, err)
-	// if the entrypoint was not skipped, it would return "echo hello\n"
-	require.Equal(t, "hello\n", out)
+		out, err = modGen.With(daggerCall("skip", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		// if the entrypoint was not skipped, it would return "echo hello\n"
+		require.Equal(t, "hello\n", out)
+	}
 }
 
 func (LegacySuite) TestExecWithSkipEntrypointCompat(ctx context.Context, t *testctx.T) {
@@ -610,7 +612,7 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	for _, version := range []string{"v0.9.9", "0.12.6"} {
+	for _, version := range []string{"v0.9.9", "v0.12.6"} {
 		ctr := daggerCliBase(t, c).
 			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 			WithWorkdir("/work").

@@ -209,7 +209,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		_, err := git.Head().Commit(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = git.Tags(ctx)
-		require.ErrorContains(t, err, "not a git repository")
+		require.ErrorContains(t, err, "does not appear to be a git repository")
 	})
 }
 
@@ -431,8 +431,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://github.com/grouville/daggerverse-private.git").
-			WithAuthToken(c.SetSecret("github_pat", token)).
+		_, err = c.Git("https://github.com/grouville/daggerverse-private.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("github_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("LICENSE").
@@ -446,8 +447,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git").
-			WithAuthToken(c.SetSecret("bitbucket_pat", token)).
+		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -461,8 +463,9 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		_, err = c.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git").
-			WithAuthToken(c.SetSecret("gitlab_pat", token)).
+		_, err = c.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", dagger.GitOpts{
+			HTTPAuthToken: c.SetSecret("gitlab_pat", token),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -507,8 +510,10 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthToken(c.SetSecret("token-wrong", "wrong")).
+		_, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthToken:           c.SetSecret("token-wrong", "wrong"),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -518,8 +523,10 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthToken(c.SetSecret("token", "foobar")).
+		dt, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthToken:           c.SetSecret("token", "foobar"),
+		}).
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -529,8 +536,43 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
-		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar")))).
+		dt, err := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+			HTTPAuthHeader:          c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))),
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
+}
+
+func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
+	// these were deprecated in dagger/dagger#10248
+
+	c := connect(ctx, t)
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
+
+	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
+		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+		//nolint:staticcheck // SA1019 deprecated
+		git = git.WithAuthToken(c.SetSecret("token", "foobar"))
+		dt, err := git.
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
+
+	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
+		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
+		//nolint:staticcheck // SA1019 deprecated
+		git = git.WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))))
+		dt, err := git.
 			Branch("main").
 			Tree().
 			File("README.md").
@@ -610,44 +652,83 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("all tags", func(ctx context.Context, t *testctx.T) {
-		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx)
-		require.NoError(t, err)
-		require.Contains(t, tags, "v0.9.3")
-		require.Contains(t, tags, "sdk/go/v0.9.3")
-	})
-
-	t.Run("all tags (short url)", func(ctx context.Context, t *testctx.T) {
-		tags, err := c.Git("github.com/dagger/dagger").Tags(ctx)
-		require.NoError(t, err)
-		require.Contains(t, tags, "v0.9.3")
-		require.Contains(t, tags, "sdk/go/v0.9.3")
-	})
-
-	t.Run("tag pattern", func(ctx context.Context, t *testctx.T) {
-		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
-			Patterns: []string{"v*"},
+	testTags := func(t *testctx.T, repo *dagger.GitRepository) {
+		t.Run("all tags", func(ctx context.Context, t *testctx.T) {
+			tags, err := repo.Tags(ctx)
+			require.NoError(t, err)
+			require.Contains(t, tags, "v0.9.3")
+			require.Contains(t, tags, "sdk/go/v0.9.3")
 		})
-		require.NoError(t, err)
-		require.Contains(t, tags, "v0.9.3")
-		require.Contains(t, tags, "sdk/go/v0.9.3")
+
+		t.Run("tag pattern", func(ctx context.Context, t *testctx.T) {
+			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+				Patterns: []string{"v*"},
+			})
+			require.NoError(t, err)
+			require.Contains(t, tags, "v0.9.3")
+			require.Contains(t, tags, "sdk/go/v0.9.3")
+		})
+
+		t.Run("ref-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
+			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+				Patterns: []string{"refs/tags/v*"},
+			})
+			require.NoError(t, err)
+			require.Contains(t, tags, "v0.9.3")
+			require.NotContains(t, tags, "sdk/go/v0.9.3")
+		})
+
+		t.Run("prefix-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
+			tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+				Patterns: []string{"sdk/go/v*"},
+			})
+			require.NoError(t, err)
+			require.NotContains(t, tags, "v0.9.3")
+			require.Contains(t, tags, "sdk/go/v0.9.3")
+		})
+	}
+
+	testBranches := func(t *testctx.T, repo *dagger.GitRepository) {
+		t.Run("all branches", func(ctx context.Context, t *testctx.T) {
+			branches, err := repo.Branches(ctx)
+			require.NoError(t, err)
+			require.Contains(t, branches, "main")
+		})
+
+		t.Run("branches pattern", func(ctx context.Context, t *testctx.T) {
+			branches, err := repo.Branches(ctx, dagger.GitRepositoryBranchesOpts{
+				Patterns: []string{"ma*"},
+			})
+			require.NoError(t, err)
+			require.Contains(t, branches, "main")
+		})
+	}
+
+	t.Run("remote", func(ctx context.Context, t *testctx.T) {
+		git := c.Git("https://github.com/dagger/dagger.git")
+		testTags(t, git)
+		testBranches(t, git)
+	})
+	t.Run("remote (short)", func(ctx context.Context, t *testctx.T) {
+		git := c.Git("github.com/dagger/dagger")
+		testTags(t, git)
+		testBranches(t, git)
 	})
 
-	t.Run("ref-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
-		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
-			Patterns: []string{"refs/tags/v*"},
-		})
-		require.NoError(t, err)
-		require.Contains(t, tags, "v0.9.3")
-		require.NotContains(t, tags, "sdk/go/v0.9.3")
+	localClone := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
+		Directory(".")
+	t.Run("local worktree", func(ctx context.Context, t *testctx.T) {
+		git := localClone.AsGit()
+		testTags(t, git)
+		testBranches(t, git)
 	})
-
-	t.Run("prefix-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
-		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
-			Patterns: []string{"sdk/go/v*"},
-		})
-		require.NoError(t, err)
-		require.NotContains(t, tags, "v0.9.3")
-		require.Contains(t, tags, "sdk/go/v0.9.3")
+	t.Run("local git", func(ctx context.Context, t *testctx.T) {
+		git := localClone.Directory(".git").AsGit()
+		testTags(t, git)
+		testBranches(t, git)
 	})
 }

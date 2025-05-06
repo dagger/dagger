@@ -275,13 +275,14 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 		if err != nil {
 			return nil, err
 		}
+		inputs := fieldspec.Args.Inputs(sdk.dag.View)
 
 		// check if there are any unknown config keys provided
 		var unusedKeys = []string{}
 		for configKey := range rawConfig {
 			found := false
-			for _, arg := range fieldspec.Args {
-				if arg.Name == configKey {
+			for _, input := range inputs {
+				if input.Name == configKey {
 					found = true
 					break
 				}
@@ -296,20 +297,20 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 			return nil, fmt.Errorf("unknown sdk config keys found %v", unusedKeys)
 		}
 		args := []dagql.NamedInput{}
-		for _, arg := range fieldspec.Args {
-			var valInput = arg.Default
+		for _, input := range inputs {
+			var valInput = input.Default
 
 			// override if the argument with same name exists in dagger.json -> sdk.config
-			val, ok := rawConfig[arg.Name]
+			val, ok := rawConfig[input.Name]
 			if ok {
-				valInput, err = arg.Type.Decoder().DecodeInput(val)
+				valInput, err = input.Type.Decoder().DecodeInput(val)
 				if err != nil {
-					return nil, fmt.Errorf("parsing value for arg %q: %w", arg.Name, err)
+					return nil, fmt.Errorf("parsing value for arg %q: %w", input.Name, err)
 				}
 			}
 
 			args = append(args, dagql.NamedInput{
-				Name:  arg.Name,
+				Name:  input.Name,
 				Value: valInput,
 			})
 		}
@@ -375,7 +376,7 @@ func (sdk *moduleSDK) GenerateClient(
 	outputDir string,
 	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -422,7 +423,7 @@ func (sdk *moduleSDK) GenerateClient(
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -451,7 +452,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -575,7 +576,7 @@ func (sdk *goSDK) GenerateClient(
 	outputDir string,
 	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -839,7 +840,7 @@ func (sdk *goSDK) baseWithCodegen(
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
