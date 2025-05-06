@@ -64,11 +64,13 @@ type LLM struct {
 	maxAPICalls int
 	apiCalls    int
 
-	model    string
-	endpoint *LLMEndpoint
+	model string
 
-	once        *sync.Once
+	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
+
+	once *sync.Once
+	err  error
 
 	// History of messages
 	messages []ModelMessage
@@ -465,9 +467,10 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
 	cp.mcp = cp.mcp.Clone()
-	cp.once = &sync.Once{}
-	cp.endpointMtx = &sync.Mutex{}
 	cp.endpoint = llm.endpoint
+	cp.endpointMtx = &sync.Mutex{}
+	cp.once = &sync.Once{}
+	cp.err = nil
 	return &cp
 }
 
@@ -634,11 +637,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
 		return err
 	}
-	var err error
 	llm.once.Do(func() {
-		err = llm.loop(ctx, dag)
+		llm.err = llm.loop(ctx, dag)
 	})
-	return err
+	return llm.err
 }
 
 func (llm *LLM) Interject(ctx context.Context) error {
