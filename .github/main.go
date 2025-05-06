@@ -211,6 +211,9 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"interface", []string{"TestInterface"}, &dagger.GhaJobOpts{
 				Runner: AltGoldRunner(),
 			}},
+			{"call-and-shell", []string{"TestCall", "TestShell", "TestDaggerCMD"}, &dagger.GhaJobOpts{
+				Runner: AltGoldRunner(),
+			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
 			}},
