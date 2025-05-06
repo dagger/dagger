@@ -350,6 +350,7 @@ func (src *ModuleSource) LoadContext(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(path)},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
+					{Name: "noCache", Value: dagql.NewBoolean(true)},
 				},
 			},
 		)

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dagger/testctx"
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -319,5 +320,48 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, "hello world", content)
+	})
+
+	t.Run("cache behavior", func(ctx context.Context, t *testctx.T) {
+		tests := []struct {
+			name     string
+			opts     []dagger.HostFileOpts
+			expected string
+		}{
+			{
+				name:     "default aka cache",
+				opts:     []dagger.HostFileOpts{},
+				expected: "1",
+			},
+			{
+				name:     "explicit cache",
+				opts:     []dagger.HostFileOpts{{NoCache: false}},
+				expected: "1",
+			},
+			{
+				name:     "explicit no cache",
+				opts:     []dagger.HostFileOpts{{NoCache: true}},
+				expected: "12",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+				bPath := filepath.Join(dir, uuid.NewString())
+				require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
+
+				file := c.Host().File(bPath, test.opts...)
+				content, err := file.Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "1", content)
+
+				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+				// file = c.Host().File(bPath, test.opts...) // this doesn't change behavior, but maybe worth testing?
+				content, err = file.Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, test.expected, content)
+			})
+		}
 	})
 }
