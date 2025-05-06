@@ -11,6 +11,7 @@ on:
       - "daggerverse-preview"
       - "docs"
       - "Engine & CLI"
+      - "evals"
       - "Github"
       - "Helm"
       - "Publish"

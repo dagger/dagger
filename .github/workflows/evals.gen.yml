@@ -9,6 +9,7 @@ name: evals
             - core/schema/llm.go
             - core/schema/env.go
             - modules/evaluator/**
+            - .github/workflows/evals.gen.yml
     workflow_dispatch: {}
 jobs:
     testdev:
