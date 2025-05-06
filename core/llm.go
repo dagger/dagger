@@ -66,6 +66,7 @@ type LLM struct {
 	Endpoint    *LLMEndpoint
 
 	once *sync.Once
+	err  error
 
 	// History of messages
 	messages []ModelMessage
@@ -625,11 +626,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
 		return err
 	}
-	var err error
 	llm.once.Do(func() {
-		err = llm.loop(ctx, dag)
+		llm.err = llm.loop(ctx, dag)
 	})
-	return err
+	return llm.err
 }
 
 func (llm *LLM) Interject(ctx context.Context) error {
