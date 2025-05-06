@@ -220,7 +220,11 @@ Dagger Cloud lets you see all your organization's modules in one place, with met
 
 Dagger Cloud scans your specified repositories for Dagger modules, showing them automatically in Dagger Cloud.
 
-To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Integrations` sub-menu. Click `Add new target` to add a GitHub account or organization.
+:::info
+You must be signed in to Dagger Cloud with GitHub.
+:::
+
+To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Git Sources` sub-menu. Click `Install the GitHub Application` to add a GitHub account or organization.
 
 ![Module repository setup](/img/current_docs/configuration/cloud-modules-target.png)
 
@@ -228,7 +232,7 @@ You will be directed to install the Dagger Cloud GitHub application and select t
 
 ![Module repository setup](/img/current_docs/configuration/cloud-modules-install-app.png)
 
-Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Map to this organization` to have Dagger Cloud begin scanning for Dagger modules.
+Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Enable module scanning` to have Dagger Cloud begin scanning for Dagger modules. You can enable module scanning for multiple GitHub organizations. Each one can be enabled on a single Dagger organization.
 
 ![Module repository setup](/img/current_docs/configuration/cloud-modules-map.png)
 
@@ -244,7 +248,7 @@ Access the modules dashboard from the `Modules` menu item in the top navigation 
 
 ![Module list](/img/current_docs/configuration/cloud-modules-list.png)
 
-Modules are automatically categorized by their source repository. However, it is possible to create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
+You can view your entire list of modules by selecting the `All Modules` tab. If you wish to curate and organize this list, you can create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
 
 ![Module filter](/img/current_docs/configuration/cloud-modules-filter.png)
 
