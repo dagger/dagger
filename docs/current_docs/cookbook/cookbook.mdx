@@ -2931,11 +2931,11 @@ Dagger represents operations performed by a Dagger Function as [OpenTelemetry sp
 
 It is possible to instrument custom OpenTelemetry spans inside any Dagger Function. This allows you to define logical boundaries within complex workflows, measure execution time, and track nested operations with greater granularity. These custom spans appear in the Dagger TUI and Traces.
 
+The following Dagger Function demonstrates this by emitting custom spans for various tasks.
+
 :::warning
 The approach described below is experimental and may be deprecated in favor of a new OpenTelemetry span API. [Contribute to the ongoing discussion of this topic on GitHub](https://github.com/dagger/dagger/pull/9327).
 :::
-
-The following Dagger Function demonstrates this by emitting custom spans for various tasks.
 
 <Tabs groupId="language">
 <TabItem value="Go">
