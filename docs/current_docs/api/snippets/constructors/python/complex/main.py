@@ -1,9 +1,10 @@
 from typing import Annotated
+
 import dagger
 from dagger import (
-    dag,
     DefaultPath,
     Doc,
+    dag,
     field,
     object_type,
 )
