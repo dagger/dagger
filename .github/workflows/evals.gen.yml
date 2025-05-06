@@ -3,6 +3,7 @@ name: evals
 "on":
     push:
         paths:
+            - .github/workflows/evals.gen.yml
             - core/llm.go
             - core/mcp.go
             - core/env.go
