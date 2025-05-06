@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	fs "github.com/tonistiigi/fsutil/copy"
+	"golang.org/x/sync/errgroup"
 )
 
 // TODO: add more tests for longer chains of cache hits that then diverge (i.e. constructor + some function cache hit, then diverge)
@@ -1517,4 +1518,72 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 			require.Equal(t, "2", string(outDecoded))
 		}
 	})
+}
+
+func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *testctx.T) {
+	callMod := func(c *dagger.Client) error {
+		_, err := goGitBase(t, c).
+			WithWorkdir("/work").
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+)
+
+type Test struct {}
+
+func (Test) Fn(ctx context.Context) error {
+	ctr, err := dag.Container().
+		From("alpine:3.20").
+		WithExec([]string{"sh", "-c", "echo "+strconv.Itoa(int(time.Now().UnixNano()))+"> /foo.txt"}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("sleeping", time.Now().UnixNano())
+	time.Sleep(20 * time.Second)
+	fmt.Println("awoken", time.Now().UnixNano())
+
+	ctr, err = ctr.WithExec([]string{"true"}).Sync(ctx)
+	return err
+}
+	`,
+			).
+			With(daggerCall("fn")).
+			Sync(ctx)
+		return err
+	}
+
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	var eg errgroup.Group
+
+	eg.Go(func() error {
+		time.Sleep(10 * time.Second)
+		t.Log("closing c1")
+		c1.Close()
+		t.Log("closed c1")
+		return nil
+	})
+
+	eg.Go(func() error {
+		callMod(c1)
+		t.Log("c1 call complete")
+		return nil
+	})
+
+	eg.Go(func() error {
+		time.Sleep(5 * time.Second)
+		return callMod(c2)
+	})
+
+	err := eg.Wait()
+	require.NoError(t, err)
 }

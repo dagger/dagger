@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix "failed to return error" and "failed to emit telemetry" errors when two
+  identical functions execute at the same time and one client cancels the request.
+time: 2025-05-01T18:44:24.032929067-07:00
+custom:
+  Author: sipsma
+  PR: "10264"

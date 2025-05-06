@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -240,7 +241,9 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
 		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
-		bklog.G(ctx).Errorf("ref evaluate error: %+v", err)
+		bklog.G(ctx).
+			WithField("caller stack", string(debug.Stack())).
+			Errorf("ref evaluate error: %+v", err)
 		err = includeBuildkitContextCancelledLine(err)
 		return nil, WrapError(ctx, err, r.c)
 	}

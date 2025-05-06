@@ -308,6 +308,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		llb.Platform(platform.Spec()),
 		execMDOpt,
 	}
+	if opts.ExperimentalPrivilegedNesting {
+		marshalOpts = append(marshalOpts, llb.SkipEdgeMerge)
+	}
 	execDef, err := execSt.Root().Marshal(ctx, marshalOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("marshal root: %w", err)
