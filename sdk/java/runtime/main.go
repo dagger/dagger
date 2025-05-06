@@ -28,6 +28,10 @@ const (
 type JavaSdk struct {
 	SDKSourceDir *dagger.Directory
 	moduleConfig moduleConfig
+	// If true, -e flag will be added to the maven command to display execution error messages
+	MavenErrors bool
+	// If true, -X flag will be added to the maven command to enable full debug logging
+	MavenDebugLogging bool
 }
 
 type moduleConfig struct {
@@ -53,7 +57,19 @@ func New(
 	}
 	return &JavaSdk{
 		SDKSourceDir: sdkSourceDir,
+		MavenErrors:  false,
 	}, nil
+}
+
+func (m *JavaSdk) WithConfig(
+	// +default=false
+	mavenErrors bool,
+	// +default=false
+	mavenDebugLogging bool,
+) *JavaSdk {
+	m.MavenErrors = mavenErrors
+	m.MavenDebugLogging = mavenDebugLogging
+	return m
 }
 
 func (m *JavaSdk) Codegen(
@@ -114,13 +130,13 @@ func (m *JavaSdk) codegenBase(
 	}
 	ctr = ctr.
 		// set the version of the Dagger dependencies to the version of the introspection file
-		WithExec([]string{
+		WithExec(m.mavenCommand(
 			"mvn",
 			"versions:set-property",
 			"-DgenerateBackupPoms=false",
 			"-Dproperty=dagger.module.deps",
 			fmt.Sprintf("-DnewVersion=%s", version),
-		})
+		))
 	return ctr, nil
 }
 
@@ -149,12 +165,12 @@ func (m *JavaSdk) buildJavaDependencies(
 		WithDirectory(GenPath, m.SDKSourceDir).
 		WithWorkdir(GenPath).
 		// Set the version of the dependencies we are building to the version of the introspection file
-		WithExec([]string{
+		WithExec(m.mavenCommand(
 			"mvn",
 			"versions:set",
 			"-DgenerateBackupPoms=false",
 			fmt.Sprintf("-DnewVersion=%s", version),
-		}).
+		)).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
 		//   this means including the ability to call other projects (not part of the main dagger SDK)
@@ -164,7 +180,7 @@ func (m *JavaSdk) buildJavaDependencies(
 		//   - this processor will be used by the user module to generate the entrypoint, so it's referenced in the user module pom.xml
 		// - dagger-java-sdk: the actual SDK, where the generated code will be written
 		//   - the user module code only depends on this, it includes all the required types
-		WithExec([]string{
+		WithExec(m.mavenCommand(
 			"mvn",
 			"--projects", "dagger-codegen-maven-plugin,dagger-java-annotation-processor,dagger-java-sdk", "--also-make",
 			"clean", "install",
@@ -172,8 +188,7 @@ func (m *JavaSdk) buildJavaDependencies(
 			"-DskipTests",
 			// specify the introspection json file
 			"-Ddaggerengine.schema=/schema.json",
-			// "-e", // this is just for debug purpose, uncomment if needed
-		}), nil
+		)), nil
 }
 
 // addTemplate creates all the necessary files to start a new Java module
@@ -247,12 +262,11 @@ func (m *JavaSdk) generateCode(
 		// set the module name as an environment variable so we ensure constructor is only on main object
 		WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
 		// generate the entrypoint
-		WithExec([]string{
+		WithExec(m.mavenCommand(
 			"mvn",
 			"clean",
 			"compile",
-			// "-e", // this is just for debug purpose, uncomment if needed
-		})
+		))
 	return dag.
 		Directory().
 		// copy all user files
@@ -320,13 +334,12 @@ func (m *JavaSdk) buildJar(
 			// set the module name as an environment variable so we ensure constructor is only on main object
 			WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
 			// build the final jar
-			WithExec([]string{
+			WithExec(m.mavenCommand(
 				"mvn",
 				"clean",
 				"package",
 				"-DskipTests",
-				// "-e", // this is just for debug purpose, uncomment if needed
-			}))
+			)))
 }
 
 // finalJar will return the jar corresponding to the user module built
@@ -339,13 +352,13 @@ func (m *JavaSdk) finalJar(
 	ctr *dagger.Container,
 ) (*dagger.File, error) {
 	artifactID, err := ctr.
-		WithExec([]string{"mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.artifactId", "-q", "-DforceStdout"}).
+		WithExec(m.mavenCommand("mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.artifactId", "-q", "-DforceStdout")).
 		Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
 	version, err := ctr.
-		WithExec([]string{"mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.version", "-q", "-DforceStdout"}).
+		WithExec(m.mavenCommand("mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.version", "-q", "-DforceStdout")).
 		Stdout(ctx)
 	if err != nil {
 		return nil, err
@@ -439,4 +452,14 @@ func (m *JavaSdk) replace(
 		content = strings.ReplaceAll(content, change.oldString, change.newString)
 	}
 	return content, nil
+}
+
+func (m *JavaSdk) mavenCommand(args ...string) []string {
+	if m.MavenErrors {
+		args = append(args, "-e")
+	}
+	if m.MavenDebugLogging {
+		args = append(args, "-X")
+	}
+	return args
 }
