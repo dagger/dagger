@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dagger/testctx"
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -321,35 +322,46 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "hello world", content)
 	})
 
-	t.Run("default reload behavior", func(ctx context.Context, t *testctx.T) {
-		bPath := filepath.Join(dir, "b.txt")
+	t.Run("reload behavior", func(ctx context.Context, t *testctx.T) {
+		bPath := filepath.Join(dir, uuid.NewString())
 		require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
 
-		file := c.Host().File(bPath)
-		content, err := file.Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "1", content)
+		tests := []struct {
+			name     string
+			opts     []dagger.HostFileOpts
+			expected string
+		}{
+			{
+				name:     "default aka cache",
+				opts:     []dagger.HostFileOpts{},
+				expected: "1",
+			},
+			{
+				name:     "explicit cache",
+				opts:     []dagger.HostFileOpts{{Cache: true}},
+				expected: "1",
+			},
+			{
+				name:     "explicit no cache",
+				opts:     []dagger.HostFileOpts{{Cache: false}},
+				expected: "12",
+			},
+		}
 
-		require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+		for _, test := range tests {
+			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+				file := c.Host().File(bPath, test.opts...)
+				content, err := file.Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "1", content)
 
-		content, err = file.Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "1", content)
-	})
+				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
 
-	t.Run("reload behavior with cache", func(ctx context.Context, t *testctx.T) {
-		bPath := filepath.Join(dir, "b.txt")
-		require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
-
-		file := c.Host().File(bPath, dagger.HostFileOpts{Cache: false})
-		content, err := file.Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "1", content)
-
-		require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
-
-		content, err = file.Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "12", content)
+				// file = c.Host().File(bPath, test.opts...) // this doesn't change behavior, but maybe worth testing?
+				content, err = file.Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, test.expected, content)
+			})
+		}
 	})
 }
