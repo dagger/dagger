@@ -1,6 +1,0 @@
-kind: Added
-body: New `GitRepository.branches` API
-time: 2025-04-28T12:32:01.629673555+01:00
-custom:
-    Author: jedevc
-    PR: "10250"

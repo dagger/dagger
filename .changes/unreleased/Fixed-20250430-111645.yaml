@@ -1,6 +1,0 @@
-kind: Fixed
-body: Return an error when a function argument conflicts with a persistent flag in `dagger call`
-time: 2025-04-30T11:16:45.32856Z
-custom:
-    Author: helderco
-    PR: "10305"

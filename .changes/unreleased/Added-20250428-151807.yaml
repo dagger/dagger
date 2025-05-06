@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    New `File` top-level field added to allow easier creation of `File` objects
-time: 2025-04-28T15:18:07.81665956+01:00
-custom:
-    Author: jedevc
-    PR: "10290"
