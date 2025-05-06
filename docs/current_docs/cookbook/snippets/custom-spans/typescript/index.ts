@@ -2,7 +2,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 import * as trace from "@dagger.io/dagger/telemetry"
 
 @object()
-class MyModule {
+export class MyModule {
   @func()
   async foo(): Promise<void> {
     // clone the source code repository
@@ -18,7 +18,7 @@ class MyModule {
 
     // run tests concurrently
     // emit a span for each
-    for (const version of versions) {
+    await Promise.all(versions.map(async (version) => {
       await tracer.startActiveSpan(
         `running unit tests with Node ${version}`,
         async () => {
@@ -32,6 +32,6 @@ class MyModule {
             .sync()
         },
       )
-    }
+    }))
   }
 }
