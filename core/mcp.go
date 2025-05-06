@@ -1273,7 +1273,7 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	if typeName != schema.Query.Name {
 		schema := map[string]any{
 			"type":        "string",
-			"description": fmt.Sprintf("The %s to operate against, e.g. Potato#123.", typeName),
+			"description": fmt.Sprintf("(%s ID) The %s to operate against", typeName, typeName),
 		}
 		properties[typeName] = schema
 
