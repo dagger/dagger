@@ -986,6 +986,13 @@ export type HostDirectoryOpts = {
   include?: string[]
 }
 
+export type HostFileOpts = {
+  /**
+   * If false, the file will always be reloaded from the host.
+   */
+  cache: boolean
+}
+
 export type HostServiceOpts = {
   /**
    * Upstream host to forward traffic to.
@@ -5721,9 +5728,10 @@ export class Host extends BaseClient {
   /**
    * Accesses a file on the host.
    * @param path Location of the file to retrieve (e.g., "README.md").
+   * @param opts.cache If false, the file will always be reloaded from the host.
    */
-  file = (path: string): File => {
-    const ctx = this._ctx.select("file", { path })
+  file = (path: string, opts?: HostFileOpts): File => {
+    const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
   }
 

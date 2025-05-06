@@ -35,10 +35,13 @@ defmodule Dagger.Host do
   @doc """
   Accesses a file on the host.
   """
-  @spec file(t(), String.t()) :: Dagger.File.t()
-  def file(%__MODULE__{} = host, path) do
+  @spec file(t(), String.t(), boolean()) :: Dagger.File.t()
+  def file(%__MODULE__{} = host, path, cache) do
     query_builder =
-      host.query_builder |> QB.select("file") |> QB.put_arg("path", path)
+      host.query_builder
+      |> QB.select("file")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("cache", cache)
 
     %Dagger.File{
       query_builder: query_builder,

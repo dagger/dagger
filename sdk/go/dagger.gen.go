@@ -5754,9 +5754,23 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
+// HostFileOpts contains options for Host.File
+type HostFileOpts struct {
+	// If false, the file will always be reloaded from the host.
+	//
+	// Default: true
+	Cache bool
+}
+
 // Accesses a file on the host.
-func (r *Host) File(path string) *File {
+func (r *Host) File(path string, opts ...HostFileOpts) *File {
 	q := r.query.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cache) {
+			q = q.Arg("cache", opts[i].Cache)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &File{

@@ -152,10 +152,11 @@ func (s *hostSchema) Install() {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 			),
 
-		dagql.FuncWithCacheKey("file", s.file, dagql.CachePerClient).
+		dagql.FuncWithCacheKey("file", s.file, cacheIfRequested).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
+				dagql.Arg("cache").Default(dagql.NewBoolean(true)).Doc(`If false, the file will always be reloaded from the host.`),
 			),
 
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
@@ -338,7 +339,8 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host]
 }
 
 type hostFileArgs struct {
-	Path string
+	Path  string
+	Cache bool
 }
 
 func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (i dagql.Instance[*core.File], err error) {
@@ -536,4 +538,11 @@ func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args h
 		return nil, errors.New("socket accessor must be provided")
 	}
 	return &core.Socket{IDDigest: dagql.CurrentID(ctx).Digest()}, nil
+}
+
+func cacheIfRequested[T dagql.Typed](ctx context.Context, i dagql.Instance[T], a hostFileArgs, cc dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	if a.Cache {
+		return dagql.CachePerSession(ctx, i, a, cc)
+	}
+	return dagql.CachePerCall(ctx, i, a, cc)
 }

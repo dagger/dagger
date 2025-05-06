@@ -32,10 +32,13 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * Accesses a file on the host.
      */
-    public function file(string $path): File
+    public function file(string $path, ?bool $cache = true): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $cache) {
+        $innerQueryBuilder->setArgument('cache', $cache);
+        }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

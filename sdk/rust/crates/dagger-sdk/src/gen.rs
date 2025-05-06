@@ -6946,9 +6946,11 @@ impl Host {
     /// # Arguments
     ///
     /// * `path` - Location of the file to retrieve (e.g., "README.md").
-    pub fn file(&self, path: impl Into<String>) -> File {
+    /// * `cache` - If false, the file will always be reloaded from the host.
+    pub fn file(&self, path: impl Into<String>, cache: bool) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
+        query = query.arg("cache", cache);
         File {
             proc: self.proc.clone(),
             selection: query,

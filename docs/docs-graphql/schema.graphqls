@@ -2497,6 +2497,9 @@ type Host {
   file(
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
+
+    """If false, the file will always be reloaded from the host."""
+    cache: Boolean! = true
   ): File!
 
   """A unique identifier for this Host."""

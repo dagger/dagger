@@ -320,4 +320,36 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello world", content)
 	})
+
+	t.Run("default reload behavior", func(ctx context.Context, t *testctx.T) {
+		bPath := filepath.Join(dir, "b.txt")
+		require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
+
+		file := c.Host().File(bPath)
+		content, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1", content)
+
+		require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+		content, err = file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1", content)
+	})
+
+	t.Run("reload behavior with cache", func(ctx context.Context, t *testctx.T) {
+		bPath := filepath.Join(dir, "b.txt")
+		require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
+
+		file := c.Host().File(bPath, dagger.HostFileOpts{Cache: false})
+		content, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1", content)
+
+		require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+		content, err = file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "12", content)
+	})
 }

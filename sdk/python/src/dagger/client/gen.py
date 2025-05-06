@@ -5996,16 +5996,19 @@ class Host(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, path: str) -> File:
+    def file(self, path: str, *, cache: bool = True) -> File:
         """Accesses a file on the host.
 
         Parameters
         ----------
         path:
             Location of the file to retrieve (e.g., "README.md").
+        cache:
+            If false, the file will always be reloaded from the host.
         """
         _args = [
             Arg("path", path),
+            Arg("cache", cache, True),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
