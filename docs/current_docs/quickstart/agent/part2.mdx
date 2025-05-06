@@ -80,10 +80,28 @@ To give the agent a specialized set of tools to edit files, create a Dagger subm
         ```
     </TabItem>
     <TabItem value="java" label="Java">
-    TODO
+        Start by creating the submodule:
+
+        ```shell
+        dagger init --sdk java .dagger/workspace
+        ```
+
+        Now replace the main file in the workspace with the following content.
+        Edit `.dagger/workspace/src/main/java/io/dagger/modules/workspace/Workspace.java`:
+        ```java file=./snippets/part2/workspace/java/src/main/java/io/dagger/modules/workspace/Workspace.java
+        ```
     </TabItem>
     <TabItem value="php" label="PHP">
-    TODO
+        Start by creating the submodule:
+
+        ```shell
+        dagger init --sdk php .dagger/workspace
+        ```
+
+        Now replace the main file in the workspace with the following content.
+        Edit `.dagger/workspace/src/Workspace.php`:
+        ```php file=./snippets/part2/workspace/php/src/Workspace.php
+        ```
     </TabItem>
 </Tabs>
 
@@ -96,7 +114,6 @@ dagger install ./.dagger/workspace
 ## Create an Agentic function
 
 This agent will be used to make changes to the application and use the existing `Test` function to validate the changes.
-
 
 <Tabs groupId="language" queryString="sdk">
     <TabItem value="go" label="Go">
@@ -118,10 +135,16 @@ This agent will be used to make changes to the application and use the existing 
         ```
     </TabItem>
     <TabItem value="java" label="Java">
-    TODO
+        Add the following new function to the main dagger module in `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java`:
+
+        ```java file=./snippets/part2/agent/java/agent.java.snippet
+        ```
     </TabItem>
     <TabItem value="php" label="PHP">
-    TODO
+        Add the following new function to the main dagger module in `.dagger/src/HelloDagger.php`:
+
+        ```php file=./snippets/part2/agent/php/agent.php.snippet
+        ```
     </TabItem>
 </Tabs>
 
