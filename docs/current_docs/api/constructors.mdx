@@ -123,9 +123,11 @@ Here is an example of a Dagger module with a default constructor argument of typ
 
 <PartialComplexConstructorOutput />
 
-#### Multiple complex types
+#### Dagger objects are Python data classes
 
-Since `@object_type` classes are Python data classes, it is possible to provide multiple complex types as constructor arguments:
+Since `@object_type` classes are [Python data classes](https://docs.python.org/3/library/dataclasses.html), you can fine tune the generation of the constructor in different ways. 
+
+Here is a more complex example:
 
 ```python file=./snippets/constructors/python/complex/main.py
 ```
