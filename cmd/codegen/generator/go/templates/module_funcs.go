@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/types"
 	"maps"
+	"os"
 	"strconv"
 	"strings"
 
@@ -315,6 +316,19 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 	}
 
+	// handle defaultEnv
+	// TODO(jasonmccallister): should this return an error if the env var is not set but it has a default?
+	defaultEnv := ""
+	if v, ok := pragmas["defaultEnv"]; ok {
+		// get the value of the environment variable
+		if e, ok := os.LookupEnv(v); ok {
+			defaultEnv = e
+		}
+		if defaultEnv == "" {
+			return paramSpec{}, fmt.Errorf("defaultEnv '%s' not set", v)
+		}
+	}
+
 	// ignore ctx arg for parsing type reference
 	isContext := paramType.String() == contextTypename
 	var typeSpec ParsedType
@@ -347,6 +361,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		defaultValue: defaultValue,
 		description:  comment,
 		defaultPath:  defaultPath,
+		defaultEnv:   defaultEnv,
 		ignore:       ignore,
 	}, nil
 }
@@ -363,6 +378,9 @@ type paramSpec struct {
 
 	// Set a default value for the argument. Value must be a json-encoded literal value
 	defaultValue string
+
+	// defaultEnv is the name of an environment variable to use as a default value for the argument.
+	defaultEnv string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc
