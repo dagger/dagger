@@ -1,4 +1,4 @@
-import { dag, object, func, Directory } from '@dagger.io/dagger'
+import { dag, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
 export class Workspace {
@@ -37,10 +37,10 @@ export class Workspace {
   async listFiles(): Promise<string> {
     return await dag
       .container()
-      .from('alpine:3')
-      .withDirectory('/src', this.source)
-      .withWorkdir('/src')
-      .withExec(['tree', './src'])
+      .from("alpine:3")
+      .withDirectory("/src", this.source)
+      .withWorkdir("/src")
+      .withExec(["tree", "./src"])
       .stdout()
   }
 
