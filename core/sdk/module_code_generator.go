@@ -21,7 +21,7 @@ func (sdk *codeGeneratorModule) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self.Name(), err)
 	}

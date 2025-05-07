@@ -42,7 +42,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	outputDir string,
 	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
