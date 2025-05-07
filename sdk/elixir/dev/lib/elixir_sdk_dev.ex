@@ -158,7 +158,7 @@ defmodule ElixirSdkDev do
     dag()
     |> Dagger.Client.container()
     |> Dagger.Container.from(@base_image)
-    |> Dagger.Container.with_workdir("/sdk")
+    |> Dagger.Container.with_workdir("/sdk/elixir")
     |> Dagger.Container.with_directory(".", source)
     |> Dagger.Container.with_exec(~w"mix local.hex --force")
     |> Dagger.Container.with_exec(~w"mix local.rebar --force")
