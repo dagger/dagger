@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -345,20 +346,29 @@ type hostFileArgs struct {
 
 func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (i dagql.Instance[*core.File], err error) {
 	fileDir, fileName := filepath.Split(args.Path)
+	dirArgs := []dagql.NamedInput{
+		{
+			Name:  "path",
+			Value: dagql.NewString(fileDir),
+		},
+		{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)},
+		},
+	}
+
+	if !args.Cache {
+		dirArgs = append(dirArgs, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String]{dagql.NewString(uuid.NewString())},
+		})
+	}
+
 	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
 		Field: "host",
 	}, dagql.Selector{
 		Field: "directory",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(fileDir),
-			},
-			{
-				Name:  "include",
-				Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)},
-			},
-		},
+		Args:  dirArgs,
 	}, dagql.Selector{
 		Field: "file",
 		Args: []dagql.NamedInput{
