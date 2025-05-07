@@ -10,7 +10,6 @@ import (
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 )
 
-
 func TestMatchVersion(t *testing.T) {
 	vers := []string{"v1.0.0", "v1.0.1", "v2.0.0", "path/v1.0.1", "path/v2.0.1"}
 
