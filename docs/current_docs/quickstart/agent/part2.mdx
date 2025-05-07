@@ -5,26 +5,28 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import PartialIde from '../../partials/_ide.mdx';
 
-# Build a Contextual Agent
+# Add an AI agent to an Existing Project
 
-Now that you've learned the basics of creating an AI Agent with Dagger in [Built an AI Agent](./agent), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI Agent that builds features for an existing project.
+Now that you've learned the basics of creating an AI agent with Dagger in [Built an AI agent](./index.mdx), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI agent that builds features for an existing project.
 
 For this guide you will start with a Daggerized project. The agent will use the Dagger functions in this project that are already used locally and in CI for testing the project.
 
 ## Requirements
 
+This quickstart will take you approximately 10 minutes to complete. You should ideally have completed the AI agent and CI quickstart and should be familiar with programming in Go, Python, TypeScript, PHP, or Java.
+Before beginning, ensure that:
+
 - you have [installed the Dagger CLI](../../install.mdx).
 - You have [configured](../../configuration/llm.mdx) an LLM provider to use with Dagger
-- You have completed the [AI Agent quickstart](./agent) to learn the basics of LLMs in Dagger
-- You have completed the [CI quickstart](./ci) to a Daggerize a project
+- You have completed the [AI agent quickstart](./index.mdx) to learn the basics of LLMs in Dagger
+- You have completed the [CI quickstart](../ci/index.mdx) to a Daggerize a project
 
-## Open the example application
+## Inspect the example application
 
-This guide builds on the Daggerized project from the [CI quickstart](./ci). If you have not completed the CI quickstart, you will at least need to complete the [construct a pipeline](./ci#construct-a-pipeline) step to get the Daggerized project.
-
-List the existing Dagger functions:
+This quickstart uses the [Daggerized project from the CI quickstart](../ci/index.mdx). To verify that your project is in the correct state, change to the project's working directory and list the available Dagger Functions:
 
 ```shell
+cd hello-dagger
 dagger functions
 ```
 
@@ -38,72 +40,75 @@ publish     Publish the application container after building and testing it on-t
 test        Return the result of running unit tests
 ```
 
-## Create a workspace for the Agent
+## Create a workspace for the agent
 
-To give the agent a specialized set of tools to edit files, create a Dagger submodule called `Workspace`. This module will have functions to read, write, and list files. Modules like this are useful for agents to accomplish tasks like file editing without too much room for error.
+The goal of this quickstart is to create an agent to interact with the existing codebase and add features to it. This means that the agent needs the ability to list, read and write files in the project directory.
+
+To give the agent these tools, create a Dagger submodule called `workspace`. This module will have Dagger Functions to list, read, and write files. The agent can use these Dagger Functions to interact with the codebase. By giving the agent a module with a limited set of tools, the agent has less room for error and will be more successful at its tasks.
 
 <Tabs groupId="language" queryString="sdk">
     <TabItem value="go" label="Go">
-        Start by creating the submodule:
+    Start by creating the submodule:
 
-        ```shell
-        dagger init --sdk go .dagger/workspace
-        ```
+    ```shell
+    dagger init --sdk=go .dagger/workspace
+    ```
 
-        Now replace the main file in the workspace with the following content.
-        Edit `.dagger/workspace/main.go`:
-        ```go file=./snippets/part2/workspace/go/main.go
-        ```
+    Replace the `.dagger/workspace/main.go` file with the following contents:
+    ```go file=./snippets/part2/workspace/go/main.go
+    ```
     </TabItem>
     <TabItem value="python" label="Python">
-        Start by creating the submodule:
+    Start by creating the submodule:
 
-        ```shell
-        dagger init --sdk python .dagger/workspace
-        ```
+    ```shell
+    dagger init --sdk=python .dagger/workspace
+    ```
 
-        Now replace the main file in the workspace with the following content.
-        Edit `.dagger/workspace/src/workspace/main.py`:
-        ```python file=./snippets/part2/workspace/python/src/workspace/main.py
-        ```
+    Replace the `.dagger/workspace/src/workspace/main.py` file with the following contents:
+    ```python file=./snippets/part2/workspace/python/src/workspace/main.py
+    ```
     </TabItem>
     <TabItem value="typescript" label="Typescript">
-        Start by creating the submodule:
+    Start by creating the submodule:
 
-        ```shell
-        dagger init --sdk typescript .dagger/workspace
-        ```
+    ```shell
+    dagger init --sdk=typescript .dagger/workspace
+    ```
 
-        Now replace the main file in the workspace with the following content.
-        Edit `.dagger/workspace/src/index.ts`:
-        ```typescript file=./snippets/part2/workspace/typescript/src/index.ts
-        ```
-    </TabItem>
-    <TabItem value="java" label="Java">
-        Start by creating the submodule:
-
-        ```shell
-        dagger init --sdk java .dagger/workspace
-        ```
-
-        Now replace the main file in the workspace with the following content.
-        Edit `.dagger/workspace/src/main/java/io/dagger/modules/workspace/Workspace.java`:
-        ```java file=./snippets/part2/workspace/java/src/main/java/io/dagger/modules/workspace/Workspace.java
-        ```
+    Replace the `.dagger/workspace/src/index.ts` file with the following contents:
+    ```typescript file=./snippets/part2/workspace/typescript/src/index.ts
+    ```
     </TabItem>
     <TabItem value="php" label="PHP">
-        Start by creating the submodule:
+    Start by creating the submodule:
 
-        ```shell
-        dagger init --sdk php .dagger/workspace
-        ```
+    ```shell
+    dagger init --sdk=php .dagger/workspace
+    ```
 
-        Now replace the main file in the workspace with the following content.
-        Edit `.dagger/workspace/src/Workspace.php`:
-        ```php file=./snippets/part2/workspace/php/src/Workspace.php
-        ```
+    Replace the `.dagger/workspace/src/Workspace.php` file with the following contents:
+    ```php file=./snippets/part2/workspace/php/src/Workspace.php
+    ```
     </TabItem>
+    <TabItem value="java" label="Java">
+    Start by creating the submodule:
+
+    ```shell
+    dagger init --sdk=java .dagger/workspace
+    ```
+
+    Replace the `.dagger/workspace/src/main/java/io/dagger/modules/workspace/Workspace.java` file with the following contents:
+    ```java file=./snippets/part2/workspace/java/src/main/java/io/dagger/modules/workspace/Workspace.java
+  ```
+</TabItem>
 </Tabs>
+
+In this Dagger module, each Dagger Function performs a different operation:
+- The `read-file` Dagger Function reads a file in the workspace.
+- The `write-file` Dagger Function writes a file to the workspace.
+- The `list-files` Dagger Function lists all the files in the workspace.
+- The `get-source` Dagger Function gets the source code directory from the workspace.
 
 See the functions of the new workspace module:
 
@@ -117,9 +122,9 @@ Now install the new submodule as a dependency to the main module:
 dagger install ./.dagger/workspace
 ```
 
-## Create an Agentic function
+## Create an agentic function
 
-This agent will be used to make changes to the application and use the existing `Test` function to validate the changes.
+This agent will make changes to the application and use the existing `test` function from the Daggerized CI pipeline to validate the changes.
 
 <Tabs groupId="language" queryString="sdk">
     <TabItem value="go" label="Go">
@@ -140,6 +145,12 @@ This agent will be used to make changes to the application and use the existing 
         ```typescript file=./snippets/part2/agent/typescript/agent.ts.snippet
         ```
     </TabItem>
+    <TabItem value="php" label="PHP">
+    Add the following new function to the main dagger module in `.dagger/src/HelloDagger.php`:
+
+    ```php file=./snippets/part2/agent/php/agent.php.snippet
+    ```
+    </TabItem>
     <TabItem value="java" label="Java">
         Add the following new function to the main dagger module in `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java`:
 
@@ -156,19 +167,18 @@ import io.dagger.client.LLM;
 import io.dagger.client.Workspace;
         ```
     </TabItem>
-    <TabItem value="php" label="PHP">
-        Add the following new function to the main dagger module in `.dagger/src/HelloDagger.php`:
-
-        ```php file=./snippets/part2/agent/php/agent.php.snippet
-        ```
-    </TabItem>
 </Tabs>
 
-This new function `Develop` is the new agent. Because you installed the `Workspace` submodule, `Env` has generated functions for `WithWorkspaceInput` and `WithWorkspaceOutput`. Using these, you've created an environment with a `Workspace` input and output.
+This code creates a Dagger Function called `develop` that takes an assignment and codebase as input and returns a `Directory` with the modified codebase containing the completed assignment.
 
-The `Env` in this agent is privileged, which means the environment will also include the current module and core Dagger APIs. This allows the agent to use the existing `Test` function.
+There are a few important points to note here:
+- The variable `environment` is the environment to define inputs and outputs for the agent. Each input and output provides a description which acts as a declarative form of prompting.
+- Other Dagger module dependencies are automatically detected and made available for use in this environment. In this example, Dagger finds the `workspace` sub-module installed and automatically generates bindings for it: `with-workspace-input` and `with-workspace-output`. These bindings can be used to provide (or retrieve) the workspace to the agent.
+- The `environment` is privileged, which means that the environment includes all the Dagger Functions in the existing Daggerized CI pipeline, plus the core Dagger API. This allows the agent to use the existing `test` function to run unit tests.
+- The LLM is supplied with a prompt file instead of an inline prompt. By separating the prompt from the Dagger Function code, it becomes easier to maintain and update the instructions given to the LLM.
+- The `Env` in this agent is privileged, which means the environment will also include the current module and core Dagger APIs. This allows the agent to use the existing `test` function.
 
-Notice the LLM references a prompt file instead of an inline prompt. The final step is to add this prompt file. Create a file `.dagger/develop_prompt.md` with the following content:
+The final step is to add the prompt file. Create a file at `.dagger/develop_prompt.md` with the following content:
 
 ```
 You are a developer on the HelloDagger Vue.js project.
@@ -190,25 +200,41 @@ This prompt is longer and more structured than the prompt from the first quickst
 
 Now its time to run the new agent. Enter Dagger shell by running `dagger`, and then:
 
+Check the help text for the new Dagger Function:
+```shell
+.help develop
+```
+
+This should show how to use the `develop` function.
+
+Make sure your LLM provider has been properly configured:
+
+```shell
+llm | model
+```
+
+This should show the model you've configured to use with your provider.
+
+Call the agent with an assignment:
+
 ```shell
 develop "make the main page green"
 ```
 
-If all goes well, the agent will explore the project to find the correct place to make the changes, write the appropriate changes, and then validate them by calling the `Test` function.
+If all goes well, the agent will explore the project to find the correct place to make the changes, write the appropriate changes, and then validate them by calling the `test` function.
 
+:::tip
 If the agent misbehaves, try providing more guidance in the prompt file based on what went wrong.
+:::
 
 TODO gif of output
 
-Since the agent returns a `Directory`, we can use Dagger shell to do more things with that `Directory`. First, save the output to a variable:
+
+Since the agent returns a `Directory`, use Dagger Shell to do more with that `Directory`. For example:
 
 ```shell
+# Save the directory containing the completed assignment to a variable
 completed=$(develop "make the main page green")
-```
-
-With that completed assignment in a variable, you can use it just like any other Dagger object in shell:
-
-```shell
 # Get a terminal in the build container with the directory
 build-env --source $completed | terminal
 # Run the app with the updated source code
