@@ -25,6 +25,7 @@ type CI struct {
 
 	GithubRunner *dagger.Gha // +private
 	DaggerRunner *dagger.Gha // +private
+	Alt2Runner   *dagger.Gha // +private
 }
 
 func New() *CI {
@@ -55,7 +56,14 @@ func New() *CI {
 		}),
 		DaggerRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         []string{BronzeRunner(false)},
+				Runner:         BronzeRunner(false),
+				TimeoutMinutes: timeoutMinutes,
+			}),
+			WorkflowDefaults: workflow,
+		}),
+		Alt2Runner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         AltBronzeRunnerWithCache(),
 				TimeoutMinutes: timeoutMinutes,
 			}),
 			WorkflowDefaults: workflow,
@@ -64,19 +72,19 @@ func New() *CI {
 
 	return ci.
 		withModuleWorkflow(
-			ci.DaggerRunner,
+			ci.Alt2Runner,
 			".github",
 			"Github",
 			"check",
 		).
 		withWorkflow(
-			ci.DaggerRunner,
+			ci.Alt2Runner,
 			false,
 			"docs",
 			"check --targets=docs",
 		).
 		withWorkflow(
-			ci.GithubRunner,
+			ci.Alt2Runner,
 			false,
 			"Helm",
 			"check --targets=helm",
@@ -153,7 +161,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 		w = w.
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
-				Runner:        []string{AltSilverRunner()},
+				Runner:        AltSilverRunner(),
 			}))
 	}
 
@@ -165,43 +173,49 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 	w := runner.
 		Workflow(name).
 		WithJob(runner.Job("engine-lint", "engine lint", dagger.GhaJobOpts{
-			Runner: []string{GoldRunner(false)},
+			Runner: GoldRunner(false),
 		})).
 		WithJob(runner.Job("scripts", "check --targets=scripts")).
 		WithJob(runner.Job("cli-test-publish", "cli test-publish")).
 		WithJob(runner.Job("cli-test-publish", "cli test-publish", dagger.GhaJobOpts{
-			Runner: []string{GoldRunner(false)},
+			Runner: GoldRunner(false),
 		})).
 		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
-			Runner: []string{GoldRunner(false)},
+			Runner: GoldRunner(false),
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
 				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
 				// @gerhard @matipan @jedevc have more details
-				Runner: []string{AltGoldRunner()},
+				Runner: AltGoldRunner(),
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: AltGoldRunner(),
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: AltPlatinumRunner(),
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: AltGoldRunner(),
 			}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(true)},
+				Runner: GoldRunner(true),
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(true)},
+				Runner: AltGoldRunner(),
 			}},
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(true)},
+				Runner: AltGoldRunner(),
+			}},
+			{"interface", []string{"TestInterface"}, &dagger.GhaJobOpts{
+				Runner: AltGoldRunner(),
+			}},
+			{"call-and-shell", []string{"TestCall", "TestShell", "TestDaggerCMD"}, &dagger.GhaJobOpts{
+				Runner: AltGoldRunner(),
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+				Runner: AltPlatinumRunner(),
 			}},
 		}))
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
@@ -244,7 +258,7 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 func (ci *CI) withPrepareReleaseWorkflow() *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-			Runner:         []string{BronzeRunner(false)},
+			Runner:         BronzeRunner(false),
 			DaggerVersion:  daggerVersion,
 			TimeoutMinutes: timeoutMinutes,
 		}),
@@ -276,7 +290,7 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 func (ci *CI) withEvalsWorkflow() *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-			Runner:         []string{BronzeRunner(false)},
+			Runner:         BronzeRunner(false),
 			DaggerVersion:  daggerVersion,
 			TimeoutMinutes: timeoutMinutes,
 		}),
@@ -290,6 +304,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/schema/llm.go",
 			"core/schema/env.go",
 			"modules/evaluator/**",
+			".github/workflows/evals.gen.yml",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
@@ -297,7 +312,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		dagger.GhaJobOpts{
 			Module:        "modules/evaluator",
 			DaggerVersion: ".", // testdev, so run against local dagger
-			Runner:        []string{GoldRunner(true)},
+			Runner:        AltGoldRunner(),
 			// NOTE: avoid running for forks
 			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
@@ -322,7 +337,7 @@ func Runner(
 	cpus int,
 	singleTenant bool,
 	dind bool,
-) string {
+) []string {
 	runner := fmt.Sprintf(
 		"dagger-g%d-%s-%dc",
 		generation,
@@ -337,18 +352,19 @@ func Runner(
 
 	// Fall back to default runner if repository is not upstream
 	// (this is GHA DSL and will be evaluated by the GHA runner)
-	return fmt.Sprintf(
+	return []string{fmt.Sprintf(
 		"${{ github.repository == '%s' && '%s' || '%s' }}",
 		upstreamRepository,
 		runner,
 		defaultRunner,
-	)
+	)}
 }
 
-// Assemble an alternative runner name for a workflow
-func AltRunner(
+// Assemble an alternative 2 runner name for a workflow
+func Alt2Runner(
 	cpus int,
-) string {
+	cached bool,
+) []string {
 	mem := cpus * 2
 	runner := fmt.Sprintf(
 		"nscloud-ubuntu-%s-amd64-%dx%d",
@@ -358,12 +374,27 @@ func AltRunner(
 
 	// Fall back to default runner if repository is not upstream
 	// (this is GHA DSL and will be evaluated by the GHA runner)
-	return fmt.Sprintf(
+	labels := []string{fmt.Sprintf(
 		"${{ github.repository == '%s' && '%s' || '%s' }}",
 		upstreamRepository,
 		runner,
 		defaultRunner,
-	)
+	)}
+
+	if cached {
+		dagger := fmt.Sprintf(
+			"namespace-experiments:dagger.integration=enabled;dagger.version=%s",
+			strings.TrimPrefix(daggerVersion, "v"),
+		)
+		labels = append(labels, fmt.Sprintf(
+			"${{ github.repository == '%s' && '%s' || '%s' }}",
+			upstreamRepository,
+			dagger,
+			defaultRunner,
+		))
+	}
+
+	return labels
 }
 
 // Bronze runner: Multi-tenant instance, 4 cpu
@@ -371,7 +402,7 @@ func BronzeRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
-) string {
+) []string {
 	return Runner(3, daggerVersion, 4, false, dind)
 }
 
@@ -380,7 +411,7 @@ func SilverRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
-) string {
+) []string {
 	return Runner(3, daggerVersion, 8, false, dind)
 }
 
@@ -389,7 +420,7 @@ func GoldRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
-) string {
+) []string {
 	return Runner(3, daggerVersion, 16, true, dind)
 }
 
@@ -398,21 +429,26 @@ func PlatinumRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
-) string {
+) []string {
 	return Runner(3, daggerVersion, 32, true, dind)
 }
 
+// Alternative Bronze runner with caching: Single-tenant, 4 cpu
+func AltBronzeRunnerWithCache() []string {
+	return Alt2Runner(4, true)
+}
+
 // Alternative Silver runner: Single-tenant with Docker, 8 cpu
-func AltSilverRunner() string {
-	return AltRunner(8)
+func AltSilverRunner() []string {
+	return Alt2Runner(8, false)
 }
 
 // Alternative Gold runner: Single-tenant with Docker, 16 cpu
-func AltGoldRunner() string {
-	return AltRunner(16)
+func AltGoldRunner() []string {
+	return Alt2Runner(16, false)
 }
 
 // Alternative Platinum runner: Single-tenant with Docker, 32 cpu
-func AltPlatinumRunner() string {
-	return AltRunner(32)
+func AltPlatinumRunner() []string {
+	return Alt2Runner(32, false)
 }

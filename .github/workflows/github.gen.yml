@@ -19,7 +19,8 @@ concurrency:
 jobs:
     github:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-5-4c' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.5' || 'ubuntu-24.04' }}
         name: Github
         steps:
             - name: Checkout

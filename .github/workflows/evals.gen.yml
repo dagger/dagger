@@ -9,12 +9,13 @@ name: evals
             - core/schema/llm.go
             - core/schema/env.go
             - modules/evaluator/**
+            - .github/workflows/evals.gen.yml
     workflow_dispatch: {}
 jobs:
     testdev:
         if: ${{ github.repository == 'dagger/dagger' }}
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-5-16c-dind-st' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
         name: testdev
         steps:
             - name: Checkout
