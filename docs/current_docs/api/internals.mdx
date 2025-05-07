@@ -144,7 +144,7 @@ As this example demonstrates, Dagger object IDs hold the state of their correspo
 
 GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger uses this feature of GraphQL to evaluate workflows "lazily".
 
-In practice, this means that if you create a Dagger object (like a container or a directory) but never access its state - either by returning it to the Dagger CLI, reading data from it, or using it in a different Dagger Function - Dagger automatically skips it as part of its optimization process, thinking it's not needed. This is analogous to running a build command but never using the output binary; since the output is never used, Dagger optimizes away the build step.
+In practice, this means that if you create a Dagger object (like a container or a directory) but never access its state - either by returning it to the Dagger CLI, reading data from it, or using it in a different Dagger Function - Dagger automatically skips it as part of its optimization process, thinking it's not needed. This is analogous to running a build command but never using the output binary; since the output is never used, Dagger skips the build step.
 
 There are some cases where this behavior causes unexpected results, such as when the command to be run has external effects. In this case, the optimization can be forcefully disabled with the `sync` field.
 
