@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -866,9 +868,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(writeFlusher{w}, resp.Body)
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -1039,7 +1039,7 @@ func cacheConfigFromEnv(envName string) ([]*controlapi.CacheOptionsEntry, error)
 	for i := len(configKVs) - 2; i >= 0; i-- {
 		if strings.HasSuffix(configKVs[i], `\`) {
 			configKVs[i] = configKVs[i][:len(configKVs[i])-1] + ";" + configKVs[i+1]
-			configKVs = append(configKVs[:i+1], configKVs[i+2:]...)
+			configKVs = slices.Delete(configKVs, i+1, i+2)
 		}
 	}
 

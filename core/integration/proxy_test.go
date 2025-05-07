@@ -369,7 +369,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 						proxyLogTest: func(t *testctx.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
 							// retry a few times in case logs haven't been flushed yet
 							var proxyLogs string
-							for i := 0; i < 5; i++ {
+							for range 5 {
 								var err error
 								proxyLogs, err = getProxyLogs(ctx)
 								require.NoError(t, err)

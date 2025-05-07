@@ -463,8 +463,8 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 }
 
 func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) context.Context {
-	return bksolver.WithCacheOptGetter(ctx, func(_ bool, keys ...interface{}) map[interface{}]interface{} {
-		vals := make(map[interface{}]interface{})
+	return bksolver.WithCacheOptGetter(ctx, func(_ bool, keys ...any) map[any]any {
+		vals := make(map[any]any)
 		for _, k := range keys {
 			if key, ok := k.(bkcache.DescHandlerKey); ok {
 				if handler := ref.DescHandler(digest.Digest(key)); handler != nil {

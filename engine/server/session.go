@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
@@ -802,7 +803,7 @@ func (srv *Server) getOrInitClient(
 
 		parent, parentExists := sess.clients[opts.CallerClientID]
 		if parentExists {
-			client.parents = append([]*daggerClient{}, parent.parents...)
+			client.parents = slices.Clone(parent.parents)
 			client.parents = append(client.parents, parent)
 		}
 

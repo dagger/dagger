@@ -621,7 +621,7 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 }
 
 var copyBufferPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buffer := make([]byte, 32*1024) // same size that fsutil.Send chunks files into
 		return &buffer
 	},
@@ -725,7 +725,7 @@ func (s *StatInfo) IsDir() bool {
 	return s.Mode().IsDir()
 }
 
-func (s *StatInfo) Sys() interface{} {
+func (s *StatInfo) Sys() any {
 	return s.Stat
 }
 

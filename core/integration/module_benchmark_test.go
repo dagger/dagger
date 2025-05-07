@@ -33,7 +33,7 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
                 type PotatoSack struct {}
                 `
 
-			for i := 0; i < funcCount; i++ {
+			for i := range funcCount {
 				mainSrc += fmt.Sprintf(`
 			func (m *PotatoSack) Potato%d() string {
 				return "potato #%d"
@@ -48,7 +48,7 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 				With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=go"))
 
 			var eg errgroup.Group
-			for i := 0; i < funcCount; i++ {
+			for i := range funcCount {
 				i := i
 				// just verify a subset work
 				if i%10 != 0 {
@@ -74,7 +74,7 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 class PotatoSack:
 `
 
-		for i := 0; i < funcCount; i++ {
+		for i := range funcCount {
 			mainSrc += fmt.Sprintf(`
     @dagger.function
     def potato_%d(self) -> str:
@@ -90,7 +90,7 @@ class PotatoSack:
 			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
 
 		var eg errgroup.Group
-		for i := 0; i < funcCount; i++ {
+		for i := range funcCount {
 			i := i
 			// just verify a subset work
 			if i%10 != 0 {
@@ -116,7 +116,7 @@ class PotatoSack:
 export class PotatoSack {
 		`
 
-		for i := 0; i < funcCount; i++ {
+		for i := range funcCount {
 			mainSrc += fmt.Sprintf(`
   @func()
   potato_%d(): string {
@@ -136,7 +136,7 @@ export class PotatoSack {
 			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript", "--source=."))
 
 		var eg errgroup.Group
-		for i := 0; i < funcCount; i++ {
+		for i := range funcCount {
 			i := i
 			// just verify a subset work
 			if i%10 != 0 {
@@ -200,7 +200,7 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, b *testctx.B) {
 			b.Helper()
 
 			var newModNames []string
-			for i := 0; i < newMods; i++ {
+			for range newMods {
 				name := fmt.Sprintf("mod%d", modCount)
 				modCount++
 				newModNames = append(newModNames, name)
@@ -233,7 +233,7 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, b *testctx.B) {
 		// Basically, this creates a quadratically growing DAG of modules and verifies we
 		// handle it efficiently enough to be callable.
 		curDeps := addModulesWithDeps(1, nil)
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			curDeps = addModulesWithDeps(len(curDeps)+1, curDeps)
 		}
 		addModulesWithDeps(1, curDeps)

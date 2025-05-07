@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"sync"
@@ -113,9 +114,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 				Factory: func(token *oauth2.Token) (sdktrace.SpanExporter, error) {
 					authHeader := token.Type() + " " + token.AccessToken
 					newHeaders := map[string]string{}
-					for k, v := range headers {
-						newHeaders[k] = v
-					}
+					maps.Copy(newHeaders, headers)
 					newHeaders["Authorization"] = authHeader
 					return otlptracehttp.New(ctx,
 						otlptracehttp.WithEndpointURL(tracesURL.String()),
@@ -128,9 +127,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 				Factory: func(token *oauth2.Token) (sdklog.Exporter, error) {
 					authHeader := token.Type() + " " + token.AccessToken
 					newHeaders := map[string]string{}
-					for k, v := range headers {
-						newHeaders[k] = v
-					}
+					maps.Copy(newHeaders, headers)
 					newHeaders["Authorization"] = authHeader
 					return otlploghttp.New(ctx,
 						otlploghttp.WithEndpointURL(logsURL.String()),
@@ -143,9 +140,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 				Factory: func(token *oauth2.Token) (sdkmetric.Exporter, error) {
 					authHeader := token.Type() + " " + token.AccessToken
 					newHeaders := map[string]string{}
-					for k, v := range headers {
-						newHeaders[k] = v
-					}
+					maps.Copy(newHeaders, headers)
 					newHeaders["Authorization"] = authHeader
 					return otlpmetrichttp.New(ctx,
 						otlpmetrichttp.WithEndpointURL(metricsURL.String()),
