@@ -36,7 +36,7 @@ Note that this feature requires a `.gitconfig` file entry to use SSH instead of 
 </TabItem>
 <TabItem value="python" label="Python">
 
-To add a Python package, add it to your `pyproject.toml` file using your chosen package manager. For example:
+To add a Python package, add it to your `pyproject.toml` file using your chosen package manager.
 
 <Tabs groupId="python-pm">
 <TabItem value="uv">
@@ -108,11 +108,25 @@ Third-party dependencies are managed in the same way as any normal Python projec
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-To add a TypeScript package, add it to the `package.json` file using your favorite package manager. For example:
+To add TypeScript packages, use the package manager for your chosen runtime. For example:
 
+<Tabs groupId="ts_runtime" queryString="ts_runtime">
+<TabItem value="nodejs" label="Node.js">
 ```shell
 npm install pm2
 ```
+</TabItem>
+<TabItem value="bun" label="Bun">
+```shell
+bun install pm2
+```
+</TabItem>
+<TabItem value="deno" label="Deno">
+```shell
+deno add jsr:@celusion/simple-validation
+```
+</TabItem>
+</Tabs>
 
 Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
 
