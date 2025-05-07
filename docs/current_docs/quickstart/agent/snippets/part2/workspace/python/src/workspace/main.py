@@ -1,11 +1,13 @@
 from typing import Annotated
 
 import dagger
-from dagger import dag, Doc, function, object_type
+from dagger import Doc, dag, function, object_type
+
 
 @object_type
 class Workspace:
     """A module for editing code"""
+
     source: dagger.Directory
 
     @function
@@ -20,7 +22,7 @@ class Workspace:
     def write_file(
         self,
         path: Annotated[str, Doc("The path to the file in the workspace")],
-        contents: Annotated[str, Doc("The new contents of the file")]
+        contents: Annotated[str, Doc("The new contents of the file")],
     ) -> "Workspace":
         """Write a file to the Workspace"""
         self.source = self.source.with_new_file(path, contents)
