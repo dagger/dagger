@@ -18,12 +18,16 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // A frontend for LLM tool calling
@@ -51,6 +55,8 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
+	// The last log ID that we've seen
+	lastLogID int64
 }
 
 func newMCP(env *Env) *MCP {
@@ -381,6 +387,7 @@ func (m *MCP) call(ctx context.Context,
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
 		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
+		trace.WithAttributes(attribute.String(telemetry.DagCallScopeAttr, "llm")),
 		telemetry.ActorEmoji("🤖"),
 		telemetry.Passthrough(),
 		telemetry.Reveal())
@@ -586,7 +593,25 @@ func (m *MCP) toolCallToSelection(
 	return sel, nil
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (string, bool) {
+const llmLastLogs = 10
+
+func (m *MCP) Call(ctx context.Context, dag *dagql.Server, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
+	defer func() {
+		logs, err := m.captureLogs(ctx, dag)
+		if err != nil {
+			res += fmt.Sprintf("\n\nFailed to capture logs: %v", err)
+		} else if len(logs) > 0 {
+			if len(logs) > llmLastLogs {
+				skipped := len(logs) - llmLastLogs
+				logs = append(
+					[]string{fmt.Sprintf("... skipped %d lines ...", skipped)},
+					logs[skipped:]...,
+				)
+			}
+			res += fmt.Sprintf(`\n\n<logs>\n%s\n</logs>`, strings.Join(logs, "\n"))
+		}
+	}()
+
 	var tool *LLMTool
 	for _, t := range tools {
 		if t.Name == toolCall.Function.Name {
@@ -620,6 +645,123 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		}
 		return string(jsonBytes), false
 	}
+}
+
+const logsBatchSize = 1000
+
+// captureLogs returns nicely Heroku-formatted lines of all logs seen since the
+// last capture.
+func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, error) {
+	root, ok := dag.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("unexpected root object type: %T", dag.Root())
+	}
+	mainMeta, err := root.Self.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get main client caller metadata: %w", err)
+	}
+	q, close, err := root.Self.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	if err != nil {
+		return nil, err
+	}
+	defer close()
+
+	var formattedLines []string
+	for {
+		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+			ID:    m.lastLogID,
+			Limit: logsBatchSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(logs) == 0 {
+			break
+		}
+
+		for _, log := range logs {
+			m.lastLogID = log.ID
+
+			var logAttrs []*otlpcommonv1.KeyValue
+			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
+				slog.Warn("failed to unmarshal log attributes", "error", err)
+				continue
+			}
+			var eof bool
+			for _, attr := range logAttrs {
+				if attr.Key == telemetry.StdioEOFAttr {
+					if attr.Value.GetBoolValue() {
+						eof = true
+						break
+					}
+				}
+			}
+			if eof {
+				// don't generate a line for EOF events
+				continue
+			}
+
+			var content string
+
+			var bodyPb otlpcommonv1.AnyValue
+			if err := proto.Unmarshal(log.Body, &bodyPb); err != nil {
+				slog.Warn("failed to unmarshal log body", "error", err, "client", mainMeta.ClientID, "log", log.ID)
+				continue
+			}
+			switch x := bodyPb.GetValue().(type) {
+			case *otlpcommonv1.AnyValue_StringValue:
+				if !utf8.ValidString(x.StringValue) {
+					// sanity check
+					continue
+				}
+				content = x.StringValue
+			case *otlpcommonv1.AnyValue_BytesValue:
+				if !utf8.Valid(x.BytesValue) {
+					// sanity check
+					continue
+				}
+				content = string(x.BytesValue)
+			default:
+				// default to something troubleshootable
+				content = fmt.Sprintf("UNHANDLED: %+v", x)
+			}
+
+			var prefix string
+			if log.SpanID.Valid {
+				span, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
+					TraceID: log.TraceID.String,
+					SpanID:  log.SpanID.String,
+				})
+				if err != nil {
+					return nil, err
+				}
+				var spanAttrs []*otlpcommonv1.KeyValue
+				if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+					slog.Warn("failed to unmarshal span attributes", "error", err)
+					continue
+				}
+				var isLLM bool
+				for _, attr := range spanAttrs {
+					if attr.Key == telemetry.DagCallScopeAttr {
+						if attr.Value.GetStringValue() == "llm" {
+							isLLM = true
+							break
+						}
+					}
+				}
+				if isLLM {
+					// don't show logs from the LLM spans themselves
+					continue
+				}
+				prefix = span.Name + " | "
+			}
+			for _, line := range strings.Split(content, "\n") {
+				formattedLines = append(formattedLines, prefix+line)
+			}
+		}
+	}
+
+	return formattedLines, nil
 }
 
 func toolErrorMessage(err error) string {
