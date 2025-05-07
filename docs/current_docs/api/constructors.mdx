@@ -13,12 +13,16 @@ It's possible to write a custom constructor. The mechanism to do this is SDK-spe
 
 This is a simple way to accept module-wide configuration, or just to set a few attributes without having to create setter functions for them.
 
+:::important
+Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./index.mdx#chaining) them.
+:::
+
 ## Simple constructor
 
 The default constructor for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger` command directly.
 
 :::important
-Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./index.mdx#chaining) them.
+If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
 :::
 
 Here is an example module with a custom constructor:
@@ -92,10 +96,6 @@ The result will be:
 ```shell
 Hello, Foo!
 ```
-
-:::important
-If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
-:::
 
 ## Default values for complex types
 
