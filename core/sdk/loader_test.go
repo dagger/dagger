@@ -1,4 +1,4 @@
-package schema
+package sdk
 
 import (
 	"errors"
@@ -18,50 +18,50 @@ func TestParseSDKName(t *testing.T) {
 
 	testcases := []struct {
 		sdkName       string
-		parsedSDKName SDK
+		parsedSDKName sdk
 		parsedSuffix  string
 		expectedError string
 	}{
 		{
 			sdkName:       "go",
-			parsedSDKName: SDKGo,
+			parsedSDKName: sdkGo,
 		},
 		{
 			sdkName:       "typescript",
-			parsedSDKName: SDKTypescript,
+			parsedSDKName: sdkTypescript,
 		},
 		{
 			sdkName:       "python",
-			parsedSDKName: SDKPython,
+			parsedSDKName: sdkPython,
 		},
 		{
 			sdkName:       "php",
-			parsedSDKName: SDKPHP,
+			parsedSDKName: sdkPHP,
 			parsedSuffix:  "@v0.12.6",
 		},
 		{
 			sdkName:       "elixir",
-			parsedSDKName: SDKElixir,
+			parsedSDKName: sdkElixir,
 			parsedSuffix:  "@v0.12.6",
 		},
 		{
 			sdkName:       "php@foo",
-			parsedSDKName: SDKPHP,
+			parsedSDKName: sdkPHP,
 			parsedSuffix:  "@foo",
 		},
 		{
 			sdkName:       "elixir@foo",
-			parsedSDKName: SDKElixir,
+			parsedSDKName: sdkElixir,
 			parsedSuffix:  "@foo",
 		},
 		{
 			sdkName:       "elixir@",
-			parsedSDKName: SDKElixir,
+			parsedSDKName: sdkElixir,
 			parsedSuffix:  "@v0.12.6",
 		},
 		{
 			sdkName:       "php@",
-			parsedSDKName: SDKPHP,
+			parsedSDKName: sdkPHP,
 			parsedSuffix:  "@v0.12.6",
 		},
 		{

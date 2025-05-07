@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -643,7 +644,7 @@ func (s *moduleSchema) currentModuleWorkdir(
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
-	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
+	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
@@ -671,7 +672,7 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
-	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
+	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
