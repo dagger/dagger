@@ -750,8 +750,6 @@ The result will be a JSON-formatted list of issues from Dagger's repository.
 
 When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
-When a `Secret` is included in other operations, the cache for those operations will be based on the plaintext value of the secret. If the same operation is run with a secret with the same plaintext value, that operation may be cached rather than re-executed. In the above example, the cache for the `withExec` will be based on the plaintext value of the secret. If two clients execute the container with a secret whose plaintext values are the same, the container execution may be cached. Otherwise, if the plaintext values of the secret are different, the container execution will not be cached.
-
 ### Host secret providers
 
 Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
@@ -870,6 +868,10 @@ dagger call github-api --token=vault://infra/github.credential
 ```
 </TabItem>
 </Tabs>
+
+### Caching
+
+When a `Secret` is included in other operations, the layer cache entries for those operations will be based on the plaintext value of the secret. If the same operation is run with a secret with the same plaintext value, that operation may be cached rather than re-executed. In the above example, the cache for the `withExec` will be based on the plaintext value of the secret. If two clients execute the container with a secret whose plaintext values are the same, the container execution may be cached. Otherwise, if the plaintext values of the secret are different, the container execution will not be cached.
 
 ## Service arguments
 
