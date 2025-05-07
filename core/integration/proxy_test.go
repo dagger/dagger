@@ -88,6 +88,9 @@ func customProxyTests(
 		Host:   net.JoinHostPort(noproxyHTTPServerAlias, "80"),
 	}
 
+	// NOTE(jedevc): if you end up here needing to add new functionality, it
+	// might be just faster to convert some of this to go. squid is not very
+	// fun to configure.
 	squidConf := `
 acl localnet src 0.0.0.1-0.255.255.255  # RFC 1122 "this" network (LAN)
 acl localnet src 10.0.0.0/8             # RFC 1918 local private network (LAN)
@@ -126,12 +129,25 @@ http_access deny CONNECT !SSL_ports
 http_access allow localhost manager
 http_access deny manager
 http_access allow localhost
+
+url_rewrite_program /usr/local/bin/squid-urlrewrite
+url_rewrite_children 20 startup=1 idle=1 concurrency=10000
 `
+
+	// NOTE: for some reason this doesn't redirect https URLs
+	squidURLRewriteConf := `
+loglevel debug
+
+# redirect ^([^/]*).example:(\d+)$			$1:$2
+redirect ^(https?://)(.*).example(/.*)$		$1$2$3
+	`
 
 	squidCert, squidKey := certGen.newServerCerts(squidAlias)
 	squidLogsVolume := c.CacheVolume("squid-logs-" + identity.NewID())
 	squid := c.Container().From(alpineImage).
-		WithExec([]string{"apk", "add", "squid", "ca-certificates"}).
+		WithExec([]string{"apk", "add", "squid", "ca-certificates", "go"}).
+		WithExec([]string{"go", "install", "github.com/rchunping/squid-urlrewrite@latest"}).
+		WithExec([]string{"mv", "/root/go/bin/squid-urlrewrite", "/usr/local/bin/"}).
 		WithMountedFile("/usr/local/bin/printpass", certGen.printPasswordScript).
 		WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
 		WithExec([]string{"update-ca-certificates"}).
@@ -173,6 +189,7 @@ http_access allow localhost
 
 	squidSvc := squid.
 		WithNewFile("/etc/squid/squid.conf", squidConf).
+		WithNewFile("/etc/squid-urlrewrite.conf", squidURLRewriteConf).
 		WithServiceBinding(httpServerAlias, httpServer.AsService()).
 		WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
 		WithDefaultArgs([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"}).
@@ -377,7 +394,57 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 						if token := tc.token(); token != "" {
 							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
 						}
-						git := c.Git("https://"+strings.TrimPrefix(tc.gitTestRepoRef, "https://"), opts)
+						gitURL := "https://" + strings.TrimPrefix(tc.gitTestRepoRef, "https://")
+						git := c.Git(gitURL, opts)
+						_, err := git.Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
+						require.NoError(t, err)
+					},
+					proxyLogTest: func(t *testctx.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
+						// retry a few times in case logs haven't been flushed yet
+						var proxyLogs string
+						for range 5 {
+							var err error
+							proxyLogs, err = getProxyLogs(ctx)
+							require.NoError(t, err)
+							if strings.Contains(proxyLogs, fmt.Sprintf("CONNECT %s:443", tc.expectedHost)) {
+								return
+							}
+							time.Sleep(1 * time.Second)
+						}
+						require.Fail(t, fmt.Sprintf("expected CONNECT to %s in proxy logs", tc.expectedHost), proxyLogs)
+					},
+				},
+			)
+		})
+	})
+
+	t.Run("git (redirected)", func(ctx context.Context, t *testctx.T) {
+		testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+			if tc.skipProxyTest {
+				t.Skip("skipping git proxy test")
+				return
+			}
+
+			c := connect(ctx, t)
+
+			customProxyTests(ctx, t, c, false,
+				proxyTest{
+					name: "git",
+					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
+						opts := dagger.GitOpts{}
+						if token := tc.token(); token != "" {
+							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
+						}
+
+						// HACK: squid won't redirect a https url
+						gitURL := "http://" + strings.TrimPrefix(tc.gitTestRepoRef, "https://")
+						{
+							u, err := url.Parse(gitURL)
+							require.NoError(t, err)
+							u.Host += ".example"
+							gitURL = u.String()
+						}
+						git := c.Git(gitURL, opts)
 						_, err := git.Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
 						require.NoError(t, err)
 					},
