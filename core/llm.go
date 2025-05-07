@@ -63,7 +63,10 @@ type LLM struct {
 
 	maxAPICalls int
 	apiCalls    int
-	Endpoint    *LLMEndpoint
+
+	model string
+	// todo: sync once this
+	endpoint *LLMEndpoint
 
 	once *sync.Once
 
@@ -427,24 +430,9 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 }
 
 func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*LLM, error) {
-	router, err := loadLLMRouter(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	if model == "" {
-		model = router.DefaultModel()
-	}
-	endpoint, err := router.Route(model)
-	if err != nil {
-		return nil, err
-	}
-	if endpoint.Model == "" {
-		return nil, fmt.Errorf("no valid LLM endpoint configuration")
-	}
 	return &LLM{
 		Query:       query,
-		Endpoint:    endpoint,
+		model:       model,
 		maxAPICalls: maxAPICalls,
 		mcp:         NewEnv().MCP(),
 		once:        &sync.Once{},
@@ -480,6 +468,26 @@ func (llm *LLM) Clone() *LLM {
 	return &cp
 }
 
+func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
+	if llm.endpoint != nil {
+		return llm.endpoint, nil
+	}
+	router, err := loadLLMRouter(ctx, llm.Query)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := router.Route(llm.model)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.Model == "" {
+		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+
+	llm.endpoint = endpoint
+	return llm.endpoint, nil
+}
+
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
 	tools, err := llm.mcp.Tools(srv)
@@ -500,18 +508,7 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
 	// FIXME: mcp implementation takes hints from endpoint: reconfigure it
 	llm = llm.Clone()
-	router, err := loadLLMRouter(ctx, llm.Query)
-	if err != nil {
-		return nil, err
-	}
-	endpoint, err := router.Route(model)
-	if err != nil {
-		return nil, err
-	}
-	if endpoint.Model == "" {
-		return nil, fmt.Errorf("no valid LLM endpoint configuration")
-	}
-	llm.Endpoint = endpoint
+	llm.model = model
 	return llm, nil
 }
 
@@ -734,7 +731,11 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		var res *LLMResponse
 
 		// Retry operation
-		client := llm.Endpoint.Client
+		ep, err := llm.Endpoint(ctx)
+		if err != nil {
+			return err
+		}
+		client := ep.Client
 		err = backoff.Retry(func() error {
 			var sendErr error
 			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
