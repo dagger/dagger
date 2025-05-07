@@ -1212,7 +1212,6 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
-		skipProxyTest:            true,
 		encodedToken:             "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
