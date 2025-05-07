@@ -13,73 +13,37 @@ permissions:
   contents: read
 
 jobs:
-  docs-lint-on-northflank-c3-remote-engine:
+  docs-lint-on-northflank-kata-remote-engine:
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-c3-highcpu-44-kata-qemu
+      machine: nf-kata-az-amd-qemu
       function: check --targets=docs
 
-  sdk-go-on-northflank-c3-remote-engine:
-    needs: docs-lint-on-northflank-c3-remote-engine
+  sdk-go-on-northflank-kata-remote-engine:
+    needs: docs-lint-on-northflank-kata-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-c3-highcpu-44-kata-qemu
+      machine: nf-kata-az-amd-qemu
       function: check --targets=sdk/go
 
-  sdk-python-on-northflank-c3-remote-engine:
-    needs: docs-lint-on-northflank-c3-remote-engine
+  sdk-python-on-northflank-kata-remote-engine:
+    needs: docs-lint-on-northflank-kata-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-c3-highcpu-44-kata-qemu
+      machine: nf-kata-az-amd-qemu
       function: check --targets=sdk/python
 
-  sdk-typescript-on-northflank-c3-remote-engine:
-    needs: docs-lint-on-northflank-c3-remote-engine
+  sdk-typescript-on-northflank-kata-remote-engine:
+    needs: docs-lint-on-northflank-kata-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-c3-highcpu-44-kata-qemu
+      machine: nf-kata-az-amd-qemu
       function: check --targets=sdk/typescript
 
-  test-cli-engine-on-northflank-c3-remote-engine:
-    needs: docs-lint-on-northflank-c3-remote-engine
+  test-cli-engine-on-northflank-kata-remote-engine:
+    needs: docs-lint-on-northflank-kata-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-c3-highcpu-44-kata-qemu
-      function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
-      timeout: 20
-
-  # We are running the same tests on a different machine type to see how they compare
-  docs-lint-on-northflank-n4-remote-engine:
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-n4-highcpu-32-kata-qemu
-      function: check --targets=docs
-
-  sdk-go-on-northflank-n4-remote-engine:
-    needs: docs-lint-on-northflank-n4-remote-engine
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-n4-highcpu-32-kata-qemu
-      function: check --targets=sdk/go
-
-  sdk-python-on-northflank-n4-remote-engine:
-    needs: docs-lint-on-northflank-n4-remote-engine
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-n4-highcpu-32-kata-qemu
-      function: check --targets=sdk/python
-
-  sdk-typescript-on-northflank-n4-remote-engine:
-    needs: docs-lint-on-northflank-n4-remote-engine
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-n4-highcpu-32-kata-qemu
-      function: check --targets=sdk/typescript
-
-  test-cli-engine-on-northflank-n4-remote-engine:
-    needs: docs-lint-on-northflank-n4-remote-engine
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-n4-highcpu-32-kata-qemu
+      machine: nf-kata-az-amd-qemu
       function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
       timeout: 20
