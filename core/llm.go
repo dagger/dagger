@@ -562,6 +562,7 @@ func (llm *LLM) WithPrompt(
 		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 			attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 			attribute.String(telemetry.UIMessageAttr, "sent"),
+			attribute.Bool("dagger.io/llm", true),
 		))
 		defer span.End()
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -776,7 +777,13 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		client := ep.Client
 		err = backoff.Retry(func() error {
 			var sendErr error
+			ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, "received"),
+				attribute.Bool("dagger.io/llm", true),
+			))
 			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+			telemetry.End(span, func() error { return sendErr })
 			if sendErr != nil {
 				var finished *ModelFinishedError
 				if errors.As(sendErr, &finished) {
