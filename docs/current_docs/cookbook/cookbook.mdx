@@ -1825,7 +1825,7 @@ Build from a Dockerfile with a mounted secret from the host environment:
 
 By default, the cache for operations that include a secret will be based on the plaintext value of the secret. Operations that include secrets with the same plaintext value may share cache, but if the plaintext differs then the operation will not share cache.
 
-In some cases, users may desire that operations share cache even if the secret plaintext value is different. For example, a secret may often rotate in plaintext value but not be meaningfully different such that cache for operations including it should be busted.
+In some cases, users may desire that operations share the cache even if the secret plaintext value is different. For example, a secret may often rotate in plaintext value but not be meaningfully different; in these cases, it should still be possible to reuse the cache for operations that include that secret.
 
 For these use cases, the optional `cacheKey` argument to `Secret` construction can be used to specify the "cache key" of the secret. Secrets that share the same `cacheKey` will be considered equivalent when checking cache of operations that include them, even if their plaintext value differs.
 
