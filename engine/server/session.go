@@ -49,6 +49,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -697,6 +698,21 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
 	}
 	return client, nil
+}
+
+func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error) {
+	client, ok := srv.clientFromIDs(sessID, clientID)
+	if !ok {
+		return nil, nil, fmt.Errorf("client %q not found", clientID)
+	}
+	if err := client.FlushTelemetry(ctx); err != nil {
+		return nil, nil, fmt.Errorf("flush telemetry: %w", err)
+	}
+	db, err := srv.clientDBs.Open(clientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return clientdb.New(db), db.Close, nil
 }
 
 func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) {

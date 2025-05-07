@@ -796,7 +796,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
-			content, isError := llm.mcp.Call(ctx, tools, toolCall)
+			content, isError := llm.mcp.Call(ctx, dag, tools, toolCall)
 			llm.messages = append(llm.messages, ModelMessage{
 				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
