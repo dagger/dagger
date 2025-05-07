@@ -64,8 +64,7 @@ type LLM struct {
 	maxAPICalls int
 	apiCalls    int
 
-	model string
-	// todo: sync once this
+	model    string
 	endpoint *LLMEndpoint
 
 	once *sync.Once
@@ -506,7 +505,6 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 }
 
 func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
-	// FIXME: mcp implementation takes hints from endpoint: reconfigure it
 	llm = llm.Clone()
 	llm.model = model
 	return llm, nil
