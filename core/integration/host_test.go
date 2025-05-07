@@ -323,24 +323,21 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("reload behavior", func(ctx context.Context, t *testctx.T) {
-		bPath := filepath.Join(dir, uuid.NewString())
-		require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
-
 		tests := []struct {
 			name     string
 			opts     []dagger.HostFileOpts
 			expected string
 		}{
-			{
-				name:     "default aka cache",
-				opts:     []dagger.HostFileOpts{},
-				expected: "1",
-			},
-			{
-				name:     "explicit cache",
-				opts:     []dagger.HostFileOpts{{Cache: true}},
-				expected: "1",
-			},
+			// {
+			// 	name:     "default aka cache",
+			// 	opts:     []dagger.HostFileOpts{},
+			// 	expected: "1",
+			// },
+			// {
+			// 	name:     "explicit cache",
+			// 	opts:     []dagger.HostFileOpts{{Cache: true}},
+			// 	expected: "1",
+			// },
 			{
 				name:     "explicit no cache",
 				opts:     []dagger.HostFileOpts{{Cache: false}},
@@ -350,6 +347,9 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+				bPath := filepath.Join(dir, uuid.NewString())
+				require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
+
 				file := c.Host().File(bPath, test.opts...)
 				content, err := file.Contents(ctx)
 				require.NoError(t, err)

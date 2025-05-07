@@ -542,7 +542,7 @@ func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args h
 
 func cacheIfRequested[T dagql.Typed](ctx context.Context, i dagql.Instance[T], a hostFileArgs, cc dagql.CacheConfig) (*dagql.CacheConfig, error) {
 	if a.Cache {
-		return dagql.CachePerSession(ctx, i, a, cc)
+		return dagql.CachePerClient(ctx, i, a, cc)
 	}
 	return dagql.CachePerCall(ctx, i, a, cc)
 }
