@@ -203,6 +203,12 @@ http_access allow localhost
 		require.NoError(t, err)
 		thisRepo := c.Host().Directory(thisRepoPath)
 
+		nameParts := strings.Split(t.Name(), "/")
+		for i, namePart := range nameParts {
+			nameParts[i] = "^" + namePart + "$"
+		}
+		exactName := strings.Join(nameParts, "/")
+
 		_, err = c.Container().From(golangImage).
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
@@ -218,7 +224,7 @@ http_access allow localhost
 				"-v",
 				"-timeout", "20m",
 				"-count", "1",
-				"-run", fmt.Sprintf("^%s$", t.Name()),
+				"-run", exactName,
 				"./core/integration",
 			}).Sync(ctx)
 		require.NoError(t, err)
