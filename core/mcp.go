@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/core/multiprefixw"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -374,7 +375,7 @@ func (m *MCP) call(ctx context.Context,
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
 		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
-		trace.WithAttributes(attribute.String(telemetry.DagCallScopeAttr, "llm")),
+		trace.WithAttributes(attribute.Bool("dagger.io/llm", true)),
 		telemetry.ActorEmoji("🤖"),
 		telemetry.Passthrough(),
 		telemetry.Reveal())
@@ -670,7 +671,8 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 	}
 	defer close()
 
-	var formattedLines []string
+	formattedLines := new(strings.Builder)
+	mpw := multiprefixw.New(formattedLines)
 	for {
 		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    m.lastLogID,
@@ -705,31 +707,6 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				continue
 			}
 
-			var content string
-
-			var bodyPb otlpcommonv1.AnyValue
-			if err := proto.Unmarshal(log.Body, &bodyPb); err != nil {
-				slog.Warn("failed to unmarshal log body", "error", err, "client", mainMeta.ClientID, "log", log.ID)
-				continue
-			}
-			switch x := bodyPb.GetValue().(type) {
-			case *otlpcommonv1.AnyValue_StringValue:
-				if !utf8.ValidString(x.StringValue) {
-					// sanity check
-					continue
-				}
-				content = x.StringValue
-			case *otlpcommonv1.AnyValue_BytesValue:
-				if !utf8.Valid(x.BytesValue) {
-					// sanity check
-					continue
-				}
-				content = string(x.BytesValue)
-			default:
-				// default to something troubleshootable
-				content = fmt.Sprintf("UNHANDLED: %+v", x)
-			}
-
 			var prefix string
 			if log.SpanID.Valid {
 				span, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
@@ -746,8 +723,8 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				}
 				var isLLM bool
 				for _, attr := range spanAttrs {
-					if attr.Key == telemetry.DagCallScopeAttr {
-						if attr.Value.GetStringValue() == "llm" {
+					if attr.Key == "dagger.io/llm" {
+						if attr.Value.GetBoolValue() {
 							isLLM = true
 							break
 						}
@@ -759,13 +736,29 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				}
 				prefix = span.Name + " | "
 			}
-			for _, line := range strings.Split(content, "\n") {
-				formattedLines = append(formattedLines, prefix+line)
+
+			mpw.SetPrefix(prefix)
+
+			var bodyPb otlpcommonv1.AnyValue
+			if err := proto.Unmarshal(log.Body, &bodyPb); err != nil {
+				slog.Warn("failed to unmarshal log body", "error", err, "client", mainMeta.ClientID, "log", log.ID)
+				continue
+			}
+			switch x := bodyPb.GetValue().(type) {
+			case *otlpcommonv1.AnyValue_StringValue:
+				fmt.Fprint(mpw, x.StringValue)
+			case *otlpcommonv1.AnyValue_BytesValue:
+				mpw.Write(x.BytesValue)
+			default:
+				// default to something troubleshootable
+				fmt.Fprintf(mpw, "UNHANDLED: %+v", x)
 			}
 		}
 	}
-
-	return formattedLines, nil
+	if formattedLines.Len() == 0 {
+		return []string{}, nil
+	}
+	return strings.Split(formattedLines.String(), "\n"), nil
 }
 
 func toolErrorMessage(err error) string {
@@ -1283,7 +1276,7 @@ NOTE: you must select methods before chaining them`,
 				attrs = append(attrs,
 					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 					attribute.String(telemetry.DagCallAttr, callAttr),
-					attribute.String(telemetry.DagCallScopeAttr, "llm"),
+					attribute.Bool("dagger.io/llm", true),
 				)
 				return nil
 			}()
