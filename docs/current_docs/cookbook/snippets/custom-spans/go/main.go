@@ -19,7 +19,7 @@ func (m *MyModule) Foo(ctx context.Context) error {
 	versions := []string{"20", "22", "23"}
 
 	// define errorgroup
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := new(errgroup.Group)
 
 	// run tests concurrently
 	// emit a span for each
