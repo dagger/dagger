@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -394,7 +393,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
 	t.Run("core git", func(ctx context.Context, t *testctx.T) {
 		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-		require.NotEmpty(t, authTokenTestCase.token)
+		require.NotEmpty(t, authTokenTestCase.encodedToken)
 
 		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 		require.True(t, sshTestCase.sshKey)
@@ -470,7 +469,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 
 	t.Run("git module source", func(ctx context.Context, t *testctx.T) {
 		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-		require.NotEmpty(t, authTokenTestCase.token)
+		require.NotEmpty(t, authTokenTestCase.encodedToken)
 
 		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 		require.True(t, sshTestCase.sshKey)
@@ -857,10 +856,7 @@ func (*Secreter) CheckPlaintext(ctx context.Context, s *dagger.Secret, expected 
 
 	t.Run("contenthash cache hit with secrets", func(ctx context.Context, t *testctx.T) {
 		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-		require.NotEmpty(t, authTokenTestCase.token)
-		tokenPlaintextBytes, err := base64.StdEncoding.DecodeString(authTokenTestCase.token)
-		require.NoError(t, err)
-		tokenPlaintext := strings.TrimSpace(string(tokenPlaintextBytes))
+		require.NotEmpty(t, authTokenTestCase.encodedToken)
 
 		callMod := func(c *dagger.Client, cacheBust string) (string, error) {
 			return goGitBase(t, c).
@@ -891,7 +887,7 @@ func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 				With(daggerCall(
 					"fn",
 					"--cache-bust", cacheBust,
-					"--token-plaintext", tokenPlaintext,
+					"--token-plaintext", authTokenTestCase.token(),
 					"stdout",
 				)).
 				Stdout(ctx)
@@ -899,7 +895,7 @@ func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 
 		c1 := connect(ctx, t)
 		randVal1 := identity.NewID()
-		_, err = callMod(c1, randVal1)
+		_, err := callMod(c1, randVal1)
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)

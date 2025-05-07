@@ -5577,20 +5577,13 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 		socket = c.Host().UnixSocket(sockPath)
 	}
 
-	token := ""
-	if tc.token != "" {
-		decoded, err := base64.StdEncoding.DecodeString(tc.token)
-		require.NoError(t, err)
-		token = strings.TrimSpace(string(decoded))
-	}
-
 	return func(ctr *dagger.Container) *dagger.Container {
 		if socket != nil {
 			ctr = ctr.
 				WithUnixSocket("/sock/unix-socket", socket).
 				WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
 		}
-		if token != "" {
+		if token := tc.token(); token != "" {
 			ctr = ctr.
 				WithExec([]string{
 					"git", "config", "--global",

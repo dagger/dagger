@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -1125,10 +1127,19 @@ type vcsTestCase struct {
 	isPrivateRepo      bool
 	skipProxyTest      bool
 
-	// token is a based64 encoded read-only PAT
-	token string
+	// encodedToken is a based64 encoded read-only PAT
+	encodedToken string
 	// sshKey determines whether to propagate the host's ssh-key
 	sshKey bool
+}
+
+func (tc vcsTestCase) token() string {
+	decodedToken, err := base64.StdEncoding.DecodeString(tc.encodedToken)
+	if err != nil {
+		return ""
+	}
+	decodedToken = bytes.TrimSpace(decodedToken)
+	return string(decodedToken)
 }
 
 const vcsTestCaseCommit = "ca6493ac2a5ed309c44565121b7bdd20a17b1abb"
@@ -1202,7 +1213,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 		skipProxyTest:            true,
-		token:                    "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
+		encodedToken:             "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
