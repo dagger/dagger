@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -409,7 +410,7 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 	}
 
 	if exitCodePath != "" {
-		if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitErr.ExitCode)), 0o600); err != nil {
+		if err := os.WriteFile(exitCodePath, fmt.Appendf(nil, "%d", exitErr.ExitCode), 0o600); err != nil {
 			bklog.G(ctx).Errorf("failed to write exit code %d to %s: %v", exitErr.ExitCode, exitCodePath, err)
 		}
 	}
@@ -425,11 +426,9 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 			return nil
 		}
 	} else {
-		for _, code := range validExitCodes {
-			// exit code in allowed list, so exit cleanly
-			if code == int(exitErr.ExitCode) {
-				return nil
-			}
+		// exit code in allowed list, so exit cleanly
+		if slices.Contains(validExitCodes, int(exitErr.ExitCode)) {
+			return nil
 		}
 	}
 

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
@@ -35,22 +36,22 @@ type ModDeps struct {
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
 	return &ModDeps{
 		root: root,
-		Mods: append([]Mod{}, mods...),
+		Mods: slices.Clone(mods),
 	}
 }
 
 func (d *ModDeps) Clone() *ModDeps {
-	return NewModDeps(d.root, append([]Mod{}, d.Mods...))
+	return NewModDeps(d.root, slices.Clone(d.Mods))
 }
 
 func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
-	deps := append([]Mod{}, mods...)
+	deps := slices.Clone(mods)
 	deps = append(deps, d.Mods...)
 	return NewModDeps(d.root, deps)
 }
 
 func (d *ModDeps) Append(mods ...Mod) *ModDeps {
-	deps := append([]Mod{}, d.Mods...)
+	deps := slices.Clone(d.Mods)
 	deps = append(deps, mods...)
 	return NewModDeps(d.root, deps)
 }

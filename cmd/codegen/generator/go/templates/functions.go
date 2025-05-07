@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/token"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -213,12 +214,7 @@ func (funcs goTemplateFuncs) hasOptionals(i introspection.InputValues) bool {
 	if funcs.CheckVersionCompatibility("v0.13.0") {
 		return i.HasOptionals()
 	}
-	for _, v := range i {
-		if funcs.isArgOptional(v) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(i, funcs.isArgOptional)
 }
 
 // isArgOptional returns true if a field argument is optional

@@ -142,7 +142,7 @@ func flatKeyValuesInt64(bs []byte) iter.Seq2[string, int64] {
 
 func lines(bs []byte) func(yield func([]byte) bool) {
 	return func(yield func([]byte) bool) {
-		for _, line := range bytes.Split(bs, []byte("\n")) {
+		for line := range bytes.SplitSeq(bs, []byte("\n")) {
 			if !yield(line) {
 				return
 			}

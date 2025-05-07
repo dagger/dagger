@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -600,9 +601,7 @@ func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	if cfg.Workers.OCI.Labels == nil {
 		cfg.Workers.OCI.Labels = make(map[string]string)
 	}
-	for k, v := range labels {
-		cfg.Workers.OCI.Labels[k] = v
-	}
+	maps.Copy(cfg.Workers.OCI.Labels, labels)
 
 	if c.GlobalIsSet("oci-worker-snapshotter") {
 		cfg.Workers.OCI.Snapshotter = c.GlobalString("oci-worker-snapshotter")

@@ -36,7 +36,7 @@ it with the resulting /runtime binary.
 type goSDK struct {
 	root      *core.Query
 	dag       *dagql.Server
-	rawConfig map[string]interface{}
+	rawConfig map[string]any
 }
 
 type goSDKConfig struct {

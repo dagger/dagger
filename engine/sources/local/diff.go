@@ -157,7 +157,7 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 
 func comparePath(p1, p2 string) int {
 	minLenPath := min(len(p1), len(p2))
-	for i := 0; i < minLenPath; i++ {
+	for i := range minLenPath {
 		switch {
 		case p1[i] == p2[i]:
 			continue

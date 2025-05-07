@@ -224,7 +224,7 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 			}
 
 			paramFields := unpackASTFields(stype.Fields)
-			for f := 0; f < paramType.NumFields(); f++ {
+			for f := range paramType.NumFields() {
 				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f], paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
 				if err != nil {
 					return nil, err

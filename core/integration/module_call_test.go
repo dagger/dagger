@@ -2038,15 +2038,15 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		jsonContent, err := ctr.File("/work/dagger.json").Contents(ctx)
 		require.NoError(t, err)
 
-		var config map[string]interface{}
+		var config map[string]any
 		err = json.Unmarshal([]byte(jsonContent), &config)
 		require.NoError(t, err)
 
-		dependencies, ok := config["dependencies"].([]interface{})
+		dependencies, ok := config["dependencies"].([]any)
 		require.True(t, ok, "dependencies should be an array")
 
 		for _, dep := range dependencies {
-			depMap, ok := dep.(map[string]interface{})
+			depMap, ok := dep.(map[string]any)
 			require.True(t, ok, "each dependency should be a map")
 
 			source, ok := depMap["source"].(string)

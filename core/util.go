@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"strconv"
@@ -202,9 +203,7 @@ func cloneMap[K comparable, T any](src map[K]T) map[K]T {
 		return src
 	}
 	dst := make(map[K]T, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
+	maps.Copy(dst, src)
 	return dst
 }
 
@@ -279,9 +278,7 @@ func mergeMap[T any](dst, src map[string]T) map[string]T {
 		return src
 	}
 
-	for k, v := range src {
-		dst[k] = v
-	}
+	maps.Copy(dst, src)
 
 	return dst
 }

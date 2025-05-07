@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -178,7 +179,7 @@ func (t *CloudTracker) start() {
 
 func (t *CloudTracker) send() {
 	t.mu.Lock()
-	queue := append([]*queuedEvent{}, t.queue...)
+	queue := slices.Clone(t.queue)
 	t.queue = []*queuedEvent{}
 	t.mu.Unlock()
 

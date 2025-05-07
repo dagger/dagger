@@ -82,7 +82,7 @@ func runQuery(
 		operation = args[0]
 	}
 
-	vars := make(map[string]interface{})
+	vars := make(map[string]any)
 	if len(queryVarsJSONInput) > 0 {
 		if err := json.Unmarshal([]byte(queryVarsJSONInput), &vars); err != nil {
 			return nil, err
@@ -108,13 +108,13 @@ func runQuery(
 		operations = string(inBytes)
 	}
 
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	err := engineClient.Do(ctx, operations, operation, vars, &res)
 	return res, err
 }
 
-func getKVInput(kvs []string) map[string]interface{} {
-	m := make(map[string]interface{})
+func getKVInput(kvs []string) map[string]any {
+	m := make(map[string]any)
 	for _, kv := range kvs {
 		split := strings.SplitN(kv, "=", 2)
 		m[split[0]] = split[1]

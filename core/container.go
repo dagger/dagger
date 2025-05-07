@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -776,7 +777,7 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 	}
 
 	if found {
-		container.Mounts = append(container.Mounts[:foundIdx], container.Mounts[foundIdx+1:]...)
+		container.Mounts = slices.Delete(container.Mounts, foundIdx, foundIdx+1)
 	}
 
 	// set image ref to empty string
@@ -836,7 +837,7 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 
 	for i, sock := range container.Sockets {
 		if sock.ContainerPath == target {
-			container.Sockets = append(container.Sockets[:i], container.Sockets[i+1:]...)
+			container.Sockets = slices.Delete(container.Sockets, i, i+1)
 			break
 		}
 	}
@@ -870,7 +871,7 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 
 	for i, secret := range container.Secrets {
 		if secret.EnvName == name {
-			container.Secrets = append(container.Secrets[:i], container.Secrets[i+1:]...)
+			container.Secrets = slices.Delete(container.Secrets, i, i+1)
 			break
 		}
 	}
@@ -1199,7 +1200,7 @@ func (container *Container) WithoutAnnotation(ctx context.Context, name string) 
 
 	for i, annotation := range container.Annotations {
 		if annotation.Key == name {
-			container.Annotations = append(container.Annotations[:i], container.Annotations[i+1:]...)
+			container.Annotations = slices.Delete(container.Annotations, i, i+1)
 			break
 		}
 	}

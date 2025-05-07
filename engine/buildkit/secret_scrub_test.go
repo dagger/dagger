@@ -453,7 +453,7 @@ func BenchmarkScrubSecret(b *testing.B) {
 	wg.Add(2)
 	// randomly generate data to feed in
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			// generate random data
 			data := make([]byte, 4096)
 			for i := range data {
