@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -139,11 +140,19 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 		IncludePatterns []string
 		ExcludePatterns []string
 		FollowPaths     []string
-	}{SessionID: sessionID, IncludePatterns: ls.src.IncludePatterns, ExcludePatterns: ls.src.ExcludePatterns, FollowPaths: ls.src.FollowPaths})
+		Random          string
+	}{
+		SessionID:       sessionID,
+		IncludePatterns: ls.src.IncludePatterns,
+		ExcludePatterns: ls.src.ExcludePatterns,
+		FollowPaths:     ls.src.FollowPaths,
+		Random:          uuid.NewString(),
+	})
 	if err != nil {
 		return "", "", nil, false, err
 	}
-	return "session:" + ls.src.Name + ":" + digest.FromBytes(dt).String(), digest.FromBytes(dt).String(), nil, true, nil
+	digestString := digest.FromBytes(dt).String()
+	return "session:" + ls.src.Name + ":" + digestString, digest.FromBytes(dt).String(), nil, true, nil
 }
 
 func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
