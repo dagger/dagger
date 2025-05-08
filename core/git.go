@@ -393,14 +393,16 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 	locker.Lock(gitRemoteIndex + repo.URL.Remote())
 	defer locker.Unlock(gitRemoteIndex + repo.URL.Remote())
 
-	sis, err := searchGitRemote(ctx, dagop.Cache(), repo.URL.Remote())
+	cache := repo.Query.BuildkitCache()
+
+	sis, err := searchGitRemote(ctx, cache, repo.URL.Remote())
 	if err != nil {
 		return fmt.Errorf("failed to search metadata for %s: %w", repo.URL.Remote(), err)
 	}
 
 	var remoteRef bkcache.MutableRef
 	for _, si := range sis {
-		remoteRef, err = dagop.Cache().GetMutable(ctx, si.ID())
+		remoteRef, err = cache.GetMutable(ctx, si.ID())
 		if err != nil {
 			if errors.Is(err, bkcache.ErrLocked) {
 				// should never really happen as no other function should access this metadata, but lets be graceful
@@ -414,7 +416,7 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 
 	initializeRepo := false
 	if remoteRef == nil {
-		remoteRef, err = dagop.Cache().New(ctx, nil, dagop.Group(),
+		remoteRef, err = cache.New(ctx, nil, dagop.Group(),
 			bkcache.CachePolicyRetain,
 			bkcache.WithDescription(fmt.Sprintf("shared git repo for %s", repo.URL.Remote())))
 		if err != nil {
@@ -492,16 +494,17 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, fmt.Errorf("no dagop")
 	}
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
+	cache := ref.Query.BuildkitCache()
 
 	locker := ref.Query.Locker()
 	locker.Lock(gitSnapshotIndex + cacheKey)
 	defer locker.Unlock(gitSnapshotIndex + cacheKey)
-	sis, err := searchGitSnapshot(ctx, op.Cache(), cacheKey)
+	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search metadata for %s: %w", cacheKey, err)
 	}
 	if len(sis) > 0 {
-		res, err := op.Cache().Get(ctx, sis[0].ID(), nil)
+		res, err := cache.Get(ctx, sis[0].ID(), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -548,7 +551,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 		}
 
-		checkoutRef, err = op.Cache().New(ctx, nil, op.Group(),
+		checkoutRef, err = cache.New(ctx, nil, op.Group(),
 			bkcache.CachePolicyRetain,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.Repo.URL.Remote(), ref.FullRef, ref.Commit)))
@@ -891,11 +894,13 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("no dagop")
 	}
 
+	cache := ref.Query.BuildkitCache()
+
 	commit, fullref, err := ref.Resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bkref, err := op.Cache().New(ctx, nil, op.Group(),
+	bkref, err := cache.New(ctx, nil, op.Group(),
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", fullref, commit)))

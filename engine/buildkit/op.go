@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend"
 	bksession "github.com/moby/buildkit/session"
@@ -22,10 +21,9 @@ type CustomOpWrapper struct {
 
 	ClientMetadata engine.ClientMetadata
 
-	server        dagqlServer
-	original      solver.Op
-	cacheAccessor bkcache.Accessor
-	worker        worker.Worker
+	server   dagqlServer
+	original solver.Op
+	worker   worker.Worker
 }
 
 type CustomOp interface {
@@ -34,6 +32,7 @@ type CustomOp interface {
 }
 
 type CustomOpBackend interface {
+	Digest() (digest.Digest, error)
 	CacheKey(ctx context.Context) (digest.Digest, error)
 	Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opts OpOpts) (outputs []solver.Result, err error)
 }
@@ -41,7 +40,6 @@ type CustomOpBackend interface {
 type OpOpts struct {
 	Server *dagql.Server
 
-	Cache  bkcache.Accessor
 	Worker worker.Worker
 }
 
@@ -123,7 +121,6 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 
 	res, err := op.Backend.Exec(ctx, g, inputs, OpOpts{
 		Server: server,
-		Cache:  op.cacheAccessor,
 		Worker: op.worker,
 	})
 	return res, err
@@ -150,7 +147,6 @@ func (w *Worker) customOpFromVtx(vtx solver.Vertex, s frontend.FrontendLLBBridge
 		}
 		customOp.original = op
 		customOp.server = w.dagqlServer
-		customOp.cacheAccessor = w.workerCache
 		customOp.worker = w
 	}
 	return customOp, ok, nil
@@ -196,12 +192,9 @@ func (op CustomOpWrapper) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 }
 
 func (op CustomOpWrapper) Digest() (digest.Digest, error) {
-	// ignore the client metadata, that shouldn't be part of the buildkit id
-	op.ClientMetadata = engine.ClientMetadata{}
-
-	bs, err := json.Marshal(op)
+	dgst, err := op.Backend.Digest()
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal custom op: %w", err)
+		return "", err
 	}
-	return digest.FromBytes(bs), nil
+	return digest.FromString(op.Name + ":" + string(dgst)), nil
 }
