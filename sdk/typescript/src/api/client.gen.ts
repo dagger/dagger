@@ -1233,6 +1233,11 @@ export type ClientHttpOpts = {
   permissions?: number
 
   /**
+   * Secret used to populate the Authorization HTTP header
+   */
+  authHeader?: Secret
+
+  /**
    * A service which must be started before the URL is fetched.
    */
   experimentalServiceHost?: Service
@@ -7708,6 +7713,7 @@ export class Client extends BaseClient {
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
    * @param opts.name File name to use for the file. Defaults to the last part of the URL.
    * @param opts.permissions Permissions to set on the file.
+   * @param opts.authHeader Secret used to populate the Authorization HTTP header
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
   http = (url: string, opts?: ClientHttpOpts): File => {

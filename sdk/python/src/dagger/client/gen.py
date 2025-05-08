@@ -8215,6 +8215,7 @@ class Client(Root):
         *,
         name: str | None = None,
         permissions: int | None = None,
+        auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
     ) -> File:
         """Returns a file containing an http remote url content.
@@ -8228,6 +8229,8 @@ class Client(Root):
             URL.
         permissions:
             Permissions to set on the file.
+        auth_header:
+            Secret used to populate the Authorization HTTP header
         experimental_service_host:
             A service which must be started before the URL is fetched.
         """
@@ -8235,6 +8238,7 @@ class Client(Root):
             Arg("url", url),
             Arg("name", name, None),
             Arg("permissions", permissions, None),
+            Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("http", _args)

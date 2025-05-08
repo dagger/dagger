@@ -3298,6 +3298,9 @@ type Query {
     """Permissions to set on the file."""
     permissions: Int
 
+    """Secret used to populate the Authorization HTTP header"""
+    authHeader: SecretID
+
     """A service which must be started before the URL is fetched."""
     experimentalServiceHost: ServiceID
   ): File!

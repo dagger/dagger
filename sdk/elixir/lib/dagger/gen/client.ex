@@ -272,6 +272,7 @@ defmodule Dagger.Client do
   @spec http(t(), String.t(), [
           {:name, String.t() | nil},
           {:permissions, integer() | nil},
+          {:auth_header, Dagger.SecretID.t() | nil},
           {:experimental_service_host, Dagger.ServiceID.t() | nil}
         ]) :: Dagger.File.t()
   def http(%__MODULE__{} = client, url, optional_args \\ []) do
@@ -281,6 +282,7 @@ defmodule Dagger.Client do
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+      |> QB.maybe_put_arg("authHeader", optional_args[:auth_header])
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
     %Dagger.File{
