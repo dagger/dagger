@@ -869,6 +869,10 @@ dagger call github-api --token=vault://infra/github.credential
 </TabItem>
 </Tabs>
 
+### Caching
+
+When a `Secret` is included in other operations, the layer cache entries for those operations will be based on the plaintext value of the secret. If the same operation is run with a secret with the same plaintext value, that operation may be cached rather than re-executed. In the above example, the cache for the `withExec` will be based on the plaintext value of the secret. If two clients execute the container with a secret whose plaintext values are the same, the container execution may be cached. Otherwise, if the plaintext values of the secret are different, the container execution will not be cached.
+
 ## Service arguments
 
 Host network services or sockets can be passed to Dagger Functions as arguments. To do so, add the corresponding flag, followed by a service or socket reference.
