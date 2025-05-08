@@ -8148,10 +8148,16 @@ pub struct QueryGitOpts<'a> {
     pub ssh_known_hosts: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryHttpOpts {
+pub struct QueryHttpOpts<'a> {
     /// A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
+    /// File name to use for the file. Defaults to the last part of the URL.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
+    /// Permissions to set on the file.
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
@@ -8521,9 +8527,15 @@ impl Query {
     ///
     /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn http_opts(&self, url: impl Into<String>, opts: QueryHttpOpts) -> File {
+    pub fn http_opts<'a>(&self, url: impl Into<String>, opts: QueryHttpOpts<'a>) -> File {
         let mut query = self.selection.select("http");
         query = query.arg("url", url.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
         if let Some(experimental_service_host) = opts.experimental_service_host {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }

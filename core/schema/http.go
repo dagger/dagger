@@ -2,14 +2,12 @@ package schema
 
 import (
 	"context"
-
-	"github.com/moby/buildkit/client/llb"
-	"github.com/opencontainers/go-digest"
+	"fmt"
+	"net/url"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/sources/httpdns"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -20,10 +18,12 @@ type httpSchema struct {
 
 func (s *httpSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.Func("http", s.http).
+		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
 			Doc(`Returns a file containing an http remote url content.`).
 			Args(
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
+				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
+				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
 	}.Install(s.srv)
@@ -31,42 +31,100 @@ func (s *httpSchema) Install() {
 
 type httpArgs struct {
 	URL                     string
+	Name                    *string
+	Permissions             *int
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
 
-func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs) (*core.File, error) {
-	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
-	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
-	// of following more optimized cache codepaths.
-	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
-	filename := digest.FromString(args.URL).Encoded()
+func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (string, error) {
+	if args.Name != nil {
+		return *args.Name, nil
+	}
 
-	svcs := core.ServiceBindings{}
+	parsed, err := url.Parse(args.URL)
+	if err != nil {
+		return "", err
+	}
+	filename := filepath.Base(parsed.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "index"
+	}
+	return filename, nil
+}
+
+func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
+	if op, ok := core.DagOpFromContext[core.FSDagOp](ctx); ok {
+		cache := parent.Self.BuildkitCache()
+		ref, err := cache.Get(ctx, op.Data.(string), nil)
+		if err != nil {
+			return inst, err
+		}
+
+		f := core.NewFile(parent.Self, nil, op.Path, parent.Self.Platform(), nil)
+		f.Result = ref
+		fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+		if err != nil {
+			return inst, err
+		}
+		return fileInst, nil
+	}
+
+	filename, err := s.httpPath(ctx, parent, args)
+	if err != nil {
+		return inst, err
+	}
+	permissions := 0600
+	if args.Permissions != nil {
+		permissions = *args.Permissions
+	}
+
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		host, err := svc.Self.Hostname(ctx, svc.ID())
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
-		svcs = append(svcs, core.ServiceBinding{
+		binding := core.ServiceBinding{
 			ID:       svc.ID(),
 			Service:  svc.Self,
 			Hostname: host,
-		})
+		}
+
+		svcs, err := parent.Self.Services(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get services: %w", err)
+		}
+		detach, _, err := svcs.StartBindings(ctx, []core.ServiceBinding{binding})
+		if err != nil {
+			return inst, err
+		}
+		defer detach()
 	}
 
-	opts := []llb.HTTPOption{
-		llb.Filename(filename),
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	snap, dgst, resp, err := core.HTTPDownload(ctx, parent.Self, args.URL, filename, permissions)
 	if err != nil {
-		return nil, err
+		return inst, err
+	}
+	defer resp.Body.Close()
+
+	// also mixin the checksum
+	ctxDagOp := dagql.ContextWithID(ctx, dagql.CurrentID(ctx).WithDigest(dagql.HashFrom(
+		filename,
+		fmt.Sprint(permissions),
+		dgst.String(),
+		resp.Header.Get("Last-Modified"),
+	)))
+	inst, err = DagOpFile(ctxDagOp, s.srv, parent, args, snap.ID(), s.http, s.httpPath)
+	if err != nil {
+		return inst, err
 	}
 
-	st := httpdns.HTTP(args.URL, clientMetadata.SessionID, opts...)
-	return core.NewFileSt(ctx, parent, st, filename, parent.Platform(), svcs)
+	// evaluate now! so that the snapshot definitely lives long enough
+	if _, err := inst.Self.Evaluate(ctx); err != nil {
+		return inst, err
+	}
+	return inst, nil
 }

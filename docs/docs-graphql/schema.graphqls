@@ -3292,6 +3292,12 @@ type Query {
     """HTTP url to get the content from (e.g., "https://docs.dagger.io")."""
     url: String!
 
+    """File name to use for the file. Defaults to the last part of the URL."""
+    name: String
+
+    """Permissions to set on the file."""
+    permissions: Int
+
     """A service which must be started before the URL is fetched."""
     experimentalServiceHost: ServiceID
   ): File!

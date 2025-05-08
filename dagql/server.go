@@ -699,6 +699,10 @@ func idToContext(ctx context.Context, id *call.ID) context.Context {
 	return context.WithValue(ctx, idCtx{}, id)
 }
 
+func ContextWithID(ctx context.Context, id *call.ID) context.Context {
+	return idToContext(ctx, id)
+}
+
 func CurrentID(ctx context.Context) *call.ID {
 	val := ctx.Value(idCtx{})
 	if val == nil {
