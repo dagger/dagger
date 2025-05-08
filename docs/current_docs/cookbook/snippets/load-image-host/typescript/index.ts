@@ -5,8 +5,7 @@ class MyModule {
   @func()
   async load(docker: Socket, tag: string): Promise<Container> {
     // create a new container
-    const ctr = dag.container().from("alpine")
-      .withExec(["apk", "add", "git"])
+    const ctr = dag.container().from("alpine").withExec(["apk", "add", "git"])
 
     // create a new container from the docker CLI image
     // mount the Docker socket from the host
