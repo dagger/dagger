@@ -30,7 +30,7 @@ import (
 func init() {
 	// allow injection of custom dns resolver for go-git
 	customClient := &http.Client{
-		Transport: netconfhttp.NewInjectableTransport(&http.Transport{}),
+		Transport: netconfhttp.NewInjectableTransport(http.DefaultTransport),
 	}
 	client.InstallProtocol("http", githttp.NewClient(customClient))
 	client.InstallProtocol("https", githttp.NewClient(customClient))
