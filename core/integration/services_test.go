@@ -922,7 +922,7 @@ func (ContainerSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) 
 
 	stderr, err := client.Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stderr, "Host: "+hostname+":8000")
+	require.Contains(t, stderr, "Host: "+hostname)
 }
 
 func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
@@ -1014,7 +1014,7 @@ func (ContainerSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
 		From(alpineImage).
 		WithServiceBinding("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
-		WithExec([]string{"curl", "-v", "http://hello:8000"})
+		WithExec([]string{"curl", "-v", "http://hello"})
 
 	_, err := client.Sync(ctx)
 	require.NoError(t, err)
@@ -1025,7 +1025,7 @@ func (ContainerSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
 
 	stderr, err := client.Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stderr, "Host: hello:8000")
+	require.Contains(t, stderr, "Host: hello")
 }
 
 //go:embed testdata/pipe.go
@@ -2125,15 +2125,16 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 }
 
 func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content string) (*dagger.Service, string) {
+	return httpServiceDir(ctx, t, c, c.Directory().WithNewFile("index.html", content))
+}
+
+func httpServiceDir(ctx context.Context, t *testctx.T, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 
 	srv := c.Container().
 		From("python").
-		WithMountedDirectory(
-			"/srv/www",
-			c.Directory().WithNewFile("index.html", content),
-		).
 		WithWorkdir("/srv/www").
+		WithDirectory(".", dir).
 		WithExposedPort(8000).
 		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
@@ -2144,6 +2145,47 @@ func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content st
 	require.NoError(t, err)
 
 	return srv, httpURL
+}
+
+// httpServiceCounter is a simple http service that returns pages that contain
+// the number of times this page has been previously requested
+func httpServiceCounter(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger.Service, string) {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		l.Close()
+	})
+	port := l.Addr().(*net.TCPAddr).Port
+
+	counters := make(map[string]int)
+	httpSrv := http.Server{
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			if path == "/" {
+				path = "/index.html"
+			}
+
+			counters[path]++
+			fmt.Println(">>>", path, counters[path])
+
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "count: %d", counters[path])
+		}),
+	}
+	go httpSrv.Serve(l)
+
+	httpSvc := c.Host().Service([]dagger.PortForward{{
+		Backend:  port,
+		Frontend: port,
+	}})
+
+	hostname, err := httpSvc.Hostname(ctx)
+	require.NoError(t, err)
+	return httpSvc, "http://" + hostname + ":" + strconv.Itoa(port)
 }
 
 func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
