@@ -100,7 +100,7 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		hosts := map[string]int{}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			hosts[hostname(ctx, c)]++
 		}
 
@@ -110,7 +110,7 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	t.Run("hostnames are stable across sessions", func(ctx context.Context, t *testctx.T) {
 		hosts := map[string]int{}
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			c := connect(ctx, t)
 			hosts[hostname(ctx, c)]++
 		}
@@ -761,7 +761,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	}
 
 	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -791,7 +791,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
 	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -818,7 +818,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
 	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -1775,7 +1775,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 		srvURL, err := tunnel.Endpoint(ctx)
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			res, err := http.Get("http://" + srvURL)
 			require.NoError(t, err)
 			defer res.Body.Close()

@@ -133,10 +133,10 @@ type DiskSpace bkconfig.DiskSpace
 
 func (space DiskSpace) MarshalJSON() ([]byte, error) {
 	if space.Bytes != 0 {
-		return []byte(fmt.Sprintf(`%d`, space.Bytes)), nil
+		return fmt.Appendf(nil, `%d`, space.Bytes), nil
 	}
 	if space.Percentage != 0 {
-		return []byte(fmt.Sprintf(`"%d%%"`, space.Percentage)), nil
+		return fmt.Appendf(nil, `"%d%%"`, space.Percentage), nil
 	}
 	return []byte("0"), nil
 }

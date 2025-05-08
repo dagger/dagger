@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"runtime"
 
@@ -129,16 +130,12 @@ func manifestAnnotations(desc *remote.Descriptor) (map[string]string, error) {
 
 		// Merge annotations at the index (top-level) if they exist
 		if index.Annotations != nil {
-			for key, value := range index.Annotations {
-				annotations[key] = value
-			}
+			maps.Copy(annotations, index.Annotations)
 		}
 
 		for _, manifest := range index.Manifests {
 			if manifest.Annotations != nil {
-				for key, value := range manifest.Annotations {
-					annotations[key] = value
-				}
+				maps.Copy(annotations, manifest.Annotations)
 			}
 		}
 
@@ -153,9 +150,7 @@ func manifestAnnotations(desc *remote.Descriptor) (map[string]string, error) {
 
 		// Copy annotations into the map
 		if manifest.Annotations != nil {
-			for key, value := range manifest.Annotations {
-				annotations[key] = value
-			}
+			maps.Copy(annotations, manifest.Annotations)
 		}
 
 	default:

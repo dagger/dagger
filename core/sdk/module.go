@@ -28,7 +28,7 @@ func newModuleSDK(
 	root *core.Query,
 	sdkModMeta dagql.Instance[*core.Module],
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
-	rawConfig map[string]interface{},
+	rawConfig map[string]any,
 ) (*module, error) {
 	dagqlCache, err := root.Cache(ctx)
 	if err != nil {
@@ -85,7 +85,7 @@ func newModuleSDK(
 // the default value as specified in the moduleSource is used for that argument.
 func (sdk *module) withConfig(
 	ctx context.Context,
-	rawConfig map[string]interface{},
+	rawConfig map[string]any,
 ) (*module, error) {
 	withConfigFn, ok := sdk.funcs["withConfig"]
 	if !ok && len(rawConfig) > 0 {

@@ -3,6 +3,7 @@ package dagui
 import (
 	"encoding/json"
 	"iter"
+	"slices"
 )
 
 type OrderedSet[K, V comparable] struct {
@@ -89,7 +90,7 @@ func (set *OrderedSet[K, V]) Remove(value V) bool {
 			break
 		}
 	}
-	set.Order = append(set.Order[:removeIdx], set.Order[removeIdx+1:]...)
+	set.Order = slices.Delete(set.Order, removeIdx, removeIdx+1)
 	return true
 }
 

@@ -4196,7 +4196,7 @@ EXPOSE 8080
             }
         }`,
 		&testutil.QueryOptions{
-			Variables: map[string]interface{}{
+			Variables: map[string]any{
 				"id": cid,
 			},
 		},

@@ -448,7 +448,7 @@ export class Test {
 
 		caCertsTest{"terminal", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			modDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
+			err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
 
 	import (
 		"context"
@@ -467,7 +467,7 @@ export class Test {
 	type Test struct {
 		Ctr *dagger.Container
 	}
-	`, alpineImage)), 0644)
+	`, alpineImage), 0644)
 			require.NoError(t, err)
 
 			initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")

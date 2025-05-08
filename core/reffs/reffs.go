@@ -123,6 +123,6 @@ func (fi *refFileInfo) IsDir() bool {
 	return fi.stat.IsDir()
 }
 
-func (fi *refFileInfo) Sys() interface{} {
+func (fi *refFileInfo) Sys() any {
 	return nil
 }

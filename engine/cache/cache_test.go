@@ -22,7 +22,7 @@ func TestCacheConcurrent(t *testing.T) {
 	initialized := map[int]bool{}
 
 	wg := new(sync.WaitGroup)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		i := i
 		wg.Add(1)
 		go func() {
