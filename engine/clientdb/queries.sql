@@ -126,3 +126,27 @@ FROM
 WHERE
   trace_id = ?
   AND span_id = ?;
+
+-- name: SelectLogsBeneathSpan :many
+WITH RECURSIVE descendant_spans AS (
+  SELECT s.span_id
+  FROM spans s
+  WHERE s.parent_span_id = @span_id
+  UNION ALL
+  SELECT s.span_id
+  FROM spans s
+  INNER JOIN descendant_spans ds ON s.parent_span_id = ds.span_id
+)
+SELECT
+  *
+FROM
+  logs l
+WHERE
+  l.span_id IN (SELECT span_id FROM descendant_spans)
+AND
+  l.id > ?
+ORDER BY
+  l.id ASC
+LIMIT
+  ?;
+;

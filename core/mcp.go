@@ -2,7 +2,10 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	_ "embed"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -667,12 +670,16 @@ func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, err
 	}
 	defer close()
 
+	spanCtx := trace.SpanContextFromContext(ctx)
+
 	formattedLines := new(strings.Builder)
 	mpw := multiprefixw.New(formattedLines)
+
 	for {
-		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
-			ID:    m.lastLogID,
-			Limit: logsBatchSize,
+		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
+			ID:     m.lastLogID,
+			SpanID: sql.NullString{Valid: true, String: spanCtx.SpanID().String()},
+			Limit:  logsBatchSize,
 		})
 		if err != nil {
 			return nil, err
@@ -730,7 +737,31 @@ func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, err
 					// don't show logs from the LLM spans themselves
 					continue
 				}
-				prefix = span.Name + " | "
+				prefix = span.Name
+				spanBytes, err := hex.DecodeString(span.SpanID)
+				if err != nil {
+					slog.Warn("failed to decode hex span ID", "error", err)
+					continue
+				}
+				base64Span := base64.StdEncoding.EncodeToString(spanBytes)
+				base64Links, err := q.SelectLinkedSpans(ctx, base64Span)
+				if err != nil {
+					return nil, err
+				}
+				// linked spans override name (Container.withExec => exec foo bar)
+				for _, link := range base64Links {
+					linkedSpan, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
+						TraceID: link.TraceID,
+						SpanID:  link.SourceSpanID,
+					})
+					if err != nil {
+						slog.Warn("failed to query linked span", "error", err)
+						continue
+					}
+					prefix += "(" + linkedSpan.Name + ")"
+				}
+
+				prefix += ": "
 			}
 
 			mpw.SetPrefix(prefix)
@@ -752,7 +783,7 @@ func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, err
 		}
 	}
 	if formattedLines.Len() == 0 {
-		return []string{}, nil
+		return nil, nil
 	}
 	return strings.Split(formattedLines.String(), "\n"), nil
 }

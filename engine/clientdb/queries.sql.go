@@ -173,6 +173,71 @@ func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, 
 	return id, err
 }
 
+const selectLogsBeneathSpan = `-- name: SelectLogsBeneathSpan :many
+WITH RECURSIVE descendant_spans AS (
+  SELECT s.span_id
+  FROM spans s
+  WHERE s.parent_span_id = ?
+  UNION ALL
+  SELECT s.span_id
+  FROM spans s
+  INNER JOIN descendant_spans ds ON s.parent_span_id = ds.span_id
+)
+SELECT
+  id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url
+FROM
+  logs l
+WHERE
+  l.span_id IN (SELECT span_id FROM descendant_spans)
+AND
+  l.id > ?
+ORDER BY
+  l.id ASC
+LIMIT
+  ?
+`
+
+type SelectLogsBeneathSpanParams struct {
+	SpanID sql.NullString
+	ID     int64
+	Limit  int64
+}
+
+func (q *Queries) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
+	rows, err := q.db.QueryContext(ctx, selectLogsBeneathSpan, arg.SpanID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Log
+	for rows.Next() {
+		var i Log
+		if err := rows.Scan(
+			&i.ID,
+			&i.TraceID,
+			&i.SpanID,
+			&i.Timestamp,
+			&i.SeverityNumber,
+			&i.SeverityText,
+			&i.Body,
+			&i.Attributes,
+			&i.InstrumentationScope,
+			&i.Resource,
+			&i.ResourceSchemaUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectLogsSince = `-- name: SelectLogsSince :many
 SELECT
   id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url
