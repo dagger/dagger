@@ -212,7 +212,7 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg.Go(func() error {
 		var err error
 		engine = dev.Engine().Generate()
-		docs, err = engine.Sync(ctx)
+		engine, err = engine.Sync(ctx)
 		return err
 	})
 
