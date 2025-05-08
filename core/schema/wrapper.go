@@ -37,7 +37,10 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	if err != nil {
 		return inst, err
 	}
-	return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
+	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
+		ID:       currentIDForDagOp(ctx),
+		Filename: "output.json",
+	}, deps)
 }
 
 type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance[T], args A) (string, error)
@@ -54,7 +57,7 @@ func DagOpFileWrapper[T dagql.Typed, A any](
 		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-		return DagOpFile(ctx, srv, self, args, fn, pfn)
+		return DagOpFile(ctx, srv, self, args, nil, fn, pfn)
 	}
 }
 
@@ -68,6 +71,7 @@ func DagOpFile[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self dagql.Instance[T],
 	args A,
+	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
 	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
@@ -87,7 +91,11 @@ func DagOpFile[T dagql.Typed, A any](
 		}
 	}
 
-	file, err := core.NewFileDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	file, err := core.NewFileDagOp(ctx, srv, &core.FSDagOp{
+		ID:   currentIDForDagOp(ctx),
+		Path: filename,
+		Data: data,
+	}, deps)
 	if err != nil {
 		return inst, err
 	}
@@ -105,7 +113,7 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](
 		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-		return DagOpDirectory(ctx, srv, self, args, fn, pfn)
+		return DagOpDirectory(ctx, srv, self, args, nil, fn, pfn)
 	}
 }
 
@@ -117,6 +125,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self dagql.Instance[T],
 	args A,
+	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
 	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
@@ -133,7 +142,11 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
-	dir, err := core.NewDirectoryDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
+		ID:   currentIDForDagOp(ctx),
+		Path: filename,
+		Data: data,
+	}, deps)
 	if err != nil {
 		return inst, err
 	}

@@ -601,6 +601,10 @@ func (srv *Server) Close() error {
 	return err
 }
 
+func (srv *Server) BuildkitCache() bkcache.Manager {
+	return srv.workerCache
+}
+
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
