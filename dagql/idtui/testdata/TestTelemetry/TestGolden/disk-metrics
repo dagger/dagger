@@ -70,7 +70,7 @@ Expected stderr:
 │ │ │ │ ✔ .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
 │ │ │ ✔ asModule getModDef X.Xs
 │ │ │ │ ✔ module: Module! X.Xs
-│ │ ✔ .serve: Void X.Xs
+│ │ ✔ .serve(includeDependencies: true): Void X.Xs
 │ ✔ inspecting module metadata X.Xs
 │ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
@@ -81,14 +81,14 @@ Expected stderr:
 │ │ ✔ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
-│ │ ✔ ModuleSource.commit: String! X.Xs
-│ │
 │ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
 │ │ ┃ .
 │ │
+│ │ ✔ ModuleSource.htmlRepoURL: String! X.Xs
+│ │
 │ │ ✔ ModuleSource.version: String! X.Xs
 │ │
-│ │ ✔ ModuleSource.htmlRepoURL: String! X.Xs
+│ │ ✔ ModuleSource.commit: String! X.Xs
 │ │
 │ │ ✔ Module.name: String! X.Xs
 │ │ ┃ viztest
