@@ -269,13 +269,18 @@ defmodule Dagger.Client do
   @doc """
   Returns a file containing an http remote url content.
   """
-  @spec http(t(), String.t(), [{:experimental_service_host, Dagger.ServiceID.t() | nil}]) ::
-          Dagger.File.t()
+  @spec http(t(), String.t(), [
+          {:name, String.t() | nil},
+          {:permissions, integer() | nil},
+          {:experimental_service_host, Dagger.ServiceID.t() | nil}
+        ]) :: Dagger.File.t()
   def http(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("http")
       |> QB.put_arg("url", url)
+      |> QB.maybe_put_arg("name", optional_args[:name])
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
 
     %Dagger.File{

@@ -1223,6 +1223,16 @@ export type ClientGitOpts = {
 
 export type ClientHttpOpts = {
   /**
+   * File name to use for the file. Defaults to the last part of the URL.
+   */
+  name?: string
+
+  /**
+   * Permissions to set on the file.
+   */
+  permissions?: number
+
+  /**
    * A service which must be started before the URL is fetched.
    */
   experimentalServiceHost?: Service
@@ -7696,6 +7706,8 @@ export class Client extends BaseClient {
   /**
    * Returns a file containing an http remote url content.
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
+   * @param opts.name File name to use for the file. Defaults to the last part of the URL.
+   * @param opts.permissions Permissions to set on the file.
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
   http = (url: string, opts?: ClientHttpOpts): File => {

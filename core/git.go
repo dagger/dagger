@@ -390,8 +390,8 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 
 func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp, fn func(string) error) (retErr error) {
 	locker := repo.Query.Locker()
-	locker.Lock(gitRemoteIndex + repo.URL.Remote())
-	defer locker.Unlock(gitRemoteIndex + repo.URL.Remote())
+	locker.Lock(indexGitRemote + repo.URL.Remote())
+	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
 
 	cache := repo.Query.BuildkitCache()
 
@@ -497,8 +497,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	cache := ref.Query.BuildkitCache()
 
 	locker := ref.Query.Locker()
-	locker.Lock(gitSnapshotIndex + cacheKey)
-	defer locker.Unlock(gitSnapshotIndex + cacheKey)
+	locker.Lock(indexGitSnapshot + cacheKey)
+	defer locker.Unlock(indexGitSnapshot + cacheKey)
 	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search metadata for %s: %w", cacheKey, err)
@@ -1172,38 +1172,4 @@ func parseGitRefOutput(target string, out string, separator string) (commit stri
 		match.ref = ref
 	}
 	return match.sha, match.ref, nil
-}
-
-func searchRefMetadata(ctx context.Context, store bkcache.MetadataStore, key string, idx string) ([]cacheRefMetadata, error) {
-	mds, err := store.Search(ctx, idx+key, false)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]cacheRefMetadata, len(mds))
-	for i, md := range mds {
-		results[i] = cacheRefMetadata{md}
-	}
-	return results, nil
-}
-func searchGitRemote(ctx context.Context, store bkcache.MetadataStore, remote string) ([]cacheRefMetadata, error) {
-	return searchRefMetadata(ctx, store, remote, gitRemoteIndex)
-}
-func searchGitSnapshot(ctx context.Context, store bkcache.MetadataStore, key string) ([]cacheRefMetadata, error) {
-	return searchRefMetadata(ctx, store, key, gitSnapshotIndex)
-}
-
-const keyGitRemote = "git-remote"
-const gitRemoteIndex = keyGitRemote + "::"
-const keyGitSnapshot = "git-snapshot"
-const gitSnapshotIndex = keyGitSnapshot + "::"
-
-type cacheRefMetadata struct {
-	bkcache.RefMetadata
-}
-
-func (md cacheRefMetadata) setGitSnapshot(key string) error {
-	return md.SetString(keyGitSnapshot, key, gitSnapshotIndex+key)
-}
-func (md cacheRefMetadata) setGitRemote(key string) error {
-	return md.SetString(keyGitRemote, key, gitRemoteIndex+key)
 }

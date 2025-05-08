@@ -8184,6 +8184,10 @@ func (r *Client) Host() *Host {
 
 // HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
+	// File name to use for the file. Defaults to the last part of the URL.
+	Name string
+	// Permissions to set on the file.
+	Permissions int
 	// A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Service
 }
@@ -8192,6 +8196,14 @@ type HTTPOpts struct {
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.query.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
 			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
