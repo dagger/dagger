@@ -72,3 +72,43 @@ func TestPrefixedWriter_MultipleSwitches(t *testing.T) {
 		"[x] foo\n[x] bar\u23CE\n[y] baz\n[y] qux"
 	require.Equal(t, expected, buf.String())
 }
+
+func TestPrefixedWriter_HeaderPrefix(t *testing.T) {
+	var buf bytes.Buffer
+	pw := New(&buf)
+
+	header := "== HEADER ==\n"
+	pw.SetPrefix(header)
+	_, err := pw.Write([]byte("line1\nline2\n"))
+	require.NoError(t, err)
+	expected := "== HEADER ==\nline1\nline2\n"
+	require.Equal(t, expected, buf.String())
+}
+
+func TestPrefixedWriter_HeaderPrefixSwitchToNormal(t *testing.T) {
+	var buf bytes.Buffer
+	pw := New(&buf)
+
+	pw.SetPrefix("## Welcome ##\n")
+	_, err := pw.Write([]byte("first\n"))
+	require.NoError(t, err)
+	pw.SetPrefix("[info] ")
+	_, err = pw.Write([]byte("second\n"))
+	require.NoError(t, err)
+	expected := "## Welcome ##\nfirst\n\n[info] second\n"
+	require.Equal(t, expected, buf.String())
+}
+
+func TestPrefixedWriter_HeaderPrefixSwitchFromPartialLine(t *testing.T) {
+	var buf bytes.Buffer
+	pw := New(&buf)
+
+	pw.SetPrefix("[tag] ")
+	_, err := pw.Write([]byte("no newline"))
+	require.NoError(t, err)
+	pw.SetPrefix("### HEADER ###\n")
+	_, err = pw.Write([]byte("newblock\n"))
+	require.NoError(t, err)
+	expected := "[tag] no newline\u23CE\n\n### HEADER ###\nnewblock\n"
+	require.Equal(t, expected, buf.String())
+}
