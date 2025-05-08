@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,6 +80,30 @@ func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
 	}).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "Hello, world!")
+}
+
+func (HTTPSuite) TestHTTPAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	svc, svcURL := httpServiceAuth(ctx, t, c, "Hello, secret world!", c.SetSecret("SECRET", "personalsecret"))
+
+	_, err := c.HTTP(svcURL, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+	}).Contents(ctx)
+	require.ErrorContains(t, err, "401 Unauthorized")
+
+	contents, err := c.HTTP(svcURL, dagger.HTTPOpts{
+		ExperimentalServiceHost: svc,
+		AuthHeader:              c.SetSecret("AUTH_TOKEN", basicAuthHeader(url.UserPassword("x-access-token", "personalsecret"))),
+	}).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, contents, "Hello, secret world!")
+}
+
+func basicAuthHeader(info *url.Userinfo) string {
+	username := info.Username()
+	password, _ := info.Password()
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 }
 
 func (HTTPSuite) TestHTTPTimestamp(ctx context.Context, t *testctx.T) {

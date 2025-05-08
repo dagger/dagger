@@ -207,6 +207,7 @@ class Client extends Client\AbstractClient
         string $url,
         ?string $name = null,
         ?int $permissions = null,
+        SecretId|Secret|null $authHeader = null,
         ServiceId|Service|null $experimentalServiceHost = null,
     ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('http');
@@ -216,6 +217,9 @@ class Client extends Client\AbstractClient
         }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $authHeader) {
+        $innerQueryBuilder->setArgument('authHeader', $authHeader);
         }
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);

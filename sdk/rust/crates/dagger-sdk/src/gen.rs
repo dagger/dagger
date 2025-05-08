@@ -8149,6 +8149,9 @@ pub struct QueryGitOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts<'a> {
+    /// Secret used to populate the Authorization HTTP header
+    #[builder(setter(into, strip_option), default)]
+    pub auth_header: Option<SecretId>,
     /// A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
@@ -8535,6 +8538,9 @@ impl Query {
         }
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        if let Some(auth_header) = opts.auth_header {
+            query = query.arg("authHeader", auth_header);
         }
         if let Some(experimental_service_host) = opts.experimental_service_host {
             query = query.arg("experimentalServiceHost", experimental_service_host);

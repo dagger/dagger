@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 
@@ -24,6 +25,7 @@ func (s *httpSchema) Install() {
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
 				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
 				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
+				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
 	}.Install(s.srv)
@@ -33,6 +35,7 @@ type httpArgs struct {
 	URL                     string
 	Name                    *string
 	Permissions             *int
+	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
 
@@ -78,6 +81,23 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		permissions = *args.Permissions
 	}
 
+	var authHeader string
+	if args.AuthHeader.Valid {
+		secret, err := args.AuthHeader.Value.Load(ctx, s.srv)
+		if err != nil {
+			return inst, err
+		}
+		secretStore, err := parent.Self.Secrets(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
+		if err != nil {
+			return inst, err
+		}
+		authHeader = string(authHeaderRaw)
+	}
+
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
 		if err != nil {
@@ -104,7 +124,14 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		defer detach()
 	}
 
-	snap, dgst, resp, err := core.HTTPDownload(ctx, parent.Self, args.URL, filename, permissions)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, args.URL, nil)
+	if err != nil {
+		return inst, err
+	}
+	if authHeader != "" {
+		req.Header.Add("Authorization", authHeader)
+	}
+	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self, req, filename, permissions)
 	if err != nil {
 		return inst, err
 	}

@@ -19,25 +19,21 @@ import (
 )
 
 //nolint:gocyclo
-func HTTPDownload(
+func DoHTTPRequest(
 	ctx context.Context,
 	query *Query,
-	url string,
+	req *http.Request,
 	filename string,
 	permissions int,
 ) (_ bkcache.ImmutableRef, _ digest.Digest, _ *http.Response, rerr error) {
 	cache := query.BuildkitCache()
 
+	url := req.URL.String()
 	urlDigest := digest.FromString(url)
 
 	mds, err := searchHTTPByDigest(ctx, cache, urlDigest)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("failed to search metadata for %s: %w", url, err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, "", nil, err
 	}
 
 	// m is etag->metadata

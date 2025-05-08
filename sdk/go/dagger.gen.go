@@ -8188,6 +8188,8 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
+	// Secret used to populate the Authorization HTTP header
+	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Service
 }
@@ -8203,6 +8205,10 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `authHeader` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {
+			q = q.Arg("authHeader", opts[i].AuthHeader)
 		}
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {

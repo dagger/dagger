@@ -2124,68 +2124,64 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	require.True(t, found)
 }
 
-func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content string) (*dagger.Service, string) {
-	return httpServiceDir(ctx, t, c, c.Directory().WithNewFile("index.html", content))
+func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*dagger.Service, string) {
+	return httpServiceAuth(ctx, t, c, content, nil)
+}
+func httpServiceDir(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
+	return httpServiceDirAuth(ctx, t, c, dir, nil)
 }
 
-func httpServiceDir(ctx context.Context, t *testctx.T, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
-	t.Helper()
-
-	srv := c.Container().
-		From("python").
-		WithWorkdir("/srv/www").
-		WithDirectory(".", dir).
-		WithExposedPort(8000).
-		WithDefaultArgs([]string{"python", "-m", "http.server"}).
-		AsService()
-
-	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-
-	return srv, httpURL
+func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, content string, token *dagger.Secret) (*dagger.Service, string) {
+	return httpServiceDirAuth(ctx, t, c, c.Directory().WithNewFile("index.html", content), token)
 }
-
-// httpServiceCounter is a simple http service that returns pages that contain
-// the number of times this page has been previously requested
-func httpServiceCounter(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger.Service, string) {
+func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory, token *dagger.Secret) (*dagger.Service, string) {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		l.Close()
-	})
-	port := l.Addr().(*net.TCPAddr).Port
-
-	counters := make(map[string]int)
-	httpSrv := http.Server{
-		BaseContext: func(net.Listener) context.Context { return ctx },
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			path := r.URL.Path
-			if path == "/" {
-				path = "/index.html"
-			}
-
-			counters[path]++
-			fmt.Println(">>>", path, counters[path])
-
-			w.Header().Set("Content-Type", "text/html")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "count: %d", counters[path])
-		}),
+	var tokenPlaintext string
+	if token != nil {
+		var err error
+		tokenPlaintext, err = token.Plaintext(ctx)
+		require.NoError(t, err)
 	}
-	go httpSrv.Serve(l)
 
-	httpSvc := c.Host().Service([]dagger.PortForward{{
-		Backend:  port,
-		Frontend: port,
-	}})
+	tmpl, err := template.New("").Parse(`
+server {
+	listen       80;
+	server_name  localhost;
 
-	hostname, err := httpSvc.Hostname(ctx)
+	location / {
+		root   /usr/share/nginx/html;
+		index  index.html index.htm;
+	}
+
+	{{ if .token }}
+	auth_basic            "Restricted";
+	auth_basic_user_file  /usr/share/nginx/htpasswd;
+	{{ end }}
+}
+`)
 	require.NoError(t, err)
-	return httpSvc, "http://" + hostname + ":" + strconv.Itoa(port)
+
+	var config bytes.Buffer
+	err = tmpl.Execute(&config, map[string]any{
+		"token": tokenPlaintext,
+	})
+	require.NoError(t, err)
+
+	svc := c.Container().
+		From("nginx").
+		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
+		WithMountedDirectory("/usr/share/nginx/html", dir).
+		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd", "x-access-token:{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
+			Owner: "nginx",
+		}).
+		WithExposedPort(80).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	hostname, err := svc.Hostname(ctx)
+	require.NoError(t, err)
+	url := fmt.Sprintf("http://%s", hostname)
+	return svc, url
 }
 
 func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
@@ -2216,54 +2212,8 @@ func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, c
 func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string, token *dagger.Secret) (*dagger.Service, string) {
 	t.Helper()
 
-	var tokenPlaintext string
-	if token != nil {
-		tokenPlaintext, _ = token.Plaintext(ctx)
-	}
-
-	tmpl, err := template.New("").Parse(`
-server {
-	listen       80;
-	server_name  localhost;
-
-	location / {
-		root   /usr/share/nginx/html;
-		index  index.html index.htm;
-	}
-
-	{{ if .token }}
-	auth_basic            "Restricted";
-	auth_basic_user_file  /usr/share/nginx/htpasswd;
-	{{ end }}
-}
-`)
-	if err != nil {
-		panic(err)
-	}
-
-	var config bytes.Buffer
-	err = tmpl.Execute(&config, map[string]any{
-		"token": tokenPlaintext,
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	gitDaemon := c.Container().
-		From("nginx").
-		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
-		WithMountedDirectory("/usr/share/nginx/html", makeGitDir(c, content, branchName)).
-		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd", "x-access-token:{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
-			Owner: "nginx",
-		}).
-		WithExposedPort(80).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("http://%s/repo.git", gitHost)
-
+	gitDaemon, repoURL := httpServiceDirAuth(ctx, t, c, makeGitDir(c, content, branchName), token)
+	repoURL += "/repo.git"
 	return gitDaemon, repoURL
 }
 
