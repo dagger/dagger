@@ -328,19 +328,19 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 			opts     []dagger.HostFileOpts
 			expected string
 		}{
-			// {
-			// 	name:     "default aka cache",
-			// 	opts:     []dagger.HostFileOpts{},
-			// 	expected: "1",
-			// },
-			// {
-			// 	name:     "explicit cache",
-			// 	opts:     []dagger.HostFileOpts{{Cache: true}},
-			// 	expected: "1",
-			// },
+			{
+				name:     "default aka cache",
+				opts:     []dagger.HostFileOpts{},
+				expected: "1",
+			},
+			{
+				name:     "explicit cache",
+				opts:     []dagger.HostFileOpts{{NoCache: false}},
+				expected: "1",
+			},
 			{
 				name:     "explicit no cache",
-				opts:     []dagger.HostFileOpts{{Cache: false}},
+				opts:     []dagger.HostFileOpts{{NoCache: true}},
 				expected: "12",
 			},
 		}
