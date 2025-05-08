@@ -6,7 +6,6 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     async def load(self, docker: dagger.Socket, tag: str) -> dagger.Container:
-
         # create a new container
         ctr = dag.container().from_("alpine").with_exec(["apk", "add", "git"])
 
