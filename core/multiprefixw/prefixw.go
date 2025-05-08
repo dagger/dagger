@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type Writer struct {
 	w              io.Writer
+	wrote          bool
 	prefix         string
 	lastPrefix     string
 	lineTerminated bool
@@ -31,6 +33,7 @@ func (pw *Writer) Write(p []byte) (int, error) {
 			if _, err := pw.w.Write(p); err != nil {
 				return 0, err
 			}
+			pw.wrote = true
 			pw.lineTerminated = false
 			break
 		}
@@ -40,6 +43,7 @@ func (pw *Writer) Write(p []byte) (int, error) {
 		if _, err := pw.w.Write(p[:n+1]); err != nil {
 			return 0, err
 		}
+		pw.wrote = true
 		p = p[n+1:]
 		pw.lineTerminated = true
 	}
@@ -47,14 +51,25 @@ func (pw *Writer) Write(p []byte) (int, error) {
 }
 
 func (pw *Writer) writePrefix(prefix string) error {
+	isHeader := strings.Contains(prefix, "\n")
+	wasHeader := strings.Contains(pw.lastPrefix, "\n")
 	if pw.lastPrefix == prefix && !pw.lineTerminated {
 		// same prefix and we're not a new line, so keep on going
 		return nil
 	}
-	if pw.lastPrefix != "" && pw.lastPrefix != prefix && !pw.lineTerminated {
+	if pw.wrote && pw.lastPrefix != prefix && !pw.lineTerminated {
 		// new prefix and last line was not terminated, so manually add linebreak
 		if _, err := fmt.Fprint(pw.w, "\u23CE\n"); err != nil { // ⏎
 			return err
+		}
+	}
+	if isHeader || wasHeader {
+		if pw.lastPrefix == prefix {
+			// the prefix spans multiple lines, so we don't need a prefix for this line
+			return nil
+		} else if pw.wrote {
+			// ensure a gap from previous output
+			fmt.Fprintln(pw.w)
 		}
 	}
 	// write our prefix and remember it

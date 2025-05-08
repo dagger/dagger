@@ -603,7 +603,14 @@ func (m *MCP) Call(ctx context.Context, dag *dagql.Server, tools []LLMTool, tool
 					logs[skipped:]...,
 				)
 			}
-			res += fmt.Sprintf(`\n\n<logs>\n%s\n</logs>`, strings.Join(logs, "\n"))
+			if !strings.HasSuffix(res, "\n") {
+				// avoid double trailing linebreak (e.g. pretty JSON)
+				res += "\n"
+			}
+			res += fmt.Sprintf(`\n<logs>\n%s\n</logs>`,
+				// avoid double trailing linebreak
+				strings.TrimSuffix(strings.Join(logs, "\n"), "\n"),
+			)
 		}
 	}()
 
@@ -739,7 +746,8 @@ func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, err
 				if err != nil {
 					return nil, err
 				}
-				// linked spans override name (Container.withExec => exec foo bar)
+				var linkSuffix string
+				// linked spans get added to the name (Container.withExec => exec foo bar)
 				for _, link := range base64Links {
 					linkedSpan, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
 						TraceID: link.TraceID,
@@ -749,10 +757,10 @@ func (m *MCP) captureLogs(ctx context.Context, dag *dagql.Server) ([]string, err
 						slog.Warn("failed to query linked span", "error", err)
 						continue
 					}
-					prefix += "(" + linkedSpan.Name + ")"
+					linkSuffix = "(" + linkedSpan.Name + ")"
 				}
-
-				prefix += ": "
+				prefix += linkSuffix
+				prefix += ":\n"
 			}
 
 			mpw.SetPrefix(prefix)
