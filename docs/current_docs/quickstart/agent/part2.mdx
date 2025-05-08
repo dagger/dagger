@@ -177,7 +177,6 @@ There are a few important points to note here:
 - Other Dagger module dependencies are automatically detected and made available for use in this environment. In this example, Dagger finds the `workspace` sub-module installed and automatically generates bindings for it: `with-workspace-input` and `with-workspace-output`. These bindings can be used to provide (or retrieve) the workspace to the agent.
 - The `environment` is privileged, which means that the environment includes all the Dagger Functions in the existing Daggerized CI pipeline, plus the core Dagger API. This allows the agent to use the existing `test` function to run unit tests.
 - The LLM is supplied with a prompt file instead of an inline prompt. By separating the prompt from the Dagger Function code, it becomes easier to maintain and update the instructions given to the LLM.
-- The `Env` in this agent is privileged, which means the environment will also include the current module and core Dagger APIs. This allows the agent to use the existing `test` function.
 
 The final step is to add the prompt file. Create a file at `.dagger/develop_prompt.md` with the following content:
 
