@@ -380,7 +380,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	t.Run("git", func(ctx context.Context, t *testctx.T) {
 		testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 			if tc.skipProxyTest {
-				t.Skip("skipping git proxy test")
+				t.Skip("test explicitly not supported")
 				return
 			}
 
@@ -418,10 +418,10 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 		})
 	})
 
-	t.Run("git (redirected)", func(ctx context.Context, t *testctx.T) {
+	t.Run("git-redirected", func(ctx context.Context, t *testctx.T) {
 		testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 			if tc.skipProxyTest {
-				t.Skip("skipping git proxy test")
+				t.Skip("test explicitly not supported")
 				return
 			}
 
@@ -471,7 +471,11 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		if tc.skipProxyTest {
-			t.Skip("skipping go proxy test")
+			t.Skip("test explicitly not supported")
+			return
+		}
+		if tc.encodedToken != "" {
+			t.Skip("testing goproxy with creds is not supported")
 			return
 		}
 
