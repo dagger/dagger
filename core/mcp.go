@@ -991,7 +991,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 					"tool": map[string]any{
 						"type":        "string",
 						"description": "The name of the tool to call.",
-						"enum":        slices.Sorted(maps.Keys(m.selectedTools)),
 					},
 					"params": map[string]any{
 						"type":                 "object",
