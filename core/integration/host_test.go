@@ -322,7 +322,7 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "hello world", content)
 	})
 
-	t.Run("reload behavior", func(ctx context.Context, t *testctx.T) {
+	t.Run("cache behavior", func(ctx context.Context, t *testctx.T) {
 		tests := []struct {
 			name     string
 			opts     []dagger.HostFileOpts
