@@ -5974,6 +5974,7 @@ class Host(Type):
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
+        no_cache: bool | None = False,
     ) -> Directory:
         """Accesses a directory on the host.
 
@@ -5987,25 +5988,36 @@ class Host(Type):
         include:
             Include only artifacts that match the given pattern (e.g.,
             ["app/", "package.*"]).
+        no_cache:
+            If true, the directory will always be reloaded from the host.
         """
         _args = [
             Arg("path", path),
             Arg("exclude", () if exclude is None else exclude, ()),
             Arg("include", () if include is None else include, ()),
+            Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, path: str) -> File:
+    def file(
+        self,
+        path: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> File:
         """Accesses a file on the host.
 
         Parameters
         ----------
         path:
             Location of the file to retrieve (e.g., "README.md").
+        no_cache:
+            If true, the file will always be reloaded from the host.
         """
         _args = [
             Arg("path", path),
+            Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)

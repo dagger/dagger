@@ -6880,6 +6880,15 @@ pub struct HostDirectoryOpts<'a> {
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// If true, the directory will always be reloaded from the host.
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct HostFileOpts {
+    /// If true, the file will always be reloaded from the host.
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostServiceOpts<'a> {
@@ -6935,6 +6944,9 @@ impl Host {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -6946,9 +6958,28 @@ impl Host {
     /// # Arguments
     ///
     /// * `path` - Location of the file to retrieve (e.g., "README.md").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Accesses a file on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to retrieve (e.g., "README.md").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file_opts(&self, path: impl Into<String>, opts: HostFileOpts) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("path", path.into());
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,

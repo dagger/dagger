@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"iter"
 	"maps"
@@ -12,7 +13,6 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"github.com/dagger/dagger/core/rand"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"

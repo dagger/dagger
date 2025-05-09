@@ -139,11 +139,17 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 		IncludePatterns []string
 		ExcludePatterns []string
 		FollowPaths     []string
-	}{SessionID: sessionID, IncludePatterns: ls.src.IncludePatterns, ExcludePatterns: ls.src.ExcludePatterns, FollowPaths: ls.src.FollowPaths})
+	}{
+		SessionID:       sessionID,
+		IncludePatterns: ls.src.IncludePatterns,
+		ExcludePatterns: ls.src.ExcludePatterns,
+		FollowPaths:     ls.src.FollowPaths,
+	})
 	if err != nil {
 		return "", "", nil, false, err
 	}
-	return "session:" + ls.src.Name + ":" + digest.FromBytes(dt).String(), digest.FromBytes(dt).String(), nil, true, nil
+	digestString := digest.FromBytes(dt).String()
+	return "session:" + ls.src.Name + ":" + digestString, digestString, nil, true, nil
 }
 
 func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {

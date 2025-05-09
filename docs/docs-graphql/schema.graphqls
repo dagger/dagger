@@ -2491,12 +2491,18 @@ type Host {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """If true, the directory will always be reloaded from the host."""
+    noCache: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""
   file(
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
+
+    """If true, the file will always be reloaded from the host."""
+    noCache: Boolean = false
   ): File!
 
   """A unique identifier for this Host."""

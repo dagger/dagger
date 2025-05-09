@@ -16,8 +16,11 @@ defmodule Dagger.Host do
   @doc """
   Accesses a directory on the host.
   """
-  @spec directory(t(), String.t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) ::
-          Dagger.Directory.t()
+  @spec directory(t(), String.t(), [
+          {:exclude, [String.t()]},
+          {:include, [String.t()]},
+          {:no_cache, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = host, path, optional_args \\ []) do
     query_builder =
       host.query_builder
@@ -25,6 +28,7 @@ defmodule Dagger.Host do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -35,10 +39,13 @@ defmodule Dagger.Host do
   @doc """
   Accesses a file on the host.
   """
-  @spec file(t(), String.t()) :: Dagger.File.t()
-  def file(%__MODULE__{} = host, path) do
+  @spec file(t(), String.t(), [{:no_cache, boolean() | nil}]) :: Dagger.File.t()
+  def file(%__MODULE__{} = host, path, optional_args \\ []) do
     query_builder =
-      host.query_builder |> QB.select("file") |> QB.put_arg("path", path)
+      host.query_builder
+      |> QB.select("file")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
 
     %Dagger.File{
       query_builder: query_builder,
