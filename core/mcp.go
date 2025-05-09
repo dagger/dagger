@@ -46,7 +46,7 @@ type LLMTool struct {
 type MCP struct {
 	env *Env
 	// Only show these functions, if non-empty
-	selectedTools map[string]bool
+	selectedMethods map[string]bool
 	// The last value returned by a function.
 	lastResult dagql.Typed
 	// Indicates that the model has returned
@@ -55,8 +55,8 @@ type MCP struct {
 
 func newMCP(env *Env) *MCP {
 	return &MCP{
-		env:           env,
-		selectedTools: map[string]bool{},
+		env:             env,
+		selectedMethods: map[string]bool{},
 	}
 }
 
@@ -70,7 +70,7 @@ func (m *MCP) DefaultSystemPrompt() string {
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
-	cp.selectedTools = cloneMap(cp.selectedTools)
+	cp.selectedMethods = cloneMap(cp.selectedMethods)
 	cp.returned = false
 	return &cp
 }
@@ -397,24 +397,24 @@ func (m *MCP) call(ctx context.Context,
 	if m.env.Root() != nil && selfType == schema.Query.Name {
 		target = m.env.Root()
 	} else {
-		self, ok := argsMap[selfType]
+		self, ok := argsMap["self"]
 		if !ok {
 			// default to the newest object of this type
 			self = fmt.Sprintf("%s#%d", selfType, m.env.typeCounts[selfType])
 		}
 		recv, ok := self.(string)
 		if !ok {
-			return "", fmt.Errorf("expected %q to be a string - got %#v", selfType, recv)
+			return "", fmt.Errorf("expected 'self' to be a string - got %#v", self)
 		}
 		// don't pass 'self' along to future arg validation
-		delete(argsMap, selfType)
+		delete(argsMap, "self")
 		var err error
 		target, err = m.GetObject(recv, selfType)
 		if err != nil {
 			return "", err
 		}
 		if target.ObjectType().TypeName() != selfType {
-			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
+			return "", fmt.Errorf("expected %q to be a %q - got %q", recv, selfType, target.ObjectType().TypeName())
 		}
 	}
 	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, argsMap, toolProps)
@@ -738,7 +738,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 }
 
 //nolint:gocyclo
-func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMTool, error) {
+func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
 
 	builtins := []LLMTool{
@@ -865,122 +865,124 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 	})
 
 	builtins = append(builtins, LLMTool{
-		Name:        "list_available_tools",
-		Description: "List the tools that can be selected, which change as you encounter new types of objects.",
+		Name:        "list_available_methods",
+		Description: "List the methods that can be selected, which change as you encounter new types of objects.",
 		Schema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
-			"required":   []string{},
 		},
-		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
+		Call: func(ctx context.Context, _ any) (any, error) {
 			type toolDesc struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
-				Returns     string `json:"returns,omitempty"`
+				Returns     string `json:"returns"`
 			}
-			var tools []toolDesc
-			for _, tool := range allTools {
-				if m.selectedTools[tool.Name] {
+			var methods []toolDesc
+			for _, method := range allMethods {
+				if m.selectedMethods[method.Name] {
 					// already have it
 					continue
 				}
 				var returns string
-				if tool.Returns != nil {
-					returns = tool.Returns.String()
+				if method.Returns != nil {
+					returns = method.Returns.String()
 				}
-				tools = append(tools, toolDesc{
-					Name:        tool.Name,
-					Description: tool.Description,
+				methods = append(methods, toolDesc{
+					Name:        method.Name,
+					Description: method.Description,
 					Returns:     returns,
 				})
 			}
-			sort.Slice(tools, func(i, j int) bool {
-				return tools[i].Name < tools[j].Name
+			sort.Slice(methods, func(i, j int) bool {
+				return methods[i].Name < methods[j].Name
 			})
-			return toolStructuredResponse(tools)
-		}),
+			return toolStructuredResponse(methods)
+		},
 	})
 
-	if len(allTools) > 0 {
+	if len(allMethods) > 0 {
 		builtins = append(builtins, LLMTool{
-			Name:        "select_tools",
-			Description: `Select tools for interacting with the available objects.`,
+			Name:        "select_methods",
+			Description: "Select methods for interacting with the available objects.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"tools": map[string]any{
+					"methods": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "The tools to select.",
+						"description": "The methods to select.",
 					},
 				},
-				"required": []string{"tools"},
+				"required":             []string{"methods"},
+				"additionalProperties": false,
 			},
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
-				Tools []string `json:"tools"`
+				Methods []string
 			}) (any, error) {
-				toolCounts := make(map[string]int)
-				for _, tool := range args.Tools {
-					toolCounts[tool]++
+				methodCounts := make(map[string]int)
+				for _, tool := range args.Methods {
+					methodCounts[tool]++
 				}
 				// perform a sanity check; some LLMs will do silly things like request
 				// the same tool 3 times when told to call it 3 times
-				for tool, count := range toolCounts {
+				for tool, count := range methodCounts {
 					if count > 1 {
 						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
 					}
 				}
-				var selectedTools []LLMTool
-				var unknownTools []string
-				for toolName := range toolCounts {
-					// NOTE: builtins can _also_ be selected, for maximal compatibility.
-					// models/clients that only support static tools can discover updated
-					// schemas this way.
-					tool, found := allTools[toolName]
+				var selectedMethods []LLMTool
+				var unknownMethods []string
+				for methodName := range methodCounts {
+					method, found := allMethods[methodName]
 					if found {
-						m.selectedTools[toolName] = true
-						selectedTools = append(selectedTools, tool)
+						m.selectedMethods[methodName] = true
+						selectedMethods = append(selectedMethods, method)
 					} else {
-						unknownTools = append(unknownTools, toolName)
+						unknownMethods = append(unknownMethods, methodName)
 					}
 				}
-				sort.Slice(selectedTools, func(i, j int) bool {
-					return selectedTools[i].Name < selectedTools[j].Name
+				sort.Slice(selectedMethods, func(i, j int) bool {
+					return selectedMethods[i].Name < selectedMethods[j].Name
 				})
 				res := map[string]any{
-					"added_tools": selectedTools,
+					"added_methods": selectedMethods,
 				}
-				if len(unknownTools) > 0 {
-					res["unknown_tools"] = unknownTools
+				if len(unknownMethods) > 0 {
+					res["unknown_methods"] = unknownMethods
 				}
 				return toolStructuredResponse(res)
 			}),
 		})
 
 		builtins = append(builtins, LLMTool{
-			Name:        "call_tool",
-			Description: `Call a tool with the given parameters. Tools must be selected before calling them. Parameters must be specified as the params field, not inline with the tool field.`,
+			Name:        "call_method",
+			Description: "Call a method on an object. Methods must be selected before calling them. Self represents the object to call the method on, and params specify any additional parameters to pass.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"tool": map[string]any{
+					"method": map[string]any{
 						"type":        "string",
-						"description": "The name of the tool to call.",
+						"description": "The name of the method to call.",
 					},
-					"params": map[string]any{
+					"self": map[string]any{
+						"type":        "string",
+						"description": "The object to call the method on.",
+					},
+					"args": map[string]any{
 						"type":                 "object",
-						"description":          "The parameters to pass to the tool.",
+						"description":          "The arguments to pass to the method.",
 						"additionalProperties": true,
 					},
 				},
-				"required":             []string{"tool", "params"},
+				"required":             []string{"method", "self"},
 				"strict":               true,
 				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var call struct {
-					Tool   string         `json:"tool"`
-					Params map[string]any `json:"params"`
+					Method string         `json:"method"`
+					Self   string         `json:"self"`
+					Args   map[string]any `json:"args"`
 				}
 				pl, err := json.Marshal(argsAny)
 				if err != nil {
@@ -989,18 +991,20 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				if err := json.Unmarshal(pl, &call); err != nil {
 					return nil, err
 				}
-				if !m.selectedTools[call.Tool] {
-					return nil, fmt.Errorf("tool not selected: %q", call.Tool)
-				}
-				var tool LLMTool
-				tool, found := allTools[call.Tool]
+				var method LLMTool
+				method, found := allMethods[call.Method]
 				if !found {
-					return nil, fmt.Errorf("tool not found: %q", call.Tool)
+					return nil, fmt.Errorf("method not defined: %q; use list_available_methods first", call.Method)
 				}
-				if call.Params == nil {
-					call.Params = make(map[string]any)
+				if !m.selectedMethods[call.Method] {
+					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
 				}
-				return tool.Call(ctx, call.Params)
+				if call.Args == nil {
+					call.Args = make(map[string]any)
+				}
+				// Add self parameter to the method call
+				call.Args["self"] = call.Self
+				return method.Call(ctx, call.Args)
 			},
 		})
 	}
@@ -1203,17 +1207,6 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *
 	}
 	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
-	if typeName != schema.Query.Name {
-		schema := map[string]any{
-			"type":        "string",
-			"description": fmt.Sprintf("(%s ID) The %s to operate against", typeName, typeName),
-		}
-		properties[typeName] = schema
-
-		// mark this required, as a hint. lots of models forget to pass it, so we
-		// tolerate that too, but our schema should suggest the right mental model.
-		required = append(required, typeName)
-	}
 	for _, arg := range field.Arguments {
 		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
 		if err != nil {
