@@ -296,7 +296,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			// references a banned type
 			continue
 		}
-		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeDef.Name, field)
+		toolSchema, err := m.fieldArgsToJSONSchema(schema, field)
 		if err != nil {
 			return fmt.Errorf("field %q: %w", field.Name, err)
 		}
@@ -1200,7 +1200,7 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	), nil
 }
 
-func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeName string, field *ast.FieldDefinition) (map[string]any, error) {
+func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
 	jsonSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
