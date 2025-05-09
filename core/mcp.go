@@ -484,7 +484,7 @@ func (m *MCP) selectionToToolResult(
 	m.lastResult = val
 
 	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-		// Handle object returns by switching to them.
+		// Handle object returns
 		return m.newState(obj)
 	}
 
@@ -835,7 +835,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"properties": map[string]any{
 				"type": map[string]any{
 					"type":        "string",
-					"description": "List objects of a particular type.",
+					"description": "If specified, list objects of a particular type.",
 				},
 			},
 		},
@@ -868,10 +868,18 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		Name:        "list_available_methods",
 		Description: "List the methods that can be selected, which change as you encounter new types of objects.",
 		Schema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"type": map[string]any{
+					"type":        "string",
+					"description": "If specified, only list methods of a particular type.",
+				},
+			},
+			"required": []string{},
 		},
-		Call: func(ctx context.Context, _ any) (any, error) {
+		Call: ToolFunc(srv, func(ctx context.Context, args struct {
+			Type string `default:""`
+		}) (any, error) {
 			type toolDesc struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
@@ -881,6 +889,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			for _, method := range allMethods {
 				if m.selectedMethods[method.Name] {
 					// already have it
+					continue
+				}
+				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+"_") {
 					continue
 				}
 				var returns string
@@ -897,7 +908,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				return methods[i].Name < methods[j].Name
 			})
 			return toolStructuredResponse(methods)
-		},
+		}),
 	})
 
 	if len(allMethods) > 0 {
@@ -966,7 +977,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					},
 					"self": map[string]any{
 						"type":        "string",
-						"description": "The object to call the method on.",
+						"description": "The object to call the method on. Not specified for top-level methods.",
 					},
 					"args": map[string]any{
 						"type":                 "object",
@@ -974,7 +985,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 						"additionalProperties": true,
 					},
 				},
-				"required":             []string{"method", "self"},
+				"required":             []string{"method"},
 				"strict":               true,
 				"additionalProperties": false,
 			},
@@ -1003,7 +1014,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					call.Args = make(map[string]any)
 				}
 				// Add self parameter to the method call
-				call.Args["self"] = call.Self
+				if call.Self != "" {
+					call.Args["self"] = call.Self
+				}
 				return method.Call(ctx, call.Args)
 			},
 		})
@@ -1316,7 +1329,15 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 const jsonSchemaIDAttr = "x-id-type"
 
 func (m *MCP) newState(target dagql.Object) (string, error) {
-	return m.env.Ingest(target, ""), nil
+	typeName := target.Type().Name()
+	_, known := m.env.typeCounts[typeName]
+	res := map[string]any{
+		"result": m.env.Ingest(target, ""),
+	}
+	if !known {
+		res["hint"] = fmt.Sprintf("New methods available for type %q.", typeName)
+	}
+	return toolStructuredResponse(res)
 }
 
 func toolStructuredResponse(val any) (string, error) {
