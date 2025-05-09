@@ -309,7 +309,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 		allTools[toolName] = LLMTool{
 			Name:        toolName,
 			Returns:     field.Type,
-			Description: fmt.Sprintf("%s\n\nReturn type: %s", field.Description, field.Type),
+			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args)
@@ -921,7 +921,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					"methods": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "The methods to select.",
+						"description": "The methods to select. Learn these from list_available_methods.",
 					},
 				},
 				"required":             []string{"methods"},
@@ -941,13 +941,28 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
 					}
 				}
-				var selectedMethods []LLMTool
+				type methodDef struct {
+					Name        string         `json:"name"`
+					Returns     string         `json:"returns,omitempty"`
+					Description string         `json:"description"`
+					Schema      map[string]any `json:"argsSchema"`
+				}
+				var selectedMethods []methodDef
 				var unknownMethods []string
 				for methodName := range methodCounts {
 					method, found := allMethods[methodName]
 					if found {
 						m.selectedMethods[methodName] = true
-						selectedMethods = append(selectedMethods, method)
+						var returns string
+						if method.Returns != nil {
+							returns = method.Returns.String()
+						}
+						selectedMethods = append(selectedMethods, methodDef{
+							Name:        method.Name,
+							Returns:     returns,
+							Description: method.Description,
+							Schema:      method.Schema,
+						})
 					} else {
 						unknownMethods = append(unknownMethods, methodName)
 					}
