@@ -81,7 +81,7 @@ func (t *Test) Telemetry(
 	// +optional
 	envFile *dagger.Secret,
 	// +optional
-	verbose bool,
+	testVerbose bool,
 ) (*dagger.Directory, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
@@ -100,7 +100,7 @@ func (t *Test) Telemetry(
 			count:         count,
 			update:        update,
 			envs:          envFile,
-			testVerbose:   verbose,
+			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
 	if err != nil {

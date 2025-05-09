@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -432,8 +433,25 @@ func (*Viztest) List(ctx context.Context, dir *dagger.Directory) (string, error)
 	return strings.Join(ents, "\n"), nil
 }
 
-func (*Viztest) GitReadme(ctx context.Context, remote string) (string, error) {
-	result, err := dag.Git(remote).Head().Tree().File("README.md").Contents(ctx)
+func (*Viztest) GitReadme(ctx context.Context, remote string, version string) (string, error) {
+	result, err := dag.Git(remote).Tag(version).Tree().File("README.md").Contents(ctx)
+	result, _, _ = strings.Cut(result, "\n")
+	return result, err
+}
+
+func (*Viztest) HTTPReadme(ctx context.Context, remote string, version string) (string, error) {
+	p, err := url.Parse(remote)
+	if err != nil {
+		return "", err
+	}
+	if p.Host != "github.com" {
+		return "", fmt.Errorf("expected github.com url, got %q", p.Host)
+	}
+	repo := strings.Trim(p.Path, "/")
+	repo = strings.TrimSuffix(repo, ".git")
+
+	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/README.md", repo, version)
+	result, err := dag.HTTP(url).Contents(ctx)
 	result, _, _ = strings.Cut(result, "\n")
 	return result, err
 }
