@@ -979,7 +979,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 						"additionalProperties": true,
 					},
 				},
-				"required": []string{"tool", "params"},
+				"required":             []string{"tool", "params"},
+				"strict":               true,
+				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var call struct {
