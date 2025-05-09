@@ -527,16 +527,17 @@ func (m *MCP) toolCallToSelection(
 			fieldDef.Name,
 			targetObjType.TypeName())
 	}
-	var unknownArgs error
+	remainingArgs := make(map[string]any)
+	maps.Copy(remainingArgs, argsMap)
 	for _, arg := range field.Args.Inputs(srv.View) {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
 		}
+		delete(remainingArgs, arg.Name)
 		argSchema, ok := propsSchema[arg.Name].(map[string]any)
 		if !ok {
-			unknownArgs = errors.Join(unknownArgs, fmt.Errorf("unknown arg: %q", arg.Name))
-			continue
+			return sel, fmt.Errorf("arg %q: missing from schema", arg.Name)
 		}
 		if idType, ok := argSchema[jsonSchemaIDAttr].(string); ok {
 			idStr, ok := val.(string)
@@ -566,8 +567,8 @@ func (m *MCP) toolCallToSelection(
 			Value: input,
 		})
 	}
-	if unknownArgs != nil {
-		return sel, unknownArgs
+	if len(remainingArgs) > 0 {
+		return sel, fmt.Errorf("unknown args: %v", remainingArgs)
 	}
 	return sel, nil
 }
