@@ -37,6 +37,14 @@ type goSDK struct {
 	rawConfig map[string]any
 }
 
+func (sdk *goSDK) HasModuleTypeDefs() bool {
+	return false
+}
+
+func (sdk *goSDK) TypeDefs(ctx context.Context, deps *core.ModDeps, d dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
+	return sdk.Runtime(ctx, deps, d)
+}
+
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
