@@ -994,6 +994,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				if err := json.Unmarshal(pl, &call); err != nil {
 					return nil, err
 				}
+				if !m.selectedTools[call.Tool] {
+					return nil, fmt.Errorf("tool not selected: %q", call.Tool)
+				}
 				var tool LLMTool
 				tool, found := allTools[call.Tool]
 				if !found {
