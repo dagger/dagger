@@ -826,7 +826,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 
 	builtins = append(builtins, LLMTool{
 		Name:        "list_objects",
-		Description: "List all available objects.",
+		Description: "List available objects.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
