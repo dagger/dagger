@@ -1719,6 +1719,11 @@ func (s *moduleSourceSchema) runCodegen(
 	srcInst dagql.Instance[*core.ModuleSource],
 	genDirInst dagql.Instance[*core.Directory],
 ) (dagql.Instance[*core.Directory], error) {
+	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
+	if !ok {
+		return genDirInst, ErrSDKCodegenNotImplemented{SDK: srcInst.Self.SDK.Source}
+	}
+
 	// load the deps as actual Modules
 	deps, err := s.loadDependencyModules(ctx, srcInst.Self)
 	if err != nil {
@@ -1733,11 +1738,6 @@ func (s *moduleSourceSchema) runCodegen(
 		return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
 	srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
-
-	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
-	if !ok {
-		return genDirInst, ErrSDKCodegenNotImplemented{SDK: srcInst.Self.SDK.Source}
-	}
 
 	// run codegen to get the generated context directory
 	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInstContentHashed)
