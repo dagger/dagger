@@ -1045,13 +1045,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
-		if builtin.Name == "think" {
-			// has its own custom telemetry
-			continue
-		}
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
 			attrs := []attribute.KeyValue{
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+			}
+			if builtin.Name == "think" || builtin.Name == "call_method" {
+				attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 			}
 			// do an awkward dance to make sure we still show a span even if we fail
 			// to construct parts of it (e.g. due to invalid input)
