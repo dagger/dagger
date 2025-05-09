@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'helm: Enable using persistent volume claims in DaemonSet'
+time: 2025-04-11T11:41:48.535164+01:00
+custom:
+    Author: vmaffet
+    PR: "10138"
