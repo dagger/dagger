@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 	"unicode"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -85,6 +86,10 @@ type ClientMetadata struct {
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// (Optional) Clamp produced timestamps. For more information, see the SOURCE_DATE_EPOCH specification.
+	// Value: int (number of seconds since Unix epoch)
+	SourceDateEpoch *time.Time `json:"source_date_epoch"`
 }
 
 type clientMetadataCtxKey struct{}

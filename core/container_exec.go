@@ -99,6 +99,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
+	execMD.SourceDateEpoch = clientMetadata.SourceDateEpoch
 
 	if opts.NoInit {
 		execMD.NoInit = true
