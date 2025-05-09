@@ -964,7 +964,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 
 		builtins = append(builtins, LLMTool{
 			Name:        "call_tool",
-			Description: `Call a tool with the given parameters. Tools must be selected before calling them.`,
+			Description: `Call a tool with the given parameters. Tools must be selected before calling them. Parameters must be specified as the params field, not inline with the tool field.`,
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -974,7 +974,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 					},
 					"params": map[string]any{
 						"type":                 "object",
-						"description":          "The properties to pass to the tool.",
+						"description":          "The parameters to pass to the tool.",
 						"additionalProperties": true,
 					},
 				},
