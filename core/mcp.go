@@ -1059,28 +1059,39 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 }
 
 func (m *MCP) userProvidedValues() []LLMTool {
+	inputs := m.env.Inputs()
+	if len(inputs) == 0 {
+		return nil
+	}
 	desc := "The following values have been provided by the user:"
-	var anyProvided bool
-	for _, input := range m.env.Inputs() {
-		anyProvided = true
-		desc += "\n\n---"
+	type valueDesc struct {
+		Description string `json:"description"`
+		Value       any    `json:"value"`
+	}
+	var values []valueDesc
+	for _, input := range inputs {
 		description := input.Description
 		if description == "" {
 			description = input.Key
 		}
-		desc += "\n\n" + description + "\n\n"
 		if obj, isObj := input.AsObject(); isObj {
-			desc += m.env.Ingest(obj, input.Description)
-		} else if payload, err := json.Marshal(input.Value); err == nil {
-			desc += string(payload)
+			values = append(values, valueDesc{
+				Value:       m.env.Ingest(obj, input.Description),
+				Description: description,
+			})
 		} else {
-			desc += "MARSHAL ERROR: " + err.Error()
+			values = append(values, valueDesc{
+				Value:       input.Value,
+				Description: description,
+			})
 		}
 	}
-	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
-	if !anyProvided {
+	formatted, err := toolStructuredResponse(values)
+	if err != nil {
 		return nil
 	}
+	desc += "\n\n" + formatted
+	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
 	return []LLMTool{
 		{
 			Name:        "user_provided_values",
