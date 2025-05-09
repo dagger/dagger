@@ -15,7 +15,15 @@ Dagger Cloud requires a GitHub or Google account for identity verification. If y
 Dagger Cloud requires Dagger v0.11 or higher.
 :::
 
-## Traces
+## Organizations
+
+A Dagger Cloud "organization" refers to a group of member accounts linked to a single team.
+
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+
+:::important
+You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role.
+:::
 
 ### Create a Dagger Cloud organization
 
@@ -35,7 +43,7 @@ Dagger Cloud requires Dagger v0.11 or higher.
 
     1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
 
-1. Click `Go to dashboard`. The next step walks you through how to send telemetry to Dagger Cloud.
+## Traces
 
 ### Connect to Dagger Cloud
 
@@ -72,7 +80,7 @@ export DAGGER_CLOUD_TOKEN={your token}
 
 To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
 
-To find your token, navigate to the organization settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
+To find your token, navigate to the settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
 
     ![Get token](/img/current_docs/configuration/get-token.png)
 
@@ -200,16 +208,71 @@ Dagger Cloud automatically detects if the traces produced by your workflows orig
 a CI system and a public repository. When both conditions are met, Dagger Cloud allows
 public access to these traces without requiring an invitation to the organization.
 
-To modify this default setting, navigate to the organization settings page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
+To modify this default setting, navigate to the organization page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
 
 ![public traces](/img/current_docs/api/public-traces.png)
 
-## Organizations
+## Modules
 
-A member account grants a person access to log in to a Dagger Cloud organization to diagnose workflow failures and collaborate on changes. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+Dagger Cloud lets you see all your organization's modules in one place, with metadata like engine versions, descriptions, and linked repositories. Module information and activity is automatically synced from GitHub.
 
-:::important
-You must hold the `Admin` role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
+### Add modules
+
+Dagger Cloud scans your specified repositories for Dagger modules, showing them automatically in Dagger Cloud.
+
+:::info
+You must be signed in to Dagger Cloud with GitHub.
+:::
+
+To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Git Sources` sub-menu. Click `Install the GitHub Application` to add a GitHub account or organization.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-target.png)
+
+You will be directed to install the Dagger Cloud GitHub application and select the GitHub accounts and repositories to add.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-install-app.png)
+
+Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Enable module scanning` to have Dagger Cloud begin scanning for Dagger modules. You can enable module scanning for multiple GitHub organizations. Each one can be enabled on a single Dagger organization.
+
+![Module repository setup](/img/current_docs/configuration/cloud-modules-map.png)
+
+The `Scan Results` section at the bottom of the page maintains a record of scans and their status.
+
+![Module scans](/img/current_docs/configuration/cloud-modules-scans.png)
+
+### Manage and inspect modules
+
+Once your modules have been added, you can start using Dagger Cloud to manage them.
+
+Access the modules dashboard from the `Modules` menu item in the top navigation bar to see a list of available modules.
+
+![Module list](/img/current_docs/configuration/cloud-modules-list.png)
+
+You can view your entire list of modules by selecting the `All Modules` tab. If you wish to curate and organize this list, you can create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
+
+![Module filter](/img/current_docs/configuration/cloud-modules-filter.png)
+
+Select a module to see detailed information on its activity and API.
+
+- API: View detailed API documentation for each module, including its installation command, functions, arguments and return values
+
+![Module API](/img/current_docs/configuration/cloud-modules-api.png)
+
+- Activity: See a list of commits, sorted by date
+
+![Module activity](/img/current_docs/configuration/cloud-modules-activity.png)
+
+- Dependencies and dependents: Trace dependencies and dependents of your module
+
+![Module dependencies](/img/current_docs/configuration/cloud-modules-deps.png)
+
+- Traces: List traces triggered by a module
+
+![Module traces](/img/current_docs/configuration/cloud-modules-traces.png)
+
+
+:::tip
+This information is available for all versions of the module; use the version selector in the top bar to switch between versions.
 :::
 
 ## Roles and permissions
@@ -227,6 +290,6 @@ You cannot change a member's role at this time. Please contact Dagger via the su
 
 ## Cache pruning
 
-Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization settings page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
+Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
 
 ![Get token](/img/current_docs/configuration/prune-cache.png)

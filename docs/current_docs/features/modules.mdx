@@ -42,6 +42,21 @@ async def ci(self, source: dagger.Directory) -> str:
     return await dag.trivy().scan_container(dag.container().from_(ref))
 ```
 
+## Dagger Cloud
+
+Modules integrate seamlessly with Dagger Cloud, which offers a collaborative environment to manage modules, visualize dependencies, and trace executions.
+
+- A dedicated "Modules" tab in Dagger Cloud: See all your organization’s modules in one place, with metadata like engine versions, descriptions, and linked repositories, automatically pulled and synced from GitHub.
+- Views for better organization: Create filtered views of modules by team, service, or domain.
+- Documentation: See API documentation for each module and version, directly in the Dagger Cloud dashboard.
+- Version-aware navigation: View active branches and tags, ordered by recency.
+- Supply chain visibility: See exactly which modules your code depends on, and which depend on yours. This upstream/downstream awareness helps eliminate breakage and fosters stronger collaboration between teams.
+- Trace-to-module linkage: Trace failed runs or AI workflows back to the exact module versions that caused them.
+
+![Module list](/img/current_docs/configuration/cloud-modules-list.png)
+
+## The Daggerverse
+
 To make it easier to search and consume Dagger modules, the [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules. These might be Dagger modules developed by your team, your organization or the broader Dagger community. By importing and reusing these Dagger modules in your workflows and across your teams, you can significantly speed up development.
 
 ## Learn more
@@ -50,4 +65,5 @@ To make it easier to search and consume Dagger modules, the [Daggerverse](https:
 - [Call a remote module](../api/remote-modules.mdx)
 - [Understand module structure](../api/module-structure.mdx)
 - [Publish a module](../api/daggerverse.mdx)
+- [Use modules in Dagger Cloud](../configuration/cloud.mdx#modules)
 - [Find modules in the Daggerverse](https://daggerverse.dev)
