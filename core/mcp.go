@@ -1040,7 +1040,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				)
 				return nil
 			}()
-			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,
+			ctx, span := Tracer(ctx).Start(ctx,
+				fmt.Sprintf("%s %v", builtin.Name, args),
 				telemetry.Reveal(),
 				trace.WithAttributes(attrs...),
 			)
