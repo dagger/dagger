@@ -157,7 +157,9 @@ func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error
 		if !ok {
 			return fmt.Errorf("type %q not found", typeName)
 		}
-		m.typeTools(allTools, srv, schema, typeDef)
+		if err := m.typeTools(allTools, srv, schema, typeDef); err != nil {
+			return fmt.Errorf("load %q tools: %w", typeName, err)
+		}
 	}
 	return nil
 }
