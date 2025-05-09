@@ -956,7 +956,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 
 		builtins = append(builtins, LLMTool{
 			Name:        "call_method",
-			Description: "Call a method on an object. Methods must be selected before calling them. Self represents the object to call the method on, and params specify any additional parameters to pass.",
+			Description: "Call a method on an object. Methods must be selected with `select_methods` before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
