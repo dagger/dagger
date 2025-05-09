@@ -410,6 +410,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Description  string    `default:""`
 	DefaultValue core.JSON `default:""`
 	DefaultPath  string    `default:""`
+	DefaultGit   string    `default:""`
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
@@ -446,8 +447,11 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	if args.DefaultPath != "" {
 		td = td.WithOptional(true)
 	}
+	if args.DefaultGit != "" {
+		td = td.WithOptional(true)
+	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultGit, args.Ignore, sourceMap), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
