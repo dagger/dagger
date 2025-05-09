@@ -374,7 +374,7 @@ func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, research
 			researchEnv.
 				WithStringOutput("prompt", "Your newly generated prompt."),
 		).
-		WithPrompt("Generate a new system prompt incorporating your suggestions. Focus on brevity - remember that each word has a cost, both monetary and in context waste.").
+		WithPrompt("Generate a new system prompt incorporating your suggestions. Make incremental improvements - only completely rewrite the prompt as a last resort.").
 		Env().
 		Output("prompt").
 		AsString(ctx)
