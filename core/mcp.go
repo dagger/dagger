@@ -914,7 +914,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	if len(allMethods) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name:        "select_methods",
-			Description: "Select methods for interacting with the available objects.",
+			Description: "Select methods for interacting with the available objects. Never guess - use list_available_methods.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
