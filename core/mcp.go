@@ -109,26 +109,7 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	if err := m.allTypeTools(srv, allTools); err != nil {
 		return nil, err
 	}
-	builtins, err := m.Builtins(srv, allTools)
-	if err != nil {
-		return nil, err
-	}
-	var tools []LLMTool
-	for _, tool := range allTools {
-		if m.selectedTools[tool.Name] {
-			tools = append(tools, tool)
-		}
-	}
-	// ensure consistent tool order
-	sort.Slice(tools, func(i, j int) bool {
-		return tools[i].Name < tools[j].Name
-	})
-	for _, tool := range builtins {
-		// make builtins selectable too
-		allTools[tool.Name] = tool
-	}
-	// builtins are added last so they carry more weight
-	return append(tools, builtins...), nil
+	return m.Builtins(srv, allTools)
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
