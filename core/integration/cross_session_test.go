@@ -90,7 +90,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 	func (*Test) Fn(
 		// +optional
-		i int, 
+		i int,
 		// +optional
 		s string,
 	) string {
