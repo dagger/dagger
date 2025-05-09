@@ -292,6 +292,14 @@ func (m *JavaSdk) generateCode(
 		Directory(ModSourceDirPath), nil
 }
 
+func (m *JavaSdk) ModuleTypeDefs(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Container, error) {
+	return m.ModuleRuntime(ctx, modSource, introspectionJSON)
+}
+
 func (m *JavaSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
