@@ -16,8 +16,12 @@ class Host extends Client\AbstractObject implements Client\IdAble
     /**
      * Accesses a directory on the host.
      */
-    public function directory(string $path, ?array $exclude = null, ?array $include = null): Directory
-    {
+    public function directory(
+        string $path,
+        ?array $exclude = null,
+        ?array $include = null,
+        ?bool $noCache = false,
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $exclude) {
@@ -26,18 +30,21 @@ class Host extends Client\AbstractObject implements Client\IdAble
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $noCache) {
+        $innerQueryBuilder->setArgument('noCache', $noCache);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Accesses a file on the host.
      */
-    public function file(string $path, ?bool $cache = true): File
+    public function file(string $path, ?bool $noCache = false): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $cache) {
-        $innerQueryBuilder->setArgument('cache', $cache);
+        if (null !== $noCache) {
+        $innerQueryBuilder->setArgument('noCache', $noCache);
         }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

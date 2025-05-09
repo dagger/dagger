@@ -5732,7 +5732,7 @@ type HostDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
-	// If false, the directory will always be reloaded from the host.
+	// If true, the directory will always be reloaded from the host.
 	NoCache bool
 }
 
@@ -5762,7 +5762,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 
 // HostFileOpts contains options for Host.File
 type HostFileOpts struct {
-	// If false, the file will always be reloaded from the host.
+	// If true, the file will always be reloaded from the host.
 	NoCache bool
 }
 

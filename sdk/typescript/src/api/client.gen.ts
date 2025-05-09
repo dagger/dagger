@@ -984,13 +984,18 @@ export type HostDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * If true, the directory will always be reloaded from the host.
+   */
+  noCache?: boolean
 }
 
 export type HostFileOpts = {
   /**
-   * If false, the file will always be reloaded from the host.
+   * If true, the file will always be reloaded from the host.
    */
-  cache: boolean
+  noCache?: boolean
 }
 
 export type HostServiceOpts = {
@@ -5719,6 +5724,7 @@ export class Host extends BaseClient {
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.noCache If true, the directory will always be reloaded from the host.
    */
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -5728,7 +5734,7 @@ export class Host extends BaseClient {
   /**
    * Accesses a file on the host.
    * @param path Location of the file to retrieve (e.g., "README.md").
-   * @param opts.cache If false, the file will always be reloaded from the host.
+   * @param opts.noCache If true, the file will always be reloaded from the host.
    */
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
