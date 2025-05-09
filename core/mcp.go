@@ -889,25 +889,47 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 		}),
 	})
 
+	builtins = append(builtins, LLMTool{
+		Name:        "list_available_tools",
+		Description: "List the tools that can be selected, which change as you encounter new types of objects.",
+		Schema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+			"required":   []string{},
+		},
+		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
+			type toolDesc struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Returns     string `json:"returns,omitempty"`
+			}
+			var tools []toolDesc
+			for _, tool := range allTools {
+				if m.selectedTools[tool.Name] {
+					// already have it
+					continue
+				}
+				var returns string
+				if tool.Returns != nil {
+					returns = tool.Returns.String()
+				}
+				tools = append(tools, toolDesc{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Returns:     returns,
+				})
+			}
+			sort.Slice(tools, func(i, j int) bool {
+				return tools[i].Name < tools[j].Name
+			})
+			return toolStructuredResponse(tools)
+		}),
+	})
+
 	if len(allTools) > 0 {
 		builtins = append(builtins, LLMTool{
-			Name: "select_tools",
-			Description: (func() string {
-				desc := `Select tools for interacting with the available objects.`
-				desc += "\n\nAvailable tools:"
-				var tools []LLMTool
-				for _, tool := range allTools {
-					if m.selectedTools[tool.Name] {
-						// already have it
-						continue
-					}
-					tools = append(tools, tool)
-				}
-				for _, tool := range tools {
-					desc += "\n- " + tool.Name + " (returns " + tool.Returns.String() + ")"
-				}
-				return desc
-			})(),
+			Name:        "select_tools",
+			Description: `Select tools for interacting with the available objects.`,
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -960,80 +982,48 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 			}),
 		})
 
-		if len(m.selectedTools) > 0 {
-			builtins = append(builtins, LLMTool{
-				Name: "chain_tools",
-				Description: `Invoke multiple tool calls sequentially, passing the result of one call as the receiver of the next
-
-NOTE: you must select tools before chaining them`,
-				Schema: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"calls": map[string]any{
-							"type": "array",
-							"items": map[string]any{
-								"type": "object",
-								"properties": map[string]any{
-									"tool": map[string]any{
-										"type":        "string",
-										"description": "The name of the tool to call.",
-										"enum":        slices.Sorted(maps.Keys(m.selectedTools)),
-									},
-									"params": map[string]any{
-										"type":                 "object",
-										"description":          "The properties to pass to the tool.",
-										"additionalProperties": true,
-									},
-								},
-								"required": []string{"tool", "params"},
-							},
-							"description": "The sequence of tools to call.",
-						},
+		builtins = append(builtins, LLMTool{
+			Name:        "call_tool",
+			Description: `Call a tool with the given parameters. Tools must be selected before calling them.`,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tool": map[string]any{
+						"type":        "string",
+						"description": "The name of the tool to call.",
+						"enum":        slices.Sorted(maps.Keys(m.selectedTools)),
 					},
-					"required": []string{"calls"},
+					"params": map[string]any{
+						"type":                 "object",
+						"description":          "The properties to pass to the tool.",
+						"additionalProperties": true,
+					},
 				},
-				Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-					var args struct {
-						Calls []ChainedCall `json:"calls"`
-					}
-					pl, err := json.Marshal(argsAny)
-					if err != nil {
-						return nil, err
-					}
-					if err := json.Unmarshal(pl, &args); err != nil {
-						return nil, err
-					}
-					if err := m.validateChain(args.Calls, allTools, schema); err != nil {
-						return nil, err
-					}
-					var res any
-					for i, call := range args.Calls {
-						var tool LLMTool
-						tool, found := allTools[call.Tool]
-						if !found {
-							return nil, fmt.Errorf("tool not found: %q", call.Tool)
-						}
-						if call.Params == nil {
-							call.Params = make(map[string]any)
-						}
-						args := cloneMap(call.Params)
-						if i > 0 {
-							if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
-								lastType := obj.Type().Name()
-								// override, since the whole point is to chain from the previous
-								// value; any value here is surely mistaken or hallucinated
-								args[lastType] = m.env.Ingest(obj, "")
-							}
-						}
-						res, err = tool.Call(ctx, args)
-						if err != nil {
-							return nil, fmt.Errorf("call %q: %w", call.Tool, err)
-						}
-					}
-					return res, nil
-				},
-			})
-		}
+				"required": []string{"tool", "params"},
+			},
+			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+				var call struct {
+					Tool   string         `json:"tool"`
+					Params map[string]any `json:"params"`
+				}
+				pl, err := json.Marshal(argsAny)
+				if err != nil {
+					return nil, err
+				}
+				if err := json.Unmarshal(pl, &call); err != nil {
+					return nil, err
+				}
+				var tool LLMTool
+				tool, found := allTools[call.Tool]
+				if !found {
+					return nil, fmt.Errorf("tool not found: %q", call.Tool)
+				}
+				if call.Params == nil {
+					call.Params = make(map[string]any)
+				}
+				return tool.Call(ctx, call.Params)
+			},
+		})
 	}
 
 	if returnTool, ok := m.returnBuiltin(); ok {
@@ -1130,54 +1120,6 @@ func (m *MCP) userProvidedValues() []LLMTool {
 			},
 		},
 	}
-}
-
-type ChainedCall struct {
-	Tool   string         `json:"tool"`
-	Params map[string]any `json:"params"`
-}
-
-func (m *MCP) validateChain(calls []ChainedCall, allTools map[string]LLMTool, schema *ast.Schema) error {
-	if len(calls) == 0 {
-		return errors.New("no tools called")
-	}
-	var returnedType *ast.Type
-	var errs error
-	for i, call := range calls {
-		if call.Tool == "" {
-			errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool name cannot be empty", i))
-			continue
-		}
-		tool, found := allTools[call.Tool]
-		if !found {
-			errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown tool: %q", i, call.Tool))
-			continue
-		}
-		if !m.selectedTools[tool.Name] {
-			errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool %q is not selected", i, tool.Name))
-		}
-		if returnedType != nil {
-			if returnedType.Elem != nil {
-				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from array result", i, tool.Name))
-				continue
-			}
-			typeDef, found := schema.Types[returnedType.Name()]
-			if !found {
-				errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown type: %q", i, returnedType.Name()))
-				continue
-			}
-			if typeDef.Kind != ast.Object {
-				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from non-Object type: %q (%s)", i, tool.Name, returnedType.Name(), typeDef.Kind))
-			}
-			props := tool.Schema["properties"].(map[string]any)
-			if _, found := props[typeDef.Name]; !found {
-				errs = errors.Join(errs, fmt.Errorf("calls[%d]: tool %q does not chain from type %q", i, tool.Name, typeDef.Name))
-				continue
-			}
-		}
-		returnedType = tool.Returns
-	}
-	return errs
 }
 
 func (m *MCP) IsDone() bool {
