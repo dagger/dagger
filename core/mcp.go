@@ -641,15 +641,6 @@ func toolErrorMessage(err error) string {
 	return errResponse
 }
 
-func (m *MCP) allIDs(typeName string) []string {
-	total := m.env.typeCounts[typeName]
-	ids := make([]string, 0, total)
-	for i := total; i > 0; i-- {
-		ids = append(ids, fmt.Sprintf("%s#%d", typeName, i))
-	}
-	return ids
-}
-
 func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	if len(m.env.outputsByName) == 0 {
 		// no outputs desired
@@ -743,6 +734,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}, true
 }
 
+//nolint:gocyclo
 func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
 
