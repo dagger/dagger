@@ -111,11 +111,19 @@ func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*cor
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	return llm.Endpoint.Model, nil
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return "", err
+	}
+	return ep.Model, nil
 }
 
 func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	return string(llm.Endpoint.Provider), nil
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(ep.Provider), nil
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{}) (dagql.String, error) {
