@@ -847,8 +847,11 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
 		}) (any, error) {
-			desc := "Available objects:"
-			var objects []string
+			type objDesc struct {
+				ID          string `json:"id"`
+				Description string `json:"description"`
+			}
+			var objects []objDesc
 			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
 				if args.Type != "" && args.Type != typeName {
 					continue
@@ -856,17 +859,13 @@ func (m *MCP) Builtins(srv *dagql.Server, allTools map[string]LLMTool) ([]LLMToo
 				count := m.env.typeCounts[typeName]
 				for i := 1; i <= count; i++ {
 					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
-					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+					objects = append(objects, objDesc{
+						ID:          bnd.ID(),
+						Description: bnd.Description,
+					})
 				}
 			}
-			if len(objects) > 0 {
-				for _, input := range objects {
-					desc += fmt.Sprintf("\n- %s", input)
-				}
-			} else {
-				desc += "\n- No objects available."
-			}
-			return desc, nil
+			return toolStructuredResponse(objects)
 		}),
 	})
 
