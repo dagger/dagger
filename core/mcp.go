@@ -34,9 +34,8 @@ type LLMTool struct {
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
 	Schema map[string]any `json:"schema"`
-	// Return type, used to hint to the model in tool lists - not exposed through
-	// this field, since there's no such thing (I wish!)
-	Returns *ast.Type `json:"-"`
+	// GraphQL API field that this tool corresponds to
+	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
 	Call func(context.Context, any) (any, error) `json:"-"`
 }
@@ -308,7 +307,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 		}
 		allTools[toolName] = LLMTool{
 			Name:        toolName,
-			Returns:     field.Type,
+			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
@@ -890,18 +889,16 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+"_") {
 					continue
 				}
-				var returns string
-				if method.Returns != nil {
-					returns = method.Returns.String()
-				}
-				props := method.Schema["properties"].(map[string]any)
-				required, _ := method.Schema["required"].([]string)
 				args := map[string]string{}
-				for _, name := range required {
-					schema := props[name].(map[string]any)
-					args[name] = schema["type"].(string)
-					if idType, isID := schema[jsonSchemaIDAttr]; isID {
-						args[name] = idType.(string)
+				var returns string
+				if method.Field != nil {
+					returns = method.Field.Type.String()
+					for _, arg := range method.Field.Arguments {
+						if arg.DefaultValue != nil || !arg.Type.NonNull {
+							// optional
+							continue
+						}
+						args[arg.Name] = arg.Type.String()
 					}
 				}
 				methods = append(methods, toolDesc{
@@ -913,7 +910,18 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			sort.Slice(methods, func(i, j int) bool {
 				return methods[i].Name < methods[j].Name
 			})
-			return toolStructuredResponse(methods)
+			if len(methods) == 0 {
+				return "none", nil
+			}
+			var list []string
+			for _, method := range methods {
+				var args []string
+				for name, type_ := range method.RequiredArgs {
+					args = append(args, fmt.Sprintf("%s: %s", name, type_))
+				}
+				list = append(list, fmt.Sprintf("%s(%s) -> %s", method.Name, strings.Join(args, ", "), method.Returns))
+			}
+			return strings.Join(list, "\n"), nil
 		}),
 	})
 
@@ -925,9 +933,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"type": "object",
 				"properties": map[string]any{
 					"methods": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "The methods to select.",
+						"type": "array",
+						"items": map[string]any{
+							"type":        "string",
+							"description": "The name of the method to select, e.g. \"Potato_peel\".",
+						},
+						"description": "The method names to select.",
 					},
 				},
 				"required":             []string{"methods"},
@@ -960,8 +971,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					if found {
 						m.selectedMethods[methodName] = true
 						var returns string
-						if method.Returns != nil {
-							returns = method.Returns.String()
+						if method.Field != nil {
+							returns = method.Field.Type.String()
 						}
 						selectedMethods = append(selectedMethods, methodDef{
 							Name:        method.Name,
