@@ -881,9 +881,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			Type string `default:""`
 		}) (any, error) {
 			type toolDesc struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-				Returns     string `json:"returns"`
+				Name    string            `json:"name"`
+				Args    map[string]string `json:"args"`
+				Returns string            `json:"returns"`
 			}
 			var methods []toolDesc
 			for _, method := range allMethods {
@@ -898,10 +898,18 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if method.Returns != nil {
 					returns = method.Returns.String()
 				}
+				args := map[string]string{}
+				for name, schemaAny := range method.Schema["properties"].(map[string]any) {
+					schema := schemaAny.(map[string]any)
+					args[name] = schema["type"].(string)
+					if idType, isID := schema[jsonSchemaIDAttr]; isID {
+						args[name] = idType.(string)
+					}
+				}
 				methods = append(methods, toolDesc{
-					Name:        method.Name,
-					Description: method.Description,
-					Returns:     returns,
+					Name:    method.Name,
+					Args:    args,
+					Returns: returns,
 				})
 			}
 			sort.Slice(methods, func(i, j int) bool {
