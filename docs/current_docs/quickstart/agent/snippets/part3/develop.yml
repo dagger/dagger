@@ -1,0 +1,29 @@
+name: develop
+on:
+  issues:
+    types:
+      - labeled
+jobs:
+  develop:
+    if: github.event.label.name == 'develop'
+    name: develop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@8.0.0
+        with:
+          version: 0.18.6
+      - name: Develop
+        run: |
+          dagger call develop-issue \
+          --github-token env://GH_TOKEN \
+          --issue-id ${{ github.event.issue.number }} \
+          --repository https://github.com/${{ github.repository }}
+        env:
+          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
