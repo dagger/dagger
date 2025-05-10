@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
@@ -272,6 +273,10 @@ func (c *OpenAIClient) queryWithoutStreaming(
 func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLMToolCall, error) {
 	var toolCalls []LLMToolCall
 	for _, call := range calls {
+		if call.Function.Name == "" {
+			slog.Warn("skipping tool call with empty name", "toolCall", call)
+			continue
+		}
 		args := map[string]any{}
 		if call.Function.Arguments != "" {
 			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
