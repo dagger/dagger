@@ -272,9 +272,11 @@ func (c *OpenAIClient) queryWithoutStreaming(
 func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLMToolCall, error) {
 	var toolCalls []LLMToolCall
 	for _, call := range calls {
-		var args map[string]any
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+		args := map[string]any{}
+		if call.Function.Arguments != "" {
+			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+			}
 		}
 		toolCalls = append(toolCalls, LLMToolCall{
 			ID: call.ID,
