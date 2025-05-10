@@ -22,7 +22,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -740,39 +739,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
 
-	builtins := []LLMTool{
-		{
-			Name:        "think",
-			Description: `A tool for thinking through problems, brainstorming ideas, or planning without executing any actions`,
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"thought": map[string]any{
-						"type":        "string",
-						"description": "Your thoughts.",
-					},
-				},
-				"required": []string{"thought"},
-			},
-			Call: ToolFunc(srv, func(ctx context.Context, args struct {
-				Thought string
-			}) (_ any, rerr error) {
-				ctx, span := Tracer(ctx).Start(ctx, "think",
-					telemetry.Reveal(),
-					trace.WithAttributes(
-						attribute.String(telemetry.UIMessageAttr, "received"),
-						attribute.String(telemetry.UIActorEmojiAttr, "💭"),
-					),
-				)
-				defer telemetry.End(span, func() error { return rerr })
-				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-					log.String(telemetry.ContentTypeAttr, "text/markdown"))
-				defer stdio.Close()
-				fmt.Fprint(stdio.Stdout, args.Thought)
-				return "Finished thinking.", nil
-			}),
-		},
-	}
+	builtins := []LLMTool{}
 
 	if m.env.writable {
 		allTypes := map[string]dagql.Type{
