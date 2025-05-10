@@ -179,4 +179,12 @@ public class Helpers {
     }
     return str.replace("$", "$$").replace("&", "&amp;");
   }
+
+  static String argJavaDoc(String str) {
+    if (str == null || str.isBlank()) {
+      return "";
+    }
+    // return line is needed to that multiple params are ont on the same line
+    return escapeJavadoc(str) + "\n";
+  }
 }

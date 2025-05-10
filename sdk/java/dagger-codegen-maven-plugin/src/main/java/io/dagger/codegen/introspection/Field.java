@@ -3,9 +3,9 @@ package io.dagger.codegen.introspection;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTransient;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 public class Field {
-
   private String name;
   private String description;
 
@@ -22,6 +22,8 @@ public class Field {
   @JsonbTransient private List<InputObject> optionalArgs;
 
   private Type parentObject;
+
+  private List<Directive> directives;
 
   public String getName() {
     return name;
@@ -87,6 +89,38 @@ public class Field {
     return getArgs().stream().filter(arg -> arg.getType().isOptional()).count() > 0;
   }
 
+  public List<Directive> getDirectives() {
+    return directives;
+  }
+
+  public void setDirectives(List<Directive> directives) {
+    this.directives = directives;
+  }
+
+  public boolean isExperimental() {
+    return getDirectives().stream()
+        .anyMatch(directive -> directive.getName().equals("experimental"));
+  }
+
+  public String experimentalReason() {
+    try {
+      return getDirectives().stream()
+          .filter(directive -> directive.getName().equals("experimental"))
+          .findFirst()
+          .orElseThrow()
+          .getArgs()
+          .stream()
+          .filter(arg -> arg.getName().equals("reason"))
+          .findFirst()
+          .orElseThrow()
+          .getValue()
+          .replaceFirst("^\"", "")
+          .replaceAll("\"$", "");
+    } catch (NoSuchElementException e) {
+      return "";
+    }
+  }
+
   /** Returns the list of optional argument of this field */
   List<InputObject> getOptionalArgs() {
     if (optionalArgs == null) {
@@ -111,6 +145,8 @@ public class Field {
         + args
         + ", deprecated="
         + deprecated
+        + ", directives="
+        + directives
         + ", optionalArgs="
         + optionalArgs
         + ", parentObject="

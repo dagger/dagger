@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	javaSDKPath = "sdk/java"
-	mavenImage  = "maven:3.9.9-eclipse-temurin-21-alpine"
-	mavenDigest = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+	javaSDKPath             = "sdk/java"
+	javaSDKGenCodePath      = javaSDKPath + "/dagger-java-sdk/target/generated-sources/dagger"
+	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
+	mavenImage              = "maven:3.9.9-eclipse-temurin-21-alpine"
+	mavenDigest             = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
 )
 
 type JavaSDK struct {
@@ -44,7 +46,19 @@ func (t JavaSDK) Test(ctx context.Context) error {
 
 // Regenerate the Java SDK API
 func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	return dag.Directory(), nil
+	installer, err := t.Dagger.installer(ctx, "sdk")
+	if err != nil {
+		return nil, err
+	}
+	introspection, err := t.Dagger.introspection(ctx, installer)
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Directory().WithDirectory(
+		javaSDKPath,
+		dag.JavaSDKDev().Generate(introspection).GeneratedSources(),
+	), nil
 }
 
 // Test the publishing process

@@ -42,6 +42,10 @@
       "source": "helm"
     },
     {
+      "name": "java-sdk-dev",
+      "source": "sdk/java/dev"
+    },
+    {
       "name": "notify",
       "source": "github.com/gerhard/daggerverse/notify",
       "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"

@@ -32,13 +32,10 @@ public class DaggerCodegenMojo extends AbstractMojo {
   @Parameter(property = "project", required = true, readonly = true)
   protected MavenProject project;
 
-  @Parameter(property = "dagger.bin")
-  protected String bin;
-
   @Parameter(property = "dagger.version", required = true)
   protected String version;
 
-  @Parameter(property = "dagger.introspectionJson")
+  @Parameter(property = "dagger.introspectionJson", required = true)
   protected String introspectionJson;
 
   /** Specify output directory where the Java files are generated. */
@@ -110,27 +107,16 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
   }
 
-  private InputStream getInstrospectionJson()
-      throws IOException, MojoFailureException, InterruptedException {
-    if (this.introspectionJson != null && !this.introspectionJson.isEmpty()) {
-      File f = new File(this.introspectionJson);
-      if (f.exists()) {
-        return new FileInputStream(f);
-      }
+  private InputStream getInstrospectionJson() throws IOException, InterruptedException {
+    if (this.introspectionJson == null || this.introspectionJson.isEmpty()) {
+      throw new IllegalArgumentException("introspection JSON must be specified");
     }
-    this.bin = DaggerCLIUtils.getBinary(this.bin);
-    return daggerSchema();
-  }
-
-  private InputStream daggerSchema()
-      throws IOException, InterruptedException, MojoFailureException {
-    String actualVersion = DaggerCLIUtils.getVersion(this.bin);
-    getLog()
-        .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
-    this.version = actualVersion;
-    return DaggerCLIUtils.query(
-        getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
-        this.bin);
+    File f = new File(this.introspectionJson);
+    if (f.exists()) {
+      return new FileInputStream(f);
+    } else {
+      throw new IllegalArgumentException("introspection JSON file does not exist");
+    }
   }
 
   public File getOutputDirectory() {

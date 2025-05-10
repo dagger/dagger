@@ -1,4 +1,12 @@
-target/
+# By default target should be ignored.
+# But the generated SDK files are interesting to keep
+# so that we can re-generate them and see the impact.
+# So ignore all target except dagger-java-sdk/target/generated-sources/dagger
+**/target/*
+!dagger-java-sdk/target/generated-sources/
+dagger-java-sdk/target/generated-sources/*
+!dagger-java-sdk/target/generated-sources/dagger/
+
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
