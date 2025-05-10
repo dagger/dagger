@@ -81,6 +81,8 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			mcpArg = mcp.WithNumber
 		case "number":
 			mcpArg = mcp.WithNumber
+		case "object":
+			mcpArg = mcp.WithObject
 		case "string":
 			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
 			mcpArg = mcp.WithString
