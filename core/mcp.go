@@ -865,8 +865,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	})
 
 	builtins = append(builtins, LLMTool{
-		Name:        "list_available_methods",
-		Description: "List the methods that can be selected, which change as you encounter new types of objects.",
+		Name:        "list_methods",
+		Description: "List the methods that can be selected.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -887,10 +887,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			}
 			var methods []toolDesc
 			for _, method := range allMethods {
-				if m.selectedMethods[method.Name] {
-					// already have it
-					continue
-				}
 				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+"_") {
 					continue
 				}
@@ -924,14 +920,14 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	if len(allMethods) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name:        "select_methods",
-			Description: "Select methods for interacting with the available objects. Never guess - use list_available_methods.",
+			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by list_methods.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"methods": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "The methods to select. Learn these from list_available_methods.",
+						"description": "The methods to select.",
 					},
 				},
 				"required":             []string{"methods"},
@@ -1030,7 +1026,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				var method LLMTool
 				method, found := allMethods[call.Method]
 				if !found {
-					return nil, fmt.Errorf("method not defined: %q; use list_available_methods first", call.Method)
+					return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
 				}
 				if !m.selectedMethods[call.Method] {
 					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)

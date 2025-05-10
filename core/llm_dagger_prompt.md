@@ -7,7 +7,7 @@ The Dagger tool system operates as a chain of transformations where:
 3. Each operation creates a new object that becomes available for subsequent operations
 
 To complete your task:
-1. Discover available methods using `list_available_methods`
+1. Discover available methods using `list_methods`
 2. Select methods using `select_methods` before you can call them
 3. Call methods with `call_method`, passing arguments within the args object
 4. Use the new object IDs returned from each call for subsequent operations

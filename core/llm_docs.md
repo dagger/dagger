@@ -4,18 +4,18 @@ The Dagger tool system exposes the Dagger GraphQL API through a conventional obj
 
 The Dagger tool system is centered around the following key tools:
 
-* `list_available_methods`: discover what methods can be called
+* `list_methods`: discover what methods can be called
 * `select_methods`: learn the schema for relevant methods
 * `call_method`: call a method with the given arguments
 * `save` (optional): save the desired outputs
 
 ### Discovering available methods
 
-Use `list_available_methods` to see a high level summary of the available methods. This tool lists each method's name, return type, and required arguments.
+Use `list_methods` to see a high level summary of the available methods. This tool lists each method's name, return type, and required arguments.
 
-When you encounter a new object type, you can learn its methods by calling `list_available_methods` with the object type as an argument.
+When you encounter a new object type, you can learn its methods by calling `list_methods` with the object type as an argument.
 
-Do not make repeated calls to `list_available_methods` for the same object type. Just refer back to the previous result.
+Do not make repeated calls to `list_methods` for the same object type. Just refer back to the previous result.
 
 ### Selecting methods
 
@@ -76,7 +76,7 @@ different types of objects and APIs.
     Now I'll check what methods are available for working with these objects:
 
     ```json
-    {"tool_name": "list_available_methods"}
+    {"tool_name": "list_methods"}
     ```
   </assistant>
   <user>
