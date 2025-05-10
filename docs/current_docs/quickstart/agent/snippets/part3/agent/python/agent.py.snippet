@@ -6,7 +6,7 @@ async def develop_issue(
     ],
     issue_id: Annotated[int, Doc("Github issue number")],
     repository: Annotated[str, Doc("Github repository url")],
-    source: Optional[Annotated[Directory, Doc("The source directory")]] = None,
+    source: Annotated[dagger.Directory, DefaultPath("/")],
 ) -> str:
     """Develop with a Github issue as the assignment and open a pull request."""
     # Get the Github issue
