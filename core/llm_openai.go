@@ -181,9 +181,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		Content:   choice.Message.Content,
 		ToolCalls: toolCalls,
 		TokenUsage: LLMTokenUsage{
-			InputTokens:  chatCompletion.Usage.PromptTokens,
-			OutputTokens: chatCompletion.Usage.CompletionTokens,
-			TotalTokens:  chatCompletion.Usage.TotalTokens,
+			InputTokens:      chatCompletion.Usage.PromptTokens,
+			OutputTokens:     chatCompletion.Usage.CompletionTokens,
+			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
+			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
 	}, nil
 }

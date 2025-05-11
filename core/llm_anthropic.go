@@ -278,9 +278,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		Content:   content,
 		ToolCalls: toolCalls,
 		TokenUsage: LLMTokenUsage{
-			InputTokens:  acc.Usage.InputTokens,
-			OutputTokens: acc.Usage.OutputTokens,
-			TotalTokens:  acc.Usage.InputTokens + acc.Usage.OutputTokens,
+			InputTokens:       acc.Usage.InputTokens,
+			OutputTokens:      acc.Usage.OutputTokens,
+			CachedTokenReads:  acc.Usage.CacheReadInputTokens,
+			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
+			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
 	}, nil
 }

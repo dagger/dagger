@@ -284,6 +284,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 		usageSummary.OutputTokens += candidatesTokens
 		usageSummary.InputTokens += promptTokens
+		usageSummary.CachedTokenReads += cachedTokens
 		usageSummary.TotalTokens += candidatesTokens + promptTokens
 
 		return usageSummary

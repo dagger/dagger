@@ -293,11 +293,13 @@ func (m *Evals) llm(opts ...dagger.LLMOpts) *dagger.LLM {
 }
 
 type Report struct {
-	Succeeded    bool
-	Report       string
-	ToolsDoc     string
-	InputTokens  int
-	OutputTokens int
+	Succeeded          bool
+	Report             string
+	ToolsDoc           string
+	InputTokens        int
+	OutputTokens       int
+	CachedTokensReads  int
+	CachedTokensWrites int
 }
 
 func withLLMReport(
@@ -367,12 +369,22 @@ func withLLMReport(
 	if err != nil {
 		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
 	}
+	report.CachedTokensReads, err = llm.TokenUsage().CachedTokenReads(ctx)
+	if err != nil {
+		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
+	}
+	report.CachedTokensWrites, err = llm.TokenUsage().CachedTokenWrites(ctx)
+	if err != nil {
+		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
+	}
 	fmt.Fprintln(reportMD)
 
 	fmt.Fprintln(reportMD, "### Total Token Cost")
 	fmt.Fprintln(reportMD)
 	fmt.Fprintln(reportMD, "* Input Tokens:", report.InputTokens)
 	fmt.Fprintln(reportMD, "* Output Tokens:", report.OutputTokens)
+	fmt.Fprintln(reportMD, "* Cached Token Reads:", report.CachedTokensReads)
+	fmt.Fprintln(reportMD, "* Cached Token Writes:", report.CachedTokensWrites)
 	fmt.Fprintln(reportMD)
 
 	fmt.Fprintln(reportMD, "### Evaluation Result")

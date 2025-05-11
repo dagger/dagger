@@ -106,9 +106,11 @@ type LLMResponse struct {
 }
 
 type LLMTokenUsage struct {
-	InputTokens  int64 `field:"true" json:"input_tokens"`
-	OutputTokens int64 `field:"true" json:"output_tokens"`
-	TotalTokens  int64 `field:"true" json:"total_tokens"`
+	InputTokens       int64 `field:"true" json:"input_tokens"`
+	OutputTokens      int64 `field:"true" json:"output_tokens"`
+	CachedTokenReads  int64 `field:"true" json:"cached_token_reads"`
+	CachedTokenWrites int64 `field:"true" json:"cached_token_writes"`
+	TotalTokens       int64 `field:"true" json:"total_tokens"`
 }
 
 func (*LLMTokenUsage) Type() *ast.Type {
@@ -987,6 +989,8 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 	for _, msg := range llm.messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
+		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads
+		res.CachedTokenWrites += msg.TokenUsage.CachedTokenWrites
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
