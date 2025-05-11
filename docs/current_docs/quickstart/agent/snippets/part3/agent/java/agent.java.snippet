@@ -1,14 +1,18 @@
 /**
-* Develop with a Github issue as the assignment and open a pull request
-*
-* @param githubToken Github Token with permissions to write issues and contents
-* @param issueID Github issue number
-* @param repository Github repository url
-* @param source Source directory (defaultPath="/")
-*/
-@Function
-public String developIssue(Secret githubToken, Integer issueID, String repository, Directory source)
-        throws ExecutionException, DaggerQueryException, InterruptedException {
+   * Develop with a Github issue as the assignment and open a pull request
+   *
+   * @param githubToken Github Token with permissions to write issues and contents
+   * @param issueID Github issue number
+   * @param repository Github repository url
+   * @param source Source directory
+   */
+  @Function
+  public String developIssue(
+    Secret githubToken,
+    Integer issueID,
+    String repository,
+    @DefaultPath("/") Directory source
+  ) throws ExecutionException, DaggerQueryException, InterruptedException {
     // Get the Github issue
     var args = new Client.GithubIssueArguments().withToken(githubToken);
     GithubIssue issueClient = dag().githubIssue(args);
@@ -27,4 +31,4 @@ public String developIssue(Secret githubToken, Integer issueID, String repositor
     var pr = issueClient.createPullRequest(repository, title, body, feature, "main");
 
     return pr.url();
-}
+  }

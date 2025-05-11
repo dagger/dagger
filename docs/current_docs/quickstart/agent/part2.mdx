@@ -287,11 +287,24 @@ dagger install github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be
 
     ```php file=./snippets/part3/agent/php/agent.php.snippet
     ```
+
+    Be sure to add imports for the following:
+
+    ```php
+    use Dagger\Secret;
+    ```
     </TabItem>
     <TabItem value="java" label="Java">
     Add the following new function to the main dagger module in `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java`:
 
     ```java file=./snippets/part3/agent/java/agent.java.snippet
+    ```
+
+    Be sure to add imports for the following:
+
+    ```java
+import io.dagger.client.Secret;
+import io.dagger.client.GithubIssue;
     ```
     </TabItem>
 </Tabs>
