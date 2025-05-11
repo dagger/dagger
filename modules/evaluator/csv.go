@@ -18,13 +18,13 @@ import (
 )
 
 func (result *EvalsAcrossModels) CSV(
-	// Include a header.
+	// Don't include a header.
 	// +default=false
-	header bool,
+	noHeader bool,
 ) string {
 	buf := new(strings.Builder)
 	csvW := csv.NewWriter(buf)
-	if header {
+	if !noHeader {
 		csvW.Write([]string{
 			"model",
 			"eval",

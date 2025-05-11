@@ -27,9 +27,9 @@ function add_header() {
   local file=$1
   # Add header if file doesn't exist AND it's the first iteration
   if [ ! -f "$file" ] && [ $2 -eq 1 ]; then
-    echo " --header"
-  else
     echo ""
+  else
+    echo " --no-header"
   fi
 }
 
