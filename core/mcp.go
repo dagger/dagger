@@ -755,7 +755,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"properties": map[string]any{
 				"type": map[string]any{
 					"type":        "string",
-					"description": "If specified, only list methods of a particular type.",
+					"description": "If specified, only list this type's methods.",
 				},
 			},
 			"required": []string{},
@@ -771,9 +771,10 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			var methods []toolDesc
 			for _, method := range allMethods {
 				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+".") {
+					// looking for a particular type's methods
 					continue
 				}
-				args := map[string]string{}
+				reqArgs := map[string]string{}
 				var returns string
 				if method.Field != nil {
 					returns = method.Field.Type.String()
@@ -782,30 +783,19 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 							// optional
 							continue
 						}
-						args[arg.Name] = arg.Type.String()
+						reqArgs[arg.Name] = arg.Type.String()
 					}
 				}
 				methods = append(methods, toolDesc{
 					Name:         method.Name,
-					RequiredArgs: args,
+					RequiredArgs: reqArgs,
 					Returns:      returns,
 				})
 			}
 			sort.Slice(methods, func(i, j int) bool {
 				return methods[i].Name < methods[j].Name
 			})
-			if len(methods) == 0 {
-				return "none", nil
-			}
-			var list []string
-			for _, method := range methods {
-				var args []string
-				for name, type_ := range method.RequiredArgs {
-					args = append(args, fmt.Sprintf("%s: %s", name, type_))
-				}
-				list = append(list, fmt.Sprintf("%s(%s) -> %s", method.Name, strings.Join(args, ", "), method.Returns))
-			}
-			return strings.Join(list, "\n"), nil
+			return toolStructuredResponse(methods)
 		}),
 	})
 
@@ -816,33 +806,23 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"type": map[string]any{
-						"type":        "string",
-						"description": "The type providing the methods, or empty for a toplevel method.",
-						"pattern":     `^[a-zA-Z0-9_]+$`,
-					},
 					"methods": map[string]any{
 						"type": "array",
 						"items": map[string]any{
 							"type":        "string",
 							"description": "The name of the method to select, as seen in list_methods.",
-							"pattern":     `^[a-zA-Z0-9]+$`,
 						},
-						"description": "The method names to select.",
+						"description": "The methods to select.",
 					},
 				},
-				"required":             []string{"type", "methods"},
+				"required":             []string{"methods"},
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
-				Type    string `default:""`
 				Methods []string
 			}) (any, error) {
 				methodCounts := make(map[string]int)
 				for _, toolName := range args.Methods {
-					if args.Type != "" && !strings.Contains(toolName, ".") {
-						toolName = args.Type + "." + toolName
-					}
 					methodCounts[toolName]++
 				}
 				// perform a sanity check; some LLMs will do silly things like request

@@ -4,14 +4,19 @@ The Dagger tool system exposes the Dagger GraphQL API through a conventional obj
 
 The Dagger tool system is centered around the following key tools:
 
+* `list_outputs`: discover what outputs can be saved
 * `list_methods`: discover what methods can be called
 * `select_methods`: learn the schema for relevant methods
 * `call_method`: call a method with the given arguments
-* `save` (optional): save the desired outputs
+* `save`: save the desired outputs
+
+### Identifying the task to complete
+
+Use `list_outputs` to discover any outputs that have been explicitly declared. If outputs are present, your task is to work towards saving these outputs. Never end your turn without saving outputs.
 
 ### Discovering available methods
 
-Use `list_methods` to see a high level summary of the available methods. This tool lists each method's name, return type, and required arguments.
+Use `list_methods` to see a high level summary of the available methods. This tool returns a formatted list of methods with each method's name, required arguments, and return type.
 
 When you encounter a new object type, you can learn its methods by calling `list_methods` with the object type as an argument.
 
@@ -82,13 +87,13 @@ different types of objects and APIs.
   <user>
     ```json
     {"result": [
-      {"name": "Oven_bake", "required_args": {"item": "String"}, "returns": "Fries"},
-      {"name": "Oven_broil", "required_args": {"item": "String"}, "returns": "Fries"},
-      {"name": "Potato_dice", "returns": "Potato"},
-      {"name": "Potato_peel", "returns": "Potato"},
-      {"name": "Potato_rinse", "args": {"sink": "Sink"}, "returns": "Potato"},
-      {"name": "Potato_slice", "required_args": {"shape": "String"}, "returns": "Potato"},
-      {"name": "Fries_plate", "required_args": {"plate": "Plate"}, "returns": "Plate"}
+      {"name": "Oven.bake", "required_args": {"item": "String"}, "returns": "Fries"},
+      {"name": "Oven.broil", "required_args": {"item": "String"}, "returns": "Fries"},
+      {"name": "Potato.dice", "returns": "Potato"},
+      {"name": "Potato.peel", "returns": "Potato"},
+      {"name": "Potato.rinse", "args": {"sink": "Sink"}, "returns": "Potato"},
+      {"name": "Potato.slice", "required_args": {"shape": "String"}, "returns": "Potato"},
+      {"name": "Fries.plate", "required_args": {"plate": "Plate"}, "returns": "Plate"}
     ]}
     ```
   </user>
@@ -96,7 +101,7 @@ different types of objects and APIs.
     I need to select the methods I'll need to prepare the french fries:
 
     ```json
-    {"tool_name": "select_methods", "parameters": {"methods": ["Potato_rinse", "Potato_peel", "Potato_slice", "Oven_bake", "Fries_plate"]}}
+    {"tool_name": "select_methods", "parameters": {"methods": ["Potato.rinse", "Potato.peel", "Potato.slice", "Oven.bake", "Fries.plate"]}}
     ```
   </assistant>
   <user>
@@ -104,7 +109,7 @@ different types of objects and APIs.
     {"result": {
       "added_methods": [
         {
-          "name": "Potato_rinse",
+          "name": "Potato.rinse",
           "returns": "Potato",
           "description": "Rinses a potato clean using a sink",
           "argsSchema": {
@@ -116,7 +121,7 @@ different types of objects and APIs.
           }
         },
         {
-          "name": "Potato_peel",
+          "name": "Potato.peel",
           "returns": "Potato",
           "description": "Peels a potato",
           "argsSchema": {
@@ -126,7 +131,7 @@ different types of objects and APIs.
           }
         },
         {
-          "name": "Potato_slice",
+          "name": "Potato.slice",
           "returns": "Potato",
           "description": "Slices a potato into the specified shape",
           "argsSchema": {
@@ -138,7 +143,7 @@ different types of objects and APIs.
           }
         },
         {
-          "name": "Oven_bake",
+          "name": "Oven.bake",
           "returns": "Fries",
           "description": "Bakes something in the oven",
           "argsSchema": {
@@ -150,7 +155,7 @@ different types of objects and APIs.
           }
         },
         {
-          "name": "Fries_plate",
+          "name": "Fries.plate",
           "returns": "Plate",
           "description": "Places fries on a plate for serving",
           "argsSchema": {
@@ -169,7 +174,7 @@ different types of objects and APIs.
     Now I'll start preparing the french fries. First, I need to rinse the potato:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato_rinse", "self": "Potato#1", "args": {"sink": "Sink#1"}}}
+    {"tool_name": "call_method", "parameters": {"method": "Potato.rinse", "self": "Potato#1", "args": {"sink": "Sink#1"}}}
     ```
   </assistant>
   <user>
@@ -181,7 +186,7 @@ different types of objects and APIs.
     Next, I'll peel the rinsed potato:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato_peel", "self": "Potato#2", "args": {}}}
+    {"tool_name": "call_method", "parameters": {"method": "Potato.peel", "self": "Potato#2", "args": {}}}
     ```
   </assistant>
   <user>
@@ -193,7 +198,7 @@ different types of objects and APIs.
     Now I'll slice the potato into fry shapes:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato_slice", "self": "Potato#3", "args": {"shape": "STICKS"}}}
+    {"tool_name": "call_method", "parameters": {"method": "Potato.slice", "self": "Potato#3", "args": {"shape": "STICKS"}}}
     ```
   </assistant>
   <user>
@@ -205,7 +210,7 @@ different types of objects and APIs.
     Now I'll bake the sliced potato to make french fries:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Oven_bake", "self": "Oven#1", "args": {"item": "Potato#4"}}}
+    {"tool_name": "call_method", "parameters": {"method": "Oven.bake", "self": "Oven#1", "args": {"item": "Potato#4"}}}
     ```
   </assistant>
   <user>
@@ -217,7 +222,7 @@ different types of objects and APIs.
     Finally, I'll plate the fries for serving:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Fries_plate", "self": "Fries#1", "args": {"plate": "Plate#1"}}}
+    {"tool_name": "call_method", "parameters": {"method": "Fries.plate", "self": "Fries#1", "args": {"plate": "Plate#1"}}}
     ```
   </assistant>
   <user>
