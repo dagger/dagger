@@ -8,9 +8,13 @@ RUNS=${1:-3}
 # Generate default timestamp-based filename with minute precision
 TIMESTAMP=$(date +"%Y%m%d-%H%M")
 
+function get_version() {
+  local dagger=$1
+  $dagger version | awk '{print $2}'
+}
+
 # Define output files - allow overriding with environment variables
-NEW_CSV=${NEW_CSV:-"evals/$TIMESTAMP/new.csv"}
-OLD_CSV=${OLD_CSV:-"evals/$TIMESTAMP/old.csv"}
+NEW_CSV=${NEW_CSV:-"evals/$TIMESTAMP/new-$(get_version ./bin/dagger).csv"}
 
 # Ensure parent dir exists
 mkdir -p $(dirname $NEW_CSV)
@@ -32,6 +36,7 @@ function add_header() {
 echo "Running $RUNS iterations"
 echo "New results will be saved to: $NEW_CSV"
 if [ "$RUN_OLD" = true ]; then
+  OLD_CSV=${OLD_CSV:-"evals/$TIMESTAMP/old-$(get_version ./bin/dagger-old).csv"}
   echo "Old results will be saved to: $OLD_CSV"
 fi
 
