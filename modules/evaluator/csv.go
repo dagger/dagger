@@ -89,8 +89,8 @@ func (m *Evaluator) Compare(
 	var sb strings.Builder
 	w := io.MultiWriter(&sb, stdio.Stdout)
 	fmt.Fprintf(w, "# Comparison Report\n\n")
-	fmt.Fprintf(w, "| Model | Eval | Success Rate | Input / Output Tokens |\n")
-	fmt.Fprintf(w, "|-------|------|-------------|---------------------|\n")
+	fmt.Fprintf(w, "| Model | Eval | Success Rate | Input / Output Tokens | Traces |\n")
+	fmt.Fprintf(w, "|-------|------|-------------|---------------------|-------|\n")
 
 	// Compare data for each model+eval pair
 	for _, modelEval := range slices.Sorted(maps.Keys(afterAggregates)) {
@@ -136,13 +136,20 @@ func (m *Evaluator) Compare(
 			"%.1f",
 		)
 
+		// Format trace links
+		traceLinksStr := ""
+		for i, link := range afterStats.traceLinks {
+			traceLinksStr += fmt.Sprintf("[[%d]](%s)", i+1, link)
+		}
+
 		// Add row to table
-		fmt.Fprintf(w, "| `%s` | %s | %s <br />(%s attempts) | %s <br />%s |\n",
+		fmt.Fprintf(w, "| `%s` | %s | %s <br />(%s attempts) | %s <br />%s | %s |\n",
 			model, eval,
 			successRateComparison,
 			attemptsComparison,
 			inputTokensComparison,
 			outputTokensComparison,
+			traceLinksStr,
 		)
 	}
 
@@ -175,11 +182,13 @@ type aggregateStats struct {
 	totalAttempts          int
 	inputTokensPerAttempt  float64
 	outputTokensPerAttempt float64
+	traceLinks             []string
 }
 
 // Helper function to aggregate data
 func aggregateData(records [][]string) map[string]aggregateStats {
 	aggregates := make(map[string]map[string][]float64)
+	traceLinks := make(map[string][]string)
 
 	headerIndices := make(map[string]int)
 	for i, row := range records {
@@ -203,6 +212,11 @@ func aggregateData(records [][]string) map[string]aggregateStats {
 		attempts, _ := strconv.Atoi(row[headerIndices["total_attempts"]])
 		successRate, _ := strconv.ParseFloat(row[headerIndices["success_rate"]], 64)
 
+		// Create trace link URL
+		traceID := row[headerIndices["trace_id"]]
+		evalSpanID := row[headerIndices["eval_span_id"]]
+		traceLink := fmt.Sprintf("https://v3.dagger.cloud/dagger/traces/%s?span=%s", traceID, evalSpanID)
+
 		if aggregates[key] == nil {
 			aggregates[key] = make(map[string][]float64)
 		}
@@ -211,6 +225,12 @@ func aggregateData(records [][]string) map[string]aggregateStats {
 		aggregates[key]["attempts"] = append(aggregates[key]["attempts"], float64(attempts))
 		aggregates[key]["inputTokens"] = append(aggregates[key]["inputTokens"], float64(inputTokens))
 		aggregates[key]["outputTokens"] = append(aggregates[key]["outputTokens"], float64(outputTokens))
+
+		// Store trace links
+		if traceLinks[key] == nil {
+			traceLinks[key] = []string{}
+		}
+		traceLinks[key] = append(traceLinks[key], traceLink)
 	}
 
 	// Calculate final aggregates
@@ -246,6 +266,9 @@ func aggregateData(records [][]string) map[string]aggregateStats {
 			stats.inputTokensPerAttempt = totalInputTokens / float64(totalAttempts)
 			stats.outputTokensPerAttempt = totalOutputTokens / float64(totalAttempts)
 		}
+
+		// Add trace links
+		stats.traceLinks = traceLinks[key]
 
 		result[key] = stats
 	}
