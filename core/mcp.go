@@ -936,7 +936,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				for methodName := range methodCounts {
 					method, found := allMethods[methodName]
 					if found {
-						m.selectedMethods[methodName] = true
 						var returns string
 						if method.Field != nil {
 							returns = method.Field.Type.String()
@@ -950,6 +949,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					} else {
 						unknownMethods = append(unknownMethods, methodName)
 					}
+				}
+				if len(unknownMethods) > 0 {
+					return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
+				}
+				for _, method := range selectedMethods {
+					m.selectedMethods[method.Name] = true
 				}
 				sort.Slice(selectedMethods, func(i, j int) bool {
 					return selectedMethods[i].Name < selectedMethods[j].Name
