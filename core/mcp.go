@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -295,7 +294,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 		if typeDef.Name == schema.Query.Name {
 			toolName = field.Name
 		} else {
-			toolName = typeDef.Name + "_" + strcase.ToSnake(field.Name)
+			toolName = typeDef.Name + "." + field.Name
 		}
 		allTools[toolName] = LLMTool{
 			Name:        toolName,
@@ -691,8 +690,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if err := m.env.DeclareOutput(args.Name, allTypes[args.Type], args.Description); err != nil {
 					return nil, err
 				}
-				return "Output '%s' declared successfully:\n"+m.todoList(), nil
-				})
+				return "Output '%s' declared successfully:\n" + m.todoList(), nil
 			}),
 		})
 	}
@@ -758,6 +756,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"type": map[string]any{
 					"type":        "string",
 					"description": "If specified, only list methods of a particular type.",
+					"pattern":     `^[A-Z][a-zA-Z0-9]*$`,
 				},
 			},
 			"required": []string{},
@@ -772,7 +771,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			}
 			var methods []toolDesc
 			for _, method := range allMethods {
-				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+"_") {
+				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+".") {
 					continue
 				}
 				args := map[string]string{}
@@ -822,7 +821,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 						"type": "array",
 						"items": map[string]any{
 							"type":        "string",
-							"description": "The name of the method to select, e.g. \"Potato_peel\".",
+							"description": "The name of the method to select, as seen in list_methods.",
+							"pattern":     `^([A-Z][a-zA-Z0-9_]*\.)?[a-zA-Z0-9]+$`,
 						},
 						"description": "The method names to select.",
 					},
