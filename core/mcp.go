@@ -1222,6 +1222,9 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 		}
 		callArgs = append(callArgs, call.NewArgument(k, lit, false))
 	}
+	sort.Slice(callArgs, func(i, j int) bool {
+		return callArgs[i].Name() < callArgs[j].Name()
+	})
 	return call.New().Append(
 		&ast.Type{
 			NamedType: "String",
