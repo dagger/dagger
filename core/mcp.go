@@ -756,7 +756,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"type": map[string]any{
 					"type":        "string",
 					"description": "If specified, only list methods of a particular type.",
-					"pattern":     `^[A-Z][a-zA-Z0-9]*$`,
 				},
 			},
 			"required": []string{},
@@ -817,25 +816,34 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"type": map[string]any{
+						"type":        "string",
+						"description": "The type providing the methods, or empty for a toplevel method.",
+						"pattern":     `^[a-zA-Z0-9_]+$`,
+					},
 					"methods": map[string]any{
 						"type": "array",
 						"items": map[string]any{
 							"type":        "string",
 							"description": "The name of the method to select, as seen in list_methods.",
-							"pattern":     `^([A-Z][a-zA-Z0-9_]*\.)?[a-zA-Z0-9]+$`,
+							"pattern":     `^[a-zA-Z0-9]+$`,
 						},
 						"description": "The method names to select.",
 					},
 				},
-				"required":             []string{"methods"},
+				"required":             []string{"type", "methods"},
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
+				Type    string `default:""`
 				Methods []string
 			}) (any, error) {
 				methodCounts := make(map[string]int)
-				for _, tool := range args.Methods {
-					methodCounts[tool]++
+				for _, toolName := range args.Methods {
+					if args.Type != "" && !strings.Contains(toolName, ".") {
+						toolName = args.Type + "." + toolName
+					}
+					methodCounts[toolName]++
 				}
 				// perform a sanity check; some LLMs will do silly things like request
 				// the same tool 3 times when told to call it 3 times
@@ -926,6 +934,23 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if err := json.Unmarshal(pl, &call); err != nil {
 					return nil, err
 				}
+				if call.Args == nil {
+					call.Args = make(map[string]any)
+				}
+				// Add self parameter to the method call
+				if call.Self != "" {
+					call.Args["self"] = call.Self
+					matches := idRegex.FindStringSubmatch(call.Self)
+					if matches == nil {
+						return nil, fmt.Errorf("invalid ID format: %q", call.Self)
+					}
+					typeName := matches[idRegex.SubexpIndex("type")]
+					if !strings.Contains(call.Method, ".") {
+						// allow omitting the TypeName. prefix, which models are more prone
+						// to guessing
+						call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
+					}
+				}
 				var method LLMTool
 				method, found := allMethods[call.Method]
 				if !found {
@@ -933,13 +958,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				}
 				if !m.selectedMethods[call.Method] {
 					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
-				}
-				if call.Args == nil {
-					call.Args = make(map[string]any)
-				}
-				// Add self parameter to the method call
-				if call.Self != "" {
-					call.Args["self"] = call.Self
 				}
 				return method.Call(ctx, call.Args)
 			},
