@@ -1739,6 +1739,26 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 	srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
 
+	// If possible, add the types defined by the module itself to the "deps" so that they can be
+	// part of the code generation.
+	// This is not really a dependency as it's the module itself, but that will allow to generate
+	// the types.
+	if srcInst.Self.SDK != nil {
+		// Only if the SDK implements a specific `moduleTypeDefs` function.
+		// If not, we will have circular dependency issues.
+		if sdkImpl, ok := srcInst.Self.SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() {
+			var mod dagql.Instance[*core.Module]
+			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
+
+			deps = mod.Self.Deps.Append(mod.Self)
+		}
+	}
+
 	// run codegen to get the generated context directory
 	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInstContentHashed)
 	if err != nil {
@@ -2176,6 +2196,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
 		if err != nil {
 			return inst, err
+		}
+		if runtimeImpl.HasModuleTypeDefs() {
+			mod.Deps = mod.Deps.Append(mod)
 		}
 
 		// pre-load the module Runtime
