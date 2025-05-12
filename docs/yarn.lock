@@ -8409,10 +8409,10 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.239.1:
-  version "1.239.1"
-  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.239.1.tgz#871c734a438f2ead1529deba26031d689819d587"
-  integrity sha512-4cN3A02e9uyyTVQ/9+bGVfvoAmpM1mlVXlq2DsujCQjloMMSbEb+6Uwv6fro3Q5qk7NEU62kQqZHyvqQIqv9zA==
+posthog-js@^1.240.6:
+  version "1.240.6"
+  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.240.6.tgz#c64ce71b0f8749055add7cb872af6400463b7768"
+  integrity sha512-Pz5r/LrMchGf9jCVnTXJrbyMhKriZRGLSZ5qt8c8QrPkmG2JOnFHNWmmBlu+iqmzbY3+oROrhwyP4IgQl2z34w==
   dependencies:
     core-js "^3.38.1"
     fflate "^0.4.8"
@@ -9054,10 +9054,10 @@ sass-loader@^16.0.2:
   dependencies:
     neo-async "^2.6.2"
 
-sass@^1.87.0:
-  version "1.87.0"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.87.0.tgz#8cceb36fa63fb48a8d5d7f2f4c13b49c524b723e"
-  integrity sha512-d0NoFH4v6SjEK7BoX810Jsrhj7IQSYHAHLi/iSpgqKc7LaIDshFRlSg5LOymf9FqQhxEHs2W5ZQXlvy0KD45Uw==
+sass@^1.88.0:
+  version "1.88.0"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.88.0.tgz#cd1495749bebd9e4aca86e93ee60b3904a107789"
+  integrity sha512-sF6TWQqjFvr4JILXzG4ucGOLELkESHL+I5QJhh7CNaE+Yge0SI+ehCatsXhJ7ymU1hAFcIS3/PBpjdIbXoyVbg==
   dependencies:
     chokidar "^4.0.0"
     immutable "^5.0.2"
