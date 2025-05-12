@@ -24,10 +24,8 @@ type Env struct {
 	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
-	// An optional root object
-	// Can be used to give the environment ambient access to the
-	// dagger core API, possibly extended by a module
-	root dagql.Object
+	// Whether the environment exposes toplevel bindings
+	privileged bool
 	// The env supports declaring new outputs.
 	writable bool
 }
@@ -68,18 +66,14 @@ func (env *Env) Clone() *Env {
 	return &cp
 }
 
-// Set a root object.
-// Can be used to give the environment ambient access to
-// the dagger core API, possibly extended by a module
-func (env *Env) WithRoot(root dagql.Object) *Env {
+func (env *Env) Privileged() *Env {
 	env = env.Clone()
-	env.root = root
+	env.privileged = true
 	return env
 }
 
-// Return the root object, or nil if no root object is set
-func (env *Env) Root() dagql.Object {
-	return env.root
+func (env *Env) IsPrivileged() bool {
+	return true
 }
 
 // Return a writable copy of the environment

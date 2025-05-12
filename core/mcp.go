@@ -146,7 +146,7 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error {
 	schema := srv.Schema()
 	typeNames := m.env.Types()
-	if m.env.Root() != nil {
+	if m.env.IsPrivileged() {
 		typeNames = append(typeNames, schema.Query.Name)
 	}
 	for _, typeName := range typeNames {
@@ -391,8 +391,8 @@ func (m *MCP) call(ctx context.Context,
 	}
 	toolProps := toolSchema["properties"].(map[string]any)
 	var target dagql.Object
-	if m.env.Root() != nil && selfType == schema.Query.Name {
-		target = m.env.Root()
+	if m.env.IsPrivileged() && selfType == schema.Query.Name {
+		target = srv.Root()
 	} else {
 		self, ok := argsMap["self"]
 		if !ok {
