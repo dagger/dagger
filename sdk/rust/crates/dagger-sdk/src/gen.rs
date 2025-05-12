@@ -7343,6 +7343,14 @@ pub struct LlmTokenUsage {
     pub graphql_client: DynGraphQLClient,
 }
 impl LlmTokenUsage {
+    pub async fn cached_token_reads(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("cachedTokenReads");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn cached_token_writes(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("cachedTokenWrites");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this LLMTokenUsage.
     pub async fn id(&self) -> Result<LlmTokenUsageId, DaggerError> {
         let query = self.selection.select("id");

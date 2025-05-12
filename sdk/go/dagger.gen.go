@@ -6395,16 +6395,42 @@ func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
-	id           *LLMTokenUsageID
-	inputTokens  *int
-	outputTokens *int
-	totalTokens  *int
+	cachedTokenReads  *int
+	cachedTokenWrites *int
+	id                *LLMTokenUsageID
+	inputTokens       *int
+	outputTokens      *int
+	totalTokens       *int
 }
 
 func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsage {
 	return &LLMTokenUsage{
 		query: q,
 	}
+}
+
+func (r *LLMTokenUsage) CachedTokenReads(ctx context.Context) (int, error) {
+	if r.cachedTokenReads != nil {
+		return *r.cachedTokenReads, nil
+	}
+	q := r.query.Select("cachedTokenReads")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
+	if r.cachedTokenWrites != nil {
+		return *r.cachedTokenWrites, nil
+	}
+	q := r.query.Select("cachedTokenWrites")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this LLMTokenUsage.

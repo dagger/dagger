@@ -10,6 +10,18 @@ namespace Dagger;
 
 class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble
 {
+    public function cachedTokenReads(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenReads');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenReads');
+    }
+
+    public function cachedTokenWrites(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenWrites');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenWrites');
+    }
+
     /**
      * A unique identifier for this LLMTokenUsage.
      */
