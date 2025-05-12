@@ -298,8 +298,8 @@
         <commons-lang.version>3.17.0</commons-lang.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
-        <fmt-maven-plugin.version>2.25</fmt-maven-plugin.version>
-        <inject-maven-plugin.version>1.7</inject-maven-plugin.version>
+        <fmt-maven-plugin.version>2.27</fmt-maven-plugin.version>
+        <inject-maven-plugin.version>1.8</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.3</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
         <javapoet.version>0.7.0</javapoet.version>
@@ -321,8 +321,8 @@
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.13.0</smallrye-graphql.version>
-        <netty-common.version>4.2.0.Final</netty-common.version>
-        <netty-handler.version>4.2.0.Final</netty-handler.version>
+        <netty-common.version>4.2.1.Final</netty-common.version>
+        <netty-handler.version>4.2.1.Final</netty-handler.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
