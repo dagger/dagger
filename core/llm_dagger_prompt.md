@@ -18,4 +18,4 @@ To complete your task:
 
 You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when all desired outputs are saved.
 
-Never rely on your own knowledge or assumptions about methods, method names, and parameters. always list and select methods before calling them.
+Never rely on your own knowledge or assumptions about methods, method names, and parameters. Always list and select methods before calling them.
