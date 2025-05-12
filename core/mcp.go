@@ -1115,7 +1115,7 @@ NOTE: you must select methods before chaining them`,
 			attrs := []attribute.KeyValue{
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			}
-			if builtin.Name == "think" || builtin.Name == "call_method" {
+			if builtin.Name == "call_method" || builtin.Name == "chain_methods" {
 				attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 			}
 			// do an awkward dance to make sure we still show a span even if we fail
