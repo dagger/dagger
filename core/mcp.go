@@ -987,8 +987,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var call struct {
-					Method string         `json:"method"`
 					Self   string         `json:"self"`
+					Method string         `json:"method"`
 					Args   map[string]any `json:"args"`
 				}
 				pl, err := json.Marshal(argsAny)
@@ -1024,6 +1024,81 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
 				}
 				return method.Call(ctx, call.Args)
+			},
+		}, LLMTool{
+			Name: "chain_methods",
+			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
+
+NOTE: you must select methods before chaining them`,
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"self": map[string]any{
+						"type":        "string",
+						"description": "The object to call the method on. Not specified for top-level methods.",
+					},
+					"chain": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"method": map[string]any{
+									"type":        "string",
+									"description": "The name of the method to call.",
+								},
+								"args": map[string]any{
+									"type":                 "object",
+									"description":          "The arguments to pass to the method.",
+									"additionalProperties": true,
+								}},
+							"required": []string{"method", "args"},
+						},
+						"description": "The chain of method calls.",
+					},
+				},
+				"required": []string{"chain"},
+			},
+			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+				var toolArgs struct {
+					Self  string        `json:"self"`
+					Chain []ChainedCall `json:"chain"`
+				}
+				pl, err := json.Marshal(argsAny)
+				if err != nil {
+					return nil, err
+				}
+				if err := json.Unmarshal(pl, &toolArgs); err != nil {
+					return nil, err
+				}
+				if err := m.validateAndNormalizeChain(toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
+					return nil, err
+				}
+				var res any
+				for i, call := range toolArgs.Chain {
+					var tool LLMTool
+					tool, found := allMethods[call.Method]
+					if !found {
+						return nil, fmt.Errorf("tool not found: %q", call.Method)
+					}
+					if call.Args == nil {
+						call.Args = make(map[string]any)
+					}
+					args := cloneMap(call.Args)
+					if i > 0 {
+						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
+							// override, since the whole point is to chain from the previous
+							// value; any value here is surely mistaken or hallucinated
+							args["self"] = m.env.Ingest(obj, "")
+						}
+					} else {
+						args["self"] = toolArgs.Self
+					}
+					res, err = tool.Call(ctx, args)
+					if err != nil {
+						return nil, fmt.Errorf("call %q: %w", call.Method, err)
+					}
+				}
+				return res, nil
 			},
 		})
 	}
@@ -1081,6 +1156,61 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		}
 	}
 	return builtins, nil
+}
+
+type ChainedCall struct {
+	Method string         `json:"method"`
+	Args   map[string]any `json:"args"`
+}
+
+func (m *MCP) validateAndNormalizeChain(self string, calls []ChainedCall, allMethods map[string]LLMTool, schema *ast.Schema) error {
+	if len(calls) == 0 {
+		return errors.New("no methods called")
+	}
+	var currentType *ast.Type
+	if self != "" {
+		obj, err := m.GetObject(self, "")
+		if err != nil {
+			return err
+		}
+		currentType = obj.Type()
+	}
+	var errs error
+	for i, call := range calls {
+		if call.Method == "" {
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: method name cannot be empty", i))
+			continue
+		}
+		if !strings.Contains(call.Method, ".") && currentType != nil {
+			// add type prefix to method name
+			call.Method = currentType.Name() + "." + call.Method
+			calls[i] = call
+		}
+		method, found := allMethods[call.Method]
+		if !found {
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown method: %q", i, call.Method))
+			continue
+		}
+		if !m.selectedMethods[method.Name] {
+			errs = errors.Join(errs, fmt.Errorf("calls[%d]: method %q is not selected", i, method.Name))
+		}
+		if currentType != nil {
+			if currentType.Elem != nil {
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from array result", i, method.Name))
+				continue
+			}
+			typeDef, found := schema.Types[currentType.Name()]
+			if !found {
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown type: %q", i, currentType.Name()))
+				continue
+			}
+			if typeDef.Kind != ast.Object {
+				errs = errors.Join(errs, fmt.Errorf("calls[%d]: cannot chain %q call from non-Object type: %q (%s)", i, method.Name, currentType.Name(), typeDef.Kind))
+			}
+		}
+		currentType = method.Field.Type
+	}
+	return errs
 }
 
 func (m *MCP) userProvidedValues() []LLMTool {
