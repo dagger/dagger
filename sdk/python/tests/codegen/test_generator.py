@@ -17,6 +17,7 @@ from graphql import GraphQLString as String
 from codegen.generator import (
     Context,
     _InputField,
+    _ObjectField,
     doc,
     format_input_type,
     format_name,
@@ -159,6 +160,59 @@ def test_input_field_param(cls, name, args, expected, ctx: Context):
 @pytest.mark.parametrize("cls", [Argument, Input])
 def test_input_field_arg(cls, name, args, expected, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_arg() == expected
+
+
+def test_core_sync(ctx: Context):
+    handler = _ObjectField(
+        ctx,
+        "sync",
+        Field(NonNull(Scalar("FooID")), {}),
+        Object("Foo", {}),
+    )
+
+    assert handler.func_signature() == "async def sync(self) -> Self:"
+
+    assert str(handler.func_body()).endswith(
+        "return await self._ctx.execute_sync(self)"
+    )
+
+
+def test_user_sync_leaf(ctx: Context):
+    handler = _ObjectField(
+        ctx,
+        "sync",
+        Field(NonNull(String), {}),
+        Object("Foo", {}),
+    )
+
+    assert handler.func_signature() == "async def sync(self) -> str:"
+
+    assert str(handler.func_body()).endswith(
+        dedent(
+            """
+            _args: list[Arg] = []
+            _ctx = self._select("sync", _args)
+            return await _ctx.execute(str)
+            """.rstrip()
+        )
+    )
+
+
+def test_user_sync_object(ctx: Context):
+    handler = _ObjectField(
+        ctx,
+        "sync",
+        Field(NonNull(Object("Foo", {})), {}),
+        Object("Foo", {}),
+    )
+    assert str(handler) == dedent(
+        """
+        def sync(self) -> Self:
+            _args: list[Arg] = []
+            _ctx = self._select("sync", _args)
+            return Foo(_ctx)
+        """.rstrip()
+    )
 
 
 @pytest.mark.parametrize(
