@@ -34,11 +34,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 			span.End()
 		}()
 
-		installer, err := t.Dagger.installer(ctx, "sdk")
-		if err != nil {
-			return err
-		}
-
+		installer := t.Dagger.installer("sdk")
 		return t.sdkDevWithInstaller(installer).Lint(ctx)
 	})
 	eg.Go(func() (rerr error) {
@@ -61,24 +57,14 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 
 // Test the Elixir SDK
 func (t ElixirSDK) Test(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	return t.sdkDevWithInstaller(installer).Test(ctx)
 }
 
 // Regenerate the Elixir SDK API
 func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
-	if err != nil {
-		return nil, err
-	}
+	installer := t.Dagger.installer("sdk")
+	introspection := t.Dagger.introspection(installer)
 
 	return t.sdkDevWithInstaller(installer).Generate(introspection), nil
 }

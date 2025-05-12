@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/cmd/engine/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 )
@@ -24,8 +24,8 @@ func (e *DaggerEngine) LoadToDocker(
 	platform dagger.Platform,
 
 	// Set target distro
-	// +optional
-	image *Distro,
+	// +default="alpine"
+	image Distro,
 	// Enable experimental GPU support
 	// +optional
 	gpuSupport bool,

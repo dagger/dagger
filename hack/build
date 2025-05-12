@@ -14,11 +14,11 @@ cli |\
     dev-binaries --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" --platform=current |\
     export ./bin &
 
-engine |
+.deps | dagger-engine |\
     container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     as-tarball --forced-compression=gzip |\
     export ./bin/engine.tar &
-engine |\
+.deps | dagger-engine |\
     # HACK: /var/run/docker.sock is a linux default
     load-to-docker ${DOCKER_HOST:-/var/run/docker.sock} \
         ${IMAGE:+--name=${IMAGE-}} \

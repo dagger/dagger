@@ -89,11 +89,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 
 // Test the Python SDK
 func (t PythonSDK) Test(ctx context.Context) (rerr error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return err
-	}
-
+	installer := t.Dagger.installer("sdk")
 	base := dag.PythonSDKDev().Container().With(installer)
 	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
 
@@ -118,14 +114,8 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
-	if err != nil {
-		return nil, err
-	}
+	installer := t.Dagger.installer("sdk")
+	introspection := t.Dagger.introspection(installer)
 	return dag.Directory().WithDirectory(
 		pythonSubdir,
 		dag.PythonSDKDev().Generate(introspection),

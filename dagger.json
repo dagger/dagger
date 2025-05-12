@@ -18,6 +18,10 @@
       "source": "cmd/dagger"
     },
     {
+      "name": "dagger-engine",
+      "source": "cmd/engine"
+    },
+    {
       "name": "dirdiff",
       "source": "modules/dirdiff"
     },

@@ -9,9 +9,8 @@ import (
 
 	"github.com/moby/buildkit/identity"
 
-	"github.com/dagger/dagger/.dagger/build"
-	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 // A dev environment for the official Dagger SDKs
@@ -62,12 +61,8 @@ func (sdk *SDK) allSDKs() []sdkBase {
 	}
 }
 
-func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.Container) *dagger.Container, error) {
-	engineSvc, err := dev.Engine().Service(ctx, name, nil, false, false)
-	if err != nil {
-		return nil, err
-	}
-
+func (dev *DaggerDev) installer(name string) func(*dagger.Container) *dagger.Container {
+	engineSvc := dag.DaggerEngine().Service(name)
 	cliBinary := dag.DaggerCli().Binary()
 	cliBinaryPath := "/.dagger-cli"
 
@@ -80,23 +75,26 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.
 			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"}).
 			With(dev.withDockerCfg) // this avoids rate limiting in our ci tests
 		return ctr
-	}, nil
+	}
 }
 
-func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.Container) *dagger.Container) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source)
-	if err != nil {
-		return nil, err
-	}
+func (dev *DaggerDev) codegenBinary() *dagger.File {
+	return dev.Go().Binary("./cmd/codegen", dagger.GoBinaryOpts{
+		NoSymbols: true,
+		NoDwarf:   true,
+	})
+}
+
+func (dev *DaggerDev) introspection(installer func(*dagger.Container) *dagger.Container) *dagger.File {
 	return dag.
 		Alpine(dagger.AlpineOpts{
-			Branch: consts.AlpineVersion,
+			Branch: distconsts.AlpineVersion,
 		}).
 		Container().
 		With(installer).
-		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
+		WithFile("/usr/local/bin/codegen", dev.codegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
-		File("/schema.json"), nil
+		File("/schema.json")
 }
 
 type gitPublishOpts struct {
@@ -120,7 +118,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 	if base == nil {
 		base = dag.
 			Alpine(dagger.AlpineOpts{
-				Branch:   consts.AlpineVersion,
+				Branch:   distconsts.AlpineVersion,
 				Packages: []string{"git", "go", "python3"},
 			}).
 			Container()

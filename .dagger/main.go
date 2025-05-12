@@ -100,6 +100,47 @@ func (dev *DaggerDev) CLI() *CLI {
 	return &CLI{Dagger: dev}
 }
 
+// Lint the codebase
+func (dev *DaggerDev) Lint(
+	ctx context.Context,
+	pkgs []string, // +optional
+) error {
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		if len(pkgs) == 0 {
+			allPkgs, err := dev.containing(ctx, "go.mod")
+			if err != nil {
+				return err
+			}
+
+			for _, pkg := range allPkgs {
+				if strings.HasPrefix(pkg, "docs/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "core/integration/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/evaluator/") {
+					continue
+				}
+				pkgs = append(pkgs, pkg)
+			}
+		}
+
+		return dag.
+			Go(dev.SourceDeveloped()).
+			Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
+	})
+	eg.Go(func() error {
+		return dag.DaggerEngine().LintGenerate(ctx)
+	})
+
+	return eg.Wait()
+}
+
 func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string, error) {
 	entries, err := dev.Source.Glob(ctx, "**/"+filename)
 	if err != nil {
@@ -121,28 +162,22 @@ func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string
 
 // Dagger's Go toolchain
 func (dev *DaggerDev) Go() *GoToolchain {
-	return &GoToolchain{Go: dag.Go(dev.Source)}
+	return &GoToolchain{Go: dag.Go(dev.Source, dagger.GoOpts{
+		Values: []string{
+			"github.com/dagger/dagger/engine.Version=" + dev.Version,
+			"github.com/dagger/dagger/engine.Tag=" + dev.Tag,
+		},
+	})}
 }
 
 type GoToolchain struct {
+	// NOTE: this wrapper is because we can't return Go directly :(
 	// +private
 	*dagger.Go
 }
 
 func (gtc *GoToolchain) Env() *dagger.Container {
 	return gtc.Go.Env()
-}
-
-func (gtc *GoToolchain) Lint(
-	ctx context.Context,
-	packages []string,
-) error {
-	return gtc.Go.Lint(ctx, dagger.GoLintOpts{Packages: packages})
-}
-
-// Develop the Dagger engine container
-func (dev *DaggerDev) Engine() *DaggerEngine {
-	return &DaggerEngine{Dagger: dev}
 }
 
 // Run Dagger scripts
@@ -211,8 +246,8 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	eg.Go(func() error {
 		var err error
-		engine = dev.Engine().Generate()
-		docs, err = engine.Sync(ctx)
+		engine = dag.DaggerEngine().Generate()
+		engine, err = engine.Sync(ctx)
 		return err
 	})
 
@@ -247,8 +282,8 @@ func (dev *DaggerDev) Dev(
 	// +optional
 	target *dagger.Directory,
 	// Set target distro
-	// +optional
-	image *Distro,
+	// +default="alpine"
+	image Distro,
 	// Enable experimental GPU support
 	// +optional
 	gpuSupport bool,
@@ -260,10 +295,11 @@ func (dev *DaggerDev) Dev(
 		target = dag.Directory()
 	}
 
-	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport, sharedCache)
-	if err != nil {
-		return nil, err
-	}
+	svc := dag.DaggerEngine().Service("", dagger.DaggerEngineServiceOpts{
+		Image:       dagger.DaggerEngineDistro(image),
+		GpuSupport:  gpuSupport,
+		SharedCache: sharedCache,
+	})
 	endpoint, err := svc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	if err != nil {
 		return nil, err
@@ -282,4 +318,85 @@ func (dev *DaggerDev) withDockerCfg(ctr *dagger.Container) *dagger.Container {
 		return ctr
 	}
 	return ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
+}
+
+func (dev *DaggerDev) Scan(ctx context.Context) error {
+	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
+		Include: []string{
+			".trivyignore",
+			".trivyignore.yml",
+			".trivyignore.yaml",
+		},
+	})
+	ignoreFileNames, err := ignoreFiles.Entries(ctx)
+	if err != nil {
+		return err
+	}
+
+	ctr := dag.Container().
+		From("aquasec/trivy:0.56.1@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293").
+		WithMountedDirectory("/mnt/ignores", ignoreFiles).
+		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
+		With(dev.withDockerCfg)
+
+	commonArgs := []string{
+		"--db-repository=public.ecr.aws/aquasecurity/trivy-db",
+		"--format=json",
+		"--exit-code=1",
+		"--severity=CRITICAL,HIGH",
+		"--show-suppressed",
+	}
+	if len(ignoreFileNames) > 0 {
+		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
+	}
+
+	eg := errgroup.Group{}
+
+	eg.Go(func() error {
+		// scan the source code
+		args := []string{
+			"trivy",
+			"fs",
+			"--scanners=vuln",
+			"--vuln-type=library",
+		}
+		args = append(args, commonArgs...)
+		args = append(args, "/mnt/src")
+
+		// HACK: filter out directories that present occasional issues
+		src := dev.Source
+		src = src.
+			WithoutDirectory("docs").
+			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
+			WithoutDirectory("core/integration/testdata").
+			WithoutDirectory("dagql/idtui/viztest")
+
+		_, err := ctr.
+			WithMountedDirectory("/mnt/src", src).
+			WithExec(args).
+			Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		// scan the engine image - this can catch dependencies that are only
+		// discoverable in the final build
+		args := []string{
+			"trivy",
+			"image",
+			"--vuln-type=os,library",
+		}
+		args = append(args, commonArgs...)
+		engineTarball := "/mnt/engine.tar"
+		args = append(args, "--input", engineTarball)
+
+		target := dag.DaggerEngine().Container()
+		_, err = ctr.
+			WithMountedFile(engineTarball, target.AsTarball()).
+			WithExec(args).
+			Sync(ctx)
+		return err
+	})
+
+	return eg.Wait()
 }
