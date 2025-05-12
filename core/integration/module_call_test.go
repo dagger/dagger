@@ -2673,12 +2673,12 @@ func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 				"core", "--silent",
 				"container",
 				"from", "--address", alpineImage,
-				"with-exec", "--args", "ls,wat",
+				"with-exec", "--args", "ls,wat-call1",
 				"stdout",
 			)).
 			Sync(ctx)
 
-		requireErrOut(t, err, "ls: wat: No such file or directory")
+		requireErrOut(t, err, "ls: wat-call1: No such file or directory")
 	})
 
 	t.Run("plain", func(ctx context.Context, t *testctx.T) {
@@ -2689,12 +2689,12 @@ func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 				"core", "--progress", "plain",
 				"container",
 				"from", "--address", alpineImage,
-				"with-exec", "--args", "ls,wat",
+				"with-exec", "--args", "ls,wat-call2",
 				"stdout",
 			)).
 			Sync(ctx)
 
-		requireErrOut(t, err, "ls: wat: No such file or directory")
+		requireErrOut(t, err, "ls: wat-call2: No such file or directory")
 	})
 }
 
