@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed regression where Dagger module functions named "sync" would generate an incorrect client binding
+time: 2025-05-12T15:23:54.509983Z
+custom:
+    Author: helderco
+    PR: "10381"
