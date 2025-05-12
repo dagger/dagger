@@ -46,6 +46,8 @@ type MCP struct {
 	selectedMethods map[string]bool
 	// The last value returned by a function.
 	lastResult dagql.Typed
+	// Indicates that the model has returned
+	returned bool
 }
 
 func newMCP(env *Env) *MCP {
@@ -66,7 +68,12 @@ func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
 	cp.selectedMethods = cloneMap(cp.selectedMethods)
+	cp.returned = false
 	return &cp
+}
+
+func (m *MCP) Returned() bool {
+	return m.returned
 }
 
 // Get an object saved at a given key
@@ -634,6 +641,99 @@ func toolErrorMessage(err error) string {
 	return errResponse
 }
 
+func (m *MCP) returnBuiltin() (LLMTool, bool) {
+	if len(m.env.outputsByName) == 0 {
+		// no outputs desired
+		return LLMTool{}, false
+	}
+
+	props := map[string]any{}
+	required := []string{}
+
+	desc := "Save your work, making the requested outputs available to the user:\n"
+
+	var outputs []string
+	for name, b := range m.env.outputsByName {
+		required = append(required, name)
+
+		typeName := b.ExpectedType
+
+		outputs = append(outputs,
+			fmt.Sprintf("- %s (%s): %s", name, typeName, b.Description))
+
+		argSchema := map[string]any{
+			"type": "string",
+		}
+
+		var desc string
+		if typeName == "String" {
+			desc = b.Description
+		} else {
+			argSchema[jsonSchemaIDAttr] = typeName
+			desc = fmt.Sprintf("(%s ID) %s", typeName, b.Description)
+		}
+
+		argSchema["description"] = desc
+
+		props[name] = argSchema
+	}
+
+	// append outputs
+	sort.Strings(outputs)
+	for _, out := range outputs {
+		desc += fmt.Sprintf("\n%s", out)
+	}
+
+	return LLMTool{
+		Name:        "save",
+		Description: desc,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           props,
+			"strict":               true,
+			"required":             required,
+			"additionalProperties": false,
+		},
+		Call: func(ctx context.Context, args any) (any, error) {
+			vals, ok := args.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid arguments: %T", args)
+			}
+			for name, output := range m.env.outputsByName {
+				arg, ok := vals[name]
+				if !ok {
+					return nil, fmt.Errorf("required output %s not provided", name)
+				}
+				argStr, ok := arg.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
+				}
+				if output.ExpectedType == "String" {
+					output.Value = dagql.String(argStr)
+				} else {
+					bnd, ok := m.env.objsByID[argStr]
+					if !ok {
+						return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
+					}
+
+					obj := bnd.Value
+					actualType := obj.Type().Name()
+					if output.ExpectedType != actualType {
+						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
+					}
+
+					// Propagate description from output to binding so that outputs are
+					// described under `Available objects:`
+					bnd.Description = output.Description
+					output.Value = obj
+				}
+			}
+			m.returned = true
+			return "ok", nil
+		},
+	}, true
+}
+
 //nolint:gocyclo
 func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
@@ -690,25 +790,10 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if err := m.env.DeclareOutput(args.Name, allTypes[args.Type], args.Description); err != nil {
 					return nil, err
 				}
-				return "Output '%s' declared successfully:\n" + m.todoList(), nil
+				return "Output '%s' declared successfully.", nil
 			}),
 		})
 	}
-
-	builtins = append(builtins, LLMTool{
-		Name:        "list_outputs",
-		Description: "List all desired outputs, and whether they have been saved.",
-		Schema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-		Call: ToolFunc(srv, func(context.Context, struct{}) (any, error) {
-			if len(m.env.outputsByName) == 0 {
-				return "No outputs - behave as normal.", nil
-			}
-			return m.todoList(), nil
-		}),
-	})
 
 	builtins = append(builtins, LLMTool{
 		Name:        "list_objects",
@@ -829,7 +914,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				// the same tool 3 times when told to call it 3 times
 				for tool, count := range methodCounts {
 					if count > 1 {
-						return "", fmt.Errorf("method %q selected more than once (%d times)", tool, count)
+						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
 					}
 				}
 				type methodDef struct {
@@ -889,7 +974,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					"self": map[string]any{
 						"type":        "string",
 						"description": "The object to call the method on. Not specified for top-level methods.",
-						"pattern":     idRegex.String(),
 					},
 					"args": map[string]any{
 						"type":                 "object",
@@ -944,56 +1028,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		})
 	}
 
-	builtins = append(builtins, LLMTool{
-		Name: "save",
-		Description: `Save a requested output. See list_outputs to learn what outputs need to be save.
-
-Example: save {"msg":"Hello there.","bin":"File#123"}`,
-		Schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name": map[string]any{
-					"type":        "string",
-					"description": "The name of the output to save.",
-				},
-				"value": map[string]any{
-					"type":        "string",
-					"description": "The value to save as the output.",
-				},
-			},
-			"required": []string{"name", "value"},
-		},
-		Call: ToolFunc(srv, func(ctx context.Context, args struct {
-			Name  string
-			Value string
-		}) (any, error) {
-			output := m.env.outputsByName[args.Name]
-			if output == nil {
-				return nil, fmt.Errorf("unknown output: %q; see list_outputs", args.Name)
-			}
-			if output.ExpectedType == "String" {
-				output.Value = dagql.String(args.Value)
-			} else {
-				bnd, ok := m.env.objsByID[args.Value]
-				if !ok {
-					return nil, fmt.Errorf("object not found for argument %s: %s", args.Name, args.Value)
-				}
-
-				obj := bnd.Value
-				actualType := obj.Type().Name()
-				if output.ExpectedType != actualType {
-					return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", args.Name, output.ExpectedType, actualType)
-				}
-
-				// Propagate description from output to binding so that outputs are
-				// described under `Available objects:`
-				bnd.Description = output.Description
-				output.Value = obj
-			}
-			out := fmt.Sprintf("Output %q saved:", args.Name)
-			return out + "\n" + m.todoList(), nil
-		}),
-	})
+	if returnTool, ok := m.returnBuiltin(); ok {
+		builtins = append(builtins, returnTool)
+	}
 
 	builtins = append(builtins, m.userProvidedValues()...)
 
@@ -1044,40 +1081,6 @@ Example: save {"msg":"Hello there.","bin":"File#123"}`,
 		}
 	}
 	return builtins, nil
-}
-
-func (m *MCP) todoList() string {
-	var outputs []string
-	for _, b := range slices.SortedFunc(maps.Values(m.env.outputsByName), func(a, b *Binding) int {
-		return strings.Compare(a.Key, b.Key)
-	}) {
-		typeName := b.ExpectedType
-
-		var check string
-		if b.Value != nil {
-			check = "x"
-		} else {
-			check = " "
-		}
-
-		var desc string
-		if b.Description != "" {
-			desc = b.Description
-		} else {
-			desc = "(no description provided)"
-		}
-
-		output := fmt.Sprintf("* [%s] %s (%s): %s", check, b.Key, typeName, desc)
-		if b.Value != nil {
-			if obj, isObj := dagql.UnwrapAs[dagql.Object](b.Value); isObj {
-				output += fmt.Sprintf(" = %v", m.env.Ingest(obj, ""))
-			}
-		}
-
-		outputs = append(outputs, output)
-	}
-
-	return strings.Join(outputs, "\n")
 }
 
 func (m *MCP) userProvidedValues() []LLMTool {
@@ -1133,12 +1136,7 @@ func (m *MCP) userProvidedValues() []LLMTool {
 }
 
 func (m *MCP) IsDone() bool {
-	for _, output := range m.env.outputsByName {
-		if output.Value == nil {
-			return false
-		}
-	}
-	return true
+	return len(m.env.outputsByName) == 0 || m.returned
 }
 
 func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
@@ -1158,41 +1156,45 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 		var lit call.Literal
 		var litVal = v
 
-		additionalProps, _ := props["additionalProperties"].(bool)
 		spec, found := props[k].(map[string]any)
-		if !found && !additionalProps {
+		if !found {
 			return nil, fmt.Errorf("unknown arg: %q", k)
 		}
 
-		if str, ok := v.(string); ok {
-			if matches := idRegex.FindStringSubmatch(str); len(matches) > 0 {
-				typeName := matches[idRegex.SubexpIndex("type")]
-				nthStr := matches[idRegex.SubexpIndex("nth")]
-				nth, _ := strconv.Atoi(nthStr)
-				obj, err := m.GetObject(str, typeName)
-				if err != nil {
-					litVal = call.NewLiteralID(call.New().Append(
-						&ast.Type{NamedType: typeName},
-						"",
-						"",
-						nil,
-						nth, // TODO: show in UI
-						"",
-					))
-				} else {
-					// show the real ID in telemetry
-					litVal = obj.ID()
-				}
+		if idType, ok := spec[jsonSchemaIDAttr].(string); ok {
+			str, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string value, got %T", v)
 			}
+			obj, err := m.GetObject(str, idType)
+			if err != nil {
+				// drop it, maybe it's an invalid value
+			} else {
+				// show the real ID in telemetry
+				litVal = obj.ID()
+			}
+		}
 
-			if patternStr, found := spec["pattern"].(string); found {
-				re, err := regexp.Compile(patternStr)
-				if err != nil {
-					return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
-				}
-				if !re.MatchString(str) {
-					return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
-				}
+		pattern, found := spec["pattern"]
+		if found {
+			// if we have a pattern configured:
+			//   1) validate the arg value as a sanity check, and
+			//   2) if it's an ID pattern, map the value back to the real ID
+
+			patternStr, ok := pattern.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
+			}
+			str, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string value, got %T", v)
+			}
+			re, err := regexp.Compile(patternStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
+			}
+			if !re.MatchString(str) {
+				return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
 			}
 		}
 
@@ -1220,10 +1222,6 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 }
 
 var idRegex = regexp.MustCompile(`^(?P<type>[A-Z]\w*)#(?P<nth>\d+)$`)
-
-func idPattern(typeName string) string {
-	return `^` + typeName + `#\d+$`
-}
 
 func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
 	jsonSchema := map[string]any{

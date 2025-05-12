@@ -833,6 +833,10 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 				ToolErrored: isError,
 			})
 		}
+		if llm.mcp.Returned() {
+			// we returned; exit the loop, since some models just keep going
+			break
+		}
 	}
 	return nil
 }
