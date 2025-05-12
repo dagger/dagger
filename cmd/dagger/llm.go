@@ -76,10 +76,6 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		shell: shellHandler,
 	}
 
-	if llmModel != "" {
-		s.llm = s.llm.WithModel(llmModel)
-	}
-
 	// don't sync the initial env vars
 	for k := range shellHandler.runner.Env.Each {
 		s.skipEnv[k] = true

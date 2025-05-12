@@ -67,7 +67,8 @@ type LLM struct {
 	model    string
 	endpoint *LLMEndpoint
 
-	once *sync.Once
+	once        *sync.Once
+	endpointMtx *sync.Mutex
 
 	// History of messages
 	messages []ModelMessage
@@ -435,6 +436,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		maxAPICalls: maxAPICalls,
 		mcp:         NewEnv().MCP(),
 		once:        &sync.Once{},
+		endpointMtx: &sync.Mutex{},
 	}, nil
 }
 
@@ -464,13 +466,19 @@ func (llm *LLM) Clone() *LLM {
 	cp.messages = cloneSlice(cp.messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.once = &sync.Once{}
+	cp.endpointMtx = &sync.Mutex{}
+	cp.endpoint = llm.endpoint
 	return &cp
 }
 
 func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
+	llm.endpointMtx.Lock()
+	defer llm.endpointMtx.Unlock()
+
 	if llm.endpoint != nil {
 		return llm.endpoint, nil
 	}
+
 	router, err := loadLLMRouter(ctx, llm.Query)
 	if err != nil {
 		return nil, err
@@ -484,6 +492,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	}
 
 	llm.endpoint = endpoint
+
 	return llm.endpoint, nil
 }
 
@@ -507,6 +516,11 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
 	llm = llm.Clone()
 	llm.model = model
+
+	llm.endpointMtx.Lock()
+	defer llm.endpointMtx.Unlock()
+	llm.endpoint = nil
+
 	return llm, nil
 }
 
