@@ -113,21 +113,40 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
-// func (m *Evals) SingleState(ctx context.Context) (*Report, error) {
-// 	return withLLMReport(ctx,
-// 		m.LLM().
-// 			WithContainer(
-// 				dag.Container().
-// 					From("alpine").
-// 					WithEnvVariable("TERM", "xterm-potato"),
-// 			).
-// 			WithPrompt("what is the value of the TERM environment variable?"),
-// 		func(t testing.TB, llm *dagger.LLM) {
-// 			reply, err := llm.LastReply(ctx)
-// 			require.NoError(t, err)
-// 			require.Contains(t, reply, "xterm-potato")
-// 		})
-// }
+func (m *Evals) CoreAPI(ctx context.Context) (*Report, error) {
+	return withLLMReport(ctx,
+		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
+			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+				WithFileOutput("starch", "A file containing the word potato")).
+			WithPrompt("return a file that contains the word potato"),
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
+			reply, err := llm.Env().Output("starch").AsFile().Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, reply, "potato")
+		})
+}
+
+// Test that the model is conscious of a "current state" without needing
+// explicit prompting.
+func (m *Evals) ModuleDependencies(ctx context.Context) (*Report, error) {
+	err := dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender").AsModule().Serve(ctx, dagger.ModuleServeOpts{
+		IncludeDependencies: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return withLLMReport(ctx,
+		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
+			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+				WithStringOutput("methods", "The list of methods that you can see.")).
+			WithPrompt("List all of the methods that you can see."),
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
+			reply, err := llm.Env().Output("methods").AsString(ctx)
+			require.NoError(t, err)
+			require.Contains(t, reply, "llmTestModule")
+			require.Contains(t, reply, "llmDirModuleDepender")
+		})
+}
 
 // func (m *Evals) CoreMulti(ctx context.Context) (*Report, error) {
 // 	return withLLMReport(ctx,
@@ -242,11 +261,6 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 
 // Test that the LLM is able to access the content of variables without the user
 // having to expand them in the prompt.
-//
-// SUCCESS RATE (ballpark):
-// - claude-3-7-sonnet-latest: 100%
-// - gpt-4o: 100%
-// - gemini-2.0-flash: 0%
 func (m *Evals) ReadImplicitVars(ctx context.Context) (*Report, error) {
 	// use some fun formatting here to make sure it doesn't get lost in
 	// the shuffle

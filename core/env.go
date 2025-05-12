@@ -73,7 +73,7 @@ func (env *Env) Privileged() *Env {
 }
 
 func (env *Env) IsPrivileged() bool {
-	return true
+	return env.privileged
 }
 
 // Return a writable copy of the environment
