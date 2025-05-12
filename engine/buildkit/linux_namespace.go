@@ -93,7 +93,7 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 	state.cleanups.Add("stopping namespace workers", p.Wait)
 	state.cleanups.Add("canceling namespace workers", Infallible(func() { cancel(fmt.Errorf("cleanup container: %w", context.Canceled)) }))
 
-	for i := 0; i < workerPoolSize; i++ {
+	for range workerPoolSize {
 		p.Go(func(ctx context.Context) (rerr error) {
 			for {
 				select {

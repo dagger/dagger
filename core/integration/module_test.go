@@ -5878,7 +5878,7 @@ func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
 			var wg sync.WaitGroup
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()

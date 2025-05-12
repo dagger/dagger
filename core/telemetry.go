@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -239,10 +240,8 @@ func isMeta(id *call.ID) bool {
 // the given types.
 func anyReturns(id *call.ID, types ...string) bool {
 	ret := id.Type().NamedType()
-	for _, t := range types {
-		if ret == t {
-			return true
-		}
+	if slices.Contains(types, ret) {
+		return true
 	}
 	if id.Receiver() != nil {
 		return anyReturns(id.Receiver(), types...)

@@ -875,7 +875,7 @@ func (spec FieldSpec) FieldDefinition(view View) *ast.FieldDefinition {
 		Type:        spec.Type.Type(),
 	}
 	if len(spec.Directives) > 0 {
-		def.Directives = append([]*ast.Directive{}, spec.Directives...)
+		def.Directives = slices.Clone(spec.Directives)
 	}
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))

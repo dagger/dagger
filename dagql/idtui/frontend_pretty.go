@@ -1714,7 +1714,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dag
 		}
 
 		// Print each wrapped line with proper indentation
-		for _, line := range strings.Split(errText, "\n") {
+		for line := range strings.SplitSeq(errText, "\n") {
 			if line == "" {
 				continue
 			}

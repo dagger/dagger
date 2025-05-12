@@ -122,7 +122,7 @@ func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 				var gpus []string
 
 				// Take host output and get GPU IDs:
-				for _, ln := range strings.Split(hostNvidiaOutputStr, "\n") {
+				for ln := range strings.SplitSeq(hostNvidiaOutputStr, "\n") {
 					matches := uuidRegex.FindAllString(ln, 1)
 					if len(matches) == 0 {
 						continue

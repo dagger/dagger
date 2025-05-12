@@ -265,7 +265,7 @@ func (t Trie) String() string {
 	for ch, child := range t.children {
 		if child != nil {
 			lines += fmt.Sprintf("- %c ->\n", ch)
-			for _, line := range strings.Split(child.String(), "\n") {
+			for line := range strings.SplitSeq(child.String(), "\n") {
 				lines += "  " + line + "\n"
 			}
 		}

@@ -218,7 +218,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 	`
 
 	modDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(mainGoTmpl, defaultPort)), 0o644)
+	err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, mainGoTmpl, defaultPort), 0o644)
 	require.NoError(t, err)
 
 	_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -384,9 +385,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	} else {
 		baseLabels[wlabel.Hostname] = hostname
 	}
-	for k, v := range ociCfg.Labels {
-		baseLabels[k] = v
-	}
+	maps.Copy(baseLabels, ociCfg.Labels)
 	workerID, err := base.ID(srv.workerRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worker ID: %w", err)

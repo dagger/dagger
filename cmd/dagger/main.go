@@ -557,10 +557,7 @@ func nameShortWrappedIter(s iter.Seq2[string, string]) string {
 		lines = append(lines, fmt.Sprintf("%s\x00%s", name, short))
 	}
 
-	padding := maxLen
-	if minPadding > maxLen {
-		padding = minPadding
-	}
+	padding := max(minPadding, maxLen)
 
 	sb := new(strings.Builder)
 	for _, line := range lines {

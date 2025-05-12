@@ -298,7 +298,7 @@ func limitTicker(interval time.Duration, limit int) <-chan time.Time {
 	go func() {
 		defer ticker.Stop()
 		defer close(ch)
-		for i := 0; i < limit; i++ {
+		for range limit {
 			ch <- <-ticker.C
 		}
 	}()

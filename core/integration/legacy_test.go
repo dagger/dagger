@@ -69,7 +69,7 @@ func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// construct and return the terminal type, so these old schemas should
 	// process these types as before.
 
-	src := []byte(fmt.Sprintf(`package main
+	src := fmt.Appendf(nil, `package main
 import (
 	"context"
 	"dagger/test/internal/dagger"
@@ -91,7 +91,7 @@ type Test struct {
 func (t *Test) Debug() *dagger.Terminal {
 	return t.Ctr.Terminal()
 }
-`, alpineImage))
+`, alpineImage)
 
 	t.Run("from cli", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()

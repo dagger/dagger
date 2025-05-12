@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -530,14 +531,7 @@ func (w *Worker) setUserGroup(_ context.Context, state *execState) error {
 	state.spec.Process.User.GID = state.gid
 	state.spec.Process.User.AdditionalGids = state.sgids
 	// ensure the primary GID is also included in the additional GID list
-	var found bool
-	for _, gid := range state.sgids {
-		if gid == state.gid {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(state.sgids, state.gid) {
 		state.spec.Process.User.AdditionalGids = append([]uint32{state.gid}, state.sgids...)
 	}
 

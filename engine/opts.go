@@ -254,7 +254,7 @@ func LocalExportOptsFromContext(ctx context.Context) (*LocalExportOpts, error) {
 	return opts, nil
 }
 
-func encodeMeta(key string, v interface{}) metadata.MD {
+func encodeMeta(key string, v any) metadata.MD {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
@@ -262,7 +262,7 @@ func encodeMeta(key string, v interface{}) metadata.MD {
 	return metadata.Pairs(key, base64.StdEncoding.EncodeToString(b))
 }
 
-func decodeMeta(md metadata.MD, key string, dest interface{}) error {
+func decodeMeta(md metadata.MD, key string, dest any) error {
 	vals := md.Get(key)
 	if len(vals) != 1 {
 		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))

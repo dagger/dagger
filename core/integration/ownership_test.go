@@ -66,7 +66,7 @@ func testOwnership(
 				}).
 				Stdout(ctx)
 			require.NoError(t, err)
-			for _, line := range strings.Split(output, "\n") {
+			for line := range strings.SplitSeq(output, "\n") {
 				if line == "" {
 					continue
 				}

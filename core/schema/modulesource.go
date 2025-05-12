@@ -1741,7 +1741,7 @@ func (s *moduleSourceSchema) runCodegen(
 			}
 			fileName := strings.TrimPrefix(fileName, "/")
 			gitAttrsContents = append(gitAttrsContents,
-				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
+				fmt.Appendf(nil, "/%s linguist-generated\n", fileName)...,
 			)
 		}
 
@@ -1786,7 +1786,7 @@ func (s *moduleSourceSchema) runCodegen(
 			}
 			fileName := strings.TrimPrefix(fileName, "/")
 			gitIgnoreContents = append(gitIgnoreContents,
-				[]byte(fmt.Sprintf("/%s\n", fileName))...,
+				fmt.Appendf(nil, "/%s\n", fileName)...,
 			)
 		}
 

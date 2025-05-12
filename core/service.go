@@ -415,7 +415,7 @@ func (svc *Service) startContainer(
 		checked <- newHealth(bk, gc, fullHost, ctr.Ports).Check(ctx)
 	}()
 
-	env := append([]string{}, execOp.Meta.Env...)
+	env := slices.Clone(execOp.Meta.Env)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
@@ -773,10 +773,8 @@ func (set AliasSet) String() string {
 }
 
 func (set AliasSet) With(alias string) AliasSet {
-	for _, a := range set {
-		if a == alias {
-			return set
-		}
+	if slices.Contains(set, alias) {
+		return set
 	}
 	return append(set, alias)
 }

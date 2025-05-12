@@ -100,7 +100,7 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		hosts := map[string]int{}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			hosts[hostname(ctx, c)]++
 		}
 
@@ -110,7 +110,7 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	t.Run("hostnames are stable across sessions", func(ctx context.Context, t *testctx.T) {
 		hosts := map[string]int{}
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			c := connect(ctx, t)
 			hosts[hostname(ctx, c)]++
 		}
@@ -761,7 +761,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	}
 
 	res, err := testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -791,7 +791,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
 	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -818,7 +818,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
 	res, err = testutil.QueryWithClient[GetPortsResponse](c, t, getPorts, &testutil.QueryOptions{
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"id": cid,
 		},
 	})
@@ -1775,7 +1775,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 		srvURL, err := tunnel.Endpoint(ctx)
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			res, err := http.Get("http://" + srvURL)
 			require.NoError(t, err)
 			defer res.Body.Close()
@@ -2074,7 +2074,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 
 	var newResolvContents string
-	for _, line := range strings.Split(resolvContents, "\n") {
+	for line := range strings.SplitSeq(resolvContents, "\n") {
 		if strings.HasPrefix(line, "search") {
 			continue
 		}
@@ -2115,7 +2115,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		Stdout(ctx)
 	require.NoError(t, err)
 	var found bool
-	for _, line := range strings.Split(resolvContents2, "\n") {
+	for line := range strings.SplitSeq(resolvContents2, "\n") {
 		if strings.HasPrefix(line, "search") {
 			found = true
 			require.Regexp(t, `search [a-z0-9]+\.dagger\.local`, line)

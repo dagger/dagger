@@ -250,7 +250,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			return nil, nil, err
 		}
 		authHeader := "basic " + base64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:%s", username, password)),
+			fmt.Appendf(nil, "%s:%s", username, password),
 		)
 		opts = append(opts, gitutil.WithArgs(
 			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,

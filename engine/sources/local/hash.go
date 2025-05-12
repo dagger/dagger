@@ -17,7 +17,7 @@ const (
 )
 
 var statHashBufPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buffer := make([]byte, 0, 64)
 		return &buffer
 	},

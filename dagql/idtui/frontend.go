@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -134,9 +135,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	}
 
 	db := dagui.NewDB()
-	for dig, call := range dag.CallsByDigest {
-		db.Calls[dig] = call
-	}
+	maps.Copy(db.Calls, dag.CallsByDigest)
 	r := newRenderer(db, -1, dagui.FrontendOpts{})
 	if d.Newline != "" {
 		r.newline = d.Newline
