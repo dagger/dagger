@@ -34,6 +34,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bknetwork "github.com/moby/buildkit/util/network"
+	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
@@ -887,10 +888,7 @@ func (w *Worker) createCWD(_ context.Context, state *execState) error {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
 	}
 	if _, err := os.Stat(newp); err != nil {
-		if err := idtools.MkdirAllAndChown(newp, 0o755, idtools.Identity{
-			UID: int(state.uid),
-			GID: int(state.gid),
-		}); err != nil {
+		if err := user.MkdirAllAndChown(newp, 0o755, int(state.uid), int(state.gid), user.WithOnlyNew); err != nil {
 			return fmt.Errorf("failed to create working directory %s: %w", newp, err)
 		}
 	}

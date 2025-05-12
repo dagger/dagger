@@ -374,7 +374,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 }
 
 // Complexity returns the complexity of the given field.
-func (s *Server) Complexity(typeName, field string, childComplexity int, args map[string]any) (int, bool) {
+func (s *Server) Complexity(ctx context.Context, typeName, field string, childComplexity int, args map[string]any) (int, bool) {
 	// TODO
 	return 1, false
 }
