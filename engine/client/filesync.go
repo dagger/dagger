@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/session/filesync"
+	"github.com/moby/sys/user"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"google.golang.org/grpc"
@@ -140,10 +140,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 
 	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := idtools.MkdirAllAndChownNew(filepath.FromSlash(absPath), 0o700, idtools.Identity{
-			UID: int(t.uid),
-			GID: int(t.gid),
-		}); err != nil {
+		if err := user.MkdirAllAndChown(filepath.FromSlash(absPath), 0o700, int(t.uid), int(t.gid), user.WithOnlyNew); err != nil {
 			return fmt.Errorf("failed to create synctarget dest dir %s: %w", absPath, err)
 		}
 
@@ -204,10 +201,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
 
-	if err := idtools.MkdirAllAndChownNew(filepath.FromSlash(destParentDir), 0o700, idtools.Identity{
-		UID: int(t.uid),
-		GID: int(t.gid),
-	}); err != nil {
+	if err := user.MkdirAllAndChown(filepath.FromSlash(destParentDir), 0o700, int(t.uid), int(t.gid), user.WithOnlyNew); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", absPath, err)
 	}
 
