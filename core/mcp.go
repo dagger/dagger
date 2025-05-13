@@ -805,29 +805,19 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		Name:        "list_objects",
 		Description: "List available objects.",
 		Schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"type": map[string]any{
-					"type":        []string{"string", "null"},
-					"description": "If specified, list objects of a particular type.",
-				},
-			},
-			"required":             []string{"type"},
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Strict: true,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct {
-			Type string `default:""`
-		}) (any, error) {
+		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
 			type objDesc struct {
 				ID          string `json:"id"`
 				Description string `json:"description"`
 			}
 			var objects []objDesc
 			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
-				if args.Type != "" && args.Type != typeName {
-					continue
-				}
 				count := m.env.typeCounts[typeName]
 				for i := 1; i <= count; i++ {
 					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
@@ -845,20 +835,13 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		Name:        "list_methods",
 		Description: "List the methods that can be selected.",
 		Schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"type": map[string]any{
-					"type":        []string{"string", "null"},
-					"description": "If specified, only list this type's methods.",
-				},
-			},
-			"required":             []string{"type"},
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
 			"additionalProperties": false,
 		},
 		Strict: true,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct {
-			Type string `default:""`
-		}) (any, error) {
+		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
 			type toolDesc struct {
 				Name         string            `json:"name"`
 				Returns      string            `json:"returns"`
@@ -866,10 +849,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			}
 			var methods []toolDesc
 			for _, method := range allMethods {
-				if args.Type != "" && !strings.HasPrefix(method.Name, args.Type+".") {
-					// looking for a particular type's methods
-					continue
-				}
 				reqArgs := map[string]string{}
 				var returns string
 				if method.Field != nil {
