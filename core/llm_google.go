@@ -325,8 +325,18 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 			yes := true
 			schema.Nullable = &yes
 		case "type":
-			gtype := bbiTypeToGenaiType(param.(string))
-			schema.Type = gtype
+			switch x := param.(type) {
+			case string:
+				gtype := bbiTypeToGenaiType(x)
+				schema.Type = gtype
+			case []string:
+				gtype := bbiTypeToGenaiType(x[0])
+				schema.Type = gtype
+				if x[1] == "null" {
+					yes := true
+					schema.Nullable = &yes
+				}
+			}
 		case "format":
 			switch param {
 			case "enum", "date-time":

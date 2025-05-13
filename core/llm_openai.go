@@ -140,6 +140,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 					Name:        tool.Name,
 					Description: openai.Opt(tool.Description),
 					Parameters:  openai.FunctionParameters(tool.Schema),
+					// Strict:      openai.Opt(true),
 				},
 			})
 		}

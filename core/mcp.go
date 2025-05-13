@@ -690,7 +690,6 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
-			"strict":               true,
 			"required":             required,
 			"additionalProperties": false,
 		},
@@ -780,7 +779,8 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 						"description": "A description of the output.",
 					},
 				},
-				"required": []string{"name", "description"},
+				"required":             []string{"name", "type", "description"},
+				"additionalProperties": false,
 			},
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Name        string
@@ -802,10 +802,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"type": "object",
 			"properties": map[string]any{
 				"type": map[string]any{
-					"type":        "string",
+					"type":        []string{"string", "null"},
 					"description": "If specified, list objects of a particular type.",
 				},
 			},
+			"required":             []string{"type"},
+			"additionalProperties": false,
 		},
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
@@ -839,11 +841,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"type": "object",
 			"properties": map[string]any{
 				"type": map[string]any{
-					"type":        "string",
+					"type":        []string{"string", "null"},
 					"description": "If specified, only list this type's methods.",
 				},
 			},
-			"required": []string{},
+			"required":             []string{"type"},
+			"additionalProperties": false,
 		},
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
@@ -972,17 +975,16 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 						"description": "The name of the method to call.",
 					},
 					"self": map[string]any{
-						"type":        "string",
+						"type":        []string{"string", "null"},
 						"description": "The object to call the method on. Not specified for top-level methods.",
 					},
 					"args": map[string]any{
-						"type":                 "object",
+						"type":                 []string{"object", "null"},
 						"description":          "The arguments to pass to the method.",
 						"additionalProperties": true,
 					},
 				},
-				"required":             []string{"method"},
-				"strict":               true,
+				"required":             []string{"method", "self", "args"},
 				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
@@ -1034,7 +1036,7 @@ NOTE: you must select methods before chaining them`,
 				"type": "object",
 				"properties": map[string]any{
 					"self": map[string]any{
-						"type":        "string",
+						"type":        []string{"string", "null"},
 						"description": "The object to call the method on. Not specified for top-level methods.",
 					},
 					"chain": map[string]any{
@@ -1050,13 +1052,15 @@ NOTE: you must select methods before chaining them`,
 									"type":                 "object",
 									"description":          "The arguments to pass to the method.",
 									"additionalProperties": true,
-								}},
+								},
+							},
 							"required": []string{"method", "args"},
 						},
 						"description": "The chain of method calls.",
 					},
 				},
-				"required": []string{"chain"},
+				"required":             []string{"chain", "self"},
+				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var toolArgs struct {
@@ -1254,7 +1258,6 @@ func (m *MCP) userProvidedValues() []LLMTool {
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
-				"strict":               true,
 				"required":             []string{},
 				"additionalProperties": false,
 			},
@@ -1283,6 +1286,11 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	}
 	var callArgs []*call.Argument
 	for k, v := range argsMap {
+		if v == nil {
+			// explicitly passing null for required arg (maybe due to strict mode); omit
+			continue
+		}
+
 		var lit call.Literal
 		var litVal = v
 
