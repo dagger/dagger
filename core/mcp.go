@@ -32,6 +32,9 @@ type LLMTool struct {
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
 	Schema map[string]any `json:"schema"`
+	// Whether the tool schema is strict.
+	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
+	Strict bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -308,6 +311,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
+			Strict:      false, // unused
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args)
 			},
@@ -693,6 +697,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			"required":             required,
 			"additionalProperties": false,
 		},
+		Strict: true,
 		Call: func(ctx context.Context, args any) (any, error) {
 			vals, ok := args.(map[string]any)
 			if !ok {
@@ -782,6 +787,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"required":             []string{"name", "type", "description"},
 				"additionalProperties": false,
 			},
+			Strict: true,
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Name        string
 				Type        string
@@ -809,6 +815,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"required":             []string{"type"},
 			"additionalProperties": false,
 		},
+		Strict: true,
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
 		}) (any, error) {
@@ -848,6 +855,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"required":             []string{"type"},
 			"additionalProperties": false,
 		},
+		Strict: true,
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Type string `default:""`
 		}) (any, error) {
@@ -906,6 +914,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"required":             []string{"methods"},
 				"additionalProperties": false,
 			},
+			Strict: true,
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Methods []string
 			}) (any, error) {
@@ -987,6 +996,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"required":             []string{"method", "self", "args"},
 				"additionalProperties": false,
 			},
+			Strict: false,
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var call struct {
 					Self   string         `json:"self"`
@@ -1062,6 +1072,7 @@ NOTE: you must select methods before chaining them`,
 				"required":             []string{"chain", "self"},
 				"additionalProperties": false,
 			},
+			Strict: false,
 			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
 				var toolArgs struct {
 					Self  string        `json:"self"`
@@ -1261,6 +1272,7 @@ func (m *MCP) userProvidedValues() []LLMTool {
 				"required":             []string{},
 				"additionalProperties": false,
 			},
+			Strict: true,
 			Call: func(ctx context.Context, args any) (any, error) {
 				return desc, nil
 			},
