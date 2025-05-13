@@ -175,7 +175,7 @@ func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
 			Loop().
 			WithPrompt("Create the file /b with contents 2.").
 			Loop().
-			WithPrompt("Nevermind - go back to before you created /b and create /c with contents 3, and return that."),
+			WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			entries, err := llm.Env().Output("out").AsDirectory().Entries(ctx)
 			require.NoError(t, err)
