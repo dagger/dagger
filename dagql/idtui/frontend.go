@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"strings"
@@ -622,13 +623,13 @@ func humanizeTokens(v int64) string {
 // 	return nil
 // }
 
-func renderPrimaryOutput(db *dagui.DB) error {
+func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 	logs := db.PrimaryLogs[db.PrimarySpan]
 	if len(logs) == 0 {
 		return nil
 	}
 
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(w)
 
 	for _, l := range logs {
 		data := l.Body().AsString()
@@ -648,7 +649,7 @@ func renderPrimaryOutput(db *dagui.DB) error {
 		case 2: // stderr
 			fallthrough
 		default:
-			if _, err := fmt.Fprint(os.Stderr, data); err != nil {
+			if _, err := fmt.Fprint(w, data); err != nil {
 				return err
 			}
 		}

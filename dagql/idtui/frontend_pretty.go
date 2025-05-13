@@ -92,6 +92,7 @@ type frontendPretty struct {
 	viewOut    *termenv.Output
 	browserBuf *strings.Builder // logs if browser fails
 	stdin      io.Reader        // used by backgroundMsg for running terminal
+	writer     io.Writer
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -104,17 +105,17 @@ type frontendPretty struct {
 	activeStringPrompt *promptString
 }
 
-func NewPretty() Frontend {
-	return NewWithDB(dagui.NewDB())
+func NewPretty(w io.Writer) Frontend {
+	return NewWithDB(w, dagui.NewDB())
 }
 
-func NewReporter() Frontend {
-	fe := NewWithDB(dagui.NewDB())
+func NewReporter(w io.Writer) Frontend {
+	fe := NewWithDB(w, dagui.NewDB())
 	fe.reportOnly = true
 	return fe
 }
 
-func NewWithDB(db *dagui.DB) *frontendPretty {
+func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	profile := ColorProfile()
 	view := new(strings.Builder)
 	return &frontendPretty{
@@ -137,6 +138,7 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 		view:       view,
 		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
 		browserBuf: new(strings.Builder),
+		writer:     w,
 	}
 }
 
@@ -390,8 +392,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
-				fmt.Fprintln(os.Stderr)
-				handleTelemetryErrorOutput(os.Stderr, out, fe.TelemetryError)
+				fmt.Fprintln(w)
+				handleTelemetryErrorOutput(w, out, fe.TelemetryError)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
@@ -408,7 +410,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	// Replay the primary output log to stdout/stderr.
-	return renderPrimaryOutput(fe.db)
+	return renderPrimaryOutput(w, fe.db)
 }
 
 func (fe *frontendPretty) flush() {

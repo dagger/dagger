@@ -3,7 +3,7 @@ package idtui
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -103,14 +103,14 @@ type logLine struct {
 	time time.Time
 }
 
-func NewPlain() Frontend {
+func NewPlain(w io.Writer) Frontend {
 	db := dagui.NewDB()
 	return &frontendPlain{
 		db:   db,
 		data: make(map[dagui.SpanID]*spanData),
 
 		profile:        ColorProfile(),
-		output:         NewOutput(os.Stderr),
+		output:         NewOutput(w),
 		contextHold:    1 * time.Second,
 		contextHoldMax: 10 * time.Second,
 
@@ -120,7 +120,7 @@ func NewPlain() Frontend {
 }
 
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
-	fmt.Fprintln(os.Stderr, "Shell not supported in plain mode")
+	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }
 
 func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
@@ -399,6 +399,7 @@ func (fe *frontendPlain) finalRender() {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
+	stderr := fe.output.Writer()
 	if !fe.Silent {
 		// disable context holds, for this final render of *everything*
 		fe.contextHold = 0
@@ -406,15 +407,15 @@ func (fe *frontendPlain) finalRender() {
 	}
 	if fe.idx > 0 {
 		// if we rendered anything, leave a newline
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 	}
 
-	handleTelemetryErrorOutput(os.Stderr, fe.output, fe.TelemetryError)
+	handleTelemetryErrorOutput(stderr, fe.output, fe.TelemetryError)
 
 	if fe.msgPreFinalRender.Len() > 0 {
-		fmt.Fprintln(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
+		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
-	renderPrimaryOutput(fe.db)
+	renderPrimaryOutput(stderr, fe.db)
 }
 
 func (fe *frontendPlain) renderProgress() {
