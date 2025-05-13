@@ -110,9 +110,14 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op FSDagOp) Digest() (digest.Digest, error) {
+	opData, err := json.Marshal(op.Data)
+	if err != nil {
+		return "", err
+	}
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Path,
+		string(opData),
 	}, "+")), nil
 }
 func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {

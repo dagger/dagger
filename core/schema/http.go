@@ -58,18 +58,15 @@ func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Q
 func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
 	if op, ok := core.DagOpFromContext[core.FSDagOp](ctx); ok {
 		cache := parent.Self.BuildkitCache()
-		ref, err := cache.Get(ctx, op.Data.(string), nil)
+		snap, err := cache.Get(ctx, op.Data.(string), nil)
 		if err != nil {
 			return inst, err
 		}
+		snap = snap.Clone()
 
 		f := core.NewFile(parent.Self, nil, op.Path, parent.Self.Platform(), nil)
-		f.Result = ref
-		fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
-		if err != nil {
-			return inst, err
-		}
-		return fileInst, nil
+		f.Result = snap
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 	}
 
 	filename, err := s.httpPath(ctx, parent, args)
@@ -136,6 +133,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		return inst, err
 	}
 	defer resp.Body.Close()
+	defer snap.Release(context.WithoutCancel(ctx))
 
 	// also mixin the checksum
 	ctxDagOp := dagql.ContextWithID(ctx, dagql.CurrentID(ctx).WithDigest(dagql.HashFrom(
@@ -144,6 +142,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		dgst.String(),
 		resp.Header.Get("Last-Modified"),
 	)))
+
 	inst, err = DagOpFile(ctxDagOp, s.srv, parent, args, snap.ID(), s.http, s.httpPath)
 	if err != nil {
 		return inst, err

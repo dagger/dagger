@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
@@ -28,8 +29,11 @@ func DoHTTPRequest(
 ) (_ bkcache.ImmutableRef, _ digest.Digest, _ *http.Response, rerr error) {
 	cache := query.BuildkitCache()
 
+	// FIXME: this is the same as the legacy buildkit behavior, but we *could*
+	// potentially reuse ETags even if filename/permissions change: then
+	// creating a new snapshot, copying only the data from the old one
 	url := req.URL.String()
-	urlDigest := digest.FromString(url)
+	urlDigest := dagql.HashFrom(url, filename, fmt.Sprint(permissions))
 
 	mds, err := searchHTTPByDigest(ctx, cache, urlDigest)
 	if err != nil {

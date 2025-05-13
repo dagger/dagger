@@ -52,22 +52,34 @@ func (HTTPSuite) TestHTTPName(ctx context.Context, t *testctx.T) {
 	filename, err = c.HTTP(url, dagger.HTTPOpts{Name: "FooBar.md"}).Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "FooBar.md", filename)
+
+	filename, err = c.HTTP(url, dagger.HTTPOpts{Name: "FooBar.md.x"}).Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "FooBar.md.x", filename)
 }
 
 func (HTTPSuite) TestHTTPPermissions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	url := "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
-	f := c.HTTP(url, dagger.HTTPOpts{Permissions: 0765})
 
+	f := c.HTTP(url, dagger.HTTPOpts{Permissions: 0765})
 	stat, err := c.Container().From(alpineImage).
 		WithFile("/target", f).
 		WithExec([]string{"stat", "-c", "%a", "/target"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	stat = strings.TrimSpace(stat)
-
 	require.Equal(t, "765", stat)
+
+	f2 := c.HTTP(url, dagger.HTTPOpts{Permissions: 0764})
+	stat, err = c.Container().From(alpineImage).
+		WithFile("/target", f2).
+		WithExec([]string{"stat", "-c", "%a", "/target"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	stat = strings.TrimSpace(stat)
+	require.Equal(t, "764", stat)
 }
 
 func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
