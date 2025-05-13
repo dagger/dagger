@@ -537,7 +537,6 @@ class _ObjectField:
         self.is_list = is_list_of_objects_type(field.type)
         self.is_exec = self.is_leaf or self.is_list
         self.is_void = self.is_leaf and self.named_type.name == "Void"
-        self.is_sync = self.is_leaf and self.name == "sync"
         self.type = format_output_type(field.type).replace("Query", "Client")
 
         # Currently, `sync` is the only field where the error is all we
@@ -552,6 +551,7 @@ class _ObjectField:
                 self.type = converted
                 self.convert_id = True
 
+        self.is_sync = self.convert_id and self.name == "sync"
         self.id_query_field = id_query_field(self.named_type)
 
     @joiner
