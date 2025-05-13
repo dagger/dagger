@@ -214,9 +214,9 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR
+                COMMAND: dagger call -q --github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-daggerverse-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: modules/daggerverse
+                DAGGER_MODULE: modules/dagger-io
                 RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
               shell: bash
         timeout-minutes: 20
