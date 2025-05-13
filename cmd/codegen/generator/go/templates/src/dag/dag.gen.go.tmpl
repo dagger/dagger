@@ -10,7 +10,19 @@ import (
 	"sync"
 	
 	dagger "{{.PackageImport}}"
+
+	{{- /*  The standalone client in not dev mode uses the published package library for dagger connection option */ -}}
+	{{- if and (IsStandaloneClient) (not IsDevMode) }}
+	dagClient "dagger.io/dagger"
+	{{ end -}}
 )
+
+{{- $daggerClientImportPkg := "" -}}
+{{- if and (IsStandaloneClient) (not IsDevMode) -}}
+	{{- $daggerClientImportPkg = "dagClient" -}}
+{{- else -}}
+	{{- $daggerClientImportPkg = "dagger" -}}
+{{- end }}
 
 var client *dagger.Client
 var clientMu sync.Mutex
@@ -20,8 +32,8 @@ func initClient() *dagger.Client {
 	defer clientMu.Unlock()
 
 	if client == nil {
-		opts := []dagger.ClientOpt{
-		  dagger.WithLogOutput(os.Stdout),
+		opts := []{{ $daggerClientImportPkg }}.ClientOpt{
+		  {{ $daggerClientImportPkg }}.WithLogOutput(os.Stdout),
 		}
 
 		ctx := context.Background()

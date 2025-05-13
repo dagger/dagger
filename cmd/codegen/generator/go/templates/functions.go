@@ -87,7 +87,9 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsDevMode":               funcs.isDevMode,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
-		"GitDependencies":         funcs.gitDependencies,
+		"Dependencies":            funcs.Dependencies,
+		"HasLocalDependencies":    funcs.HasLocalDependencies,
+		"ImplementModule":         funcs.ImplementModule,
 	}
 }
 

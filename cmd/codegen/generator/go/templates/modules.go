@@ -13,7 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -39,8 +40,22 @@ func (funcs goTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
 }
 
-func (funcs goTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
-	return funcs.cfg.GitDependencies
+func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
+	return funcs.cfg.ModuleDependencies
+}
+
+func (funcs goTemplateFuncs) HasLocalDependencies() bool {
+	for _, dep := range funcs.cfg.ModuleDependencies {
+		if dep.Kind == core.ModuleSourceKindLocal {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (funcs goTemplateFuncs) ImplementModule() bool {
+	return funcs.cfg.ImplementModule
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
