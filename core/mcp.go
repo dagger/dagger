@@ -771,8 +771,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				"properties": map[string]any{
 					"name": map[string]any{
 						"type":        "string",
-						"description": "The name of the output, following shell naming conventions.",
-						"format":      "[a-z][a-z0-9_]*",
+						"description": "The name of the output, following shell naming conventions ([a-z][a-z0-9_]*).",
 					},
 					"type": map[string]any{
 						"type":        "string",
