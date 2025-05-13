@@ -37,10 +37,13 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	if err != nil {
 		return inst, err
 	}
-	return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
+	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
+		ID:       currentIDForDagOp(ctx),
+		Filename: "output.json",
+	}, deps)
 }
 
-type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (string, error)
+type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance[T], args A) (string, error)
 
 // DagOpFileWrapper caches a file field as a buildkit operation - this is
 // more specialized than DagOpWrapper, since that serializes the value to
@@ -48,13 +51,13 @@ type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (s
 func DagOpFileWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-		return DagOpFile(ctx, srv, self, args, fn, pfn)
+		return DagOpFile(ctx, srv, self, args, nil, fn, pfn)
 	}
 }
 
@@ -68,8 +71,9 @@ func DagOpFile[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self dagql.Instance[T],
 	args A,
+	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
@@ -81,13 +85,17 @@ func DagOpFile[T dagql.Typed, A any](
 		// NOTE: if set, the path function must be *somewhat* stable -
 		// since it becomes part of the op, then any changes to this
 		// invalidate the cache
-		filename, err = pfn(ctx, self)
+		filename, err = pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}
 	}
 
-	file, err := core.NewFileDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	file, err := core.NewFileDagOp(ctx, srv, &core.FSDagOp{
+		ID:   currentIDForDagOp(ctx),
+		Path: filename,
+		Data: data,
+	}, deps)
 	if err != nil {
 		return inst, err
 	}
@@ -99,13 +107,13 @@ func DagOpFile[T dagql.Typed, A any](
 func DagOpDirectoryWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-		return DagOpDirectory(ctx, srv, self, args, fn, pfn)
+		return DagOpDirectory(ctx, srv, self, args, nil, fn, pfn)
 	}
 }
 
@@ -117,8 +125,9 @@ func DagOpDirectory[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self dagql.Instance[T],
 	args A,
+	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T],
+	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
@@ -127,13 +136,17 @@ func DagOpDirectory[T dagql.Typed, A any](
 
 	filename := "/"
 	if pfn != nil {
-		filename, err = pfn(ctx, self)
+		filename, err = pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}
 	}
 
-	dir, err := core.NewDirectoryDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
+		ID:   currentIDForDagOp(ctx),
+		Path: filename,
+		Data: data,
+	}, deps)
 	if err != nil {
 		return inst, err
 	}

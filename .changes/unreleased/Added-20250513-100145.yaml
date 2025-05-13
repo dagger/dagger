@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+    Add new optional paramaters to `Query.http`:
+    - `name` allows overriding the filename to download
+    - `permissions` allows setting the permissions on the resulting file
+    - `authHeader` allows passing a secret in the `Authorization` HTTP header
+time: 2025-05-13T10:01:45.822145339+01:00
+custom:
+    Author: jedevc
+    PR: "10317"

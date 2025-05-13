@@ -100,6 +100,11 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
+			"--version", "v0.18.6",
+		}},
+		{Function: "httpreadme", Args: []string{
+			"--remote", "https://github.com/dagger/dagger",
+			"--version", "v0.18.6",
 		}},
 
 		// tests intended to trigger consistent tui exec metrics output

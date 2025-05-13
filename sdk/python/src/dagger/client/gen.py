@@ -8213,6 +8213,9 @@ class Client(Root):
         self,
         url: str,
         *,
+        name: str | None = None,
+        permissions: int | None = None,
+        auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
     ) -> File:
         """Returns a file containing an http remote url content.
@@ -8221,11 +8224,21 @@ class Client(Root):
         ----------
         url:
             HTTP url to get the content from (e.g., "https://docs.dagger.io").
+        name:
+            File name to use for the file. Defaults to the last part of the
+            URL.
+        permissions:
+            Permissions to set on the file.
+        auth_header:
+            Secret used to populate the Authorization HTTP header
         experimental_service_host:
             A service which must be started before the URL is fetched.
         """
         _args = [
             Arg("url", url),
+            Arg("name", name, None),
+            Arg("permissions", permissions, None),
+            Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("http", _args)

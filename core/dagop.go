@@ -29,55 +29,59 @@ func init() {
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
-func NewDirectoryDagOp(ctx context.Context, srv *dagql.Server, id *call.ID, inputs []llb.State, path string) (*Directory, error) {
-	requiredType := (&Directory{}).Type().NamedType
-	if id.Type().NamedType() != requiredType {
-		return nil, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, id.Type().NamedType())
-	}
-
-	dagOp := FSDagOp{ID: id, Path: path}
-	st, err := newDagOpLLB(ctx, dagOp, id, inputs)
+func NewDirectoryDagOp(
+	ctx context.Context,
+	srv *dagql.Server,
+	dagop *FSDagOp,
+	inputs []llb.State,
+) (*Directory, error) {
+	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
 	if err != nil {
 		return nil, err
 	}
-
 	query, ok := srv.Root().(dagql.Instance[*Query])
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", srv.Root())
 	}
-
-	return NewDirectorySt(ctx, query.Self, st, path, query.Self.Platform(), nil)
+	return NewDirectorySt(ctx, query.Self, st, dagop.Path, query.Self.Platform(), nil)
 }
 
 // NewFileDagOp takes a target ID for a File, and returns a File for it,
 // computing the actual dagql query inside a buildkit operation, which allows
 // for efficiently caching the result.
-func NewFileDagOp(ctx context.Context, srv *dagql.Server, id *call.ID, inputs []llb.State, path string) (*File, error) {
-	requiredType := (&File{}).Type().NamedType
-	if id.Type().NamedType() != requiredType {
-		return nil, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, id.Type().NamedType())
-	}
-
-	dagOp := FSDagOp{ID: id, Path: path}
-	st, err := newDagOpLLB(ctx, dagOp, id, inputs)
+func NewFileDagOp(
+	ctx context.Context,
+	srv *dagql.Server,
+	dagop *FSDagOp,
+	inputs []llb.State,
+) (*File, error) {
+	st, err := newFSDagOp[*File](ctx, dagop, inputs)
 	if err != nil {
 		return nil, err
 	}
-
 	query, ok := srv.Root().(dagql.Instance[*Query])
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", srv.Root())
 	}
-
-	return NewFileSt(ctx, query.Self, st, path, query.Self.Platform(), nil)
+	return NewFileSt(ctx, query.Self, st, dagop.Path, query.Self.Platform(), nil)
 }
 
-func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
-	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
-		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
-		buildkit.WithTracePropagation(ctx),
-		buildkit.WithPassthrough(),
-	)
+func newFSDagOp[T dagql.Typed](
+	ctx context.Context,
+	dagop *FSDagOp,
+	inputs []llb.State,
+) (llb.State, error) {
+	if dagop.ID == nil {
+		return llb.State{}, fmt.Errorf("dagop ID is nil")
+	}
+
+	var t T
+	requiredType := t.Type().NamedType
+	if dagop.ID.Type().NamedType() != requiredType {
+		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
+	}
+
+	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
 }
 
 type FSDagOp struct {
@@ -87,6 +91,10 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
+
+	// Data is any additional data that should be passed to the dagop. It does
+	// not contribute to the cache key.
+	Data any
 
 	// utility values set in the context of an Exec
 	g   bksession.Group
@@ -101,6 +109,17 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 	return &op
 }
 
+func (op FSDagOp) Digest() (digest.Digest, error) {
+	opData, err := json.Marshal(op.Data)
+	if err != nil {
+		return "", err
+	}
+	return digest.FromString(strings.Join([]string{
+		op.ID.Digest().String(),
+		op.Path,
+		string(opData),
+	}, "+")), nil
+}
 func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
@@ -155,36 +174,31 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 }
 
-func (op FSDagOp) Cache() bkcache.Accessor {
-	return op.opt.Cache
-}
-
 func (op FSDagOp) Group() bksession.Group {
 	return op.g
 }
 
-// Mount is a utility for easily mounting a ref
 func (op FSDagOp) Mount(ctx context.Context, ref bkcache.Ref, f func(string) error) error {
-	mount, err := ref.Mount(ctx, false, op.g)
-	if err != nil {
-		return err
-	}
-	lm := snapshot.LocalMounter(mount)
-	defer lm.Unmount()
-
-	dir, err := lm.Mount()
-	if err != nil {
-		return err
-	}
-	return f(dir)
+	return MountRef(ctx, ref, op.g, f)
 }
 
 // NewRawDagOp takes a target ID for any JSON-serializable dagql type, and returns
 // it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
-func NewRawDagOp[T dagql.Typed](ctx context.Context, srv *dagql.Server, id *call.ID, inputs []llb.State) (t T, err error) {
-	dagOp := RawDagOp{ID: id, Filename: "output.json"}
-	st, err := newDagOpLLB(ctx, dagOp, id, inputs)
+func NewRawDagOp[T dagql.Typed](
+	ctx context.Context,
+	srv *dagql.Server,
+	dagop *RawDagOp,
+	inputs []llb.State,
+) (t T, err error) {
+	if dagop.ID == nil {
+		return t, fmt.Errorf("dagop ID is nil")
+	}
+	if dagop.Filename == "" {
+		return t, fmt.Errorf("dagop filename is empty")
+	}
+
+	st, err := newDagOpLLB(ctx, dagop, dagop.ID, inputs)
 	if err != nil {
 		return t, err
 	}
@@ -194,7 +208,7 @@ func NewRawDagOp[T dagql.Typed](ctx context.Context, srv *dagql.Server, id *call
 		return t, fmt.Errorf("server root was %T", srv.Root())
 	}
 
-	f, err := NewFileSt(ctx, query.Self, st, dagOp.Filename, Platform{}, nil)
+	f, err := NewFileSt(ctx, query.Self, st, dagop.Filename, Platform{}, nil)
 	if err != nil {
 		return t, err
 	}
@@ -219,6 +233,13 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 	return &op
 }
 
+func (op RawDagOp) Digest() (digest.Digest, error) {
+	return digest.FromString(strings.Join([]string{
+		op.ID.Digest().String(),
+		op.Filename,
+	}, "+")), nil
+}
+
 func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
@@ -235,7 +256,11 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 		result = wrapped.Unwrap()
 	}
 
-	ref, err := opt.Cache.New(ctx, nil, g,
+	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	ref, err := query.Self.BuildkitCache().New(ctx, nil, g,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(client.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
@@ -296,6 +321,14 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	return []solver.Result{worker.NewWorkerRefResult(snap, opt.Worker)}, nil
 }
 
+func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
+	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
+		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(),
+	)
+}
+
 type dagOpContextKey string
 
 func withDagOpContext(ctx context.Context, op buildkit.CustomOp) context.Context {
@@ -312,4 +345,20 @@ func DagOpFromContext[T buildkit.CustomOp](ctx context.Context) (t T, ok bool) {
 func DagOpInContext[T buildkit.CustomOp](ctx context.Context) bool {
 	_, ok := DagOpFromContext[T](ctx)
 	return ok
+}
+
+// MountRef is a utility for easily mounting a ref
+func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	mount, err := ref.Mount(ctx, false, g)
+	if err != nil {
+		return err
+	}
+	lm := snapshot.LocalMounter(mount)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+	return f(dir)
 }

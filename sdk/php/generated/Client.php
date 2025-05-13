@@ -203,10 +203,24 @@ class Client extends Client\AbstractClient
     /**
      * Returns a file containing an http remote url content.
      */
-    public function http(string $url, ServiceId|Service|null $experimentalServiceHost = null): File
-    {
+    public function http(
+        string $url,
+        ?string $name = null,
+        ?int $permissions = null,
+        SecretId|Secret|null $authHeader = null,
+        ServiceId|Service|null $experimentalServiceHost = null,
+    ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('http');
         $innerQueryBuilder->setArgument('url', $url);
+        if (null !== $name) {
+        $innerQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $authHeader) {
+        $innerQueryBuilder->setArgument('authHeader', $authHeader);
+        }
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }

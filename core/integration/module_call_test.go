@@ -100,7 +100,7 @@ type Test struct {}
 func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 	return dag.Container().From("%s").WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("daserver", svc).
-		WithExec([]string{"curl", "http://daserver:8000"}).
+		WithExec([]string{"curl", "http://daserver"}).
 		Stdout(ctx)
 }
 `, alpineImage),
@@ -165,7 +165,7 @@ func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 				WithServiceBinding("testserver", httpServer).
 				With(daggerCall("fn", "--svc", "tcp://"+endpoint)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "1 exposed ports:\n- TCP/8000", out)
+			require.Equal(t, "1 exposed ports:\n- TCP/80", out)
 		})
 	})
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/containerd/containerd/content"
+	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -103,6 +104,9 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
+
+	// Gets the buildkit cache manager
+	BuildkitCache() bkcache.Manager
 
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.

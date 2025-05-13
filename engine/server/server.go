@@ -51,7 +51,6 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -80,7 +79,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/engine/sources/local"
 )
 
@@ -433,18 +431,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
-	hs, err := httpdns.NewSource(httpdns.Opt{
-		Opt: srchttp.Opt{
-			CacheAccessor: srv.workerCache,
-		},
-		BaseDNSConfig: srv.dns,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(hs)
-
 	ls, err := local.NewSource(local.Opt{
 		CacheAccessor: srv.workerCache,
 	})
@@ -599,6 +585,10 @@ func (srv *Server) Close() error {
 		s.stateMu.Unlock()
 	}
 	return err
+}
+
+func (srv *Server) BuildkitCache() bkcache.Manager {
+	return srv.workerCache
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
