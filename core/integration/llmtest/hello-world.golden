@@ -15,28 +15,26 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_MSkaDVQ4NQ7m4b1kZW8np9Gv",
+        "id": "call_SY2lLnU7D3smnhBqiYzsRPjs",
         "function": {
           "name": "list_methods",
-          "arguments": {
-            "type": "ToyWorkspace"
-          }
+          "arguments": {}
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "input_tokens": 734,
-      "output_tokens": 16,
+      "input_tokens": 794,
+      "output_tokens": 11,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 750
+      "total_tokens": 805
     }
   },
   {
     "role": "user",
     "content": "[\n  {\n    \"name\": \"ToyWorkspace.build\",\n    \"returns\": \"Void\"\n  },\n  {\n    \"name\": \"ToyWorkspace.read\",\n    \"returns\": \"String!\"\n  },\n  {\n    \"name\": \"ToyWorkspace.write\",\n    \"returns\": \"ToyWorkspace!\",\n    \"required_args\": {\n      \"content\": \"String!\"\n    }\n  }\n]\n",
-    "tool_call_id": "call_MSkaDVQ4NQ7m4b1kZW8np9Gv",
+    "tool_call_id": "call_SY2lLnU7D3smnhBqiYzsRPjs",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -50,7 +48,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_gqv7kUyBKf7c3ifSLFkwc123",
+        "id": "call_9uIIx84z70TdIaXaRl5MaKw0",
         "function": {
           "name": "select_methods",
           "arguments": {
@@ -65,17 +63,17 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 835,
+      "input_tokens": 890,
       "output_tokens": 26,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 861
+      "total_tokens": 916
     }
   },
   {
     "role": "user",
     "content": "{\n  \"added_methods\": [\n    {\n      \"name\": \"ToyWorkspace.build\",\n      \"returns\": \"Void\",\n      \"description\": \"Build the code at the current directory in the workspace\",\n      \"argsSchema\": {\n        \"properties\": {},\n        \"type\": \"object\"\n      }\n    },\n    {\n      \"name\": \"ToyWorkspace.read\",\n      \"returns\": \"String!\",\n      \"description\": \"Read a file\",\n      \"argsSchema\": {\n        \"properties\": {},\n        \"type\": \"object\"\n      }\n    },\n    {\n      \"name\": \"ToyWorkspace.write\",\n      \"returns\": \"ToyWorkspace!\",\n      \"description\": \"Write a file\",\n      \"argsSchema\": {\n        \"properties\": {\n          \"content\": {\n            \"description\": \"\",\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"content\"\n        ],\n        \"type\": \"object\"\n      }\n    }\n  ]\n}\n",
-    "tool_call_id": "call_gqv7kUyBKf7c3ifSLFkwc123",
+    "tool_call_id": "call_9uIIx84z70TdIaXaRl5MaKw0",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -89,7 +87,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_Cmhl7ZQjQ7IP4v5bHYViFwos",
+        "id": "call_YLHFdO5QlyaNqFCzvMn3EUL8",
         "function": {
           "name": "call_method",
           "arguments": {
@@ -104,17 +102,17 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1065,
+      "input_tokens": 1120,
       "output_tokens": 57,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 1122
+      "total_tokens": 1177
     }
   },
   {
     "role": "user",
     "content": "{\n  \"result\": \"ToyWorkspace#2\"\n}\n",
-    "tool_call_id": "call_Cmhl7ZQjQ7IP4v5bHYViFwos",
+    "tool_call_id": "call_YLHFdO5QlyaNqFCzvMn3EUL8",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -128,10 +126,11 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_mmUvqZnCTffNnFljWRJQuWev",
+        "id": "call_YWpklcYyNQIj1a0tvv42jilt",
         "function": {
           "name": "call_method",
           "arguments": {
+            "args": {},
             "method": "ToyWorkspace.build",
             "self": "ToyWorkspace#2"
           }
@@ -140,17 +139,17 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1142,
-      "output_tokens": 24,
+      "input_tokens": 1197,
+      "output_tokens": 28,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 1166
+      "total_tokens": 1225
     }
   },
   {
     "role": "user",
     "content": "{\n  \"result\": null\n}\n",
-    "tool_call_id": "call_mmUvqZnCTffNnFljWRJQuWev",
+    "tool_call_id": "call_YWpklcYyNQIj1a0tvv42jilt",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -164,7 +163,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_SgNTj7qiI3HFgSEmofRSCNrf",
+        "id": "call_6PyDhmKR3bZ8gFWGNzaFCFmY",
         "function": {
           "name": "save",
           "arguments": {
@@ -175,17 +174,17 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 1181,
+      "input_tokens": 1240,
       "output_tokens": 17,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 1198
+      "total_tokens": 1257
     }
   },
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_SgNTj7qiI3HFgSEmofRSCNrf",
+    "tool_call_id": "call_6PyDhmKR3bZ8gFWGNzaFCFmY",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
