@@ -9,6 +9,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -30,14 +31,12 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	}
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
-		client:   client,
+		client:   &client,
 		endpoint: endpoint,
 	}
 }
 
-var ephemeral = anthropic.F(anthropic.CacheControlEphemeralParam{
-	Type: anthropic.F(anthropic.CacheControlEphemeralTypeEphemeral),
-})
+var ephemeral = anthropic.CacheControlEphemeralParam{Type: constant.Ephemeral("").Default()}
 
 // Anthropic's API only allows 4 cache breakpoints.
 const maxAnthropicCacheBlocks = 4
@@ -52,8 +51,8 @@ var _ LLMClient = (*AnthropicClient)(nil)
 
 var anthropicRetryable = []string{
 	// there's gotta be a better way to do this...
-	string(anthropic.RateLimitErrorTypeRateLimitError),
-	string(anthropic.OverloadedErrorTypeOverloadedError),
+	string(constant.RateLimitError("").Default()),
+	string(constant.OverloadedError("").Default()),
 }
 
 func (c *AnthropicClient) IsRetryable(err error) bool {
@@ -138,33 +137,25 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		// add tool usage blocks first so they get cached when setting
 		// CacheControl below
 		for _, call := range msg.ToolCalls {
-			blocks = append(blocks, anthropic.NewToolUseBlockParam(
-				call.ID,
-				call.Function.Name,
-				call.Function.Arguments,
-			))
+			blocks = append(blocks, anthropic.ContentBlockParamOfRequestToolUseBlock(call.ID, call.Function.Arguments, call.Function.Name))
 		}
 
-		cacheControl := anthropic.Null[anthropic.CacheControlEphemeralParam]()
-
 		// enable caching based on simple token usage heuristic
+		var cacheControl anthropic.CacheControlEphemeralParam
 		if msg.TokenUsage.TotalTokens > anthropicCacheThreshold && cachedBlocks < maxAnthropicCacheBlocks {
 			cacheControl = ephemeral
 			cachedBlocks++
 		}
 
 		if len(blocks) > 0 {
-			lastBlock := blocks[len(blocks)-1]
-			switch x := lastBlock.(type) {
-			case anthropic.TextBlockParam:
-				x.CacheControl = cacheControl
-				blocks[len(blocks)-1] = x
-			case anthropic.ToolUseBlockParam:
-				x.CacheControl = cacheControl
-				blocks[len(blocks)-1] = x
-			case anthropic.ToolResultBlockParam:
-				x.CacheControl = cacheControl
-				blocks[len(blocks)-1] = x
+			lastBlock := &blocks[len(blocks)-1]
+			switch {
+			case lastBlock.OfRequestTextBlock != nil:
+				lastBlock.OfRequestTextBlock.CacheControl = cacheControl
+			case lastBlock.OfRequestToolUseBlock != nil:
+				lastBlock.OfRequestToolUseBlock.CacheControl = cacheControl
+			case lastBlock.OfRequestToolResultBlock != nil:
+				lastBlock.OfRequestToolResultBlock.CacheControl = cacheControl
 			}
 		}
 
@@ -175,29 +166,48 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
 		case "system":
 			// Collect all system prompt messages.
-			systemPrompts = append(systemPrompts, anthropic.NewTextBlock(msg.Content))
+			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.Content})
 		}
 	}
 
 	// Convert tools to Anthropic tool format.
-	var toolsConfig []anthropic.ToolUnionUnionParam
+	var toolsConfig []anthropic.ToolUnionParam
 	for _, tool := range tools {
 		// TODO: figure out cache control. do we want a checkpoint at the end?
-		toolsConfig = append(toolsConfig, anthropic.ToolParam{
-			Name:        anthropic.F(tool.Name),
-			Description: anthropic.F(tool.Description),
-			InputSchema: anthropic.F(any(tool.Schema)),
-			// CacheControl: ephemeral,
+		var inputSchema anthropic.ToolInputSchemaParam
+		for k, v := range tool.Schema {
+			switch k {
+			case "properties":
+				inputSchema.Properties = v
+			case "type":
+				if v != "object" {
+					return nil, fmt.Errorf("tool must accept object, got %q", v)
+				}
+				inputSchema.Type = "object"
+			default:
+				if inputSchema.ExtraFields == nil {
+					inputSchema.ExtraFields = make(map[string]any)
+				}
+				inputSchema.ExtraFields[k] = v
+			}
+		}
+		toolsConfig = append(toolsConfig, anthropic.ToolUnionParam{
+			OfTool: &anthropic.ToolParam{
+				Name:        tool.Name,
+				Description: anthropic.Opt(tool.Description),
+				InputSchema: inputSchema,
+				// CacheControl: ephemeral,
+			},
 		})
 	}
 
 	// Prepare parameters for the streaming call.
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.F(c.endpoint.Model),
-		MaxTokens: anthropic.F(int64(8192)),
-		Messages:  anthropic.F(messages),
-		Tools:     anthropic.F(toolsConfig),
-		System:    anthropic.F(systemPrompts),
+		Model:     c.endpoint.Model,
+		MaxTokens: int64(8192),
+		Messages:  messages,
+		Tools:     toolsConfig,
+		System:    systemPrompts,
 	}
 
 	// Start a streaming request.
@@ -228,10 +238,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		}
 
 		// Check if the event delta contains text and trace it.
-		if delta, ok := event.Delta.(anthropic.ContentBlockDeltaEventDelta); ok {
-			if delta.Text != "" {
+		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
+			if delta.Delta.Text != "" {
 				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(markdownW, delta.Text)
+				fmt.Fprint(markdownW, delta.Delta.Text)
 			}
 		}
 	}
@@ -251,7 +261,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	var content string
 	var toolCalls []LLMToolCall
 	for _, block := range acc.Content {
-		switch b := block.AsUnion().(type) {
+		switch b := block.AsAny().(type) {
 		case anthropic.TextBlock:
 			// Append text from text blocks.
 			content += b.Text
