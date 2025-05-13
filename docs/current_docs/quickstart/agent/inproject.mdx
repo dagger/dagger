@@ -249,13 +249,13 @@ Now you have built an agent that can write code for your project!
 
 ## Deploy the agent to GitHub
 
-The next step is to take this agent and deploy it so that it can run automatically. For this part of the guide, you will configure Github so that when you label a Github issue with "develop", the agent will automatically pick up the task and open a pull request with its solution.
+The next step is to take this agent and deploy it so that it can run automatically. For this part of the guide, you will configure GitHub so that when you label a GitHub issue with "develop", the agent will automatically pick up the task and open a pull request with its solution.
 
-The following steps require that you used the Github template and have your own hello-dagger repository.
+The following steps require that you used the GitHub template and have your own hello-dagger repository.
 
 ### Create the develop-issue function
 
-The `develop-issue` function will use a dependency from [Daggerverse](https://daggerverse.dev) called [github-issue](https://daggerverse.dev/mod/github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38). This module gives the functions needed to read Github issues and create pull requests.
+The `develop-issue` function will use a dependency from [Daggerverse](https://daggerverse.dev) called [github-issue](https://daggerverse.dev/mod/github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38). This module gives the functions needed to read GitHub issues and create pull requests.
 
 Install the dependency:
 
@@ -309,33 +309,33 @@ import io.dagger.client.GithubIssue;
     </TabItem>
 </Tabs>
 
-The `develop-issue` function connects the dots in the automation flow. It will be called when a Github issue is ready to be developed. Using the `github-issue` dependency, this code will:
+The `develop-issue` function connects the dots in the automation flow. It will be called when a GitHub issue is ready to be developed. Using the `github-issue` dependency, this code will:
 
-- Read the title and body from the Github issue
+- Read the title and body from the GitHub issue
 - Use the body as the assignment for the agent
 - Open a pull request with the Directory returned by the agent
 
-### Create a Github Actions workflow
+### Create a GitHub Actions workflow
 
-Github Actions will need the ability to call out to an LLM. It will need the same environment variables you [configured](../../configuration/llm.mdx) locally setup as repository secrets.
+GitHub Actions will need the ability to call out to an LLM. It will need the same environment variables you [configured](../../configuration/llm.mdx) locally setup as repository secrets.
 
 To configure new repository secrets:
-- From your Github repository, select the Settings tab
+- From your GitHub repository, select the Settings tab
 - Under Security, expand the section "Secrets and Variables" and select Actions
 - Select "New repository secret"
 - Create a secret for each variable required for your LLM provider. For example: `GEMINI_API_KEY`
 
-![Configure Github Actions repository secrets](/img/current_docs/quickstart/agent/configure_gha_llm.png)
+![Configure GitHub Actions repository secrets](/img/current_docs/quickstart/agent/configure_gha_llm.png)
 
-If you signed up for Dagger Cloud, you should also configure a `DAGGER_CLOUD_TOKEN` repository secret to see your Github Actions traces in Dagger Cloud.
+If you signed up for Dagger Cloud, you should also configure a `DAGGER_CLOUD_TOKEN` repository secret to see your GitHub Actions traces in Dagger Cloud.
 
 To find your Dagger Cloud token, navigate to the organization settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
 
 ![Get token](/img/current_docs/configuration/get-token.png)
 
-The repository also needs to be configured to give Github Actions the ability to create pull requests. On the left side, select Actions -> General and find the option "Allow GitHub Actions to create and approve pull requests". Make sure this is enabled.
+The repository also needs to be configured to give GitHub Actions the ability to create pull requests. On the left side, select Actions -> General and find the option "Allow GitHub Actions to create and approve pull requests". Make sure this is enabled.
 
-![Allow Github Actions to create pull requests](/img/current_docs/quickstart/agent/configure_gha_prs.png)
+![Allow GitHub Actions to create pull requests](/img/current_docs/quickstart/agent/configure_gha_prs.png)
 
 Create the file `.github/workflows/develop.yml` with the following content:
 
@@ -344,9 +344,9 @@ Create the file `.github/workflows/develop.yml` with the following content:
 
 This snippet shows an example with Google Gemini by specifying `GEMINI_API_KEY`. Change this to match the repository secrets you created earlier.
 
-This Github Actions workflow will call the `develop-issue` function when the label "develop" is added to an issue. The Github token passed to the agent has permissions to read issues, write contents, and write pull-requests.
+This GitHub Actions workflow will call the `develop-issue` function when the label "develop" is added to an issue. The GitHub token passed to the agent has permissions to read issues, write contents, and write pull-requests.
 
-Commit and push your changes to Github:
+Commit and push your changes to GitHub:
 
 ```shell
 git add .
@@ -354,15 +354,15 @@ git commit -m'deploy agent to github'
 git push
 ```
 
-Create a new Github issue in your repository. You can title it "change the page color" with the description "make the main page green".
+Create a new GitHub issue in your repository. You can title it "change the page color" with the description "make the main page green".
 
-![Create a Github issue](/img/current_docs/quickstart/agent/create_issue.png)
+![Create a GitHub issue](/img/current_docs/quickstart/agent/create_issue.png)
 
 Now add the label called "develop" by typing "develop" in the labels input field.
 
 ![Add issue label develop](/img/current_docs/quickstart/agent/add_label.png)
 
-When the label is added, the Github Actions workflow will get kicked off. You can see it running by clicking on the "Actions" tab or by opening Dagger Cloud.
+When the label is added, the GitHub Actions workflow will get kicked off. You can see it running by clicking on the "Actions" tab or by opening Dagger Cloud.
 
 ![Watch in actions tab](/img/current_docs/quickstart/agent/watch_actions.png)
 
