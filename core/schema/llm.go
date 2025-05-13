@@ -52,10 +52,6 @@ func (s llmSchema) Install() {
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
 			),
-		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
-			return dagql.Null[core.Void](), self.Self.MCP(ctx, s.srv)
-		}).
-			Doc("instantiates an mcp server"),
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
 			Args(

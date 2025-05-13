@@ -47,11 +47,6 @@ func NewEnv() *Env {
 	}
 }
 
-// Expose this environment for LLM consumption via MCP.
-func (env *Env) MCP() *MCP {
-	return newMCP(env)
-}
-
 func (env *Env) Clone() *Env {
 	cp := *env
 	cp.inputsByName = cloneMap(cp.inputsByName)

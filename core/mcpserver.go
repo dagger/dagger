@@ -108,10 +108,9 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 }
 
 type mcpServer struct {
-	*mcpserver.MCPServer
-	dag  *dagql.Server
-	env  *MCP
-	pipe io.ReadWriteCloser
+	server *mcpserver.MCPServer
+	dag    *dagql.Server
+	mcp    *MCP
 }
 
 func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
@@ -163,7 +162,7 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 }
 
 func (s mcpServer) setTools() error {
-	tools, err := s.env.Tools(s.dag)
+	tools, err := s.mcp.Tools(s.dag)
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
 	}
@@ -171,38 +170,43 @@ func (s mcpServer) setTools() error {
 	if err != nil {
 		return fmt.Errorf("failed to convert tools to MCP: %w", err)
 	}
-	s.SetTools(mcpTools...)
+	name := ""
+	if len(mcpTools) > 0 {
+		name = mcpTools[0].Tool.Name
+	}
+	println("🍎 setting tools", len(mcpTools), name)
+	s.server.SetTools(mcpTools...)
 	return nil
 }
 
-func (s mcpServer) run(ctx context.Context) error {
+func (s mcpServer) serveStdio(ctx context.Context, pipe io.ReadWriteCloser) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := s.setTools(); err != nil {
-		return err
-	}
-
-	errCh := make(chan error)
-
-	stdioSrv := mcpserver.NewStdioServer(s.MCPServer)
+	stdioSrv := mcpserver.NewStdioServer(s.server)
 
 	// MCP library requires standard log package
 	logger := stdlog.New(bklog.G(ctx).Writer(), "", 0)
 	stdioSrv.SetErrorLogger(logger)
 
-	// Start MCP server in a goroutine
+	// Set tools lazily because dagger module may take a while to be loaded
+	// but we still want to serve stdio ASAP to avoid MCP clients' timeout.
+	errCh := make(chan error, 1)
 	go func() {
 		defer close(errCh)
-		err := stdioSrv.Listen(ctx, s.pipe, s.pipe)
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+		if err := s.setTools(); err != nil {
 			select {
 			case <-ctx.Done():
-			case errCh <- fmt.Errorf("MCP server error: %w", err):
+			case errCh <- err:
 			}
 		}
 	}()
 
+	// Start MCP server in a goroutine
+	err := stdioSrv.Listen(ctx, pipe, pipe)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -211,9 +215,18 @@ func (s mcpServer) run(ctx context.Context) error {
 	}
 }
 
-func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+func (m *MCP) Serve(ctx context.Context, dag *dagql.Server) error {
+	s := mcpServer{
+		mcpserver.NewMCPServer("Dagger", "0.0.1",
+			mcpserver.WithInstructions(defaultSystemPrompt),
+			mcpserver.WithToolCapabilities(true),
+		),
+		dag,
+		m,
+	}
+
 	// Get buildkit client
-	bk, err := llm.Query.Buildkit(ctx)
+	bk, err := m.query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("buildkit client error: %w", err)
 	}
@@ -223,13 +236,5 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
 
-	s := mcpServer{
-		mcpserver.NewMCPServer("Dagger", "0.0.1",
-			mcpserver.WithInstructions(defaultSystemPrompt)),
-		dag,
-		llm.mcp,
-		rwc,
-	}
-
-	return s.run(ctx)
+	return s.serveStdio(ctx, rwc)
 }

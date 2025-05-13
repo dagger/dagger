@@ -58,16 +58,32 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
+
+	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
+	mcpQ := q.Root().Select("__mcp")
+
+	errCh := make(chan error)
+	fmt.Fprintln(stderr, "Initializing MCP on stdio")
+	go func() {
+		defer close(errCh)
+		var response any
+		if err := makeRequest(ctx, mcpQ.Select("__serve"), &response); err != nil {
+			select {
+			case <-ctx.Done():
+			case errCh <- fmt.Errorf("error starting MCP server: %w", err):
+			}
+		}
+	}()
+
 	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
 	if err != nil && err != errModuleNotFound {
 		return err
 	}
 
 	if err == errModuleNotFound && !envPrivileged {
-		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
+		return fmt.Errorf("%w and --env-privileged not specified", errModuleNotFound)
 	}
 
-	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 	var logMsg string
 	if modDef != nil {
 		// TODO: parse user args and pass them to constructor
@@ -93,10 +109,10 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 			Arg("description", modDef.MainObject.Description()).
 			Select("id")
 
-		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
+		logMsg = fmt.Sprintf("Serving module %q%s as an MCP server", modName, extraCore)
 	} else {
 		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
-		logMsg = "Exposing Dagger core as an MCP server"
+		logMsg = "Serving Dagger core as an MCP server"
 	}
 
 	var envID string
@@ -104,17 +120,20 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("error making environment: %w", err)
 	}
 
-	fmt.Fprintln(stderr, logMsg)
-	q = q.Root().
-		Select("llm").
-		Select("withEnv").
-		Arg("env", envID).
-		Select("__mcp")
+	q = mcpQ.Select("__setEnv").
+		Arg("env", envID)
 
 	var response any
 	if err := makeRequest(ctx, q, &response); err != nil {
 		return fmt.Errorf("error starting MCP server: %w", err)
 	}
 
-	return nil
+	fmt.Fprintln(stderr, logMsg)
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
