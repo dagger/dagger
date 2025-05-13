@@ -1,112 +1,113 @@
 fragment TypeDefRefParts on TypeDef {
-	kind
-	optional
-	asObject {
-		name
-	}
-	asInterface {
-		name
-	}
-	asInput {
-		name
-	}
-	asScalar {
-		name
-	}
-	asEnum {
-		name
-	}
-	asList {
-		elementTypeDef {
-			kind
-			asObject {
-				name
-			}
-			asInterface {
-				name
-			}
-			asInput {
-				name
-			}
-			asScalar {
-				name
-			}
-			asEnum {
-				name
-			}
-		}
-	}
+    kind
+    optional
+    asObject {
+        name
+    }
+    asInterface {
+        name
+    }
+    asInput {
+        name
+    }
+    asScalar {
+        name
+    }
+    asEnum {
+        name
+    }
+    asList {
+        elementTypeDef {
+            kind
+            asObject {
+                name
+            }
+            asInterface {
+                name
+            }
+            asInput {
+                name
+            }
+            asScalar {
+                name
+            }
+            asEnum {
+                name
+            }
+        }
+    }
 }
 
 fragment FunctionParts on Function {
-	name
-	description
-	returnType {
-		...TypeDefRefParts
-	}
-	args {
-		name
-		description
-		defaultValue
+    name
+    description
+    returnType {
+        ...TypeDefRefParts
+    }
+    args {
+        name
+        description
+        defaultValue
         defaultPath
-		ignore
-		typeDef {
-			...TypeDefRefParts
-		}
-	}
+        defaultEnv
+        ignore
+        typeDef {
+            ...TypeDefRefParts
+        }
+    }
 }
 
 fragment FieldParts on FieldTypeDef {
-	name
-	description
-	typeDef {
-		...TypeDefRefParts
-	}
+    name
+    description
+    typeDef {
+        ...TypeDefRefParts
+    }
 }
 
 query TypeDefs {
-	typeDefs: currentTypeDefs {
-		kind
-		optional
-		asObject {
-			name
-			description
-			sourceModuleName
-			constructor {
-				...FunctionParts
-			}
-			functions {
-				...FunctionParts
-			}
-			fields {
-				...FieldParts
-			}
-		}
-		asScalar {
-			name
-			description
-		}
-		asEnum {
-			name
-			description
-			values {
-				name
-			    description
-			}
-		}
-		asInterface {
-			name
-			description
-			sourceModuleName
-			functions {
-				...FunctionParts
-			}
-		}
-		asInput {
-			name
-			fields {
-				...FieldParts
-			}
-		}
-	}
+    typeDefs: currentTypeDefs {
+        kind
+        optional
+        asObject {
+            name
+            description
+            sourceModuleName
+            constructor {
+                ...FunctionParts
+            }
+            functions {
+                ...FunctionParts
+            }
+            fields {
+                ...FieldParts
+            }
+        }
+        asScalar {
+            name
+            description
+        }
+        asEnum {
+            name
+            description
+            values {
+                name
+                description
+            }
+        }
+        asInterface {
+            name
+            description
+            sourceModuleName
+            functions {
+                ...FunctionParts
+            }
+        }
+        asInput {
+            name
+            fields {
+                ...FieldParts
+            }
+        }
+    }
 }
