@@ -41,7 +41,7 @@ const llmsTxtPlugin: Plugin = async function pluginLlmsTxt(context) {
               .replace(/\.mdx$/, "");
 
             // Construct the full URL
-            const fullUrl = `https://www.prisma.io/docs/${urlPath}`;
+            const fullUrl = `https://docs.dagger.io/${urlPath}`;
 
             // strip frontmatter
             const contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n/, "");
