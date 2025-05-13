@@ -86,13 +86,6 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		return nil, err
 	}
 
-	// figure out what the model resolved to
-	model, err := s.llm.Model(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s.model = model
-
 	return s, nil
 }
 
@@ -117,6 +110,12 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	if err := s.syncVarsToLLM(ctx); err != nil {
 		return s, err
 	}
+
+	resolvedModel, err := s.llm.Model(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.model = resolvedModel
 
 	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
 	if err != nil {

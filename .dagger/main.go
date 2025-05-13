@@ -190,7 +190,7 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
-// TODO: these depend on unreleased APIs
+// // TODO: these depend on unreleased APIs
 // func (dev *DaggerDev) Evals(
 // 	ctx context.Context,
 // 	// +defaultPath=./core/llm_docs.md
