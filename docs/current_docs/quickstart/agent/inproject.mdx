@@ -220,7 +220,7 @@ This should show the model you've configured to use with your provider.
 Call the agent with an assignment:
 
 ```shell
-develop "make the main page green"
+develop "make the main page blue"
 ```
 
 If all goes well, the agent will explore the project to find the correct place to make the changes, write the appropriate changes, and then validate them by calling the `test` function.
@@ -236,13 +236,15 @@ Since the agent returns a `Directory`, use Dagger Shell to do more with that `Di
 
 ```shell
 # Save the directory containing the completed assignment to a variable
-completed=$(develop "make the main page green")
+completed=$(develop "make the main page blue")
 # Get a terminal in the build container with the directory
 build-env --source $completed | terminal
 # Run the app with the updated source code
 build --source $completed | as-service | up --ports 8080:80
 # Save the changes to your filesystem
 $completed | export .
+# Exit
+exit
 ```
 
 Now you have built an agent that can write code for your project!
@@ -255,7 +257,7 @@ The following steps require that you used the GitHub template and have your own 
 
 ### Create the develop-issue function
 
-The `develop-issue` function will use a dependency from [Daggerverse](https://daggerverse.dev) called [github-issue](https://daggerverse.dev/mod/github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38). This module gives the functions needed to read GitHub issues and create pull requests.
+The `develop-issue` function will use the [github-issue](https://daggerverse.dev/mod/github.com/kpenfound/dag/github-issue@b316e472d3de5bb0e54fe3991be68dc85e33ef38) Dagger module from the [Daggerverse](https://daggerverse.dev). This module provides functions to read GitHub issues and create pull requests.
 
 Install the dependency:
 
@@ -313,11 +315,11 @@ The `develop-issue` function connects the dots in the automation flow. It will b
 
 - Read the title and body from the GitHub issue
 - Use the body as the assignment for the agent
-- Open a pull request with the Directory returned by the agent
+- Open a pull request with the `Directory` returned by the agent
 
 ### Create a GitHub Actions workflow
 
-GitHub Actions will need the ability to call out to an LLM. It will need the same environment variables you [configured](../../configuration/llm.mdx) locally setup as repository secrets.
+1. GitHub Actions will need the ability to call out to an LLM. This means that you must configure GitHub Actions with the same environment variables that you previously [configured](../../configuration/llm.mdx) locally, this time as repository secrets.
 
 To configure new repository secrets:
 - From your GitHub repository, select the Settings tab
@@ -333,20 +335,20 @@ To find your Dagger Cloud token, navigate to the organization settings page usin
 
 ![Get token](/img/current_docs/configuration/get-token.png)
 
-The repository also needs to be configured to give GitHub Actions the ability to create pull requests. On the left side, select Actions -> General and find the option "Allow GitHub Actions to create and approve pull requests". Make sure this is enabled.
+2. The repository also needs to be configured to give GitHub Actions the ability to create pull requests. On the left side, select Actions -> General and find the option "Allow GitHub Actions to create and approve pull requests". Make sure this is enabled.
 
 ![Allow GitHub Actions to create pull requests](/img/current_docs/quickstart/agent/configure_gha_prs.png)
 
-Create the file `.github/workflows/develop.yml` with the following content:
+3. Create the file `.github/workflows/develop.yml` with the following content:
 
 ```yaml file=./snippets/part3/develop.yml
 ```
 
 This snippet shows an example with Google Gemini by specifying `GEMINI_API_KEY`. Change this to match the repository secrets you created earlier.
 
-This GitHub Actions workflow will call the `develop-issue` function when the label "develop" is added to an issue. The GitHub token passed to the agent has permissions to read issues, write contents, and write pull-requests.
+This GitHub Actions workflow will call the `develop-issue` function when the label "develop" is added to an issue. The GitHub token passed to the agent has permissions to read issues, write contents, and write pull requests.
 
-Commit and push your changes to GitHub:
+4. Commit and push your changes to GitHub:
 
 ```shell
 git add .
@@ -354,24 +356,26 @@ git commit -m'deploy agent to github'
 git push
 ```
 
-Create a new GitHub issue in your repository. You can title it "change the page color" with the description "make the main page green".
+### Run the agent in GitHub Actions
+
+1. Create a new GitHub issue in your repository. You can title it "change the page color" with the description "make the main page green".
 
 ![Create a GitHub issue](/img/current_docs/quickstart/agent/create_issue.png)
 
-Now add the label called "develop" by typing "develop" in the labels input field.
+2. Now add the label called "develop" by typing "develop" in the labels input field.
 
 ![Add issue label develop](/img/current_docs/quickstart/agent/add_label.png)
 
-When the label is added, the GitHub Actions workflow will get kicked off. You can see it running by clicking on the "Actions" tab or by opening Dagger Cloud.
+3. When the label is added, it triggers the GitHub Actions workflow. See the workflow by clicking the "Actions" tab or by opening Dagger Cloud (if you configured it).
 
 ![Watch in actions tab](/img/current_docs/quickstart/agent/watch_actions.png)
 
-Once the workflow completes, there will be a new pull request ready to review!
+4. Once the workflow completes, there will be a new pull request ready to review!
 
 ![See the agents PR](/img/current_docs/quickstart/agent/agent_pr.png)
 
 ## Next steps
 
-Congratulations! You've created your agentic fuction with a Daggerized project.
+Congratulations! You created an agentic function with a Daggerized project and successfully ran it, both locally and in automatically in GitHub.
 
 We encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!
