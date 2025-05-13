@@ -86,19 +86,19 @@ jobs:
           fi
 
   # TODO: move this into Publish above
-  daggerverse-bump-dagger:
+  dagger-io-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
     runs-on: dagger-g3-v0-18-8-4c
     steps:
       - uses: actions/checkout@v4
-      - name: "Bump Dagger version in Daggerverse"
+      - name: "Bump Dagger version in Daggerverse and Dagger Cloud API"
         uses: ./.github/actions/call
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
           function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump-dagger-version --to=${{ github.ref_name }} --github-assignee=${{ github.actor }}
-          module: ./modules/daggerverse
+          module: ./modules/dagger-io
 
   # TODO: daggerize provisioning tests
   test-provision-macos:
