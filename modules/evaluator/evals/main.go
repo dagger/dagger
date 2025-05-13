@@ -118,7 +118,7 @@ func (m *Evals) CoreAPI(ctx context.Context) (*Report, error) {
 		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
 			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 				WithFileOutput("starch", "A file containing the word potato")).
-			WithPrompt("return a file that contains the word potato"),
+			WithPrompt("Create a file that contains the word potato, and return it."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.Env().Output("starch").AsFile().Contents(ctx)
 			require.NoError(t, err)
