@@ -30,10 +30,17 @@ Before beginning, ensure that:
 
 ## Get the example application
 
-The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Clone its repository and set it as the current working directory:
+The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Create a Github repository from the [hello-dagger-template](https://github.com/dagger/hello-dagger-template) and set it as the current working directory:
 
+In the GitHub UI:
+
+![Create a repo from the hello-dagger-template repository](/img/current_docs/quickstart/ci/template.png)
+
+Clone your new repoistory and set it as the current working directory.
+
+Or with the `gh` CLI:
 ```shell
-git clone https://github.com/dagger/hello-dagger
+gh repo create hello-dagger --template dagger/hello-dagger-template --public --clone
 cd hello-dagger
 ```
 
@@ -71,35 +78,35 @@ Bootstrap a new Dagger module in Go, Python, TypeScript, PHP, or Java by running
 <TabItem value="go" label="Go">
 
 ```shell
-dagger init --sdk=go
+dagger init --sdk=go --name=hello-dagger
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
 ```shell
-dagger init --sdk=python
+dagger init --sdk=python --name=hello-dagger
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```shell
-dagger init --sdk=typescript
+dagger init --sdk=typescript --name=hello-dagger
 ```
 
 </TabItem>
 <TabItem value="php" label="PHP">
 
 ```shell
-dagger init --sdk=php
+dagger init --sdk=php --name=hello-dagger
 ```
 
 </TabItem>
 <TabItem value="java" label="Java">
 
 ```shell
-dagger init --sdk=java
+dagger init --sdk=java --name=hello-dagger
 ```
 
 </TabItem>
@@ -230,5 +237,7 @@ You should now be able to access the application by browsing to `http://localhos
 Congratulations! You've created your first CI pipeline with Dagger.
 
 Now you have the tools to successfully take the next step: [adopting Dagger in your project](../../ci/adopting.mdx).
+
+The next guide [Build a Contextual Agent](../agent/inproject.mdx) will show you how to add agentic capabilities to your newly Daggerized project.
 
 In the meantime, we encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!

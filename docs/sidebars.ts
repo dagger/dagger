@@ -36,6 +36,7 @@ module.exports = {
         "quickstart/basics/index",
         "quickstart/agent/index",
         "quickstart/ci/index",
+        "quickstart/agent/inproject",
         "ci/adopting",
       ],
     },
