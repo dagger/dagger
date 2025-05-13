@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 
 	"dagger.io/dagger/telemetry"
@@ -14,9 +15,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 
-	genai "github.com/google/generative-ai-go/genai"
+	"google.golang.org/genai"
 )
 
 type GenaiClient struct {
@@ -25,15 +25,10 @@ type GenaiClient struct {
 }
 
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
-	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
-	if endpoint.Key != "" {
-		opts = append(opts, option.WithAPIKey(endpoint.Key))
-	}
-	if endpoint.BaseURL != "" {
-		opts = append(opts, option.WithEndpoint(endpoint.BaseURL))
-	}
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
-	client, err := genai.NewClient(ctx, opts...)
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: endpoint.Key,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +65,7 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) []*genai.Tool {
 
 func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
 	systemInstruction = &genai.Content{
-		Parts: []genai.Part{},
+		Parts: []*genai.Part{},
 		Role:  "system",
 	}
 	for _, msg := range history {
@@ -80,12 +75,12 @@ func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory 
 			content = systemInstruction
 		case "user", "function":
 			content = &genai.Content{
-				Parts: []genai.Part{},
+				Parts: []*genai.Part{},
 				Role:  "user",
 			}
 		case "model", "assistant":
 			content = &genai.Content{
-				Parts: []genai.Part{},
+				Parts: []*genai.Part{},
 				Role:  "model",
 			}
 		default:
@@ -95,12 +90,14 @@ func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory 
 		// message was a tool call
 		if msg.ToolCallID != "" {
 			// find the function name
-			content.Parts = append(content.Parts, genai.FunctionResponse{
-				Name: msg.ToolCallID,
-				// Genai expects a json format response
-				Response: map[string]any{
-					"response": msg.Content,
-					"error":    msg.ToolErrored,
+			content.Parts = append(content.Parts, &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: msg.ToolCallID,
+					// Genai expects a json format response
+					Response: map[string]any{
+						"response": msg.Content,
+						"error":    msg.ToolErrored,
+					},
 				},
 			})
 		} else { // just content
@@ -108,14 +105,16 @@ func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory 
 			if c == "" {
 				c = " "
 			}
-			content.Parts = append(content.Parts, genai.Text(c))
+			content.Parts = append(content.Parts, &genai.Part{Text: c})
 		}
 
 		// add tool calls
 		for _, call := range msg.ToolCalls {
-			content.Parts = append(content.Parts, genai.FunctionCall{
-				Name: call.ID,
-				Args: call.Function.Arguments,
+			content.Parts = append(content.Parts, &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: call.ID,
+					Args: call.Function.Arguments,
+				},
 			})
 		}
 
@@ -132,12 +131,11 @@ func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory 
 }
 
 func (c *GenaiClient) processStreamResponse(
-	stream *genai.GenerateContentResponseIterator,
+	stream iter.Seq2[*genai.GenerateContentResponse, error],
 	stdout io.Writer,
-	onTokenUsage func(*genai.UsageMetadata) LLMTokenUsage,
+	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (content string, toolCalls []LLMToolCall, tokenUsage LLMTokenUsage, err error) {
-	for {
-		res, err := stream.Next()
+	for res, err := range stream {
 		if err != nil {
 			if errors.Is(err, iterator.Done) {
 				break
@@ -160,23 +158,22 @@ func (c *GenaiClient) processStreamResponse(
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
-			err = &ModelFinishedError{Reason: candidate.FinishReason.String()}
+			err = &ModelFinishedError{Reason: string(candidate.FinishReason)}
 			return content, toolCalls, tokenUsage, err
 		}
 
 		for _, part := range candidate.Content.Parts {
-			switch x := part.(type) {
-			case genai.Text:
+			if x := part.Text; x != "" {
 				fmt.Fprint(stdout, x)
-				content += string(x)
-			case genai.FunctionCall:
+				content += x
+			} else if x := part.FunctionCall; x != nil {
 				toolCalls = append(toolCalls, LLMToolCall{
 					ID:       x.Name,
 					Function: FuncCall{Name: x.Name, Arguments: x.Args},
 					Type:     "function",
 				})
-			default:
-				err = fmt.Errorf("unexpected genai part type %T", part)
+			} else {
+				err = fmt.Errorf("unexpected genai part: %+v", part)
 				return content, toolCalls, tokenUsage, err
 			}
 		}
@@ -188,11 +185,12 @@ func (c *GenaiClient) processStreamResponse(
 var _ LLMClient = (*GenaiClient)(nil)
 
 func (c *GenaiClient) IsRetryable(err error) bool {
-	apiErr, ok := apierror.FromError(err)
+	var apiErr genai.APIError
+	ok := errors.As(err, &apiErr)
 	if !ok {
 		return false
 	}
-	switch apiErr.HTTPCode() {
+	switch apiErr.Code {
 	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
 		return true
 	default:
@@ -235,12 +233,6 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		return nil, fmt.Errorf("failed to get outputTokens gauge: %w", err)
 	}
 
-	// setup model
-	model := c.client.GenerativeModel(c.endpoint.Model)
-
-	// convert tools
-	model.Tools = c.convertToolsToGenai(tools)
-
 	// convert history
 	if len(history) == 0 {
 		return nil, fmt.Errorf("genai history cannot be empty")
@@ -250,7 +242,6 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert history: %w", err)
 	}
-	model.SystemInstruction = systemInstruction
 
 	if len(genaiHistory) == 0 {
 		return nil, fmt.Errorf("no user prompt")
@@ -259,13 +250,24 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	userMessage := genaiHistory[len(genaiHistory)-1]
 	chatHistoryForGenai := genaiHistory[:len(genaiHistory)-1]
 
-	chat := model.StartChat()
-	chat.History = chatHistoryForGenai
+	// setup model
+	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, &genai.GenerateContentConfig{
+		SystemInstruction: systemInstruction,
+		Tools:             c.convertToolsToGenai(tools),
+	}, chatHistoryForGenai)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat: %w", err)
+	}
 
-	stream := chat.SendMessageStream(ctx, userMessage.Parts...)
+	// some unfortunate clunkiness here
+	parts := []genai.Part{}
+	for _, part := range userMessage.Parts {
+		parts = append(parts, *part)
+	}
+	stream := chat.SendMessageStream(ctx, parts...)
 
 	// records token usage metrics and updates the final summary struct based on metadata from the stream.
-	tokenHandler := func(usageMeta *genai.UsageMetadata) (usageSummary LLMTokenUsage) {
+	tokenHandler := func(usageMeta *genai.GenerateContentResponseUsageMetadata) (usageSummary LLMTokenUsage) {
 		candidatesTokens := int64(usageMeta.CandidatesTokenCount)
 		promptTokens := int64(usageMeta.PromptTokenCount)
 		cachedTokens := int64(usageMeta.CachedContentTokenCount)
@@ -319,7 +321,8 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 				schema.Properties[propKey] = bbiSchemaToGenaiSchema(propParam.(map[string]any))
 			}
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
-			schema.Nullable = true
+			yes := true
+			schema.Nullable = &yes
 		case "type":
 			gtype := bbiTypeToGenaiType(param.(string))
 			schema.Type = gtype

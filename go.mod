@@ -53,7 +53,6 @@ require (
 	github.com/go-git/go-git/v5 v5.16.0
 	github.com/gofrs/flock v0.12.1
 	github.com/gogo/protobuf v1.3.2
-	github.com/google/generative-ai-go v0.20.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.3
 	github.com/google/go-github/v59 v59.0.0
@@ -137,6 +136,7 @@ require (
 	golang.org/x/text v0.25.0
 	golang.org/x/tools v0.32.0
 	google.golang.org/api v0.232.0
+	google.golang.org/genai v1.4.0
 	google.golang.org/grpc v1.72.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
@@ -147,12 +147,9 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.115.0 // indirect
-	cloud.google.com/go/ai v0.8.0 // indirect
+	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.16.1 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/longrunning v0.5.9 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
@@ -338,7 +335,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
-	google.golang.org/genproto v0.0.0-20240722135656-d784300faade // indirect
+	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250428153025-10db94c68c34 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
