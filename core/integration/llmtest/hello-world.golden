@@ -15,7 +15,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_RRM1ikRmerIlnTfuZxCEkB8P",
+        "id": "call_MSkaDVQ4NQ7m4b1kZW8np9Gv",
         "function": {
           "name": "list_methods",
           "arguments": {
@@ -36,7 +36,7 @@
   {
     "role": "user",
     "content": "[\n  {\n    \"name\": \"ToyWorkspace.build\",\n    \"returns\": \"Void\"\n  },\n  {\n    \"name\": \"ToyWorkspace.read\",\n    \"returns\": \"String!\"\n  },\n  {\n    \"name\": \"ToyWorkspace.write\",\n    \"returns\": \"ToyWorkspace!\",\n    \"required_args\": {\n      \"content\": \"String!\"\n    }\n  }\n]\n",
-    "tool_call_id": "call_RRM1ikRmerIlnTfuZxCEkB8P",
+    "tool_call_id": "call_MSkaDVQ4NQ7m4b1kZW8np9Gv",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -50,7 +50,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_0KKcvP48do7VhAq9SsgvRF0D",
+        "id": "call_gqv7kUyBKf7c3ifSLFkwc123",
         "function": {
           "name": "select_methods",
           "arguments": {
@@ -75,7 +75,7 @@
   {
     "role": "user",
     "content": "{\n  \"added_methods\": [\n    {\n      \"name\": \"ToyWorkspace.build\",\n      \"returns\": \"Void\",\n      \"description\": \"Build the code at the current directory in the workspace\",\n      \"argsSchema\": {\n        \"properties\": {},\n        \"type\": \"object\"\n      }\n    },\n    {\n      \"name\": \"ToyWorkspace.read\",\n      \"returns\": \"String!\",\n      \"description\": \"Read a file\",\n      \"argsSchema\": {\n        \"properties\": {},\n        \"type\": \"object\"\n      }\n    },\n    {\n      \"name\": \"ToyWorkspace.write\",\n      \"returns\": \"ToyWorkspace!\",\n      \"description\": \"Write a file\",\n      \"argsSchema\": {\n        \"properties\": {\n          \"content\": {\n            \"description\": \"\",\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"content\"\n        ],\n        \"type\": \"object\"\n      }\n    }\n  ]\n}\n",
-    "tool_call_id": "call_0KKcvP48do7VhAq9SsgvRF0D",
+    "tool_call_id": "call_gqv7kUyBKf7c3ifSLFkwc123",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -89,7 +89,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_PRpe07BfI2BxJ8YrL6N7mhRo",
+        "id": "call_Cmhl7ZQjQ7IP4v5bHYViFwos",
         "function": {
           "name": "call_method",
           "arguments": {
@@ -114,7 +114,7 @@
   {
     "role": "user",
     "content": "{\n  \"result\": \"ToyWorkspace#2\"\n}\n",
-    "tool_call_id": "call_PRpe07BfI2BxJ8YrL6N7mhRo",
+    "tool_call_id": "call_Cmhl7ZQjQ7IP4v5bHYViFwos",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -128,7 +128,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_VE9XqcdE1D0AdK8QX9Auq640",
+        "id": "call_mmUvqZnCTffNnFljWRJQuWev",
         "function": {
           "name": "call_method",
           "arguments": {
@@ -150,7 +150,7 @@
   {
     "role": "user",
     "content": "{\n  \"result\": null\n}\n",
-    "tool_call_id": "call_VE9XqcdE1D0AdK8QX9Auq640",
+    "tool_call_id": "call_mmUvqZnCTffNnFljWRJQuWev",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
@@ -164,7 +164,7 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_YXFpa0BiaNGF7i9HOZSTMTFf",
+        "id": "call_SgNTj7qiI3HFgSEmofRSCNrf",
         "function": {
           "name": "save",
           "arguments": {
@@ -185,7 +185,7 @@
   {
     "role": "user",
     "content": "ok",
-    "tool_call_id": "call_YXFpa0BiaNGF7i9HOZSTMTFf",
+    "tool_call_id": "call_SgNTj7qiI3HFgSEmofRSCNrf",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
