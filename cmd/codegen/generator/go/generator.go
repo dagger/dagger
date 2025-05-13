@@ -146,9 +146,6 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	layers := []fs.FS{mfs}
 
-	// Use the published package library for external dagger packages.
-	packageImport := "dagger.io/dagger"
-
 	// If dev is set, we need to add local files to the overlay and change the package import
 	if g.Config.Dev {
 		layers = append(
@@ -156,17 +153,17 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
 			&MountedFS{FS: dagger.EngineConn, Name: "internal"},
 		)
-
-		// Get the go package from the module
-		// We assume that we'll be located at the root source directory
-		pkg, _, err := loadPackage(ctx, ".")
-		if err != nil {
-			return nil, fmt.Errorf("load package %q: %w", outDir, err)
-		}
-
-		// respect existing package import path
-		packageImport = filepath.Join(pkg.Module.Path, g.Config.OutputDir)
 	}
+
+	// Get the go package from the module
+	// We assume that we'll be located at the root source directory
+	pkg, _, err := loadPackage(ctx, ".")
+	if err != nil {
+		return nil, fmt.Errorf("load package %q: %w", outDir, err)
+	}
+
+	// respect existing package import path
+	packageImport := filepath.Join(pkg.Module.Path, g.Config.OutputDir)
 
 	genSt := &generator.GeneratedState{
 		Overlay: layerfs.New(layers...),

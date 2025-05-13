@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
@@ -12,7 +10,6 @@ type clientGenContainer struct {
 	sdkSourceDir *dagger.Directory
 	cfg          *moduleConfig
 	ctr          *dagger.Container
-	gitDepsJSON  string
 }
 
 func (c *clientGenContainer) GeneratedDirectory() *dagger.Directory {
@@ -38,7 +35,6 @@ func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *
 	clientGenCtr := &clientGenContainer{
 		sdkSourceDir: sdkSourceDir,
 		cfg:          cfg,
-		gitDepsJSON:  "",
 		ctr: baseCtr.
 			WithoutEntrypoint().
 			// install tsx from its bundled location in the engine image
@@ -161,20 +157,14 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 }
 
 // Return the container with the generated client inside it's current working directory.
-func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File, outputDir string) *clientGenContainer {
+func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File, moduleSourceID dagger.ModuleSourceID, outputDir string) *clientGenContainer {
 	codegenArgs := []string{
 		codegenBinPath,
 		"--lang", "typescript",
 		"--output", outputDir,
 		"--introspection-json-path", schemaPath,
 		"--client-only",
-	}
-
-	if c.gitDepsJSON != "" {
-		c.ctr = c.ctr.WithNewFile(dependenciesConfigPath, c.gitDepsJSON)
-		codegenArgs = append(codegenArgs,
-			fmt.Sprintf("--dependencies-json-file-path=%s", dependenciesConfigPath),
-		)
+		"--module-source-id", string(moduleSourceID),
 	}
 
 	c.ctr = c.ctr.
@@ -185,67 +175,4 @@ func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File,
 		})
 
 	return c
-}
-
-// Same data structure as ModuleConfigDependency from core/modules/config.go#L183
-type gitDependencyConfig struct {
-	Name   string
-	Pin    string
-	Source string
-}
-
-func (c *clientGenContainer) withBundledGitDependenciesJSON(gitDepsJSON string) *clientGenContainer {
-	c.gitDepsJSON = gitDepsJSON
-
-	return c
-}
-
-// Return the list of git dependencies of the current caller module so it can be bundled in
-// the generated client.
-func extraGitDependenciesFromModule(ctx context.Context, modSource *dagger.ModuleSource) (string, error) {
-	dependencies, err := modSource.Dependencies(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-
-	dependenciesConfig := []gitDependencyConfig{}
-	// Add remote dependency reference to the codegen arguments.
-	for _, dep := range dependencies {
-		depKind, err := dep.Kind(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to get dependency kind: %w", err)
-		}
-
-		if depKind != dagger.ModuleSourceKindGitSource {
-			continue
-		}
-
-		depSource, err := dep.AsString(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to get module dependency ref: %w", err)
-		}
-
-		depPin, err := dep.Pin(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to get module dependency pin: %w", err)
-		}
-
-		depName, err := dep.ModuleOriginalName(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to get module dependency name: %w", err)
-		}
-
-		dependenciesConfig = append(dependenciesConfig, gitDependencyConfig{
-			Name:   depName,
-			Pin:    depPin,
-			Source: depSource,
-		})
-	}
-
-	dependenciesJSONConfig, err := json.Marshal(dependenciesConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal dependencies config: %w", err)
-	}
-
-	return string(dependenciesJSONConfig), nil
 }

@@ -2,14 +2,12 @@ package sdk
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -79,54 +77,17 @@ func (sdk *goSDK) GenerateClient(
 	contextDir := modSource.Self.ContextDirectory
 	rootSourcePath := modSource.Self.SourceRootSubpath
 
+	modSourceID, err := modSource.ID().Encode()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source id: %w", err)
+	}
+
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
-	}
-
-	dependencies := []*modules.ModuleConfigDependency{}
-
-	// Send the dependencies reference to the codegen so it can embed their loading.
-	for _, dep := range modSource.Self.Dependencies {
-		if dep.Self.Kind == core.ModuleSourceKindGit {
-			dependencies = append(dependencies, &modules.ModuleConfigDependency{
-				Name:   dep.Self.ModuleOriginalName,
-				Pin:    dep.Self.Pin(),
-				Source: dep.Self.AsString(),
-			})
-		}
-	}
-
-	// If there are dependencies, we pass the config files to the codegen
-	if len(dependencies) > 0 {
-		dependenciesConfig, err := json.Marshal(dependencies)
-		if err != nil {
-			return inst, fmt.Errorf("failed to marshal dependencies config: %w", err)
-		}
-
-		if err := sdk.dag.Select(ctx, ctr, &ctr,
-			dagql.Selector{
-				Field: "withNewFile",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(goSDKDependenciesConfigPath),
-					},
-					{
-						Name:  "contents",
-						Value: dagql.String(string(dependenciesConfig)),
-					},
-				},
-			}); err != nil {
-			return inst, fmt.Errorf("failed to add dependencies config file: %w", err)
-		}
-
-		codegenArgs = append(
-			codegenArgs,
-			dagql.NewString(fmt.Sprintf("--dependencies-json-file-path=%s", goSDKDependenciesConfigPath)),
-		)
+		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
 	}
 
 	err = sdk.dag.Select(ctx, ctr, &ctr,
@@ -176,6 +137,10 @@ func (sdk *goSDK) GenerateClient(
 					Value: append(dagql.ArrayInput[dagql.String]{
 						"codegen",
 					}, codegenArgs...),
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.NewBoolean(true),
 				},
 			},
 		},

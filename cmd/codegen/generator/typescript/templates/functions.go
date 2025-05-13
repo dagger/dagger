@@ -11,7 +11,7 @@ import (
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core"
 )
 
 func TypescriptTemplateFuncs(
@@ -69,7 +69,9 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
 		"IsDevMode":                 funcs.isDevMode,
-		"GitDependencies":           funcs.gitDependencies,
+		"Dependencies":              funcs.Dependencies,
+		"HasLocalDependencies":      funcs.HasLocalDependencies,
+		"ImplementModule":           funcs.ImplementModule,
 		"IsBundle":                  funcs.isBundle,
 	}
 }
@@ -342,8 +344,22 @@ func (funcs typescriptTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
 }
 
-func (funcs typescriptTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
-	return funcs.cfg.GitDependencies
+func (funcs typescriptTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
+	return funcs.cfg.ModuleDependencies
+}
+
+func (funcs typescriptTemplateFuncs) HasLocalDependencies() bool {
+	for _, dep := range funcs.cfg.ModuleDependencies {
+		if dep.Kind == core.ModuleSourceKindLocal {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (funcs typescriptTemplateFuncs) ImplementModule() bool {
+	return funcs.cfg.ImplementModule
 }
 
 func (funcs typescriptTemplateFuncs) isBundle() bool {
