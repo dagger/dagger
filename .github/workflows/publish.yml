@@ -91,14 +91,18 @@ jobs:
     if: github.ref_name != 'main'
     runs-on: dagger-g3-v0-18-8-4c
     steps:
+      # Configure credentials to clone dagger modules
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://dagger-ci:${{ secrets.RELEASE_DAGGER_CI_TOKEN }}@github.com
       - uses: actions/checkout@v4
-      - name: "Bump Dagger version in Daggerverse and Dagger Cloud API"
+      - name: "Bump Dagger version in dagger.io applications"
         uses: ./.github/actions/call
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
           function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump-dagger-version --to=${{ github.ref_name }} --github-assignee=${{ github.actor }}
-          module: ./modules/dagger-io
+          module: github.com/dagger/dagger.io/infra/dagger-version-manager@main
 
   # TODO: daggerize provisioning tests
   test-provision-macos:

@@ -277,10 +277,10 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 		Workflow("daggerverse-preview").
 		WithJob(gha.Job(
 			"deploy",
-			"--github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-daggerverse-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR",
+			"--github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR",
 			dagger.GhaJobOpts{
 				Secrets: []string{"RELEASE_DAGGER_CI_TOKEN"},
-				Module:  "modules/dagger-io",
+				Module:  "modules/daggerverse",
 			}))
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
