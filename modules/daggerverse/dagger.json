@@ -1,0 +1,18 @@
+{
+  "name": "daggerverse",
+  "engineVersion": "v0.15.1",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "gh",
+      "source": "github.com/sagikazarmark/daggerverse/gh@main",
+      "pin": "c1be27189ce47d28f84014b715f78e47db9fbadc"
+    },
+    {
+      "name": "go",
+      "source": "../go"
+    }
+  ]
+}
