@@ -9,12 +9,12 @@ import (
 	"net/http"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/api/iterator"
 
 	"google.golang.org/genai"
 )
@@ -135,17 +135,16 @@ func (c *GenaiClient) processStreamResponse(
 	stdout io.Writer,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (content string, toolCalls []LLMToolCall, tokenUsage LLMTokenUsage, err error) {
-	for res, err := range stream {
+	// FIXME: the following is awkwardly rewritten to avoid a panic caused by
+	// returning `false` from the stream function
+	stream(func(res *genai.GenerateContentResponse, nextErr error) bool {
 		if err != nil {
-			if errors.Is(err, iterator.Done) {
-				break
-			}
 			if apiErr, ok := err.(*apierror.APIError); ok {
 				err = fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
-				return content, toolCalls, tokenUsage, err
+				return true
 			}
-
-			return content, toolCalls, tokenUsage, err
+			err = nextErr
+			return true
 		}
 
 		if res.UsageMetadata != nil {
@@ -154,12 +153,12 @@ func (c *GenaiClient) processStreamResponse(
 
 		if len(res.Candidates) == 0 {
 			err = &ModelFinishedError{Reason: "no response from model"}
-			return content, toolCalls, tokenUsage, err
+			return true
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
 			err = &ModelFinishedError{Reason: string(candidate.FinishReason)}
-			return content, toolCalls, tokenUsage, err
+			return true
 		}
 
 		for _, part := range candidate.Content.Parts {
@@ -173,12 +172,11 @@ func (c *GenaiClient) processStreamResponse(
 					Type:     "function",
 				})
 			} else {
-				err = fmt.Errorf("unexpected genai part: %+v", part)
-				return content, toolCalls, tokenUsage, err
+				slog.Warn("unexpected genai part", "part", fmt.Sprintf("%+v", part))
 			}
 		}
-	}
-
+		return true
+	})
 	return content, toolCalls, tokenUsage, nil
 }
 
@@ -284,6 +282,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 		usageSummary.OutputTokens += candidatesTokens
 		usageSummary.InputTokens += promptTokens
+		usageSummary.CachedTokenReads += cachedTokens
 		usageSummary.TotalTokens += candidatesTokens + promptTokens
 
 		return usageSummary
@@ -324,8 +323,18 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 			yes := true
 			schema.Nullable = &yes
 		case "type":
-			gtype := bbiTypeToGenaiType(param.(string))
-			schema.Type = gtype
+			switch x := param.(type) {
+			case string:
+				gtype := bbiTypeToGenaiType(x)
+				schema.Type = gtype
+			case []string:
+				gtype := bbiTypeToGenaiType(x[0])
+				schema.Type = gtype
+				if x[1] == "null" {
+					yes := true
+					schema.Nullable = &yes
+				}
+			}
 		case "format":
 			switch param {
 			case "enum", "date-time":

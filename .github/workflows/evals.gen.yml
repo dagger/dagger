@@ -3,7 +3,9 @@ name: evals
 "on":
     push:
         paths:
-            - core/{llm,mcp,env}.go
+            - core/llm.go
+            - core/mcp.go
+            - core/env.go
             - core/llm_*.go
             - core/llm_*.md
             - core/schema/llm.go

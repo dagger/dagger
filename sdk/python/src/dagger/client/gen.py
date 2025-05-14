@@ -6584,6 +6584,44 @@ class LLM(Type):
 
 @typecheck
 class LLMTokenUsage(Type):
+    async def cached_token_reads(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("cachedTokenReads", _args)
+        return await _ctx.execute(int)
+
+    async def cached_token_writes(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("cachedTokenWrites", _args)
+        return await _ctx.execute(int)
+
     async def id(self) -> LLMTokenUsageID:
         """A unique identifier for this LLMTokenUsage.
 

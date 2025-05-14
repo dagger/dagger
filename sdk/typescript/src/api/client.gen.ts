@@ -6228,6 +6228,8 @@ export class LLM extends BaseClient {
 
 export class LLMTokenUsage extends BaseClient {
   private readonly _id?: LLMTokenUsageID = undefined
+  private readonly _cachedTokenReads?: number = undefined
+  private readonly _cachedTokenWrites?: number = undefined
   private readonly _inputTokens?: number = undefined
   private readonly _outputTokens?: number = undefined
   private readonly _totalTokens?: number = undefined
@@ -6238,6 +6240,8 @@ export class LLMTokenUsage extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMTokenUsageID,
+    _cachedTokenReads?: number,
+    _cachedTokenWrites?: number,
     _inputTokens?: number,
     _outputTokens?: number,
     _totalTokens?: number,
@@ -6245,6 +6249,8 @@ export class LLMTokenUsage extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._cachedTokenReads = _cachedTokenReads
+    this._cachedTokenWrites = _cachedTokenWrites
     this._inputTokens = _inputTokens
     this._outputTokens = _outputTokens
     this._totalTokens = _totalTokens
@@ -6261,6 +6267,28 @@ export class LLMTokenUsage extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<LLMTokenUsageID> = await ctx.execute()
+
+    return response
+  }
+  cachedTokenReads = async (): Promise<number> => {
+    if (this._cachedTokenReads) {
+      return this._cachedTokenReads
+    }
+
+    const ctx = this._ctx.select("cachedTokenReads")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+  cachedTokenWrites = async (): Promise<number> => {
+    if (this._cachedTokenWrites) {
+      return this._cachedTokenWrites
+    }
+
+    const ctx = this._ctx.select("cachedTokenWrites")
+
+    const response: Awaited<number> = await ctx.execute()
 
     return response
   }

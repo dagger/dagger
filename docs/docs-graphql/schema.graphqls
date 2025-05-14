@@ -2714,6 +2714,10 @@ The `LLMID` scalar type represents an identifier for an object of type LLM.
 scalar LLMID
 
 type LLMTokenUsage {
+  cachedTokenReads: Int!
+
+  cachedTokenWrites: Int!
+
   """A unique identifier for this LLMTokenUsage."""
   id: LLMTokenUsageID!
 

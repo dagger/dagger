@@ -141,6 +141,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 					Name:        tool.Name,
 					Description: openai.Opt(tool.Description),
 					Parameters:  openai.FunctionParameters(tool.Schema),
+					Strict:      openai.Opt(tool.Strict),
 				},
 			})
 		}
@@ -182,9 +183,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		Content:   choice.Message.Content,
 		ToolCalls: toolCalls,
 		TokenUsage: LLMTokenUsage{
-			InputTokens:  chatCompletion.Usage.PromptTokens,
-			OutputTokens: chatCompletion.Usage.CompletionTokens,
-			TotalTokens:  chatCompletion.Usage.TotalTokens,
+			InputTokens:      chatCompletion.Usage.PromptTokens,
+			OutputTokens:     chatCompletion.Usage.CompletionTokens,
+			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
+			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
 	}, nil
 }

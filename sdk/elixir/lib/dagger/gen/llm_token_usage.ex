@@ -13,6 +13,22 @@ defmodule Dagger.LLMTokenUsage do
 
   @type t() :: %__MODULE__{}
 
+  @spec cached_token_reads(t()) :: {:ok, integer()} | {:error, term()}
+  def cached_token_reads(%__MODULE__{} = llm_token_usage) do
+    query_builder =
+      llm_token_usage.query_builder |> QB.select("cachedTokenReads")
+
+    Client.execute(llm_token_usage.client, query_builder)
+  end
+
+  @spec cached_token_writes(t()) :: {:ok, integer()} | {:error, term()}
+  def cached_token_writes(%__MODULE__{} = llm_token_usage) do
+    query_builder =
+      llm_token_usage.query_builder |> QB.select("cachedTokenWrites")
+
+    Client.execute(llm_token_usage.client, query_builder)
+  end
+
   @doc """
   A unique identifier for this LLMTokenUsage.
   """

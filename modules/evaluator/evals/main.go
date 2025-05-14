@@ -65,7 +65,7 @@ func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
 func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 5}).
-			WithPrompt("Hello there! Respond with 'potato' if you received this message."),
+			WithPrompt("Hello there! Simply respond with 'potato' and take no other action."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.LastReply(ctx)
 			require.NoError(t, err)
@@ -113,21 +113,40 @@ func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
 
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
-// func (m *Evals) SingleState(ctx context.Context) (*Report, error) {
-// 	return withLLMReport(ctx,
-// 		m.LLM().
-// 			WithContainer(
-// 				dag.Container().
-// 					From("alpine").
-// 					WithEnvVariable("TERM", "xterm-potato"),
-// 			).
-// 			WithPrompt("what is the value of the TERM environment variable?"),
-// 		func(t testing.TB, llm *dagger.LLM) {
-// 			reply, err := llm.LastReply(ctx)
-// 			require.NoError(t, err)
-// 			require.Contains(t, reply, "xterm-potato")
-// 		})
-// }
+func (m *Evals) CoreAPI(ctx context.Context) (*Report, error) {
+	return withLLMReport(ctx,
+		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
+			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+				WithFileOutput("starch", "A file containing the word potato")).
+			WithPrompt("Create a file that contains the word potato, and return it."),
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
+			reply, err := llm.Env().Output("starch").AsFile().Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, reply, "potato")
+		})
+}
+
+// Test that the model is conscious of a "current state" without needing
+// explicit prompting.
+func (m *Evals) ModuleDependencies(ctx context.Context) (*Report, error) {
+	err := dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender").AsModule().Serve(ctx, dagger.ModuleServeOpts{
+		IncludeDependencies: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return withLLMReport(ctx,
+		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
+			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+				WithStringOutput("methods", "The list of methods that you can see.")).
+			WithPrompt("List all of the methods that you can see."),
+		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
+			reply, err := llm.Env().Output("methods").AsString(ctx)
+			require.NoError(t, err)
+			require.Contains(t, reply, "llmTestModule")
+			require.Contains(t, reply, "llmDirModuleDepender")
+		})
+}
 
 // func (m *Evals) CoreMulti(ctx context.Context) (*Report, error) {
 // 	return withLLMReport(ctx,
@@ -156,7 +175,7 @@ func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
 			Loop().
 			WithPrompt("Create the file /b with contents 2.").
 			Loop().
-			WithPrompt("Nevermind - go back to before you created /b and create /c with contents 3, and return that."),
+			WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			entries, err := llm.Env().Output("out").AsDirectory().Entries(ctx)
 			require.NoError(t, err)
@@ -224,8 +243,8 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 
 	history, err := llm.History(ctx)
 	require.NoError(t, err)
-	if !strings.Contains(strings.Join(history, "\n"), "Container_with_env_variable") {
-		t.Error("should have used Container_with_env_variable - use the right tool for the job!")
+	if !strings.Contains(strings.Join(history, "\n"), "Container.withEnvVariable") {
+		t.Error("should have used Container.withEnvVariable - use the right tool for the job!")
 	}
 
 	ctr := dag.Container().
@@ -242,11 +261,6 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 
 // Test that the LLM is able to access the content of variables without the user
 // having to expand them in the prompt.
-//
-// SUCCESS RATE (ballpark):
-// - claude-3-7-sonnet-latest: 100%
-// - gpt-4o: 100%
-// - gemini-2.0-flash: 0%
 func (m *Evals) ReadImplicitVars(ctx context.Context) (*Report, error) {
 	// use some fun formatting here to make sure it doesn't get lost in
 	// the shuffle
@@ -293,11 +307,13 @@ func (m *Evals) llm(opts ...dagger.LLMOpts) *dagger.LLM {
 }
 
 type Report struct {
-	Succeeded    bool
-	Report       string
-	ToolsDoc     string
-	InputTokens  int
-	OutputTokens int
+	Succeeded          bool
+	Report             string
+	ToolsDoc           string
+	InputTokens        int
+	OutputTokens       int
+	CachedTokensReads  int
+	CachedTokensWrites int
 }
 
 func withLLMReport(
@@ -367,12 +383,22 @@ func withLLMReport(
 	if err != nil {
 		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
 	}
+	report.CachedTokensReads, err = llm.TokenUsage().CachedTokenReads(ctx)
+	if err != nil {
+		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
+	}
+	report.CachedTokensWrites, err = llm.TokenUsage().CachedTokenWrites(ctx)
+	if err != nil {
+		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
+	}
 	fmt.Fprintln(reportMD)
 
 	fmt.Fprintln(reportMD, "### Total Token Cost")
 	fmt.Fprintln(reportMD)
 	fmt.Fprintln(reportMD, "* Input Tokens:", report.InputTokens)
 	fmt.Fprintln(reportMD, "* Output Tokens:", report.OutputTokens)
+	fmt.Fprintln(reportMD, "* Cached Token Reads:", report.CachedTokensReads)
+	fmt.Fprintln(reportMD, "* Cached Token Writes:", report.CachedTokensWrites)
 	fmt.Fprintln(reportMD)
 
 	fmt.Fprintln(reportMD, "### Evaluation Result")

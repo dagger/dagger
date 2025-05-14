@@ -37,12 +37,14 @@ var testedModels = []string{
 type EvalFunc = func(*dagger.Evals) *dagger.EvalsReport
 
 var evals = map[string]EvalFunc{
-	"Basic":            (*dagger.Evals).Basic,
-	"BuildMulti":       (*dagger.Evals).BuildMulti,
-	"BuildMultiNoVar":  (*dagger.Evals).BuildMultiNoVar,
-	"WorkspacePattern": (*dagger.Evals).WorkspacePattern,
-	"ReadImplicitVars": (*dagger.Evals).ReadImplicitVars,
-	"UndoChanges":      (*dagger.Evals).UndoChanges,
+	"Basic":              (*dagger.Evals).Basic,
+	"BuildMulti":         (*dagger.Evals).BuildMulti,
+	"BuildMultiNoVar":    (*dagger.Evals).BuildMultiNoVar,
+	"WorkspacePattern":   (*dagger.Evals).WorkspacePattern,
+	"ReadImplicitVars":   (*dagger.Evals).ReadImplicitVars,
+	"UndoChanges":        (*dagger.Evals).UndoChanges,
+	"CoreAPI":            (*dagger.Evals).CoreAPI,
+	"ModuleDependencies": (*dagger.Evals).ModuleDependencies,
 	// "CoreMulti":        (*dagger.Evals).CoreMulti,
 }
 

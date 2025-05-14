@@ -49,19 +49,32 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			propOpts = append(propOpts, mcp.Description(s))
 		}
 		var typ string
+		var strictNullable bool
 		if v, ok := argSchema["type"]; !ok {
 			return nil, fmt.Errorf("schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
 		} else {
-			typ, ok = v.(string)
-			if !ok {
-				return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
+			switch x := v.(type) {
+			case string:
+				typ = x
+			case []string:
+				typ = x[0]
+				if len(x) < 2 {
+					return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string with at least two elements, got %T", argName, tool.Name, v)
+				}
+				if x[1] == "null" {
+					strictNullable = true
+				} else {
+					return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string with \"null\" as the second element, got %T", argName, tool.Name, v)
+				}
+			default:
+				return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string or []string, got %T", argName, tool.Name, v)
 			}
 		}
 
 		if v, ok := argSchema["default"]; ok {
 			propOpts = append(propOpts, mcpDefaultAny(v))
 		}
-		if slices.Contains(required, argName) {
+		if slices.Contains(required, argName) && !strictNullable {
 			propOpts = append(propOpts, mcp.Required())
 		}
 
@@ -81,6 +94,8 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 			mcpArg = mcp.WithNumber
 		case "number":
 			mcpArg = mcp.WithNumber
+		case "object":
+			mcpArg = mcp.WithObject
 		case "string":
 			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
 			mcpArg = mcp.WithString

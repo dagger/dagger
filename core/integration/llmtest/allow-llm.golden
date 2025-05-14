@@ -5,6 +5,8 @@
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
       "total_tokens": 0
     }
   },
@@ -13,39 +15,43 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_OvTtJZBmJTs4H3PYfIiOdfjj",
+        "id": "call_mjlqzENPXG1Lbp8G91gK259b",
         "function": {
-          "name": "think",
-          "arguments": {
-            "thought": "The user would like a greeting. I should generate a friendly greeting message for the user."
-          }
+          "name": "list_methods",
+          "arguments": {}
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "input_tokens": 763,
-      "output_tokens": 32,
-      "total_tokens": 795
+      "input_tokens": 392,
+      "output_tokens": 11,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 403
     }
   },
   {
     "role": "user",
-    "content": "Finished thinking.",
-    "tool_call_id": "call_OvTtJZBmJTs4H3PYfIiOdfjj",
+    "content": "null\n",
+    "tool_call_id": "call_mjlqzENPXG1Lbp8G91gK259b",
     "token_usage": {
       "input_tokens": 0,
       "output_tokens": 0,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
       "total_tokens": 0
     }
   },
   {
     "role": "assistant",
-    "content": "Hello! 👋 How can I assist you today?",
+    "content": "It appears there are no greeting or response methods currently available in the system for me to use. How else can I assist you today?",
     "token_usage": {
-      "input_tokens": 804,
-      "output_tokens": 13,
-      "total_tokens": 817
+      "input_tokens": 412,
+      "output_tokens": 29,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 441
     }
   }
 ]

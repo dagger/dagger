@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -64,11 +65,13 @@ type LLM struct {
 	maxAPICalls int
 	apiCalls    int
 
-	model    string
-	endpoint *LLMEndpoint
+	model string
 
-	once        *sync.Once
+	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
+
+	once *sync.Once
+	err  error
 
 	// History of messages
 	messages []ModelMessage
@@ -103,9 +106,11 @@ type LLMResponse struct {
 }
 
 type LLMTokenUsage struct {
-	InputTokens  int64 `field:"true" json:"input_tokens"`
-	OutputTokens int64 `field:"true" json:"output_tokens"`
-	TotalTokens  int64 `field:"true" json:"total_tokens"`
+	InputTokens       int64 `field:"true" json:"input_tokens"`
+	OutputTokens      int64 `field:"true" json:"output_tokens"`
+	CachedTokenReads  int64 `field:"true" json:"cached_token_reads"`
+	CachedTokenWrites int64 `field:"true" json:"cached_token_writes"`
+	TotalTokens       int64 `field:"true" json:"total_tokens"`
 }
 
 func (*LLMTokenUsage) Type() *ast.Type {
@@ -319,64 +324,75 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 
 func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
 	if getenv == nil {
-		getenv = func(ctx context.Context, key string) (string, error) {
+		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam
 			return os.Getenv(key), nil
 		}
 	}
-	var err error
 
-	r.AnthropicAPIKey, err = getenv(ctx, "ANTHROPIC_API_KEY")
-	if err != nil {
-		return err
-	}
-	r.AnthropicBaseURL, err = getenv(ctx, "ANTHROPIC_BASE_URL")
-	if err != nil {
-		return err
-	}
-	r.AnthropicModel, err = getenv(ctx, "ANTHROPIC_MODEL")
-	if err != nil {
-		return err
+	save := func(key string, dest *string) error {
+		value, err := getenv(ctx, key)
+		if err != nil {
+			return fmt.Errorf("get %q: %w", key, err)
+		}
+		if value != "" {
+			*dest = value
+		}
+		return nil
 	}
 
-	r.OpenAIAPIKey, err = getenv(ctx, "OPENAI_API_KEY")
-	if err != nil {
+	var eg errgroup.Group
+	eg.Go(func() error {
+		return save("ANTHROPIC_API_KEY", &r.AnthropicAPIKey)
+	})
+	eg.Go(func() error {
+		return save("ANTHROPIC_BASE_URL", &r.AnthropicBaseURL)
+	})
+	eg.Go(func() error {
+		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
+	})
+
+	eg.Go(func() error {
+		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
+	})
+	eg.Go(func() error {
+		return save("OPENAI_AZURE_VERSION", &r.OpenAIAzureVersion)
+	})
+	eg.Go(func() error {
+		return save("OPENAI_BASE_URL", &r.OpenAIBaseURL)
+	})
+	eg.Go(func() error {
+		return save("OPENAI_MODEL", &r.OpenAIModel)
+	})
+
+	eg.Go(func() error {
+		return save("GEMINI_API_KEY", &r.GeminiAPIKey)
+	})
+	eg.Go(func() error {
+		return save("GEMINI_BASE_URL", &r.GeminiBaseURL)
+	})
+	eg.Go(func() error {
+		return save("GEMINI_MODEL", &r.GeminiModel)
+	})
+
+	var (
+		openAIDisableStreaming string
+	)
+	eg.Go(func() error {
+		var err error
+		openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
+		return err
+	})
+
+	if err := eg.Wait(); err != nil {
 		return err
 	}
-	r.OpenAIAzureVersion, err = getenv(ctx, "OPENAI_AZURE_VERSION")
-	if err != nil {
-		return err
-	}
-	r.OpenAIBaseURL, err = getenv(ctx, "OPENAI_BASE_URL")
-	if err != nil {
-		return err
-	}
-	r.OpenAIModel, err = getenv(ctx, "OPENAI_MODEL")
-	if err != nil {
-		return err
-	}
-	var openAIDisableStreaming string
-	openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
-	if err != nil {
-		return err
-	}
+
 	if openAIDisableStreaming != "" {
-		r.OpenAIDisableStreaming, err = strconv.ParseBool(openAIDisableStreaming)
+		v, err := strconv.ParseBool(openAIDisableStreaming)
 		if err != nil {
 			return err
 		}
-	}
-
-	r.GeminiAPIKey, err = getenv(ctx, "GEMINI_API_KEY")
-	if err != nil {
-		return err
-	}
-	r.GeminiBaseURL, err = getenv(ctx, "GEMINI_BASE_URL")
-	if err != nil {
-		return err
-	}
-	r.GeminiModel, err = getenv(ctx, "GEMINI_MODEL")
-	if err != nil {
-		return err
+		r.OpenAIDisableStreaming = v
 	}
 
 	return nil
@@ -465,9 +481,10 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
 	cp.mcp = cp.mcp.Clone()
-	cp.once = &sync.Once{}
-	cp.endpointMtx = &sync.Mutex{}
 	cp.endpoint = llm.endpoint
+	cp.endpointMtx = &sync.Mutex{}
+	cp.once = &sync.Once{}
+	cp.err = nil
 	return &cp
 }
 
@@ -634,11 +651,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
 		return err
 	}
-	var err error
 	llm.once.Do(func() {
-		err = llm.loop(ctx, dag)
+		llm.err = llm.loop(ctx, dag)
 	})
-	return err
+	return llm.err
 }
 
 func (llm *LLM) Interject(ctx context.Context) error {
@@ -977,6 +993,8 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 	for _, msg := range llm.messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
+		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads
+		res.CachedTokenWrites += msg.TokenUsage.CachedTokenWrites
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
