@@ -24,6 +24,8 @@ func mcpDefaultAny(v any) mcp.PropertyOption {
 }
 
 func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
+	println("  🍎 genMcpToolOpts " + tool.Name)
+	defer println("  🍎 genMcpToolOpts " + tool.Name + " returned")
 	toolOpts := []mcp.ToolOption{
 		mcp.WithDescription(tool.Description),
 	}
@@ -145,6 +147,8 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 }
 
 func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool, error) {
+	println("🍎 convertToMcpTools")
+	defer println("🍎 convertToMcpTools returned")
 	mcpTools := make([]mcpserver.ServerTool, 0, len(llmTools))
 	for _, tool := range llmTools {
 		// Skipping methods that return ID
@@ -162,7 +166,9 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 }
 
 func (s mcpServer) setTools() error {
+	println("🍎 setTools")
 	tools, err := s.mcp.Tools(s.dag)
+	println("🍎 setTools returned")
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
 	}
@@ -174,7 +180,7 @@ func (s mcpServer) setTools() error {
 	if len(mcpTools) > 0 {
 		name = mcpTools[0].Tool.Name
 	}
-	println("🍎 setting tools", len(mcpTools), name)
+	println("🍎🍎 setting tools", len(mcpTools), name)
 	s.server.SetTools(mcpTools...)
 	return nil
 }

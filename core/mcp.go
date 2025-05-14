@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -70,20 +71,32 @@ func NewMCP(query *Query, env *Env) *MCP {
 }
 
 func (m *MCP) SetEnv(env *Env) *MCP {
+	println("SetEnv: 🔒")
 	m.mu.Lock()
+	println("SetEnv: 🔒 acquired")
 	m.env = env
+	println("SetEnv: 📡 broadcasting")
 	m.cond.Broadcast()
+	println("SetEnv: 📡 broadcasted")
 	m.mu.Unlock()
+	println("SetEnv: 🔒 unlocked")
 	return m
 }
 
 func (m *MCP) Env() *Env {
+	println("Env: 🔒")
 	m.mu.Lock()
+	println("Env: 🔒 acquired")
 	for m.env == nil {
+		println("env is nil, waiting")
 		m.cond.Wait()
+		println("waited")
 	}
 	env := m.env
+	println("Env: 🔒 unlocking")
 	m.mu.Unlock()
+	debug.PrintStack()
+	println("Env: 🔒 unlocked")
 	return env
 }
 
@@ -95,7 +108,7 @@ func (*MCP) Type() *ast.Type {
 }
 
 func (m *MCP) Clone() *MCP {
-	env := m.env
+	env := m.Env()
 	if env != nil {
 		env = env.Clone()
 	}
@@ -177,6 +190,7 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 }
 
 func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error {
+	defer println("done alltypetools 🎯")
 	schema := srv.Schema()
 	env := m.Env()
 	typeNames := env.Types()
@@ -188,16 +202,16 @@ func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error
 		if !ok {
 			return fmt.Errorf("type %q not found", typeName)
 		}
-		if err := m.typeTools(allTools, srv, schema, typeDef); err != nil {
+		if err := m.typeTools(allTools, env, srv, schema, typeDef); err != nil {
 			return fmt.Errorf("load %q tools: %w", typeName, err)
 		}
 	}
 	return nil
 }
 
-func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition) error {
+func (m *MCP) typeTools(allTools map[string]LLMTool, env *Env, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition) error {
 	for _, field := range typeDef.Fields {
-		if _, found := m.Env().Input(field.Name); found {
+		if _, found := env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
 			continue
 		}
@@ -848,10 +862,11 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				Description string `json:"description"`
 			}
 			var objects []objDesc
-			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
-				count := m.env.typeCounts[typeName]
+			env := m.Env()
+			for _, typeName := range slices.Sorted(maps.Keys(env.typeCounts)) {
+				count := env.typeCounts[typeName]
 				for i := 1; i <= count; i++ {
-					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+					bnd := env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
 					objects = append(objects, objDesc{
 						ID:          bnd.ID(),
 						Description: bnd.Description,
@@ -1099,6 +1114,7 @@ NOTE: you must select methods before chaining them`,
 					return nil, err
 				}
 				var res any
+				env := m.Env()
 				for i, call := range toolArgs.Chain {
 					var tool LLMTool
 					tool, found := allMethods[call.Method]
@@ -1113,7 +1129,7 @@ NOTE: you must select methods before chaining them`,
 						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
 							// override, since the whole point is to chain from the previous
 							// value; any value here is surely mistaken or hallucinated
-							args["self"] = m.env.Ingest(obj, "")
+							args["self"] = env.Ingest(obj, "")
 						}
 					} else {
 						args["self"] = toolArgs.Self
@@ -1256,7 +1272,7 @@ func (m *MCP) userProvidedValues() []LLMTool {
 		}
 		if obj, isObj := input.AsObject(); isObj {
 			values = append(values, valueDesc{
-				Value:       m.env.Ingest(obj, input.Description),
+				Value:       m.Env().Ingest(obj, input.Description),
 				Description: description,
 			})
 		} else {
