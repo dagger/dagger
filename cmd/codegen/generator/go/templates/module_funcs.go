@@ -320,7 +320,6 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 	}
 
 	// handle defaultEnv
-	// TODO(jasonmccallister): should this return an error if the env var is not set but it has a default?
 	defaultEnv := ""
 	if v, ok := pragmas["defaultEnv"]; ok {
 		// get the value of the environment variable
@@ -328,6 +327,8 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
 			defaultEnv = v[1 : len(v)-1]
 		}
+
+		defaultEnv = strings.TrimSpace(v)
 	}
 
 	// ignore ctx arg for parsing type reference

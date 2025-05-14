@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -180,6 +181,23 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		if hasArg[name] || arg.DefaultValue == nil {
 			continue
 		}
+
+		// check the defaultEnv
+		if arg.DefaultEnv != "" {
+			if _, ok := os.LookupEnv(arg.DefaultEnv); !ok {
+				return nil, fmt.Errorf("failed to find env var %q", arg.DefaultEnv)
+			}
+
+			// callInputs = append(callInputs, &FunctionCallArgValue{
+			// 	Name:  name,
+			// 	Value: val,
+			// })
+
+			hasArg[name] = true
+
+			continue
+		}
+
 		callInputs = append(callInputs, &FunctionCallArgValue{
 			Name:  name,
 			Value: arg.DefaultValue,
