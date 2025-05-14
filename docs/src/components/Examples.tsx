@@ -1,7 +1,7 @@
 import React from "react";
-import AgentsExamples from "../../current_docs/_examples_agents.mdx";
-import CICDExamples from "../../current_docs/_examples_cicd.mdx";
-import CookbookExamples from "../../current_docs/_examples_cookbook.mdx";
+import AgentsExamples from "../../current_docs/partials/_examples_agents.mdx";
+import CICDExamples from "../../current_docs/partials/_examples_cicd.mdx";
+import CookbookExamples from "../../current_docs/partials/_examples_cookbook.mdx";
 
 export default function Examples({
   showAgentsExample = false,
