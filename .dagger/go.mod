@@ -2,7 +2,7 @@ module github.com/dagger/dagger/.dagger
 
 go 1.23.2
 
-require github.com/dagger/dagger/engine/distconsts v0.18.6
+require github.com/dagger/dagger/engine/distconsts v0.18.7
 
 replace (
 	github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
@@ -10,12 +10,12 @@ replace (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.70
+	github.com/99designs/gqlgen v0.17.73
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.8.0
 	github.com/containerd/platforms v0.2.1
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
-	github.com/vektah/gqlparser/v2 v2.5.23
+	github.com/vektah/gqlparser/v2 v2.5.26
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
@@ -27,8 +27,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/mod v0.24.0
-	golang.org/x/sync v0.12.0
-	google.golang.org/grpc v1.71.0
+	golang.org/x/sync v0.13.0
+	google.golang.org/grpc v1.72.0
 )
 
 require (
@@ -50,11 +50,11 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.32.0 // indirect
 	go.opentelemetry.io/otel/metric v1.34.0
 	go.opentelemetry.io/otel/sdk/metric v1.34.0
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )
 

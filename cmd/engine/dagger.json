@@ -1,6 +1,6 @@
 {
   "name": "dagger-engine",
-  "engineVersion": "v0.18.5",
+  "engineVersion": "v0.18.7",
   "sdk": {
     "source": "go"
   },
@@ -15,7 +15,7 @@
     },
     {
       "name": "dagger-cli",
-      "source": "../../cmd/dagger"
+      "source": "../dagger"
     },
     {
       "name": "dirdiff",

@@ -163,10 +163,10 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithDirectory("/dagger.io", h.clone()).
 		WithWorkdir("/dagger.io").
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("find .github/workflows -name '*daggerverse*' -exec sed -i 's/%s/%s/g' {} +", fromDashed, toDashed),
+			fmt.Sprintf(`find .github/workflows -name '*daggerverse*' -exec sed -i 's/%s/%s/g' {} +`, fromDashed, toDashed),
 		}).
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("sed -i 's/\\(DaggerVersion\\s*=\\s*\"\\)%s\"/\\1%s\"/' daggerverse/dag/main.go", from, to),
+			fmt.Sprintf(`sed -i 's/\(DaggerVersion\s*=\s*"\)%s"/\1%s"/' daggerverse/dag/main.go`, from, to),
 		}).
 		WithServiceBinding("daggerverse-engine", engine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://daggerverse-engine:1234").
@@ -176,13 +176,13 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithExec([]string{"dagger", "--mod=daggerverse/dag", "develop"}).
 		WithExec([]string{"dagger", "--mod=daggerverse", "develop"}).
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("sed -i 's/v[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*/v%s/' infra/ci/*/argocd/daggerverse-preview/appset.yaml", to),
+			fmt.Sprintf(`sed -i 's/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/v%s/' infra/ci/*/argocd/daggerverse-preview/appset.yaml`, to),
 		}).
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("sed -i 's/registry\\.dagger\\.io\\/engine:v[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*/registry\\.dagger\\.io\\/engine:v%s/' infra/ci/*/argocd/daggerverse-preview/manifests/deployment.base.yaml", to),
+			fmt.Sprintf(`sed -i 's/registry\.dagger\.io\/engine:v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/registry\.dagger\.io\/engine:v%s/' infra/ci/*/argocd/daggerverse-preview/manifests/deployment.base.yaml`, to),
 		}).
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("sed -i 's/registry\\.dagger\\.io\\/engine:v[0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*/registry\\.dagger\\.io\\/engine:v%s/' infra/prod/*/argocd/daggerverse/deployment.yaml", to),
+			fmt.Sprintf(`sed -i 's/registry\.dagger\.io\/engine:v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/registry\.dagger\.io\/engine:v%s/' infra/prod/*/argocd/daggerverse/deployment.yaml`, to),
 		}).
 		Sync(ctx)
 	if err != nil {
