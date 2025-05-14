@@ -209,15 +209,7 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	res, err := dir.Evaluate(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -247,24 +239,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := dir.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	res, err := dir.Evaluate(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -307,28 +282,10 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := dir.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
+	res, err := dir.Evaluate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
@@ -817,23 +774,7 @@ func (dir *Directory) Root() (*Directory, error) {
 }
 
 func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := dir.Query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	res, err := dir.Evaluate(ctx)
 	if err != nil {
 		return err
 	}
