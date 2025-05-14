@@ -98,19 +98,6 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 			}
 		}
 
-		// if arg.DefaultEnv != "" {
-		// 	v, ok := os.LookupEnv(arg.DefaultEnv)
-		// 	if !ok {
-		// 		return spec, fmt.Errorf("environment variable %q not set", arg.DefaultEnv)
-		// 	}
-
-		// 	var err error
-		// 	defaultVal, err = input.Decoder().DecodeInput(v)
-		// 	if err != nil {
-		// 		return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
-		// 	}
-		// }
-
 		argSpec := dagql.InputSpec{
 			Name:        arg.Name,
 			Description: formatGqlDescription(arg.Description),

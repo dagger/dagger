@@ -430,11 +430,6 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		return nil, fmt.Errorf("cannot set both default value and default path from context")
 	}
 
-	// check that the value of the default environment variable is a valid type and not empty
-	// if args.DefaultEnv != "" {
-	// 	return nil, fmt.Errorf("default environment variable cannot be empty")
-	// }
-
 	// Check if default path from context is set for non-directory or non-file type
 	if argType.Self.Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
 		(argType.Self.AsObject.Value.Name != "Directory" && argType.Self.AsObject.Value.Name != "File") {
