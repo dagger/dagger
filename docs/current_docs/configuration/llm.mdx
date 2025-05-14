@@ -7,7 +7,7 @@ import TabItem from "@theme/TabItem";
 
 # LLM Providers
 
-Dagger supports a wide range of popular Large Language Models (LLMs), including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using a local provider like Docker Model Runner or Ollama.
+Dagger supports a wide range of popular Large Language Models (LLMs), including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using a local provider like Docker Model Runner or Ollama. Dagger supports providers' OpenAI-compatible API if native support is not yet available.
 
 Dagger uses the system's standard environment variables to route LLM requests. Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
 
@@ -37,6 +37,27 @@ OPENAI_API_KEY="op://Private/OpenAI API Key/password"
 
 - `GEMINI_API_KEY`: required
 - `GEMINI_MODEL`: optional, defaults to `"gemini-2.0-flash"`. See other [model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
+
+## Amazon Bedrock (via LiteLLM proxy)
+
+Dagger connects to models in Amazon Bedrock via OpenAI-compatible proxies such as [LiteLLM](https://www.litellm.ai/).
+
+Sample LiteLLM `config.yml` which relies on `aws sso login`. [Other configs](https://docs.litellm.ai/docs/providers/bedrock#litellm-proxy-usage) possible.
+```
+model_list:
+  - model_name: bedrock-claude-3-5-sonnet
+    litellm_params:
+      model: bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+      aws_region_name: us-east-1
+      drop_params: true
+```
+
+:::warning
+Currently `drop_params: true` is required in the LiteLLM `config.yml` when used with AWS Bedrock because the OpenAI API's `seed` and `parallel_tool_calls` parameters are generally unsupported by Bedrock models.
+:::
+
+- `OPENAI_MODEL` required, use `model_name` from `config.yml` e.g. `bedrock-claude-3-5-sonnet`
+- `OPENAI_BASE_URL` required, use actual IPv4 address of host and LiteLLM port, e.g. `http://172.20.2.97:4000`
 
 ## Azure OpenAI Service
 
