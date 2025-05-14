@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -481,6 +483,14 @@ func TestListResults(t *testing.T) {
 				{X: 3, Y: 4},
 			}, nil
 		}),
+		dagql.Func("listOfRandomObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			rando := rand.IntN(math.MaxInt)
+			return []*points.Point{
+				{X: rando, Y: rando},
+				{X: rando, Y: rando},
+			}, nil
+		}),
 		dagql.Func("emptyListOfObjects", func(ctx context.Context, self Query, args struct {
 		}) ([]*points.Point, error) {
 			return []*points.Point{}, nil
@@ -495,48 +505,94 @@ func TestListResults(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	var res struct {
-		ListOfInts            []int
-		EmptyListOfInts       []int
-		EmptyNilListOfInts    []int
-		NullableListOfInts    []int
-		ListOfObjects         []points.Point
-		EmptyListOfObjects    []points.Point
-		EmptyNilListOfObjects []points.Point
-		NullableListOfObjects []points.Point
+	gql := client.New(dagql.NewDefaultHandler(srv))
+	{
+		var res struct {
+			ListOfInts            []int
+			EmptyListOfInts       []int
+			EmptyNilListOfInts    []int
+			NullableListOfInts    []int
+			ListOfObjects         []points.Point
+			EmptyListOfObjects    []points.Point
+			EmptyNilListOfObjects []points.Point
+			NullableListOfObjects []points.Point
+		}
+
+		req(t, gql, `query {
+			listOfInts
+			emptyListOfInts
+			emptyNilListOfInts
+			nullableListOfInts
+			listOfObjects {
+				x
+				y
+			}
+			emptyListOfObjects {
+				x
+				y
+			}
+			emptyNilListOfObjects {
+				x
+				y
+			}
+			nullableListOfObjects {
+				x
+				y
+			}
+		}`, &res)
+		assert.DeepEqual(t, []int{1, 2, 3}, res.ListOfInts)
+		assert.DeepEqual(t, []int{}, res.EmptyListOfInts)
+		assert.DeepEqual(t, []int{}, res.EmptyNilListOfInts)
+		assert.Check(t, res.NullableListOfInts == nil)
+		assert.DeepEqual(t, []points.Point{{X: 1, Y: 2}, {X: 3, Y: 4}}, res.ListOfObjects)
+		assert.DeepEqual(t, []points.Point{}, res.EmptyListOfObjects)
+		assert.DeepEqual(t, []points.Point{}, res.EmptyNilListOfObjects)
+		assert.Check(t, res.NullableListOfObjects == nil)
 	}
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
-	req(t, gql, `query {
-		listOfInts
-		emptyListOfInts
-		emptyNilListOfInts
-		nullableListOfInts
-		listOfObjects {
-			x
-			y
+	{
+		var res struct {
+			ListOfRandomObjects []struct {
+				ID string
+			}
 		}
-		emptyListOfObjects {
-			x
-			y
+		req(t, gql, `query {
+			listOfRandomObjects {
+				id
+			}
+		}`, &res)
+		assert.Assert(t, cmp.Len(res.ListOfRandomObjects, 2))
+
+		var res2 struct {
+			LoadPointFromID struct {
+				X int
+				Y int
+			}
 		}
-		emptyNilListOfObjects {
-			x
-			y
+		req(t, gql, `query {
+			loadPointFromID(id: "`+res.ListOfRandomObjects[0].ID+`") {
+				x
+				y
+			}
+		}`, &res2)
+		assert.Equal(t, res2.LoadPointFromID.X, res2.LoadPointFromID.Y)
+
+		var res3 struct {
+			LoadPointFromID struct {
+				X int
+				Y int
+			}
 		}
-		nullableListOfObjects {
-			x
-			y
-		}
-	}`, &res)
-	assert.DeepEqual(t, []int{1, 2, 3}, res.ListOfInts)
-	assert.DeepEqual(t, []int{}, res.EmptyListOfInts)
-	assert.DeepEqual(t, []int{}, res.EmptyNilListOfInts)
-	assert.Check(t, res.NullableListOfInts == nil)
-	assert.DeepEqual(t, []points.Point{{X: 1, Y: 2}, {X: 3, Y: 4}}, res.ListOfObjects)
-	assert.DeepEqual(t, []points.Point{}, res.EmptyListOfObjects)
-	assert.DeepEqual(t, []points.Point{}, res.EmptyNilListOfObjects)
-	assert.Check(t, res.NullableListOfObjects == nil)
+		req(t, gql, `query {
+			loadPointFromID(id: "`+res.ListOfRandomObjects[1].ID+`") {
+				x
+				y
+			}
+		}`, &res3)
+		assert.Equal(t, res3.LoadPointFromID.X, res3.LoadPointFromID.Y)
+
+		assert.Equal(t, res2.LoadPointFromID.X, res3.LoadPointFromID.X)
+	}
 }
 
 func ptr[T any](v T) *T {
