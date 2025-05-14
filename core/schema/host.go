@@ -263,8 +263,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.Instance[*core.Ho
 		buildkit.WithTracePropagation(ctx),
 	}
 
-	// this is slightl hacky - to bust the cache with noCache:true, we exclude a random text path.
-	// no real chance of excluding something real and this changes both the name and the cache key without changes to localsource.
+	// HACK(cwlbraa): to bust the cache with noCache:true, we exclude a random text path.
+	// No real chance of excluding something real this changes both the name and the cache key without modification to localsource.
+	// To be removed via dagopification.
 	if args.NoCache {
 		args.Exclude = append(args.Exclude, rand.Text())
 	}

@@ -84,9 +84,9 @@ type CacheControllableArgs interface {
 type CacheControlType int
 
 const (
-	CacheTypeUnset     CacheControlType = iota
-	CacheTypePerClient CacheControlType = 1
-	CacheTypePerCall   CacheControlType = 2
+	CacheTypeUnset CacheControlType = iota
+	CacheTypePerClient
+	CacheTypePerCall
 )
 
 func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i Instance[T], a A, cc CacheConfig) (*CacheConfig, error) {
