@@ -51,7 +51,11 @@ llm |
 
 ## Responses and Variables
 
-Use the `LLM.lastReply()` API method to obtain the last reply from the LLM
+Use the `LLM.lastReply()` API method to obtain the last reply from the LLM, or the `LLM.history()` API method to get the complete message history.
+
+:::important
+Most LLM services impose rate limits (restrictions on the number of requests they will accept within a given time period). Dagger handles this gracefully with built-in rate limit detection and automatic retry with exponential backoff.
+:::
 
 Dagger supports the use of variables in prompts. This allows you to interpolate results of other operations into an LLM prompt:
 
@@ -91,10 +95,6 @@ llm |
 ```
 </TabItem>
 </Tabs>
-
-:::tip
-To get the complete message history, use the `LLM.History()` API method.
-:::
 
 ## Environments
 
