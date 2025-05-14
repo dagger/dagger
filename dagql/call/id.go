@@ -213,14 +213,13 @@ func (id *ID) SelectNth(nth int) *ID {
 	h.Write(buf)
 	dgst := digest.NewDigest("xxh3", h)
 
-	return id.receiver.Append(
+	return id.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
 		id.pb.View,
 		id.module,
 		nth,
 		dgst,
-		id.args...,
 	)
 }
 

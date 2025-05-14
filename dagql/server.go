@@ -503,9 +503,33 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 	var base Object
 	var err error
 	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
+		nth := int(id.Nth())
+		if nth == 0 {
+			base, err = s.Load(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base: %w", err)
+			}
+		} else {
+			baseTyped, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base enum: %w", err)
+			}
+			baseEnum, isEnum := UnwrapAs[Enumerable](baseTyped)
+			if !isEnum {
+				return nil, fmt.Errorf("cannot select item %d from non-enumerable %T", nth, baseTyped)
+			}
+			res, err := baseEnum.Nth(nth)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			if wrapped, ok := res.(Derefable); ok {
+				res, ok = wrapped.Deref()
+				if !ok {
+					// the nth element is nil, maybe this should be allowed but for now error out
+					return nil, fmt.Errorf("item %d is null from enumerable", nth)
+				}
+			}
+			return s.toSelectable(id, res)
 		}
 	} else {
 		base = s.root
@@ -522,9 +546,33 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
 	var base Object
 	var err error
 	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
+		nth := int(id.Nth())
+		if nth == 0 {
+			base, err = s.Load(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base: %w", err)
+			}
+		} else {
+			baseTyped, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base enum: %w", err)
+			}
+			baseEnum, isEnum := UnwrapAs[Enumerable](baseTyped)
+			if !isEnum {
+				return nil, fmt.Errorf("cannot select item %d from non-enumerable %T", nth, baseTyped)
+			}
+			res, err := baseEnum.Nth(nth)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			if wrapped, ok := res.(Derefable); ok {
+				res, ok = wrapped.Deref()
+				if !ok {
+					// the nth element is nil, maybe this should be allowed but for now error out
+					return nil, fmt.Errorf("item %d is null from enumerable", nth)
+				}
+			}
+			return s.toSelectable(id, res)
 		}
 	} else {
 		base = s.root
