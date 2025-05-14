@@ -65,7 +65,7 @@ func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
 func (m *Evals) Basic(ctx context.Context) (*Report, error) {
 	return withLLMReport(ctx,
 		m.llm(dagger.LLMOpts{MaxAPICalls: 5}).
-			WithPrompt("Hello there! Respond with 'potato' if you received this message."),
+			WithPrompt("Hello there! Simply respond with 'potato' and take no other action."),
 		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 			reply, err := llm.LastReply(ctx)
 			require.NoError(t, err)
