@@ -299,107 +299,6 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 }
 
-func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "d.txt"), []byte("hello world"), 0o600))
-
-	c := connect(ctx, t)
-
-	t.Run("get simple file", func(ctx context.Context, t *testctx.T) {
-		content, err := c.Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "1", content)
-	})
-
-	t.Run("get nested file", func(ctx context.Context, t *testctx.T) {
-		content, err := c.Host().File(filepath.Join(dir, "subdir", "d.txt")).Contents(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello world", content)
-	})
-
-	t.Run("cache behavior", func(ctx context.Context, t *testctx.T) {
-		tests := []struct {
-			name     string
-			opts     []dagger.HostFileOpts
-			expected string
-		}{
-			{
-				name:     "default aka cache",
-				opts:     []dagger.HostFileOpts{},
-				expected: "1",
-			},
-			{
-				name:     "explicit cache",
-				opts:     []dagger.HostFileOpts{{NoCache: false}},
-				expected: "1",
-			},
-			{
-				name:     "explicit no cache",
-				opts:     []dagger.HostFileOpts{{NoCache: true}},
-				expected: "12",
-			},
-		}
-
-		for _, test := range tests {
-			setup := func() (string, *dagger.File) {
-				bPath := filepath.Join(dir, rand.Text())
-				require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
-
-				file := c.Host().File(bPath, test.opts...)
-				return bPath, file
-			}
-
-			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
-				bPath, file := setup()
-				content, err := file.Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "1", content)
-
-				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
-
-				content, err = file.Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, test.expected, content)
-			})
-
-			t.Run(test.name+" fresh query", func(ctx context.Context, t *testctx.T) {
-				bPath, file := setup()
-				content, err := file.Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "1", content)
-
-				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
-
-				file = c.Host().File(bPath, test.opts...)
-				content, err = file.Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, test.expected, content)
-			})
-
-			t.Run(test.name+" explicit sync always caches", func(ctx context.Context, t *testctx.T) {
-				bPath, file := setup()
-				file, err := file.Sync(ctx)
-				require.NoError(t, err)
-
-				content, err := file.Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "1", content)
-
-				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
-
-				content, err = file.Contents(ctx)
-				require.NoError(t, err)
-				// note the expectation here doesn't vary with test.expected
-				require.Equal(t, "1", content)
-			})
-		}
-	})
-}
-
 func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 	baseDir := t.TempDir()
 	c := connect(ctx, t)
@@ -498,6 +397,110 @@ func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			// note the expectation here doesn't vary with test.expected
 			require.Equal(t, "1", contents)
+		})
+	}
+}
+
+func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "d.txt"), []byte("hello world"), 0o600))
+
+	c := connect(ctx, t)
+
+	t.Run("get simple file", func(ctx context.Context, t *testctx.T) {
+		content, err := c.Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "1", content)
+	})
+
+	t.Run("get nested file", func(ctx context.Context, t *testctx.T) {
+		content, err := c.Host().File(filepath.Join(dir, "subdir", "d.txt")).Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello world", content)
+	})
+}
+
+func (HostSuite) TestFileCacheBehavior(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	c := connect(ctx, t)
+
+	tests := []struct {
+		name     string
+		opts     []dagger.HostFileOpts
+		expected string
+	}{
+		{
+			name:     "default aka cache",
+			opts:     []dagger.HostFileOpts{},
+			expected: "1",
+		},
+		{
+			name:     "explicit cache",
+			opts:     []dagger.HostFileOpts{{NoCache: false}},
+			expected: "1",
+		},
+		{
+			name:     "explicit no cache",
+			opts:     []dagger.HostFileOpts{{NoCache: true}},
+			expected: "12",
+		},
+	}
+
+	for _, test := range tests {
+		setup := func() (string, *dagger.File) {
+			bPath := filepath.Join(dir, rand.Text())
+			require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
+
+			file := c.Host().File(bPath, test.opts...)
+			return bPath, file
+		}
+
+		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+			bPath, file := setup()
+			content, err := file.Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "1", content)
+
+			require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+			content, err = file.Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, content)
+		})
+
+		t.Run(test.name+" fresh query", func(ctx context.Context, t *testctx.T) {
+			bPath, file := setup()
+			content, err := file.Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "1", content)
+
+			require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+			file = c.Host().File(bPath, test.opts...)
+			content, err = file.Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, content)
+		})
+
+		t.Run(test.name+" explicit sync always caches", func(ctx context.Context, t *testctx.T) {
+			bPath, file := setup()
+			file, err := file.Sync(ctx)
+			require.NoError(t, err)
+
+			content, err := file.Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "1", content)
+
+			require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+			content, err = file.Contents(ctx)
+			require.NoError(t, err)
+			// note the expectation here doesn't vary with test.expected
+			require.Equal(t, "1", content)
 		})
 	}
 }
