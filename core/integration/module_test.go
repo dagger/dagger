@@ -5497,6 +5497,209 @@ func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
 	require.Empty(t, ents)
 }
 
+func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
+			var wg sync.WaitGroup
+			for range 100 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, cleanup := setupPrivateRepoSSHAgent(t)
+					time.Sleep(10 * time.Millisecond) // Simulate some work
+					cleanup()
+				}()
+			}
+			wg.Wait()
+		})
+	})
+}
+
+func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T) {
+	tc := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+
+	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		privateSetup, cleanup := privateRepoSetup(c, t, tc)
+		defer cleanup()
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(privateSetup).
+			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
+			WithEnvVariable("HOME", "/home/dagger").
+			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
+			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
+
+		out, err := ctr.
+			WithWorkdir("/work/some/subdir").
+			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
+			WithExec([]string{"sh", "-c", "cd", "/work/some/subdir"}).
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+	})
+
+	t.Run("SSH auth from different relative paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		privateSetup, cleanup := privateRepoSetup(c, t, tc)
+		defer cleanup()
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(privateSetup).
+			WithExec([]string{"mkdir", "-p", "/work/subdir"})
+
+		// Test from same directory as the socket
+		out, err := ctr.
+			WithWorkdir("/sock").
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+
+		// Test from a subdirectory
+		out, err = ctr.
+			WithWorkdir("/work/subdir").
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines = strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+
+		// Test from parent directory
+		out, err = ctr.
+			WithWorkdir("/").
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines = strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+	})
+}
+
+func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
+	t.Run("golang", func(ctx context.Context, t *testctx.T) {
+		privateDepCode := `package main
+
+import (
+	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
+)
+
+type Foo struct{}
+
+// Returns a container that echoes whatever string argument is provided
+func (m *Foo) HowCoolIsDagger() string {
+	return cooldep.HowCoolIsThat
+}
+`
+
+		daggerjson := `{
+  "name": "foo",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/dagger/dagger-test-modules"
+    }
+  }
+}`
+
+		c := connect(ctx, t)
+		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+		defer cleanup()
+
+		socket := c.Host().UnixSocket(sockPath)
+
+		// This is simulating a user's setup where they have
+		// 1. ssh auth sock setup
+		// 2. gitconfig file with insteadOf directive
+		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithExec([]string{"apk", "add", "git", "openssh"}).
+			WithUnixSocket("/sock/unix-socket", socket).
+			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
+			WithWorkdir("/work").
+			WithNewFile("/root/.gitconfig", `
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+`).
+			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", privateDepCode).
+			WithNewFile("dagger.json", daggerjson)
+
+		howCoolIsDagger, err := modGen.
+			With(daggerExec("call", "how-cool-is-dagger")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ubercool", howCoolIsDagger)
+	})
+}
+
+func (ModuleSuite) TestDefaultPathNoCache(ctx context.Context, t *testctx.T) {
+	t.Run("sources are reloaded when changed with defaultPath", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		initialContent := "initial content"
+		testFilePath := filepath.Join(modDir, "test-file.txt")
+		err = os.WriteFile(testFilePath, []byte(initialContent), 0o644)
+		require.NoError(t, err)
+
+		moduleSrc := `package main
+
+import (
+       "context"
+       "dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) ReadFile(
+       ctx context.Context,
+       // +defaultPath="."
+       dir *dagger.Directory,
+) (string, error) {
+       return dir.File("test-file.txt").Contents(ctx)
+}
+`
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+		require.NoError(t, err)
+
+		// it's critical that we re-use a single session here like shell/prompt
+		c := connect(ctx, t)
+
+		err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				ReadFile string
+			}
+		}](c, t, `{test{readFile}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, initialContent, res1.Test.ReadFile)
+
+		newContent := "updated content"
+		err = os.WriteFile(testFilePath, []byte(newContent), 0o644)
+		require.NoError(t, err)
+
+		res2, err := testutil.QueryWithClient[struct {
+			Test struct {
+				ReadFile string
+			}
+		}](c, t, `{test{readFile}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, newContent, res2.Test.ReadFile)
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
@@ -5871,148 +6074,5 @@ func logGen(ctx context.Context, t *testctx.T, modSrc *dagger.Directory) {
 		} else {
 			t.Logf("wrote generated code to %s", fileName)
 		}
-	})
-}
-
-func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
-	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
-		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
-			var wg sync.WaitGroup
-			for range 100 {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					_, cleanup := setupPrivateRepoSSHAgent(t)
-					time.Sleep(10 * time.Millisecond) // Simulate some work
-					cleanup()
-				}()
-			}
-			wg.Wait()
-		})
-	})
-}
-
-func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T) {
-	tc := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-
-	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		privateSetup, cleanup := privateRepoSetup(c, t, tc)
-		defer cleanup()
-
-		ctr := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(privateSetup).
-			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
-			WithEnvVariable("HOME", "/home/dagger").
-			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
-			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
-
-		out, err := ctr.
-			WithWorkdir("/work/some/subdir").
-			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
-			WithExec([]string{"sh", "-c", "cd", "/work/some/subdir"}).
-			With(daggerFunctions("-m", tc.gitTestRepoRef)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		lines := strings.Split(out, "\n")
-		require.Contains(t, lines, "fn     -")
-	})
-
-	t.Run("SSH auth from different relative paths", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		privateSetup, cleanup := privateRepoSetup(c, t, tc)
-		defer cleanup()
-
-		ctr := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(privateSetup).
-			WithExec([]string{"mkdir", "-p", "/work/subdir"})
-
-		// Test from same directory as the socket
-		out, err := ctr.
-			WithWorkdir("/sock").
-			With(daggerFunctions("-m", tc.gitTestRepoRef)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		lines := strings.Split(out, "\n")
-		require.Contains(t, lines, "fn     -")
-
-		// Test from a subdirectory
-		out, err = ctr.
-			WithWorkdir("/work/subdir").
-			With(daggerFunctions("-m", tc.gitTestRepoRef)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		lines = strings.Split(out, "\n")
-		require.Contains(t, lines, "fn     -")
-
-		// Test from parent directory
-		out, err = ctr.
-			WithWorkdir("/").
-			With(daggerFunctions("-m", tc.gitTestRepoRef)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		lines = strings.Split(out, "\n")
-		require.Contains(t, lines, "fn     -")
-	})
-}
-
-func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
-	t.Run("golang", func(ctx context.Context, t *testctx.T) {
-		privateDepCode := `package main
-
-import (
-	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
-)
-
-type Foo struct{}
-
-// Returns a container that echoes whatever string argument is provided
-func (m *Foo) HowCoolIsDagger() string {
-	return cooldep.HowCoolIsThat
-}
-`
-
-		daggerjson := `{
-  "name": "foo",
-  "engineVersion": "v0.16.2",
-  "sdk": {
-    "source": "go",
-    "config": {
-      "goprivate": "github.com/dagger/dagger-test-modules"
-    }
-  }
-}`
-
-		c := connect(ctx, t)
-		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
-		defer cleanup()
-
-		socket := c.Host().UnixSocket(sockPath)
-
-		// This is simulating a user's setup where they have
-		// 1. ssh auth sock setup
-		// 2. gitconfig file with insteadOf directive
-		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithExec([]string{"apk", "add", "git", "openssh"}).
-			WithUnixSocket("/sock/unix-socket", socket).
-			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
-			WithWorkdir("/work").
-			WithNewFile("/root/.gitconfig", `
-[url "ssh://git@github.com/"]
-	insteadOf = https://github.com/
-`).
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", privateDepCode).
-			WithNewFile("dagger.json", daggerjson)
-
-		howCoolIsDagger, err := modGen.
-			With(daggerExec("call", "how-cool-is-dagger")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "ubercool", howCoolIsDagger)
 	})
 }
