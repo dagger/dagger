@@ -320,6 +320,7 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello world", content)
 	})
+
 	t.Run("cache behavior", func(ctx context.Context, t *testctx.T) {
 		tests := []struct {
 			name     string
@@ -344,11 +345,16 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 		}
 
 		for _, test := range tests {
-			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+			setup := func() (string, *dagger.File) {
 				bPath := filepath.Join(dir, rand.Text())
 				require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
 
 				file := c.Host().File(bPath, test.opts...)
+				return bPath, file
+			}
+
+			t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+				bPath, file := setup()
 				content, err := file.Contents(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "1", content)
@@ -359,11 +365,9 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expected, content)
 			})
-			t.Run(test.name+" fresh query", func(ctx context.Context, t *testctx.T) {
-				bPath := filepath.Join(dir, rand.Text())
-				require.NoError(t, os.WriteFile(bPath, []byte("1"), 0o600))
 
-				file := c.Host().File(bPath, test.opts...)
+			t.Run(test.name+" fresh query", func(ctx context.Context, t *testctx.T) {
+				bPath, file := setup()
 				content, err := file.Contents(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "1", content)
@@ -375,6 +379,125 @@ func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expected, content)
 			})
+
+			t.Run(test.name+" explicit sync always caches", func(ctx context.Context, t *testctx.T) {
+				bPath, file := setup()
+				file, err := file.Sync(ctx)
+				require.NoError(t, err)
+
+				content, err := file.Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "1", content)
+
+				require.NoError(t, os.WriteFile(bPath, []byte("12"), 0o600))
+
+				content, err = file.Contents(ctx)
+				require.NoError(t, err)
+				// note the expectation here doesn't vary with test.expected
+				require.Equal(t, "1", content)
+			})
 		}
 	})
+}
+
+func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
+	baseDir := t.TempDir()
+	c := connect(ctx, t)
+
+	tests := []struct {
+		name            string
+		opts            dagger.HostDirectoryOpts
+		expectedEntries []string
+		expectedContent string
+	}{
+		{
+			name:            "default aka cache",
+			opts:            dagger.HostDirectoryOpts{},
+			expectedEntries: []string{"file1.txt"},
+			expectedContent: "1",
+		},
+		{
+			name:            "explicit cache",
+			opts:            dagger.HostDirectoryOpts{NoCache: false},
+			expectedEntries: []string{"file1.txt"},
+			expectedContent: "1",
+		},
+		{
+			name:            "explicit no cache",
+			opts:            dagger.HostDirectoryOpts{NoCache: true},
+			expectedEntries: []string{"file1.txt", "file2.txt"},
+			expectedContent: "12",
+		},
+	}
+
+	for _, test := range tests {
+		setup := func() (string, *dagger.Directory) {
+			dir := filepath.Join(baseDir, identity.NewID())
+			require.NoError(t, os.MkdirAll(dir, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("1"), 0o600))
+
+			directory := c.Host().Directory(dir, test.opts)
+			return dir, directory
+		}
+
+		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
+			dir, directory := setup()
+			entries, err := directory.Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"file1.txt"}, entries)
+
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("1"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("12"), 0o600))
+
+			entries, err = directory.Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedEntries, entries)
+
+			contents, err := directory.File("file1.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedContent, contents)
+		})
+
+		t.Run(test.name+" fresh query", func(ctx context.Context, t *testctx.T) {
+			dir, directory := setup()
+			entries, err := directory.Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"file1.txt"}, entries)
+
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("1"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("12"), 0o600))
+
+			directory = c.Host().Directory(dir, test.opts)
+			entries, err = directory.Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedEntries, entries)
+
+			contents, err := directory.File("file1.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, test.expectedContent, contents)
+		})
+
+		t.Run(test.name+" explicit sync always caches", func(ctx context.Context, t *testctx.T) {
+			dir, directory := setup()
+			directory, err := directory.Sync(ctx)
+			require.NoError(t, err)
+
+			entries, err := directory.Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"file1.txt"}, entries)
+
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("1"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("12"), 0o600))
+
+			entries, err = directory.Entries(ctx)
+			require.NoError(t, err)
+			// note the expectation here doesn't vary with test.expected
+			require.Equal(t, []string{"file1.txt"}, entries)
+
+			contents, err := directory.File("file1.txt").Contents(ctx)
+			require.NoError(t, err)
+			// note the expectation here doesn't vary with test.expected
+			require.Equal(t, "1", contents)
+		})
+	}
 }
