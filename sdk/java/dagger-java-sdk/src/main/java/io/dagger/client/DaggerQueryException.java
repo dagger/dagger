@@ -1,10 +1,10 @@
 package io.dagger.client;
 
+import io.smallrye.graphql.client.GraphQLError;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
-import io.smallrye.graphql.client.GraphQLError;
 
 public class DaggerQueryException extends Exception {
 
@@ -27,10 +27,16 @@ public class DaggerQueryException extends Exception {
   }
 
   public DaggerQueryException(GraphQLError... errors) {
-    super(Arrays
-        .stream(errors).map(e -> String.format(SIMPLE_MESSAGE, e.getMessage(),
-            StringUtils.join(e.getPath(), ","), e.getExtensions().getOrDefault(TYPE_KEY, null)))
-        .collect(Collectors.joining("\n")));
+    super(
+        Arrays.stream(errors)
+            .map(
+                e ->
+                    String.format(
+                        SIMPLE_MESSAGE,
+                        e.getMessage(),
+                        StringUtils.join(e.getPath(), ","),
+                        e.getExtensions().getOrDefault(TYPE_KEY, null)))
+            .collect(Collectors.joining("\n")));
     this.errors = errors;
   }
 
@@ -39,22 +45,37 @@ public class DaggerQueryException extends Exception {
   }
 
   public String toEnanchedMessage() {
-    return Arrays.stream(errors).map(e -> String.format(ENANCHED_MESSAGE, e.getMessage(),
-        StringUtils.join(e.getPath(), ","), e.getExtensions().getOrDefault(TYPE_KEY, null),
-        e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
-        StringUtils.join(
-            ((Object[]) e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())), ",")))
+    return Arrays.stream(errors)
+        .map(
+            e ->
+                String.format(
+                    ENANCHED_MESSAGE,
+                    e.getMessage(),
+                    StringUtils.join(e.getPath(), ","),
+                    e.getExtensions().getOrDefault(TYPE_KEY, null),
+                    e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
+                    StringUtils.join(
+                        ((Object[])
+                            e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
+                        ",")))
         .collect(Collectors.joining("\n"));
   }
 
   public String toFullMessage() {
     return Arrays.stream(errors)
-        .map(e -> String.format(FULL_MESSAGE, e.getMessage(), StringUtils.join(e.getPath(), ","),
-            e.getExtensions().getOrDefault(TYPE_KEY, null),
-            e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
-            StringUtils.join(
-                ((Object[]) e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())), ","),
-            e.getExtensions().getOrDefault(STDERR_KEY, null)))
+        .map(
+            e ->
+                String.format(
+                    FULL_MESSAGE,
+                    e.getMessage(),
+                    StringUtils.join(e.getPath(), ","),
+                    e.getExtensions().getOrDefault(TYPE_KEY, null),
+                    e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
+                    StringUtils.join(
+                        ((Object[])
+                            e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
+                        ","),
+                    e.getExtensions().getOrDefault(STDERR_KEY, null)))
         .collect(Collectors.joining("\n"));
   }
 }
