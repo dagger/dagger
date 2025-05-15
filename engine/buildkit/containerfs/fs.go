@@ -224,8 +224,8 @@ func (ctrFS *ContainerFS) LookPath(cmd string) (string, error) {
 	// TODO: caller may need to augment PATH with sbins when user not root?
 	var pathEnvVal string
 	for _, env := range ctrFS.spec.Process.Env {
-		if strings.HasPrefix(env, "PATH=") {
-			pathEnvVal = strings.TrimPrefix(env, "PATH=")
+		if after, ok := strings.CutPrefix(env, "PATH="); ok {
+			pathEnvVal = after
 			break
 		}
 	}

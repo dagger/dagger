@@ -430,8 +430,8 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
 	if h.mode == modePrompt {
 		word, wstart, wend := computil.FindWord(entireInput, line, col)
-		if strings.HasPrefix(word, "$") {
-			prefix := strings.TrimPrefix(word, "$")
+		if after, ok := strings.CutPrefix(word, "$"); ok {
+			prefix := after
 			vars := h.runner.Vars
 			var completions []string
 			for k := range vars {
