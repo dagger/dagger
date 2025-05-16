@@ -5732,6 +5732,8 @@ type HostDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// If true, the directory will always be reloaded from the host.
+	NoCache bool
 }
 
 // Accesses a directory on the host.
@@ -5746,6 +5748,10 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
 	}
 	q = q.Arg("path", path)
 
@@ -5754,9 +5760,21 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
+// HostFileOpts contains options for Host.File
+type HostFileOpts struct {
+	// If true, the file will always be reloaded from the host.
+	NoCache bool
+}
+
 // Accesses a file on the host.
-func (r *Host) File(path string) *File {
+func (r *Host) File(path string, opts ...HostFileOpts) *File {
 	q := r.query.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &File{

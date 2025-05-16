@@ -76,6 +76,30 @@ func CachePerSessionObject[A any](
 	return &cacheCfg, nil
 }
 
+// this could all be un-generic'd and repeated per-API. might be cleaner at the end of the day.
+type CacheControllableArgs interface {
+	CacheType() CacheControlType
+}
+
+type CacheControlType int
+
+const (
+	CacheTypeUnset CacheControlType = iota
+	CacheTypePerClient
+	CacheTypePerCall
+)
+
+func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i Instance[T], a A, cc CacheConfig) (*CacheConfig, error) {
+	switch a.CacheType() {
+	case CacheTypePerClient:
+		return CachePerClient(ctx, i, a, cc)
+	case CacheTypePerCall:
+		return CachePerCall(ctx, i, a, cc)
+	default:
+		return &cc, nil
+	}
+}
+
 // CachePerCall results in the API always running when called, but the returned result from that call is cached.
 // For instance, the API may return a snapshot of some live mutating state; in that case the first call to get the snapshot
 // should always run but if the returned object is passed around it should continue to be that snapshot rather than the API
