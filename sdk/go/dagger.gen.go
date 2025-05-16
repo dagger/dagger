@@ -681,6 +681,10 @@ type ContainerAsTarballOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+	//
+	// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+	RewriteTimestamp bool
 }
 
 // Package the container state as an OCI image, and return it as a tar archive
@@ -698,6 +702,10 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 
@@ -912,6 +920,10 @@ type ContainerExportOpts struct {
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+	//
+	// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+	RewriteTimestamp bool
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host.
@@ -938,6 +950,10 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 	q = q.Arg("path", path)
@@ -1179,6 +1195,10 @@ type ContainerPublishOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+	//
+	// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+	RewriteTimestamp bool
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -1201,6 +1221,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 	q = q.Arg("address", address)
