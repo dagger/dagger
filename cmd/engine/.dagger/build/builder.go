@@ -36,43 +36,6 @@ type Builder struct {
 }
 
 func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
-	source = dag.Directory().WithDirectory("/", source, dagger.DirectoryWithDirectoryOpts{
-		Exclude: []string{
-			".git",
-			"bin",
-			"**/.DS_Store",
-
-			// node
-			"**/node_modules",
-
-			// python
-			"**/__pycache__",
-			"**/.venv",
-			"**/.mypy_cache",
-			"**/.pytest_cache",
-			"**/.ruff_cache",
-			"sdk/python/dist",
-			"sdk/python/**/sdk",
-
-			// go
-			// go.work is ignored so that you can use ../foo during local dev and let
-			// this exclude rule reflect what the PR would run with, as a reminder to
-			// actually bump dependencies
-			"go.work",
-			"go.work.sum",
-
-			// don't rebuild on test-only-changes
-			"**/*_test.go",
-
-			// rust
-			"**/target",
-
-			// elixir
-			"**/deps",
-			"**/cover",
-			"**/_build",
-		},
-	})
 	v := dag.Version()
 	version, err := v.Version(ctx)
 	if err != nil {

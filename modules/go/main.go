@@ -243,10 +243,23 @@ func (p Go) Build(
 	if p.Race {
 		p.Cgo = true
 	}
-	mainPkgs, err := p.ListPackages(ctx, pkgs, true)
-	if err != nil {
-		return nil, err
+
+	mainPkgs := pkgs
+	hasWildcardPkgs := false
+	for _, pkg := range pkgs {
+		if strings.Contains(pkg, "...") {
+			hasWildcardPkgs = true
+			break
+		}
 	}
+	if hasWildcardPkgs {
+		var err error
+		mainPkgs, err = p.ListPackages(ctx, pkgs, true)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ldflags := p.Ldflags
 	if noSymbols {
 		ldflags = append(ldflags, "-s")
@@ -254,9 +267,7 @@ func (p Go) Build(
 	if noDwarf {
 		ldflags = append(ldflags, "-w")
 	}
-	if _, err := p.Download(ctx); err != nil {
-		return nil, err
-	}
+
 	env := p.Env(platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
@@ -347,9 +358,6 @@ func (p Go) Test(
 	}
 	if skip != "" {
 		cmd = append(cmd, "-skip", skip)
-	}
-	if _, err := p.Download(ctx); err != nil {
-		return err
 	}
 	_, err := p.
 		Env(defaultPlatform).
