@@ -13,37 +13,28 @@ permissions:
   contents: read
 
 jobs:
-  docs-lint-on-northflank-kata-remote-engine:
+  docs-lint-on-nf-type-01-remote-engine:
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-kata-az-amd-qemu
+      machine: nf-type-01-0.18.8
       function: check --targets=docs
 
-  sdk-go-on-northflank-kata-remote-engine:
-    needs: docs-lint-on-northflank-kata-remote-engine
+  sdk-go-on-nf-type-01-remote-engine:
+    needs: docs-lint-on-nf-type-01-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-kata-az-amd-qemu
+      machine: nf-type-01-0.18.8
       function: check --targets=sdk/go
 
-  sdk-python-on-northflank-kata-remote-engine:
-    needs: docs-lint-on-northflank-kata-remote-engine
+  docs-lint-on-nf-type-02-remote-engine:
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-kata-az-amd-qemu
-      function: check --targets=sdk/python
+      machine: nf-type-02-0.18.8
+      function: check --targets=docs
 
-  sdk-typescript-on-northflank-kata-remote-engine:
-    needs: docs-lint-on-northflank-kata-remote-engine
+  sdk-go-on-nf-type-02-remote-engine:
+    needs: docs-lint-on-nf-type-02-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-kata-az-amd-qemu
-      function: check --targets=sdk/typescript
-
-  test-cli-engine-on-northflank-kata-remote-engine:
-    needs: docs-lint-on-northflank-kata-remote-engine
-    uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
-    with:
-      machine: nf-kata-az-amd-qemu
-      function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
-      timeout: 20
+      machine: nf-type-02-0.18.8
+      function: check --targets=sdk/go
