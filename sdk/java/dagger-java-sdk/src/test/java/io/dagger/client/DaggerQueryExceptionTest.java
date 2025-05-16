@@ -59,7 +59,7 @@ public class DaggerQueryExceptionTest {
 
     String result = new DaggerQueryException(error, error2).toEnhancedMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat,WRONG]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat,WRONG2]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\n";
     assertThat(result).isEqualTo(expected);
   }
 
@@ -94,7 +94,7 @@ public class DaggerQueryExceptionTest {
 
     String result = new DaggerQueryException(error, error2).toFullMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat,WRONG]\nSTDERR: [DEEP ERROR DETAILS]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat,WRONG2]\nSTDERR: [DEEP ERROR DETAILS2]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\nSTDERR: [DEEP ERROR DETAILS]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\nSTDERR: [DEEP ERROR DETAILS2]\n";
     assertThat(result).isEqualTo(expected);
   }
 
