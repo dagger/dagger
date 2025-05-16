@@ -28,6 +28,7 @@ type EngineCache struct {
 	KeepBytes int `field:"true" doc:"The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in." deprecated:"Use minFreeSpace instead."`
 
 	MaxUsedSpace  int `field:"true" doc:"The maximum bytes to keep in the cache without pruning."`
+	TargetSpace   int `field:"true" doc:"The target number of bytes to keep when pruning."`
 	ReservedSpace int `field:"true" doc:"The minimum amount of disk space this policy is guaranteed to retain."`
 	MinFreeSpace  int `field:"true" doc:"The target amount of free disk space the garbage collector will attempt to leave."`
 }

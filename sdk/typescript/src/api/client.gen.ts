@@ -3426,6 +3426,7 @@ export class EngineCache extends BaseClient {
   private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
   private readonly _reservedSpace?: number = undefined
+  private readonly _targetSpace?: number = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3438,6 +3439,7 @@ export class EngineCache extends BaseClient {
     _minFreeSpace?: number,
     _prune?: Void,
     _reservedSpace?: number,
+    _targetSpace?: number,
   ) {
     super(ctx)
 
@@ -3447,6 +3449,7 @@ export class EngineCache extends BaseClient {
     this._minFreeSpace = _minFreeSpace
     this._prune = _prune
     this._reservedSpace = _reservedSpace
+    this._targetSpace = _targetSpace
   }
 
   /**
@@ -3530,12 +3533,31 @@ export class EngineCache extends BaseClient {
 
     await ctx.execute()
   }
+
+  /**
+   * The minimum amount of disk space this policy is guaranteed to retain.
+   */
   reservedSpace = async (): Promise<number> => {
     if (this._reservedSpace) {
       return this._reservedSpace
     }
 
     const ctx = this._ctx.select("reservedSpace")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The target number of bytes to keep when pruning.
+   */
+  targetSpace = async (): Promise<number> => {
+    if (this._targetSpace) {
+      return this._targetSpace
+    }
+
+    const ctx = this._ctx.select("targetSpace")
 
     const response: Awaited<number> = await ctx.execute()
 

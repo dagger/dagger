@@ -5080,8 +5080,14 @@ impl EngineCache {
         let query = self.selection.select("prune");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The minimum amount of disk space this policy is guaranteed to retain.
     pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("reservedSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The target number of bytes to keep when pruning.
+    pub async fn target_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("targetSpace");
         query.execute(self.graphql_client.clone()).await
     }
 }
