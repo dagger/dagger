@@ -3059,6 +3059,7 @@ type EngineCache struct {
 	minFreeSpace  *int
 	prune         *Void
 	reservedSpace *int
+	targetSpace   *int
 }
 
 func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
@@ -3178,11 +3179,25 @@ func (r *EngineCache) Prune(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
+// The minimum amount of disk space this policy is guaranteed to retain.
 func (r *EngineCache) ReservedSpace(ctx context.Context) (int, error) {
 	if r.reservedSpace != nil {
 		return *r.reservedSpace, nil
 	}
 	q := r.query.Select("reservedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target number of bytes to keep when pruning.
+func (r *EngineCache) TargetSpace(ctx context.Context) (int, error) {
+	if r.targetSpace != nil {
+		return *r.targetSpace, nil
+	}
+	q := r.query.Select("targetSpace")
 
 	var response int
 
