@@ -1581,7 +1581,11 @@ type EngineCache {
   """Prune the cache of releaseable entries"""
   prune: Void
 
+  """The minimum amount of disk space this policy is guaranteed to retain."""
   reservedSpace: Int!
+
+  """The target number of bytes to keep when pruning."""
+  targetSpace: Int!
 }
 
 """An individual cache entry in a cache entry set"""

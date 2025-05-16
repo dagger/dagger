@@ -90,10 +90,24 @@ defmodule Dagger.EngineCache do
     end
   end
 
+  @doc """
+  The minimum amount of disk space this policy is guaranteed to retain.
+  """
   @spec reserved_space(t()) :: {:ok, integer()} | {:error, term()}
   def reserved_space(%__MODULE__{} = engine_cache) do
     query_builder =
       engine_cache.query_builder |> QB.select("reservedSpace")
+
+    Client.execute(engine_cache.client, query_builder)
+  end
+
+  @doc """
+  The target number of bytes to keep when pruning.
+  """
+  @spec target_space(t()) :: {:ok, integer()} | {:error, term()}
+  def target_space(%__MODULE__{} = engine_cache) do
+    query_builder =
+      engine_cache.query_builder |> QB.select("targetSpace")
 
     Client.execute(engine_cache.client, query_builder)
   end
