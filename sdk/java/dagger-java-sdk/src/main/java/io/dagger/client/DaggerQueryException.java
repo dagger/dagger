@@ -9,7 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 public class DaggerQueryException extends Exception {
 
   private static final String SIMPLE_MESSAGE = "Message: [%s]\nPath: [%s]\nType Code: [%s]\n";
-  private static final String ENANCHED_MESSAGE =
+  private static final String ENHANCED_MESSAGE =
       "Message: [%s]\nPath: [%s]\nType Code: [%s]\nExit Code: [%s]\nCmd: [%s]\n";
   private static final String FULL_MESSAGE =
       "Message: [%s]\nPath: [%s]\nType Code: [%s]\nExit Code: [%s]\nCmd: [%s]\nSTDERR: [%s]\n";
@@ -34,7 +34,7 @@ public class DaggerQueryException extends Exception {
                     String.format(
                         SIMPLE_MESSAGE,
                         e.getMessage(),
-                        StringUtils.join(e.getPath(), ","),
+                        StringUtils.join(e.getPath(), "."),
                         e.getExtensions().getOrDefault(TYPE_KEY, null)))
             .collect(Collectors.joining("\n")));
     this.errors = errors;
@@ -44,14 +44,14 @@ public class DaggerQueryException extends Exception {
     return errors;
   }
 
-  public String toEnanchedMessage() {
+  public String toEnhancedMessage() {
     return Arrays.stream(errors)
         .map(
             e ->
                 String.format(
-                    ENANCHED_MESSAGE,
+                    ENHANCED_MESSAGE,
                     e.getMessage(),
-                    StringUtils.join(e.getPath(), ","),
+                    StringUtils.join(e.getPath(), "."),
                     e.getExtensions().getOrDefault(TYPE_KEY, null),
                     e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
                     StringUtils.join(
@@ -68,7 +68,7 @@ public class DaggerQueryException extends Exception {
                 String.format(
                     FULL_MESSAGE,
                     e.getMessage(),
-                    StringUtils.join(e.getPath(), ","),
+                    StringUtils.join(e.getPath(), "."),
                     e.getExtensions().getOrDefault(TYPE_KEY, null),
                     e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
                     StringUtils.join(
