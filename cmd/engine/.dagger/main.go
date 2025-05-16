@@ -25,6 +25,7 @@ const (
 
 func New(
 	// +defaultPath="/"
+	// +ignore=[".git", "bin", "**/.dagger", "**/.DS_Store", "**/node_modules", "**/__pycache__", "**/.venv", "**/.mypy_cache", "**/.pytest_cache", "**/.ruff_cache", "sdk/python/dist", "sdk/python/**/sdk", "go.work", "go.work.sum", "**/*_test.go", "**/target", "**/deps", "**/cover", "**/_build"]
 	source *dagger.Directory,
 ) *DaggerEngine {
 	return &DaggerEngine{
