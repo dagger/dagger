@@ -32,7 +32,7 @@ func MakeDirectoryContentHashed(
 ) (retInst dagql.Instance[*Directory], err error) {
 	dgst, err := GetContentHashFromDirectory(ctx, bk, dirInst)
 	if err != nil {
-		return retInst, fmt.Errorf("failed to get content hash: %w", err)
+		return retInst, err
 	}
 
 	return dirInst.WithDigest(dgst), nil
