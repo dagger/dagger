@@ -38,6 +38,8 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 		if err != nil {
 			return err
 		}
+		defer dag.Close()
+
 		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, dag)
 		if err != nil {
 			return err

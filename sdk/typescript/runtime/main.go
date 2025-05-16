@@ -136,15 +136,14 @@ func (t *TypescriptSdk) GenerateClient(
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	gitDepsJSON, err := extraGitDependenciesFromModule(ctx, modSource)
+	moduleSourceID, err := modSource.ID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+		return nil, fmt.Errorf("failed to get module source id: %w", err)
 	}
 
 	return clientGenBaseContainer(cfg, t.SDKSourceDir).
-		withBundledGitDependenciesJSON(gitDepsJSON).
 		withBundledSDK().
-		withGeneratedClient(introspectionJSON, outputDir).
+		withGeneratedClient(introspectionJSON, moduleSourceID, outputDir).
 		withUpdatedEnvironment(outputDir).
 		GeneratedDirectory(), nil
 }
