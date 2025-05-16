@@ -57,7 +57,7 @@ public class DaggerQueryException extends Exception {
                     StringUtils.join(
                         ((Object[])
                             e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
-                        ",")))
+                        " ")))
         .collect(Collectors.joining("\n"));
   }
 
@@ -74,7 +74,7 @@ public class DaggerQueryException extends Exception {
                     StringUtils.join(
                         ((Object[])
                             e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
-                        ","),
+                        " "),
                     e.getExtensions().getOrDefault(STDERR_KEY, null)))
         .collect(Collectors.joining("\n"));
   }
