@@ -2232,8 +2232,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
 	}
 
-	// get the runtime container, which is what is exec'd when calling functions in the module
-	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	// get the typedefs container dedicated to get the module's definition.
+	// this will fall back to the runtime container if `moduleTypeDefs` is not defined.
+	typeDefs, err := runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
@@ -2269,7 +2270,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			ctx,
 			mod,
 			nil,
-			mod.Runtime,
+			typeDefs,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2401,10 +2402,24 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	modName := src.Self().ModuleName
 
 	if src.Self().SDKImpl != nil {
+		runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
+		if !ok {
+			return inst, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
+		}
+
 		mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
 		if err != nil {
 			return inst, err
 		}
+
+		// pre-load the module Runtime
+		if mod.Runtime.Self() == nil {
+			mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+			if err != nil {
+				return inst, err
+			}
+		}
+
 		mod.ResultID = dagql.CurrentID(ctx)
 	} else {
 		// For no SDK, provide an empty stub module definition
