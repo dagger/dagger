@@ -146,7 +146,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_directory">directory</a>(string $path, array|null $exclude = null, array|null $include = null)
+                    <a href="#method_directory">directory</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
         
                                             <p><p>Accesses a directory on the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -156,7 +156,7 @@
                     <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_file">file</a>(string $path)
+                    <a href="#method_file">file</a>(string $path, bool|null $noCache = false)
         
                                             <p><p>Accesses a file on the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -310,7 +310,7 @@
                     <h3 id="method_directory">
         <div class="location">at line 19</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null)
+    <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
         </code>
     </h3>
     <div class="details">    
@@ -339,6 +339,11 @@
                 <td>$include</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$noCache</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -360,9 +365,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 35</div>
+        <div class="location">at line 42</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>file</strong>(string $path)
+    <strong>file</strong>(string $path, bool|null $noCache = false)
         </code>
     </h3>
     <div class="details">    
@@ -379,6 +384,11 @@
                     <tr>
                 <td>string</td>
                 <td>$path</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$noCache</td>
                 <td></td>
             </tr>
             </table>
@@ -402,7 +412,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 45</div>
+        <div class="location">at line 55</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -434,7 +444,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_service">
-        <div class="location">at line 54</div>
+        <div class="location">at line 64</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>service</strong>(array $ports, string|null $host = &#039;localhost&#039;)
         </code>
@@ -481,7 +491,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecretFile">
-        <div class="location">at line 69</div>
+        <div class="location">at line 79</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecretFile</strong>(string $name, string $path)
         </code>
@@ -528,7 +538,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tunnel">
-        <div class="location">at line 80</div>
+        <div class="location">at line 90</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
         </code>
@@ -580,7 +590,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_unixSocket">
-        <div class="location">at line 96</div>
+        <div class="location">at line 106</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>unixSocket</strong>(string $path)
         </code>

@@ -8,6 +8,7 @@ async fn main() -> eyre::Result<()> {
             HostDirectoryOpts {
                 exclude: Some(vec!["node_modules", "ci/"]),
                 include: None,
+                no_cache: None,
             },
         );
 

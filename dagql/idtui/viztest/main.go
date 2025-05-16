@@ -455,3 +455,15 @@ func (*Viztest) HTTPReadme(ctx context.Context, remote string, version string) (
 	result, _, _ = strings.Cut(result, "\n")
 	return result, err
 }
+
+func (*Viztest) ObjectLists(ctx context.Context) (string, error) {
+	filePtrs, err := dag.Dep().GetFiles(ctx)
+	if err != nil {
+		return "", err
+	}
+	files := make([]*dagger.File, len(filePtrs))
+	for i, f := range filePtrs {
+		files[i] = &f
+	}
+	return dag.Dep().FileContents(ctx, files)
+}

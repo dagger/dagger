@@ -72,6 +72,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "encapsulate"},
 		{Function: "pending", Fail: true},
 		{Function: "list", Args: []string{"--dir", "."}},
+		{Function: "object-lists"},
 		{
 			Function: "custom-span",
 			Env: []string{

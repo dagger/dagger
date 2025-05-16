@@ -500,18 +500,7 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
-	var base Object
-	var err error
-	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
-		}
-	} else {
-		base = s.root
-	}
-
-	res, id, err := base.Call(ctx, s, id)
+	res, id, err := s.loadType(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -519,19 +508,51 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
+	res, _, err := s.loadType(ctx, id)
+	return res, err
+}
+
+func (s *Server) loadType(ctx context.Context, id *call.ID) (Typed, *call.ID, error) {
 	var base Object
 	var err error
 	if id.Receiver() != nil {
-		base, err = s.Load(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("load base: %w", err)
+		nth := int(id.Nth())
+		if nth == 0 {
+			base, err = s.Load(ctx, id.Receiver())
+			if err != nil {
+				return nil, nil, fmt.Errorf("load base: %w", err)
+			}
+		} else {
+			// we are selecting the nth element of an enumerable, load the list
+			// we are selecting from and then select the nth element from it rather
+			// than trying to call the field on the object
+			baseTyped, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, nil, fmt.Errorf("load base enum: %w", err)
+			}
+			baseEnum, isEnum := UnwrapAs[Enumerable](baseTyped)
+			if !isEnum {
+				return nil, nil, fmt.Errorf("cannot select item %d from non-enumerable %T", nth, baseTyped)
+			}
+			res, err := baseEnum.Nth(nth)
+			if err != nil {
+				return nil, nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			if wrapped, ok := res.(Derefable); ok {
+				res, ok = wrapped.Deref()
+				if !ok {
+					// the nth element is nil, maybe this should be allowed but for now error out
+					return nil, nil, fmt.Errorf("item %d is null from enumerable", nth)
+				}
+			}
+			return res, id, nil
 		}
 	} else {
 		base = s.root
 	}
 
-	res, _, err := base.Call(ctx, s, id)
-	return res, err
+	res, id, err := base.Call(ctx, s, id)
+	return res, id, err
 }
 
 // Select evaluates a series of chained field selections starting from the
