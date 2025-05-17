@@ -52,7 +52,6 @@ type goTemplateFuncs struct {
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 	return template.FuncMap{
 		// common
-		"FormatReturnType":          funcs.FormatReturnType,
 		"FormatInputType":           funcs.FormatInputType,
 		"FormatOutputType":          funcs.FormatOutputType,
 		"GetArrayField":             funcs.GetArrayField,
@@ -72,6 +71,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatExperimental":      funcs.formatExperimental,
 		"FormatName":              formatName,
 		"FormatEnum":              funcs.formatEnum,
+		"FormatReturnType":        funcs.FormatReturnType,
 		"SortEnumFields":          funcs.sortEnumFields,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
@@ -89,6 +89,29 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"GitDependencies":         funcs.gitDependencies,
 	}
+}
+
+func (funcs goTemplateFuncs) FormatReturnType(f introspection.Field, scopes ...string) (representation string, err error) {
+	scope := strings.Join(scopes, "")
+	ff := funcs.CommonFunctions.FormatTypeFuncs.WithScope(scope)
+
+	for ref := f.TypeRef; ref != nil; ref = ref.OfType {
+		switch ref.Kind {
+		case introspection.TypeKindNonNull:
+			continue
+		case introspection.TypeKindList:
+			defer func() {
+				representation = ff.FormatKindList(representation)
+			}()
+		case introspection.TypeKindObject:
+			representation = ff.FormatKindObject(representation, ref.Name, funcs.CommonFunctions.ConvertID(f))
+			representation = "*" + representation
+			return
+		default:
+			return funcs.CommonFunctions.FormatType(ref, scope, funcs.CommonFunctions.ConvertID(f))
+		}
+	}
+	return "", fmt.Errorf("unexpected type kind %s", f.TypeRef.Kind)
 }
 
 // comments out a string
@@ -293,8 +316,6 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		retType = "error"
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
-	default:
-		retType = "*" + retType
 	}
 	signature += " " + retType
 

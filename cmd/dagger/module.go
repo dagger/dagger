@@ -663,7 +663,7 @@ func collectLocalModulesRecursive(ctx context.Context, base *dagger.ModuleSource
 		return err
 	}
 	for _, dep := range deps {
-		err := collectLocalModulesRecursive(ctx, &dep, m)
+		err := collectLocalModulesRecursive(ctx, dep, m)
 		if err != nil {
 			return err
 		}
