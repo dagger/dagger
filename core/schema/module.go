@@ -145,6 +145,7 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("typeDef").Doc(`The type of the argument`),
 				dagql.Arg("description").Doc(`A doc string for the argument, if any`),
 				dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
+				dagql.Arg("defaultEnv").Doc(`A default environment variable to use for this argument if not explicitly set by the caller, if any`),
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
@@ -410,6 +411,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Description  string    `default:""`
 	DefaultValue core.JSON `default:""`
 	DefaultPath  string    `default:""`
+	DefaultEnv   string    `default:""`
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
@@ -447,7 +449,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		td = td.WithOptional(true)
 	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultEnv, args.Ignore, sourceMap), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {

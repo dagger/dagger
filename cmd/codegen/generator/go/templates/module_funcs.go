@@ -144,6 +144,10 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(argSpec.defaultValue)))
 		}
 
+		if argSpec.defaultEnv != "" {
+			argOptsCode = append(argOptsCode, Id("DefaultEnv").Op(":").Lit(argSpec.defaultEnv))
+		}
+
 		if argSpec.defaultPath != "" {
 			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
 		}
@@ -315,6 +319,18 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 	}
 
+	// handle defaultEnv
+	defaultEnv := ""
+	if v, ok := pragmas["defaultEnv"]; ok {
+		// get the value of the environment variable
+		// trim starting and ending quotes
+		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
+			defaultEnv = v[1 : len(v)-1]
+		}
+
+		defaultEnv = strings.TrimSpace(v)
+	}
+
 	// ignore ctx arg for parsing type reference
 	isContext := paramType.String() == contextTypename
 	var typeSpec ParsedType
@@ -347,6 +363,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		defaultValue: defaultValue,
 		description:  comment,
 		defaultPath:  defaultPath,
+		defaultEnv:   defaultEnv,
 		ignore:       ignore,
 	}, nil
 }
@@ -363,6 +380,9 @@ type paramSpec struct {
 
 	// Set a default value for the argument. Value must be a json-encoded literal value
 	defaultValue string
+
+	// defaultEnv is the name of an environment variable to use as a default value for the argument.
+	defaultEnv string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc

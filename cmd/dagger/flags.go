@@ -1071,6 +1071,7 @@ func (r *modFunctionArg) GetFlagValue(ctx context.Context, flag *pflag.Flag, dag
 	case pflag.SliceValue:
 		return val.GetSlice(), nil
 	default:
+		fmt.Println(val)
 		return v, nil
 	}
 }

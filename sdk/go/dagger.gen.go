@@ -4879,6 +4879,8 @@ type FunctionWithArgOpts struct {
 	DefaultValue JSON
 	// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
 	DefaultPath string
+	// A default environment variable to use for this argument if not explicitly set by the caller, if any
+	DefaultEnv   string
 	// Patterns to ignore when loading the contextual argument value.
 	Ignore []string
 	// The source map for the argument definition.
@@ -4901,6 +4903,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `defaultPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DefaultPath) {
 			q = q.Arg("defaultPath", opts[i].DefaultPath)
+		}
+		// `defaultEnv` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultEnv) {
+			q = q.Arg("defaultEnv", opts[i].DefaultEnv)
 		}
 		// `ignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ignore) {
@@ -4948,6 +4954,7 @@ type FunctionArg struct {
 
 	defaultPath  *string
 	defaultValue *JSON
+	defaultEnv   *string
 	description  *string
 	id           *FunctionArgID
 	name         *string
