@@ -1,8 +1,9 @@
 package io.dagger.client;
 
 import io.smallrye.graphql.client.GraphQLError;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonValue;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
@@ -47,35 +48,49 @@ public class DaggerQueryException extends Exception {
   public String toEnhancedMessage() {
     return Arrays.stream(errors)
         .map(
-            e ->
-                String.format(
-                    ENHANCED_MESSAGE,
-                    e.getMessage(),
-                    StringUtils.join(e.getPath(), "."),
-                    e.getExtensions().getOrDefault(TYPE_KEY, null),
-                    e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
-                    StringUtils.join(
-                        ((Object[])
-                            e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
-                        " ")))
+            e -> {
+              Object cmdList = e.getExtensions().get(CMD_KEY);
+              String cmd = "";
+              if (cmdList != null && cmdList instanceof JsonArray array) {
+                cmd =
+                    array.stream()
+                        .map(JsonValue::toString)
+                        .collect(Collectors.joining(" "))
+                        .replace("\"", "");
+              }
+              return String.format(
+                  ENHANCED_MESSAGE,
+                  e.getMessage(),
+                  StringUtils.join(e.getPath(), "."),
+                  e.getExtensions().getOrDefault(TYPE_KEY, null),
+                  e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
+                  cmd);
+            })
         .collect(Collectors.joining("\n"));
   }
 
   public String toFullMessage() {
     return Arrays.stream(errors)
         .map(
-            e ->
-                String.format(
-                    FULL_MESSAGE,
-                    e.getMessage(),
-                    StringUtils.join(e.getPath(), "."),
-                    e.getExtensions().getOrDefault(TYPE_KEY, null),
-                    e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
-                    StringUtils.join(
-                        ((Object[])
-                            e.getExtensions().getOrDefault(CMD_KEY, Collections.emptyList())),
-                        " "),
-                    e.getExtensions().getOrDefault(STDERR_KEY, null)))
+            e -> {
+              Object cmdList = e.getExtensions().get(CMD_KEY);
+              String cmd = "";
+              if (cmdList != null && cmdList instanceof JsonArray array) {
+                cmd =
+                    array.stream()
+                        .map(JsonValue::toString)
+                        .collect(Collectors.joining(" "))
+                        .replace("\"", "");
+              }
+              return String.format(
+                  FULL_MESSAGE,
+                  e.getMessage(),
+                  StringUtils.join(e.getPath(), "."),
+                  e.getExtensions().getOrDefault(TYPE_KEY, null),
+                  e.getExtensions().getOrDefault(EXIT_CODE_KEY, null),
+                  cmd,
+                  e.getExtensions().getOrDefault(STDERR_KEY, null));
+            })
         .collect(Collectors.joining("\n"));
   }
 }

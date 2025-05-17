@@ -7,6 +7,7 @@ import static io.dagger.client.DaggerQueryException.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.smallrye.graphql.client.GraphQLError;
+import jakarta.json.Json;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ public class DaggerQueryExceptionTest {
                 EXIT_CODE_KEY,
                 "1",
                 CMD_KEY,
-                new Object[] {"cat", "WRONG"}));
+                Json.createArrayBuilder().add("cat").add("WRONG").build()));
     GraphQLError error2 =
         buildError(
             "ERROR2",
@@ -55,7 +56,7 @@ public class DaggerQueryExceptionTest {
                 EXIT_CODE_KEY,
                 "2",
                 CMD_KEY,
-                new Object[] {"cat", "WRONG2"}));
+                Json.createArrayBuilder().add("cat").add("WRONG2").build()));
 
     String result = new DaggerQueryException(error, error2).toEnhancedMessage();
     String expected =
@@ -75,7 +76,7 @@ public class DaggerQueryExceptionTest {
                 EXIT_CODE_KEY,
                 "1",
                 CMD_KEY,
-                new Object[] {"cat", "WRONG"},
+                Json.createArrayBuilder().add("cat").add("WRONG").build(),
                 STDERR_KEY,
                 "DEEP ERROR DETAILS"));
     GraphQLError error2 =
@@ -88,7 +89,7 @@ public class DaggerQueryExceptionTest {
                 EXIT_CODE_KEY,
                 "2",
                 CMD_KEY,
-                new Object[] {"cat", "WRONG2"},
+                Json.createArrayBuilder().add("cat").add("WRONG2").build(),
                 STDERR_KEY,
                 "DEEP ERROR DETAILS2"));
 
