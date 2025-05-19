@@ -2947,6 +2947,17 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
+// Return a snapshot with a symlink
+func (r *Directory) WithSymlink(target string, linkName string) *Directory {
+	q := r.query.Select("withSymlink")
+	q = q.Arg("target", target)
+	q = q.Arg("linkName", linkName)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.query.Select("withTimestamps")

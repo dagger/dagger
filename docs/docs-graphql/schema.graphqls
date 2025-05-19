@@ -1510,6 +1510,17 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+  ): Directory!
+
   """
   Retrieves this directory with all file/dir timestamps set to the given time.
   """

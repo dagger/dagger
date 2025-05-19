@@ -4930,6 +4930,26 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    pub fn with_symlink(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+    ) -> Directory {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
     /// # Arguments

@@ -3161,6 +3161,25 @@ class Directory(Type):
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
 
+    def with_symlink(self, target: str, link_name: str) -> Self:
+        """Return a snapshot with a symlink
+
+        Parameters
+        ----------
+        target:
+            Location of the file or directory to link to (e.g.,
+            "/existing/file").
+        link_name:
+            Location where the symbolic link will be created (e.g., "/new-
+            file-link").
+        """
+        _args = [
+            Arg("target", target),
+            Arg("linkName", link_name),
+        ]
+        _ctx = self._select("withSymlink", _args)
+        return Directory(_ctx)
+
     def with_timestamps(self, timestamp: int) -> Self:
         """Retrieves this directory with all file/dir timestamps set to the given
         time.

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -814,6 +815,55 @@ func (dir *Directory) Root() (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = "/"
 	return dir, nil
+}
+
+func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
+	dir = dir.Clone()
+
+	res, err := dir.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	var immutableRef bkcache.ImmutableRef
+	if ref != nil {
+		immutableRef, err = ref.CacheRef(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	op, ok := DagOpFromContext[FSDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+
+	cache := dir.Query.BuildkitCache()
+	newRef, err := cache.New(ctx, immutableRef, op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
+	if err != nil {
+		return nil, err
+	}
+	err = op.Mount(ctx, newRef, func(root string) error {
+		return os.Symlink(target, path.Join(root, linkName))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dirWithSymlink := NewDirectory(dir.Query, nil, "/", dir.Query.Platform(), nil)
+	dirWithSymlink.Result = snap
+	return dirWithSymlink, nil
 }
 
 func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
