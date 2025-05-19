@@ -44,6 +44,12 @@ const (
 	generatedPhpReferencePath     = "docs/static/reference/php/"
 )
 
+const (
+	doctumVersion       = "5.5.4"
+	changieVersion      = "1.21.0"
+	markdownlintVersion = "0.31.1"
+)
+
 const cliZenFrontmatter = `---
 slug: /reference/cli/
 pagination_next: null
@@ -91,7 +97,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		_, err := dag.Container().
-			From("tmknom/markdownlint:0.31.1").
+			From("tmknom/markdownlint:"+markdownlintVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
 			WithWorkdir("/src").
@@ -139,7 +145,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		// FIXME: spin out a changie module
 		after := dag.
 			Container().
-			From("ghcr.io/miniscruff/changie").
+			From("ghcr.io/miniscruff/changie:v"+changieVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithWorkdir("/src").
 			WithExec([]string{"/changie", "merge"}).
@@ -189,7 +195,7 @@ func (d Docs) GeneratePhp() *dagger.Directory {
 	dir := dag.PhpSDKDev().Base().
 		WithFile(
 			"/usr/bin/doctum",
-			dag.HTTP("https://doctum.long-term.support/releases/5.5.4/doctum.phar"),
+			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", doctumVersion)),
 			dagger.ContainerWithFileOpts{Permissions: 0711},
 		).
 		WithFile("/etc/doctum-config.php", d.DoctumConfig).
