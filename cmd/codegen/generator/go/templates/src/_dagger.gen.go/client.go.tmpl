@@ -231,37 +231,25 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 	{{- end -}}
 
 	{{/* Serve the local module if there are any local dependencies */}}
-	{{- if or (HasLocalDependencies) (ImplementModule) }}
 	modSrc := client.ModuleSource(".")
 	configExist, err := modSrc.ConfigExists(ctx)
 	if err != nil {
 		return err
 	}
 
+	{{- if (HasLocalDependencies) }}
 	if !configExist {
 		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
 	}
-	{{ end -}}
+	{{- end }}
 
-  {{- if HasLocalDependencies }}
-	dependencies, err := modSrc.Dependencies(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, dep := range dependencies {
-		if err := dep.AsModule().Serve(ctx); err != nil {
+	if configExist {
+		if err := modSrc.AsModule().Serve(ctx, ModuleServeOpts{
+			IncludeDependencies: true,
+		}); err != nil {
 			return err
 		}
 	}
-	{{ end -}}
-
-
-	{{- if ImplementModule }}
-	if err := modSrc.AsModule().Serve(ctx); err != nil {
-		return err
-	}
-	{{ end }}
 
 	return nil
 }

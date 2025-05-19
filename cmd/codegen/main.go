@@ -87,6 +87,18 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		Bundle:     bundle,
 	}
 
+	// If a module source ID is provided or no introspection JSON is provided, we will query
+	// the engine so we can create a connection here.
+	if moduleSourceID != "" || introspectionJSONPath == "" {
+		dag, err := dagger.Connect(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to connect to engine: %w", err)
+		}
+		defer dag.Close()
+
+		cfg.Dag = dag
+	}
+
 	if moduleName != "" {
 		cfg.ModuleName = moduleName
 
@@ -117,19 +129,13 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	}
 
 	if moduleSourceID != "" {
-		dag, err := dagger.Connect(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to connect to engine: %w", err)
-		}
-		defer dag.Close()
-
 		var res struct {
 			Source struct {
 				Dependencies []generator.ModuleSourceDependencies
 			}
 		}
 
-		err = dag.Do(ctx,
+		err := cfg.Dag.Do(ctx,
 			&dagger.Request{
 				Query:  loadModuleSourceDepsQuery,
 				OpName: "ModuleSourceDependencies",
@@ -145,14 +151,6 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		}
 
 		cfg.ModuleDependencies = res.Source.Dependencies
-
-		// If the module source is implementing functions, we need to load the module itself
-		src, err := dag.LoadModuleSourceFromID(dagger.ModuleSourceID(moduleSourceID)).SDK().Source(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load module source from id: %w", err)
-		}
-
-		cfg.ImplementModule = src != ""
 	}
 
 	return Generate(ctx, cfg)

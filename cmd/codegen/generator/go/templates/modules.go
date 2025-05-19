@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
-	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -46,16 +45,12 @@ func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies
 
 func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 	for _, dep := range funcs.cfg.ModuleDependencies {
-		if dep.Kind == core.ModuleSourceKindLocal {
+		if dep.Kind == "LOCAL_SOURCE" {
 			return true
 		}
 	}
 
 	return false
-}
-
-func (funcs goTemplateFuncs) ImplementModule() bool {
-	return funcs.cfg.ImplementModule
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {

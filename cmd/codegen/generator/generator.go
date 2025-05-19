@@ -12,7 +12,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -25,7 +24,7 @@ const (
 )
 
 type ModuleSourceDependencies struct {
-	Kind   core.ModuleSourceKind
+	Kind   string
 	Name   string `json:"moduleOriginalName"`
 	Pin    string
 	Source string `json:"asString"`
@@ -71,13 +70,13 @@ type Config struct {
 	// dependencies when connecting to the client.
 	ModuleDependencies []ModuleSourceDependencies
 
-	// If set to true, that means the current module source is implementing functions.
-	// This is used by the client generator to load the module itself and serve it on connection
-	// to the client.
-	ImplementModule bool
-
 	// Generate the client in bundle mode.
 	Bundle bool
+
+	// A dagger client connected to the engine running the codegen.
+	// This may be nil if the codegen is run outside of a dagger context and should
+	// only be set if introspectionJSON or moduleSourceID are set.
+	Dag *dagger.Client
 }
 
 type Generator interface {

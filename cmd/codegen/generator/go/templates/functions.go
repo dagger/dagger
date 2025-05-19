@@ -89,7 +89,6 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
-		"ImplementModule":         funcs.ImplementModule,
 	}
 }
 

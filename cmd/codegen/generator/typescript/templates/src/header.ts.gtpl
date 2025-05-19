@@ -34,25 +34,20 @@ async function serveModuleDependencies(client: Client): Promise<void> {
   {{- end -}}
 
   {{/* Serve the local module if there are any local dependencies */}}
-  {{- if or (HasLocalDependencies) (ImplementModule) }}
+
   const modSrc = client.moduleSource(".")
   const configExist = await modSrc.configExists()
+
+  {{- if (HasLocalDependencies) }}
   if (!configExist) {
     console.error("WARNING: dagger.json not found but is required to load local dependencies or the module itself")
     return
   }
-  {{ end -}}
+  {{- end }}
 
-  {{- if HasLocalDependencies }}
-  const dependencies = await modSrc.dependencies()
-  await Promise.all(dependencies
-      .map(async (dep) => await dep.asModule().serve())
-  )
-  {{- end -}}
-
-  {{- if ImplementModule }}
-  await modSrc.asModule().serve()
-  {{ end }}
+  if (configExist) {
+    await modSrc.asModule().serve({ includeDependencies: true })
+  }
 }
 
 export async function connection(
