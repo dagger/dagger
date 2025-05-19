@@ -17,11 +17,11 @@ replace (
 require (
 	github.com/1password/onepassword-sdk-go v0.3.0
 	github.com/99designs/gqlgen v0.17.73
-	github.com/Khan/genqlient v0.8.0
+	github.com/Khan/genqlient v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.3
-	github.com/alecthomas/chroma/v2 v2.17.2
+	github.com/alecthomas/chroma/v2 v2.18.0
 	github.com/anthropics/anthropic-sdk-go v0.2.0-beta.3
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbles v0.21.0
@@ -58,8 +58,8 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
-	github.com/googleapis/gax-go/v2 v2.14.1
-	github.com/goproxy/goproxy v0.20.0
+	github.com/googleapis/gax-go/v2 v2.14.2
+	github.com/goproxy/goproxy v0.20.1
 	github.com/hashicorp/vault/api v1.16.0
 	github.com/hashicorp/vault/api/auth/approle v0.9.0
 	github.com/iancoleman/strcase v0.3.0
@@ -72,7 +72,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.7
 	github.com/mackerelio/go-osstat v0.2.5
-	github.com/mark3labs/mcp-go v0.27.0
+	github.com/mark3labs/mcp-go v0.28.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -105,7 +105,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
-	github.com/vektah/gqlparser/v2 v2.5.26
+	github.com/vektah/gqlparser/v2 v2.5.27
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
@@ -134,9 +134,9 @@ require (
 	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.32.0
 	golang.org/x/text v0.25.0
-	golang.org/x/tools v0.32.0
-	google.golang.org/genai v1.4.0
-	google.golang.org/grpc v1.72.0
+	golang.org/x/tools v0.33.0
+	google.golang.org/genai v1.5.0
+	google.golang.org/grpc v1.72.1
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
@@ -262,7 +262,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
@@ -335,9 +335,9 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/api v0.232.0 // indirect
-	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250428153025-10db94c68c34 // indirect
+	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250505200425-f936aa4a68b2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.62.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
