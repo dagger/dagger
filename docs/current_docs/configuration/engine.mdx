@@ -242,6 +242,9 @@ parameters:
 - `minFreeSpace` is the target amount of free disk space that the garbage
   collector will attempt to leave empty - however, it will never be bought
   below `reservedSpace`.
+- `sweepSize` defines the amount of space that should be collected on a single
+  pass of the garbage collector. When set as a percentage, it's the percentage
+  of the range of space allowed between `reservedSpace` and `maxUsedSpace`.
 
 All disk space parameters can be an integer number of bytes (e.g. `512000000`), a
 string with a unit (e.g. `"512MB"`), or a string percentage
@@ -256,7 +259,8 @@ To adjust the garbage collector default parameters:
   "gc": {
     "maxUsedSpace": "200GB",
     "reservedSpace": "10GB",
-    "minFreeSpace": "20%"
+    "minFreeSpace": "20%",
+    "sweepSize": "50%"
   },
 }
 ```
@@ -271,6 +275,8 @@ maxUsedSpace = "200GB"
 reservedSpace = "10GB"
 minFreeSpace = "20%"
 ```
+
+Note that `sweepSize` is a dagger `engine.json` specific setting.
 
 </TabItem>
 </Tabs>

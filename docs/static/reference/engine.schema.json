@@ -81,7 +81,7 @@
         },
         "sweep": {
           "$ref": "#/$defs/DiskSpace",
-          "description": "Sweep is the minimum amount of space to sweep during a single gc pass. Either an absolute number of bytes, or a percentage of the \"allowed space\" between reserved and max."
+          "description": "SweepSize is the minimum amount of space to sweep during a single gc pass. Either an absolute number of bytes, or a percentage of the \"allowed space\" between reserved and max."
         },
         "policies": {
           "items": {
@@ -125,7 +125,7 @@
         },
         "sweep": {
           "$ref": "#/$defs/DiskSpace",
-          "description": "Sweep is the minimum amount of space to sweep during a single gc pass. Either an absolute number of bytes, or a percentage of the \"allowed space\" between reserved and max."
+          "description": "SweepSize is the minimum amount of space to sweep during a single gc pass. Either an absolute number of bytes, or a percentage of the \"allowed space\" between reserved and max."
         }
       },
       "additionalProperties": false,

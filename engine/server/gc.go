@@ -166,9 +166,9 @@ func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkcl
 			MaxUsedSpace:  policy.MaxUsedSpace.AsBytes(dstat),
 			MinFreeSpace:  policy.MinFreeSpace.AsBytes(dstat),
 		}
-		if policy.Sweep != (config.DiskSpace{}) {
-			info.TargetSpace = info.MaxUsedSpace - policy.Sweep.AsBytes(disk.DiskStat{Total: info.MaxUsedSpace - info.ReservedSpace})
-			if info.TargetSpace == 0 { // 0 is a special value indicating to ignore this value
+		if policy.SweepSize != (config.DiskSpace{}) {
+			info.TargetSpace = info.MaxUsedSpace - policy.SweepSize.AsBytes(disk.DiskStat{Total: info.MaxUsedSpace - info.ReservedSpace})
+			if info.TargetSpace <= 0 { // 0 is a special value indicating to ignore this value
 				info.TargetSpace = 1
 			}
 		}
@@ -201,7 +201,7 @@ func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.Disk
 		GCMaxUsedSpace:  bkconfig.DiskSpace(space.MaxUsedSpace),
 	}, dstat))
 	for i, policy := range policies {
-		policy.Sweep = space.Sweep
+		policy.SweepSize = space.SweepSize
 		policies[i] = policy
 	}
 	return policies
@@ -216,7 +216,8 @@ func DetectDefaultGCCap(dstat disk.DiskStat) config.GCSpace {
 		ReservedSpace: reserve,
 		MinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
 		MaxUsedSpace:  config.DiskSpace{Percentage: diskSpaceMaxPercentage},
-		// Sweep: ...,
+		// SweepSize is unset by default, to preserve backwards compat
+		// SweepSize: config.DiskSpace{},
 	}
 }
 

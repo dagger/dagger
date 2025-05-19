@@ -199,6 +199,13 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			sweep:        "3GB",
 			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
+		{
+			name:         "sweep percent",
+			blocks:       2,
+			maxUsedSpace: "3GB",
+			sweep:        "80%",
+			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
+		},
 	} {
 		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container) {
 			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
@@ -246,8 +253,8 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 
 			// consume 2GB blocks of space, greater than configured keepstorage of 1GB
 			c4, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+			require.NoError(t, err)
 			for i := range tc.blocks {
-				require.NoError(t, err)
 				_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile" + fmt.Sprint(i), "bs=1M", "count=2048"}).Sync(ctx)
 				require.NoError(t, err)
 			}
@@ -306,8 +313,8 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 
 		t.Run(tc.name+" (bk opts)", func(ctx context.Context, t *testctx.T) {
 			if tc.sweep != "" {
-				return
 				t.Skip("sweep option not permitted with buildkit options")
+				return
 			}
 
 			var opts []func(*dagger.Container) *dagger.Container
@@ -336,7 +343,7 @@ func engineConfigWithGC(reserved, minFree, maxUsed, sweep string) func(context.C
 		require.NoError(t, cfg.GC.ReservedSpace.UnmarshalJSON([]byte(reserved)))
 		require.NoError(t, cfg.GC.MinFreeSpace.UnmarshalJSON([]byte(minFree)))
 		require.NoError(t, cfg.GC.MaxUsedSpace.UnmarshalJSON([]byte(maxUsed)))
-		require.NoError(t, cfg.GC.Sweep.UnmarshalJSON([]byte(sweep)))
+		require.NoError(t, cfg.GC.SweepSize.UnmarshalJSON([]byte(sweep)))
 		return cfg
 	}
 }

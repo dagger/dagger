@@ -124,17 +124,17 @@ type GCSpace struct {
 	// However, it will never let the available space fall below ReservedSpace.
 	MinFreeSpace DiskSpace `json:"minFreeSpace,omitempty"`
 
-	// Sweep is the minimum amount of space to sweep during a single gc pass.
+	// SweepSize is the minimum amount of space to sweep during a single gc pass.
 	// Either an absolute number of bytes, or a percentage of the "allowed
 	// space" between reserved and max.
-	Sweep DiskSpace `json:"sweep,omitempty"`
+	SweepSize DiskSpace `json:"sweep,omitempty"`
 }
 
 func (space *GCSpace) IsUnset() bool {
 	return space.ReservedSpace == DiskSpace{} &&
 		space.MaxUsedSpace == DiskSpace{} &&
 		space.MinFreeSpace == DiskSpace{} &&
-		space.Sweep == DiskSpace{}
+		space.SweepSize == DiskSpace{}
 }
 
 type DiskSpace bkconfig.DiskSpace
