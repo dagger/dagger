@@ -355,140 +355,206 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return value;
   }
 
+  private static MethodSpec.Builder registerFunction(ModuleInfo moduleInfo)
+      throws ClassNotFoundException {
+    var rm =
+        MethodSpec.methodBuilder("register")
+            .addModifiers(Modifier.STATIC)
+            .returns(ModuleID.class)
+            .addException(ExecutionException.class)
+            .addException(DaggerQueryException.class)
+            .addException(InterruptedException.class)
+            .addCode("$T module = $T.dag().module()", io.dagger.client.Module.class, Dagger.class);
+    if (isNotBlank(moduleInfo.description())) {
+      rm.addCode("\n    .withDescription($S)", moduleInfo.description());
+    }
+    for (var objectInfo : moduleInfo.objects()) {
+      rm.addCode("\n    .withObject(")
+          .addCode("\n        $T.dag().typeDef().withObject($S", Dagger.class, objectInfo.name());
+      if (isNotBlank(objectInfo.description())) {
+        rm.addCode(
+            ", new $T.WithObjectArguments().withDescription($S)",
+            TypeDef.class,
+            objectInfo.description());
+      }
+      rm.addCode(")"); // end of dag().TypeDef().withObject(
+      for (var fnInfo : objectInfo.functions()) {
+        rm.addCode("\n            .withFunction(")
+            .addCode(withFunction(moduleInfo.enumInfos().keySet(), objectInfo, fnInfo))
+            .addCode(")"); // end of .withFunction(
+      }
+      for (var fieldInfo : objectInfo.fields()) {
+        rm.addCode("\n            .withField(")
+            .addCode("$S, ", fieldInfo.name())
+            .addCode(DaggerType.of(fieldInfo.type()).toDaggerTypeDef());
+        if (isNotBlank(fieldInfo.description())) {
+          rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
+              .addCode(".withDescription($S)", fieldInfo.description());
+        }
+        rm.addCode(")");
+      }
+      if (objectInfo.constructor().isPresent()) {
+        rm.addCode("\n            .withConstructor(")
+            .addCode(
+                withFunction(
+                    moduleInfo.enumInfos().keySet(), objectInfo, objectInfo.constructor().get()))
+            .addCode(")"); // end of .withConstructor
+      }
+      rm.addCode(")"); // end of .withObject(
+    }
+    for (var enumInfo : moduleInfo.enumInfos().values()) {
+      rm.addCode("\n    .withEnum(")
+          .addCode("\n        $T.dag().typeDef().withEnum($S", Dagger.class, enumInfo.name());
+      if (isNotBlank(enumInfo.description())) {
+        rm.addCode(
+            ", new $T.WithEnumArguments().withDescription($S)",
+            TypeDef.class,
+            enumInfo.description());
+      }
+      rm.addCode(")"); // end of dag().TypeDef().withEnum(
+      for (var enumValue : enumInfo.values()) {
+        rm.addCode("\n            .withEnumValue($S", enumValue.value());
+        if (isNotBlank(enumValue.description())) {
+          rm.addCode(
+              ", new $T.WithEnumValueArguments().withDescription($S)",
+              io.dagger.client.TypeDef.class,
+              enumValue.description());
+        }
+        rm.addCode(")"); // end of .withEnumValue(
+      }
+      rm.addCode(")"); // end of .withEnum(
+    }
+    rm.addCode(";\n") // end of module instantiation
+        .addStatement("return module.id()");
+
+    return rm;
+  }
+
+  private static MethodSpec.Builder invokeFunction(ModuleInfo moduleInfo)
+      throws ClassNotFoundException {
+    var im =
+        MethodSpec.methodBuilder("invoke")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(JSON.class)
+            .addException(Exception.class)
+            .addParameter(JSON.class, "parentJson")
+            .addParameter(String.class, "parentName")
+            .addParameter(String.class, "fnName")
+            .addParameter(
+                ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs");
+    var firstObj = true;
+    for (var objectInfo : moduleInfo.objects()) {
+      if (firstObj) {
+        firstObj = false;
+        im.beginControlFlow("if (parentName.equals($S))", objectInfo.name());
+      } else {
+        im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
+      }
+      // If there's no constructor, we can initialize the main object here as it's the same for
+      // all.
+      // But if there's a constructor we want to inline it under the function branch.
+      if (objectInfo.constructor().isEmpty()) {
+        ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
+        im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
+            .addStatement(
+                "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
+                objName,
+                objName,
+                JsonConverter.class);
+      }
+      var firstFn = true;
+      for (var fnInfo : objectInfo.functions()) {
+        if (firstFn) {
+          firstFn = false;
+          im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
+        } else {
+          im.nextControlFlow("else if (fnName.equals($S))", fnInfo.name());
+        }
+        im.addCode(functionInvoke(objectInfo, fnInfo));
+      }
+
+      if (objectInfo.constructor().isPresent()) {
+        if (firstFn) {
+          firstFn = false;
+          im.beginControlFlow("if (fnName.equals(\"\"))");
+        } else {
+          im.nextControlFlow("if (fnName.equals(\"\"))");
+        }
+        im.addCode(functionInvoke(objectInfo, objectInfo.constructor().get()));
+      }
+
+      if (!firstFn) {
+        im.endControlFlow(); // functions
+      }
+    }
+    im.endControlFlow() // objects
+        .addStatement(
+            "throw new $T(new $T(\"unknown function \" + fnName))",
+            InvocationTargetException.class,
+            java.lang.Error.class);
+
+    return im;
+  }
+
+  static JavaFile generateRegister(ModuleInfo moduleInfo) {
+    try {
+      var f =
+          JavaFile.builder(
+                  "io.dagger.gen.entrypoint",
+                  TypeSpec.classBuilder("TypeDefs")
+                      .addModifiers(Modifier.PUBLIC)
+                      .addMethod(MethodSpec.constructorBuilder().build())
+                      .addMethod(
+                          MethodSpec.methodBuilder("main")
+                              .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                              .addException(Exception.class)
+                              .returns(void.class)
+                              .addParameter(String[].class, "args")
+                              .beginControlFlow("try")
+                              .addStatement("new TypeDefs().dispatch()")
+                              .nextControlFlow("finally")
+                              .addStatement("$T.dag().close()", Dagger.class)
+                              .endControlFlow()
+                              .build())
+                      .addMethod(
+                          MethodSpec.methodBuilder("dispatch")
+                              .addModifiers(Modifier.PRIVATE)
+                              .returns(void.class)
+                              .addException(Exception.class)
+                              .addStatement(
+                                  "$T fnCall = $T.dag().currentFunctionCall()",
+                                  FunctionCall.class,
+                                  Dagger.class)
+                              .beginControlFlow("try")
+                              .addStatement(
+                                  "fnCall.returnValue($T.toJSON(register()))", JsonConverter.class)
+                              .nextControlFlow("catch ($T e)", InvocationTargetException.class)
+                              .addStatement(
+                                  "fnCall.returnError($T.dag().error(e.getTargetException().getMessage()))",
+                                  Dagger.class)
+                              .addStatement("throw e")
+                              .nextControlFlow("catch ($T e)", Exception.class)
+                              .addStatement(
+                                  "fnCall.returnError($T.dag().error(e.getMessage()))",
+                                  Dagger.class)
+                              .addStatement("throw e")
+                              .endControlFlow()
+                              .build())
+                      .addMethod(registerFunction(moduleInfo).build())
+                      .build())
+              .addFileComment("This class has been generated by dagger-java-sdk. DO NOT EDIT.")
+              .indent("  ")
+              .addStaticImport(Dagger.class, "dag")
+              .build();
+
+      return f;
+    } catch (ClassNotFoundException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   static JavaFile generate(ModuleInfo moduleInfo) {
     try {
-      var rm =
-          MethodSpec.methodBuilder("register")
-              .addModifiers(Modifier.PRIVATE)
-              .returns(ModuleID.class)
-              .addException(ExecutionException.class)
-              .addException(DaggerQueryException.class)
-              .addException(InterruptedException.class)
-              .addCode(
-                  "$T module = $T.dag().module()", io.dagger.client.Module.class, Dagger.class);
-      if (isNotBlank(moduleInfo.description())) {
-        rm.addCode("\n    .withDescription($S)", moduleInfo.description());
-      }
-      for (var objectInfo : moduleInfo.objects()) {
-        rm.addCode("\n    .withObject(")
-            .addCode("\n        $T.dag().typeDef().withObject($S", Dagger.class, objectInfo.name());
-        if (isNotBlank(objectInfo.description())) {
-          rm.addCode(
-              ", new $T.WithObjectArguments().withDescription($S)",
-              TypeDef.class,
-              objectInfo.description());
-        }
-        rm.addCode(")"); // end of dag().TypeDef().withObject(
-        for (var fnInfo : objectInfo.functions()) {
-          rm.addCode("\n            .withFunction(")
-              .addCode(withFunction(moduleInfo.enumInfos().keySet(), objectInfo, fnInfo))
-              .addCode(")"); // end of .withFunction(
-        }
-        for (var fieldInfo : objectInfo.fields()) {
-          rm.addCode("\n            .withField(")
-              .addCode("$S, ", fieldInfo.name())
-              .addCode(DaggerType.of(fieldInfo.type()).toDaggerTypeDef());
-          if (isNotBlank(fieldInfo.description())) {
-            rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
-                .addCode(".withDescription($S)", fieldInfo.description());
-          }
-          rm.addCode(")");
-        }
-        if (objectInfo.constructor().isPresent()) {
-          rm.addCode("\n            .withConstructor(")
-              .addCode(
-                  withFunction(
-                      moduleInfo.enumInfos().keySet(), objectInfo, objectInfo.constructor().get()))
-              .addCode(")"); // end of .withConstructor
-        }
-        rm.addCode(")"); // end of .withObject(
-      }
-      for (var enumInfo : moduleInfo.enumInfos().values()) {
-        rm.addCode("\n    .withEnum(")
-            .addCode("\n        $T.dag().typeDef().withEnum($S", Dagger.class, enumInfo.name());
-        if (isNotBlank(enumInfo.description())) {
-          rm.addCode(
-              ", new $T.WithEnumArguments().withDescription($S)",
-              TypeDef.class,
-              enumInfo.description());
-        }
-        rm.addCode(")"); // end of dag().TypeDef().withEnum(
-        for (var enumValue : enumInfo.values()) {
-          rm.addCode("\n            .withEnumValue($S", enumValue.value());
-          if (isNotBlank(enumValue.description())) {
-            rm.addCode(
-                ", new $T.WithEnumValueArguments().withDescription($S)",
-                io.dagger.client.TypeDef.class,
-                enumValue.description());
-          }
-          rm.addCode(")"); // end of .withEnumValue(
-        }
-        rm.addCode(")"); // end of .withEnum(
-      }
-      rm.addCode(";\n") // end of module instantiation
-          .addStatement("return module.id()");
-
-      var im =
-          MethodSpec.methodBuilder("invoke")
-              .addModifiers(Modifier.PRIVATE)
-              .returns(JSON.class)
-              .addException(Exception.class)
-              .addParameter(JSON.class, "parentJson")
-              .addParameter(String.class, "parentName")
-              .addParameter(String.class, "fnName")
-              .addParameter(
-                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs");
-      var firstObj = true;
-      for (var objectInfo : moduleInfo.objects()) {
-        if (firstObj) {
-          firstObj = false;
-          im.beginControlFlow("if (parentName.equals($S))", objectInfo.name());
-        } else {
-          im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
-        }
-        // If there's no constructor, we can initialize the main object here as it's the same for
-        // all.
-        // But if there's a constructor we want to inline it under the function branch.
-        if (objectInfo.constructor().isEmpty()) {
-          ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
-          im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
-              .addStatement(
-                  "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
-                  objName,
-                  objName,
-                  JsonConverter.class);
-        }
-        var firstFn = true;
-        for (var fnInfo : objectInfo.functions()) {
-          if (firstFn) {
-            firstFn = false;
-            im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
-          } else {
-            im.nextControlFlow("else if (fnName.equals($S))", fnInfo.name());
-          }
-          im.addCode(functionInvoke(objectInfo, fnInfo));
-        }
-
-        if (objectInfo.constructor().isPresent()) {
-          if (firstFn) {
-            firstFn = false;
-            im.beginControlFlow("if (fnName.equals(\"\"))");
-          } else {
-            im.nextControlFlow("if (fnName.equals(\"\"))");
-          }
-          im.addCode(functionInvoke(objectInfo, objectInfo.constructor().get()));
-        }
-
-        if (!firstFn) {
-          im.endControlFlow(); // functions
-        }
-      }
-      im.endControlFlow() // objects
-          .addStatement(
-              "throw new $T(new $T(\"unknown function \" + fnName))",
-              InvocationTargetException.class,
-              java.lang.Error.class);
-
       var f =
           JavaFile.builder(
                   "io.dagger.gen.entrypoint",
@@ -536,7 +602,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addCode("\n")
                               .addStatement("$T result", JSON.class)
                               .beginControlFlow("if (parentName.isEmpty())")
-                              .addStatement("$T modID = register()", ModuleID.class)
+                              .addStatement("$T modID = TypeDefs.register()", ModuleID.class)
                               .addStatement("result = $T.toJSON(modID)", JsonConverter.class)
                               .nextControlFlow("else")
                               .addStatement(
@@ -570,8 +636,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addStatement("throw e")
                               .endControlFlow()
                               .build())
-                      .addMethod(rm.build())
-                      .addMethod(im.build())
+                      .addMethod(invokeFunction(moduleInfo).build())
                       .build())
               .addFileComment("This class has been generated by dagger-java-sdk. DO NOT EDIT.")
               .indent("  ")
@@ -751,7 +816,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
     try {
       JavaFile f = generate(moduleInfo);
+      f.writeTo(processingEnv.getFiler());
 
+      f = generateRegister(moduleInfo);
       f.writeTo(processingEnv.getFiler());
     } catch (IOException e) {
       throw new RuntimeException(e);
