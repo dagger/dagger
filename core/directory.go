@@ -838,18 +838,13 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 		}
 	}
 
-	op, ok := DagOpFromContext[FSDagOp](ctx)
-	if !ok {
-		return nil, fmt.Errorf("no dagop")
-	}
-
 	cache := dir.Query.BuildkitCache()
-	newRef, err := cache.New(ctx, immutableRef, op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := cache.New(ctx, immutableRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
 	if err != nil {
 		return nil, err
 	}
-	err = op.Mount(ctx, newRef, func(root string) error {
+	err = MountRef(ctx, newRef, nil, func(root string) error {
 		return os.Symlink(target, path.Join(root, linkName))
 	})
 	if err != nil {
