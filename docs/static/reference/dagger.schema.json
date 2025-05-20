@@ -71,6 +71,10 @@
           "$ref": "#/$defs/SDK",
           "description": "The SDK this module uses"
         },
+        "blueprint": {
+          "$ref": "#/$defs/ModuleConfigDependency",
+          "description": "An optional blueprint module"
+        },
         "include": {
           "items": {
             "type": "string"

@@ -45,6 +45,8 @@ var (
 
 	installName string
 
+	initBlueprint string
+
 	developSDK        string
 	developSourcePath string
 	developRecursive  bool
@@ -130,11 +132,13 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
+	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleInstallCmd, moduleInstallCmd.Flags(), false)
 
@@ -161,8 +165,9 @@ var moduleInitCmd = &cobra.Command{
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
+If --blueprint is specified, the given blueprint is installed in the module.
 `,
-	Example: "dagger init --sdk=python",
+	Example: "dagger init --blueprint=github.com/example/blueprint",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
@@ -277,6 +282,30 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 
 			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootAbsPath)
 
+			// Install blueprint if specified
+			if initBlueprint != "" {
+				// Validate that we don't have both SDK and blueprint
+				if sdk != "" {
+					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
+				}
+
+				// Create a new module source for the blueprint installation
+				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
+					DisableFindUp: true,
+				})
+
+				// Install the blueprint
+				modSrc = modSrc.WithBlueprint(blueprintSrc)
+				_, err = modSrc.
+					WithEngineVersion(modules.EngineVersionLatest).
+					GeneratedContextDirectory().
+					Export(ctx, contextDirPath)
+				if err != nil {
+					return fmt.Errorf("failed to install blueprint: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Installed blueprint", initBlueprint)
+			}
+
 			return nil
 		})
 	},
@@ -290,6 +319,20 @@ var moduleInstallCmd = &cobra.Command{
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		blueprint, err := cmd.Flags().GetString("blueprint")
+		if err != nil {
+			return err
+		}
+		sdk, err := cmd.Flags().GetString("sdk")
+		if err != nil {
+			return err
+		}
+		if blueprint != "" && sdk != "" {
+			return fmt.Errorf("--blueprint and --sdk cannot both be set")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -357,7 +400,8 @@ var moduleInstallCmd = &cobra.Command{
 
 			switch depSrcKind {
 			case dagger.ModuleSourceKindLocalSource:
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
 					"module_name":   origDepName,
 					"install_name":  installName,
 					"module_sdk":    sdk,
@@ -378,7 +422,8 @@ var moduleInstallCmd = &cobra.Command{
 					return fmt.Errorf("failed to get git commit: %w", err)
 				}
 
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
 					"module_name":   origDepName,
 					"install_name":  installName,
 					"module_sdk":    sdk,
