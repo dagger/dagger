@@ -41,6 +41,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The blueprint referenced by the module source.
+  """
+  @spec blueprint(t()) :: Dagger.ModuleSource.t()
+  def blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("blueprint")
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
   @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
@@ -362,6 +376,22 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Set a blueprint for the module source.
+  """
+  @spec with_blueprint(t(), Dagger.ModuleSource.t()) :: Dagger.ModuleSource.t()
+  def with_blueprint(%__MODULE__{} = module_source, blueprint) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withBlueprint")
+      |> QB.put_arg("blueprint", Dagger.ID.id!(blueprint))
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update the module source with a new client to generate.
   """
   @spec with_client(t(), String.t(), String.t()) :: Dagger.ModuleSource.t()
@@ -467,6 +497,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Update the blueprint module to the latest version.
+  """
+  @spec with_update_blueprint(t()) :: Dagger.ModuleSource.t()
+  def with_update_blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("withUpdateBlueprint")
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update one or more module dependencies.
   """
   @spec with_update_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
@@ -475,6 +519,20 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withUpdateDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Remove the current blueprint from the module source.
+  """
+  @spec without_blueprint(t()) :: Dagger.ModuleSource.t()
+  def without_blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("withoutBlueprint")
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

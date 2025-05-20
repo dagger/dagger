@@ -7479,6 +7479,12 @@ class ModuleSource(Type):
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
+    def blueprint(self) -> Self:
+        """The blueprint referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("blueprint", _args)
+        return ModuleSource(_ctx)
+
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git
         sources.
@@ -7934,6 +7940,20 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
+    def with_blueprint(self, blueprint: Self) -> Self:
+        """Set a blueprint for the module source.
+
+        Parameters
+        ----------
+        blueprint:
+            The blueprint module to set.
+        """
+        _args = [
+            Arg("blueprint", blueprint),
+        ]
+        _ctx = self._select("withBlueprint", _args)
+        return ModuleSource(_ctx)
+
     def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
 
@@ -8038,6 +8058,12 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    def with_update_blueprint(self) -> Self:
+        """Update the blueprint module to the latest version."""
+        _args: list[Arg] = []
+        _ctx = self._select("withUpdateBlueprint", _args)
+        return ModuleSource(_ctx)
+
     def with_update_dependencies(self, dependencies: list[str]) -> Self:
         """Update one or more module dependencies.
 
@@ -8050,6 +8076,12 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withUpdateDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_blueprint(self) -> Self:
+        """Remove the current blueprint from the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
 
     def without_client(self, path: str) -> Self:
