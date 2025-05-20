@@ -204,7 +204,9 @@ func (s mcpServer) serveStdio(ctx context.Context, pipe io.ReadWriteCloser) erro
 			select {
 			case <-ctx.Done():
 			case errCh <- err:
-				cancel()
+				if err != nil {
+					cancel()
+				}
 			}
 		}
 	}()
