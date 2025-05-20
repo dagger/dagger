@@ -2101,11 +2101,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	// FIXME: if an entrypoint is defined, load that,
+	// then apply everything else to the entrypoint instead of us.
+	// BUT with our context, not the entrypoint's
+	// basically the entrypoint is our surrogate
 	sdk := src.Self.SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}
 	}
-
 	mod := &core.Module{
 		Query: src.Self.Query,
 
