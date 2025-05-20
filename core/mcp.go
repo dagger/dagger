@@ -191,8 +191,8 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 
 func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error {
 	defer println("done alltypetools 🎯")
-	schema := srv.Schema()
 	env := m.Env()
+	schema := srv.Schema()
 	typeNames := env.Types()
 	if env.IsPrivileged() {
 		typeNames = append(typeNames, schema.Query.Name)
