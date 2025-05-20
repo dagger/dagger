@@ -7961,6 +7961,15 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The blueprint referenced by the module source.
+    pub fn blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("blueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
@@ -8115,6 +8124,26 @@ impl ModuleSource {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Set a blueprint for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `blueprint` - The blueprint module to set.
+    pub fn with_blueprint(&self, blueprint: impl IntoID<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withBlueprint");
+        query = query.arg_lazy(
+            "blueprint",
+            Box::new(move || {
+                let blueprint = blueprint.clone();
+                Box::pin(async move { blueprint.into_id().await.unwrap().quote() })
+            }),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with a new client to generate.
     ///
     /// # Arguments
@@ -8225,6 +8254,15 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Update the blueprint module to the latest version.
+    pub fn with_update_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withUpdateBlueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update one or more module dependencies.
     ///
     /// # Arguments
@@ -8239,6 +8277,15 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the current blueprint from the module source.
+    pub fn without_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withoutBlueprint");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

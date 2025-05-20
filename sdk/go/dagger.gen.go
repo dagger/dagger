@@ -7446,6 +7446,15 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The blueprint referenced by the module source.
+func (r *ModuleSource) Blueprint() *ModuleSource {
+	q := r.query.Select("blueprint")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // The ref to clone the root of the git repo from. Only valid for git sources.
 func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	if r.cloneRef != nil {
@@ -7823,6 +7832,17 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Set a blueprint for the module source.
+func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
+	assertNotNil("blueprint", blueprint)
+	q := r.query.Select("withBlueprint")
+	q = q.Arg("blueprint", blueprint)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with a new client to generate.
 func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSource {
 	q := r.query.Select("withClient")
@@ -7894,10 +7914,28 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Update the blueprint module to the latest version.
+func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
+	q := r.query.Select("withUpdateBlueprint")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update one or more module dependencies.
 func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Remove the current blueprint from the module source.
+func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
+	q := r.query.Select("withoutBlueprint")
 
 	return &ModuleSource{
 		query: q,
