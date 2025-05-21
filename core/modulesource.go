@@ -305,8 +305,6 @@ func (src *ModuleSource) LoadContext(
 	path string,
 	ignore []string,
 ) (inst dagql.Instance[*Directory], err error) {
-	// FIXME: if this is an platform module, load the context from the parent module
-	// (the module that we are the entrypoint for)
 	bk, err := src.Query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit api: %w", err)

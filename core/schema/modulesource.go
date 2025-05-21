@@ -422,6 +422,10 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
+		if err := s.loadPlatformModule(ctx, bk, localSrc); err != nil {
+			return inst, err
+		}
+
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
@@ -584,8 +588,11 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
+	if err := s.loadPlatformModule(ctx, bk, gitSrc); err != nil {
+		return inst, err
+	}
+
 	// load this module source's context directory and deps in parallel
-	// FIXME: also load the platform module
 	var eg errgroup.Group
 	eg.Go(func() error {
 		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
@@ -601,17 +608,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 		return nil
 	})
-
-	if pcfg := gitSrc.ConfigPlatform; pcfg != nil {
-		eg.Go(func() error {
-			var err error
-			gitSrc.Platform, err = core.ResolveDepToSource(ctx, bk, s.dag, gitSrc, pcfg.Source, pcfg.Pin, pcfg.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dep to source: %w", err)
-			}
-			return nil
-		})
-	}
 
 	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
@@ -647,6 +643,40 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.WithPostCall(secretTransferPostCall), nil
+}
+
+func (s *moduleSourceSchema) loadPlatformModule(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource) error {
+	// If we have a platform module, load it
+	platformConfig := src.ConfigPlatform
+	if platformConfig == nil {
+		return nil
+	}
+	p, err := core.ResolveDepToSource(ctx, bk, s.dag, src, platformConfig.Source, platformConfig.Pin, platformConfig.Name)
+	if err != nil {
+		return fmt.Errorf("failed to resolve dep to source: %w", err)
+	}
+	platform := p.Self
+	// Save the fields from which context dir is loaded
+	origKind := src.Kind
+	origLocal := src.Local
+	origGit := src.Git
+	// platform module takes over
+	// The context directory will be loaded after
+	*src = *platform // shallow copy of all fields
+	// Deep-clone slice fields
+	src.IncludePaths = append([]string(nil), platform.IncludePaths...)
+	src.RebasedIncludePaths = append([]string(nil), platform.RebasedIncludePaths...)
+	src.ConfigDependencies = append([]*modules.ModuleConfigDependency(nil), platform.ConfigDependencies...)
+	src.Dependencies = append([]dagql.Instance[*core.ModuleSource](nil), platform.Dependencies...)
+	src.ConfigClients = append([]*modules.ModuleConfigClient(nil), platform.ConfigClients...)
+	// restore original context-related fields
+	src.Kind = origKind
+	src.Local = origLocal
+	src.Git = origGit
+	return nil
 }
 
 type directoryAsModuleArgs struct {
@@ -771,6 +801,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	// sdk and platform can't both be set
+	if src.SDK != nil && src.Platform.Self != nil {
+		return fmt.Errorf("sdk and platform can't both be set")
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
@@ -844,9 +879,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		// always load the config file
 		src.SourceRootSubpath + "/" + modules.Filename,
 	}
-
-	// FIXME: if we're a platform module, load the parent's context
-	// (but how?)
 
 	if src.SourceSubpath != "" {
 		// load the source dir if set
