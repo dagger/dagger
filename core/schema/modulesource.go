@@ -650,32 +650,15 @@ func (s *moduleSourceSchema) loadPlatformModule(
 	bk *buildkit.Client,
 	src *core.ModuleSource) error {
 	// If we have a platform module, load it
-	platformConfig := src.ConfigPlatform
-	if platformConfig == nil {
+	pcfg := src.ConfigPlatform
+	if pcfg == nil {
 		return nil
 	}
-	p, err := core.ResolveDepToSource(ctx, bk, s.dag, src, platformConfig.Source, platformConfig.Pin, platformConfig.Name)
+	platform, err := core.ResolveDepToSource(ctx, bk, s.dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
 	if err != nil {
 		return fmt.Errorf("failed to resolve dep to source: %w", err)
 	}
-	platform := p.Self
-	// Save the fields from which context dir is loaded
-	origKind := src.Kind
-	origLocal := src.Local
-	origGit := src.Git
-	// platform module takes over
-	// The context directory will be loaded after
-	*src = *platform // shallow copy of all fields
-	// Deep-clone slice fields
-	src.IncludePaths = append([]string(nil), platform.IncludePaths...)
-	src.RebasedIncludePaths = append([]string(nil), platform.RebasedIncludePaths...)
-	src.ConfigDependencies = append([]*modules.ModuleConfigDependency(nil), platform.ConfigDependencies...)
-	src.Dependencies = append([]dagql.Instance[*core.ModuleSource](nil), platform.Dependencies...)
-	src.ConfigClients = append([]*modules.ModuleConfigClient(nil), platform.ConfigClients...)
-	// restore original context-related fields
-	src.Kind = origKind
-	src.Local = origLocal
-	src.Git = origGit
+	src.Platform = platform
 	return nil
 }
 
@@ -2149,6 +2132,13 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	var platformTarget dagql.Instance[*core.ModuleSource]
+	if src.Self.Platform.Self != nil {
+		platformTarget = src
+		src = src.Self.Platform
+		src.Self.ContextDirectory = platformTarget.Self.ContextDirectory
+		// FIXME: adopt the target module's name
+	}
 	// FIXME: fix platform module loading, so that:
 	// 1) the platform SDK has access to the actual platform module context (at the moment it's overridden by the target context)
 	// 2) still use the target context for everything else (ie. resolving defaultPath)
