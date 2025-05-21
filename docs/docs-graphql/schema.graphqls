@@ -1359,6 +1359,15 @@ type Directory {
     path: String
   ): [String!]!
 
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, check that the path is a "file", "dir", or "symlink"."""
+    expectedType: String
+  ): Boolean!
+
   """Writes the contents of the directory to a path on the host."""
   export(
     """Location of the copied directory (e.g., "logs/")."""

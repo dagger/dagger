@@ -2820,6 +2820,41 @@ class Directory(Type):
         _ctx = self._select("entries", _args)
         return await _ctx.execute(list[str])
 
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: str | None = None,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, check that the path is a "file", "dir", or
+            "symlink".
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
+
     async def export(
         self,
         path: str,
