@@ -12,6 +12,6 @@ Source ../common/shell-mod.tape
 Source ../common/start.tape
 
 Type `build | as-service | up --ports=8080:80`
+Sleep 1s
 Enter
-
-Sleep 120s
+Sleep 60s

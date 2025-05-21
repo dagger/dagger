@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"dagger/recorder/internal/dagger"
+	"fmt"
 	"time"
 )
 
@@ -58,24 +59,28 @@ func (r *Recorder) QuickstartBasicsEnv(ctx context.Context) *dagger.Container {
 	return ctr
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-1 export --path=/tmp/out/terminal-1.gif
 func (r *Recorder) QuickstartBasics1(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"vhs", "terminal-1.tape"}).
 		File("/recordings/terminal-1.gif")
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-2 export --path=/tmp/out/terminal-2.gif
 func (r *Recorder) QuickstartBasics2(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"vhs", "terminal-2.tape"}).
 		File("/recordings/terminal-2.gif")
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-3 export --path=/tmp/out/publish-shell.gif
 func (r *Recorder) QuickstartBasics3(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"vhs", "publish-shell.tape"}).
 		File("/recordings/publish-shell.gif")
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-4 export --path=/tmp/out/publish-code.gif
 func (r *Recorder) QuickstartBasics4(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
@@ -84,6 +89,7 @@ func (r *Recorder) QuickstartBasics4(ctx context.Context) *dagger.File {
 		File("/recordings/publish-code.gif")
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-5 export --path=/tmp/out/modules.gif
 func (r *Recorder) QuickstartBasics5(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
@@ -91,6 +97,7 @@ func (r *Recorder) QuickstartBasics5(ctx context.Context) *dagger.File {
 		File("/recordings/modules.gif")
 }
 
+// Example: dagger -i call --tapes-source=tapes --docker=/var/run/docker.sock quickstart-basics-6 export --path=/tmp/out/caching.gif
 func (r *Recorder) QuickstartBasics6(ctx context.Context) *dagger.File {
 	return r.QuickstartBasicsEnv(ctx).
 		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
@@ -112,15 +119,35 @@ func (r *Recorder) QuickstartCiEnv(ctx context.Context, moduleSource *dagger.Dir
 	return ctr
 }
 
+// Example: dagger -i call --docker=/var/run/docker.sock --tapes-source=tapes quickstart-ci-1 --module-source=../current_docs/quickstart/ci/snippets/go export --path=/tmp/out/publish.gif
 func (r *Recorder) QuickstartCi1(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
 	return r.QuickstartCiEnv(ctx, moduleSource).
 		WithExec([]string{"vhs", "publish.tape"}).
 		File("/recordings/publish.gif")
 }
 
-func (r *Recorder) QuickstartCi2(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
+// Example: dagger -i call --docker=/var/run/docker.sock --tapes-source=tapes quickstart-ci-2 --module-source=../current_docs/quickstart/ci/snippets/go --image=ttl.sh/hello-dagger-1671552  export --path=/tmp/out/docker.gif
+func (r *Recorder) QuickstartCi2(ctx context.Context, moduleSource *dagger.Directory, image string) *dagger.File {
 	return r.QuickstartCiEnv(ctx, moduleSource).
-		Terminal().
+		WithExec([]string{"sh", "-c", fmt.Sprintf(`sed -i 's|ttl.sh/[^\\s\"'\"']*|%s|g' docker.tape`, image)}).
+		WithExec([]string{"vhs", "docker.tape"}).
+		//Terminal().
+		WithExec([]string{"sh", "-c", `docker container stop $(docker ps --format "{{.Image}} {{.Names}}" | grep hello-dagger | awk '{print $2}')`}).
+		WithExec([]string{"sh", "-c", `docker rmi ` + image}).
+		//Terminal().
+		File("/recordings/docker.gif")
+}
+
+// Example: dagger -i call --docker=/var/run/docker.sock --tapes-source=tapes quickstart-ci-3 --module-source=../current_docs/quickstart/ci/snippets/go export --path=/tmp/out/buildenv-terminal.gif
+func (r *Recorder) QuickstartCi3(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
+	return r.QuickstartCiEnv(ctx, moduleSource).
+		WithExec([]string{"vhs", "buildenv-terminal.tape"}).
+		File("/recordings/buildenv-terminal.gif")
+}
+
+// Example: dagger -i call --docker=/var/run/docker.sock --tapes-source=tapes quickstart-ci-4 --module-source=../current_docs/quickstart/ci/snippets/go export --path=/tmp/out/build-service.gif
+func (r *Recorder) QuickstartCi4(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
+	return r.QuickstartCiEnv(ctx, moduleSource).
 		WithExec([]string{"vhs", "build-service.tape"}).
 		File("/recordings/build-service.gif")
 }

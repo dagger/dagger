@@ -12,6 +12,7 @@ Source ../common/shell-mod.tape
 Source ../common/start.tape
 
 Type `publish`
+Sleep 1s
 Enter
 
 Wait+Screen@120s /@sha256/

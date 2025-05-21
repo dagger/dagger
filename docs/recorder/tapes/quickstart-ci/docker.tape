@@ -1,13 +1,11 @@
-# Relative to current directory
-Source config.tape
+Source ../common/config.tape
 
-Output quickstart/ci/docker.gif
+Output ../../recordings/docker.gif
 
-# Update this image id based on the output of publish.tape
-Type "docker run --rm --detach --publish 8080:80 ttl.sh/hello-dagger-833337"
+Source ../common/start.tape
+
+Type `docker run --rm --detach --publish 8080:80 ttl.sh/hello-dagger-57383`
 Sleep 1s
 Enter
 
-Wait+Screen@120s /<\x{2F}html>/
-
-Sleep 5s
+Sleep 15s

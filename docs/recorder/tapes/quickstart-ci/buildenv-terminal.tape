@@ -1,9 +1,15 @@
-# Relative to current directory
-Source config.tape
+Source ../common/config.tape
 
-Output quickstart/ci/buildenv-terminal.gif
+Output ../../recordings/buildenv-terminal.gif
 
-Source shell.tape
+Hide
+Type `cd hello-dagger`
+Enter
+Show
+
+Source ../common/shell-mod.tape
+
+Source ../common/start.tape
 
 Type "build-env | terminal --cmd=bash"
 Sleep 1s
@@ -34,9 +40,4 @@ Sleep 1s
 Enter
 
 Wait+Screen@120s /root@/
-
-Type "exit"
-Sleep 1s
-Enter
-
 Sleep 5s
