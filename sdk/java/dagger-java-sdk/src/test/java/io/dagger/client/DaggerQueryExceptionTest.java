@@ -1,7 +1,7 @@
 package io.dagger.client;
 
-import static io.dagger.client.exceptions.ExceptionConstants.TYPE_EXEC_ERROR_VALUE;
-import static io.dagger.client.exceptions.ExceptionConstants.TYPE_KEY;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;

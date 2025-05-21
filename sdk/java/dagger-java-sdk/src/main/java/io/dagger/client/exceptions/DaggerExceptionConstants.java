@@ -1,6 +1,6 @@
 package io.dagger.client.exceptions;
 
-public class ExceptionConstants {
+public class DaggerExceptionConstants {
         public static final String CMD_KEY = "cmd";
         public static final String EXIT_CODE_KEY = "exitCode";
         public static final String STDERR_KEY = "stderr";
@@ -15,7 +15,7 @@ public class ExceptionConstants {
         protected static final String FULL_MESSAGE =
                         "Message: [%s]\nPath: [%s]\nType Code: [%s]\nExit Code: [%s]\nCmd: [%s]\nSTDERR: [%s]\n";
 
-        private ExceptionConstants() {
+        private DaggerExceptionConstants() {
 
         }
 }

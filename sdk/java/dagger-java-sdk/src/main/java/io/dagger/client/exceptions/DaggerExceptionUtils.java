@@ -1,12 +1,12 @@
 package io.dagger.client.exceptions;
 
-import static io.dagger.client.exceptions.ExceptionConstants.CMD_KEY;
-import static io.dagger.client.exceptions.ExceptionConstants.ENHANCED_MESSAGE;
-import static io.dagger.client.exceptions.ExceptionConstants.EXIT_CODE_KEY;
-import static io.dagger.client.exceptions.ExceptionConstants.FULL_MESSAGE;
-import static io.dagger.client.exceptions.ExceptionConstants.SIMPLE_MESSAGE;
-import static io.dagger.client.exceptions.ExceptionConstants.STDERR_KEY;
-import static io.dagger.client.exceptions.ExceptionConstants.TYPE_KEY;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.CMD_KEY;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.ENHANCED_MESSAGE;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.EXIT_CODE_KEY;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.FULL_MESSAGE;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.SIMPLE_MESSAGE;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.STDERR_KEY;
+import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
