@@ -3,210 +3,124 @@ package main
 import (
 	"context"
 	"dagger/recorder/internal/dagger"
-	"errors"
 	"time"
 )
 
 type Recorder struct {
-	R     *dagger.Termcast // +private
-	Error string           // +private
-	//Error error            // +private
+	TapesSource *dagger.Directory
+	Docker      *dagger.Socket
 }
 
 func New(
-	// Working directory for the recording container
-	// +optional
-	wdir *dagger.Directory,
-) Recorder {
-	if wdir == nil {
-		wdir = dag.Directory()
-	}
-	return Recorder{
-		R: getTermcast(wdir),
+	tapesSource *dagger.Directory,
+	docker *dagger.Socket,
+) *Recorder {
+	return &Recorder{
+		TapesSource: tapesSource,
+		Docker:      docker,
 	}
 }
 
-func getTermcast(wdir *dagger.Directory) *dagger.Termcast {
-	return dag.Termcast(dagger.TermcastOpts{
-		Container: dag.Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli", "curl"}}).
-			WithFile("/usr/local/bin/dagger", dag.DaggerCli().Binary()).
-			WithWorkdir("/src").
-			WithMountedDirectory(".", wdir).
-			WithEnvVariable("DOCKER_HOST", "tcp://docker:2375").
-			WithServiceBinding("docker", dag.Docker().Engine(dagger.DockerEngineOpts{Persist: false})),
-	})
+func (r *Recorder) Env(ctx context.Context) *dagger.Container {
+	return dag.Container().
+		From("ghcr.io/charmbracelet/vhs:v0.9.0").
+
+		// Install Docker
+		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "-y", "install", "curl", "ca-certificates", "vim", "git"}).
+		WithExec([]string{"sh", "-c", "install -m 0755 -d /etc/apt/keyrings"}).
+		WithExec([]string{"sh", "-c", `curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc`}).
+		WithExec([]string{"sh", "-c", "chmod a+r /etc/apt/keyrings/docker.asc"}).
+		WithExec([]string{"sh", "-c", `echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null`}).
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "-y", "install", "docker-ce-cli"}).
+		WithUnixSocket("/var/run/docker.sock", r.Docker).
+		WithoutEnvVariable("DEBIAN_FRONTEND").
+
+		// Install Dagger CLI
+		WithExec([]string{"sh", "-c", `curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh`}).
+
+		// Initialize Dagger engine
+		WithExec([]string{"dagger", "--command", ".help"}).
+
+		// Set up work directories
+		WithExec([]string{"mkdir", "/recordings"}).
+		WithMountedDirectory("/tapes", r.TapesSource).
+		WithEnvVariable("DO_NOT_TRACK", "1").
+		WithEnvVariable("DAGGER_NO_NAG", "1").
+		WithEnvVariable("CACHEBUSTER", time.Now().Format(time.RFC3339))
 }
 
-func getTermcastWithEnvVar(wdir *dagger.Directory, name string, value string) *dagger.Termcast {
-	ctr := getTermcast(wdir).Container().
-		WithEnvVariable("CACHEBUSTER", time.Now().String()).
-		WithEnvVariable(name, value)
-	return dag.Termcast().WithContainer(ctr)
+func (r *Recorder) QuickstartBasicsEnv(ctx context.Context) *dagger.Container {
+	ctr := r.Env(ctx).
+		WithWorkdir("/tapes/quickstart-basics")
+	return ctr
 }
 
-func getTermcastWithFile(wdir *dagger.Directory, path string, contents string) *dagger.Termcast {
-	ctr := getTermcast(wdir).Container().WithNewFile(path, contents)
-	return dag.Termcast().WithContainer(ctr)
+func (r *Recorder) QuickstartBasics1(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"vhs", "terminal-1.tape"}).
+		File("/recordings/terminal-1.gif")
 }
 
-func getTermcastWithQuickstart(wdir *dagger.Directory) *dagger.Termcast {
-	repo := dag.Git("https://github.com/dagger/hello-dagger").
-		Branch("main").Tree()
-
-	ctr := getTermcast(dag.Directory()).Container().
-		WithMountedDirectory("/src", repo).
-		WithMountedDirectory("/module", wdir).
-		WithExec([]string{"cp", "-R", "/module", "/src/dagger"}).
-		WithExec([]string{"mv", "/src/dagger/dagger.json", "/src/dagger.json"}).
-		WithExec([]string{"sh", "-c", `sed -i 's/"source": "."/"source": "dagger"/' /src/dagger.json`}).
-		WithWorkdir("/src")
-	return dag.Termcast().WithContainer(ctr)
+func (r *Recorder) QuickstartBasics2(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"vhs", "terminal-2.tape"}).
+		File("/recordings/terminal-2.gif")
 }
 
-func (r Recorder) ExecWithCacheControl(ctx context.Context, cmd string, useCache bool) (Recorder, error) {
-	if useCache {
-		// Dry-run to warm cache
-		_, err := r.R.
-			ExecEnv().
-			WithExec(
-				[]string{"sh", "-c", cmd},
-				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
-			).
-			Sync(ctx)
-		if err != nil {
-			return r, err
-		}
-	}
-	r.R = r.R.Exec(cmd, dagger.TermcastExecOpts{
-		Fast: true,
-	}).Wait(1000)
-	return r, nil
+func (r *Recorder) QuickstartBasics3(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"vhs", "publish-shell.tape"}).
+		File("/recordings/publish-shell.gif")
 }
 
-func (r Recorder) Exec(ctx context.Context, cmd string) (Recorder, error) {
-	return r.ExecWithCacheControl(ctx, cmd, true)
+func (r *Recorder) QuickstartBasics4(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
+		WithExec([]string{"sh", "-c", `echo 'func (m *Basics) Publish(ctx context.Context) (string, error) {\n return dag.Container().From("alpine:latest").WithNewFile("/hi.txt", "Hello from Dagger!").WithEntrypoint([]string{"cat", "/hi.txt"}).Publish(ctx, "ttl.sh/hello")  \n}' >> .dagger/main.go`}).
+		WithExec([]string{"vhs", "publish-code.tape"}).
+		File("/recordings/publish-code.gif")
 }
 
-func (r Recorder) ExecNoCache(ctx context.Context, cmd string) (Recorder, error) {
-	return r.ExecWithCacheControl(ctx, cmd, false)
+func (r *Recorder) QuickstartBasics5(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
+		WithExec([]string{"vhs", "modules.tape"}).
+		File("/recordings/modules.gif")
 }
 
-func (r Recorder) ExecInCtr(ctx context.Context, cmd string) (Recorder, error) {
-	_, err := r.R.Container().WithExec([]string{"sh", "-c", cmd}).Sync(ctx)
-	if err != nil {
-		return r, err
-	}
-	return r, nil
+func (r *Recorder) QuickstartBasics6(ctx context.Context) *dagger.File {
+	return r.QuickstartBasicsEnv(ctx).
+		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=basics"}).
+		WithExec([]string{"sh", "-c", `echo 'func (m *Basics) Env(ctx context.Context) *dagger.Container {\n  return dag.Container().From("debian:latest").WithMountedCache("/var/cache/apt/archives", dag.CacheVolume("apt-cache")).WithExec([]string{"apt-get", "update"}).WithExec([]string{"apt-get", "install", "--yes", "maven", "mariadb-server"}) \n}' >> .dagger/main.go`}).
+		WithExec([]string{"vhs", "caching.tape"}).
+		File("/recordings/caching.gif")
 }
 
-func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
-	_, err := r.R.ExecEnv().Terminal(dagger.ContainerTerminalOpts{
-		ExperimentalPrivilegedNesting: true,
-	}).Sync(ctx)
-	return r, err
+// QuickstartCiEnv sets up the environment for the quickstart CI recording
+func (r *Recorder) QuickstartCiEnv(ctx context.Context, moduleSource *dagger.Directory) *dagger.Container {
+	ctr := r.Env(ctx).
+		WithDirectory("/tmp/module", moduleSource).
+		WithWorkdir("/tapes/quickstart-ci").
+		WithExec([]string{"sh", "-c", "git clone --depth=1 https://github.com/dagger/hello-dagger-template.git hello-dagger"}).
+		WithWorkdir("/tapes/quickstart-ci/hello-dagger").
+		WithExec([]string{"sh", "-c", "dagger init --sdk=go --name=hello-dagger"}).
+		WithExec([]string{"sh", "-c", "cp /tmp/module/main.go .dagger/main.go"}).
+		WithWorkdir("/tapes/quickstart-ci")
+	return ctr
 }
 
-func (r Recorder) Cd(wdir string) Recorder {
-	r.R = r.R.WithContainer(r.R.Container().WithWorkdir(wdir))
-	return r
+func (r *Recorder) QuickstartCi1(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
+	return r.QuickstartCiEnv(ctx, moduleSource).
+		WithExec([]string{"vhs", "publish.tape"}).
+		File("/recordings/publish.gif")
 }
 
-func (r Recorder) Gif(ctx context.Context) (*dagger.File, error) {
-	if r.Error != "" {
-		return nil, errors.New(r.Error)
-	}
-	return r.R.Gif(), nil
-}
-
-func (r Recorder) GenerateFeatureRecordings(
-	ctx context.Context,
-	// path to features/snippets dir
-	base *dagger.Directory,
-	githubToken *dagger.Secret,
-) *dagger.Directory {
-	pt, _ := githubToken.Plaintext(ctx)
-	return dag.Directory().
-		// for https://docs.dagger.io/features/programmable-pipelines
-		WithFile(
-			"build.gif",
-			getTermcast(base.Directory("programmable-pipelines-1/go")).
-				Exec("dagger call build --src=https://github.com/golang/example#master:/hello --arch=amd64 --os=linux", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/features/programmable-pipelines
-		WithFile(
-			"build-publish.gif",
-			getTermcast(base.Directory("programmable-pipelines-1/go")).
-				Exec("dagger call build --src=https://github.com/golang/example#master:/hello --arch=amd64 --os=linux publish --address=ttl.sh/my-img", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/features/programmable-pipelines
-		WithFile(
-			"build-export.gif",
-			getTermcast(base.Directory("programmable-pipelines-2/go")).
-				Exec("dagger call build --src=https://github.com/golang/example#master:/hello --arch=amd64 --os=linux export --path=/tmp/out", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// https://docs.dagger.io/features/secrets
-		WithFile(
-			"secrets-env.gif",
-			getTermcastWithEnvVar(base.Directory("secrets/go"), "TOKEN", pt).
-				Exec("dagger call github-api --token=env://TOKEN", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/features/secrets
-		WithFile(
-			"secrets-file.gif",
-			getTermcastWithFile(base.Directory("secrets/go"), "/token.asc", pt).
-				Exec("dagger call github-api --token=file:///token.asc", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/features/visualization
-		WithFile(
-			"tui.gif",
-			getTermcast(base.Directory(".")).
-				Exec("dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-container --ctr=index.docker.io/alpine:latest", dagger.TermcastExecOpts{Fast: true}).
-				Gif())
-}
-
-func (r Recorder) GenerateQuickstartRecordings(
-	// path to quickstart/snippets dir
-	base *dagger.Directory,
-) *dagger.Directory {
-	return dag.Directory().
-		// for https://docs.dagger.io/quickstart/env
-		WithFile(
-			"buildenv.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger -c 'build-env .'", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/quickstart/test
-		WithFile(
-			"test.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger -c 'test .'", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/quickstart/build
-		WithFile(
-			"build.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger -c 'build .'", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		/*
-			// for https://docs.dagger.io/quickstart/build
-			WithFile(
-				"build-service.gif",
-				getTermcastWithQuickstart(base.Directory("daggerize/go")).
-					Exec("dagger call build --source=. as-service up --ports=8080:80", dagger.TermcastExecOpts{Fast: true}).
-					Gif()).
-		*/
-		// for https://docs.dagger.io/quickstart/publish
-		WithFile(
-			"publish.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger -c 'publish .'", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
-		// for https://docs.dagger.io/quickstart/publish
-		WithFile(
-			"docker.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("docker run --rm --detach --publish 8080:80 ttl.sh/hello-dagger-4362349", dagger.TermcastExecOpts{Fast: true}).
-				Exec("curl localhost:8080", dagger.TermcastExecOpts{Fast: true}).
-				Gif())
+func (r *Recorder) QuickstartCi2(ctx context.Context, moduleSource *dagger.Directory) *dagger.File {
+	return r.QuickstartCiEnv(ctx, moduleSource).
+		Terminal().
+		WithExec([]string{"vhs", "build-service.tape"}).
+		File("/recordings/build-service.gif")
 }
