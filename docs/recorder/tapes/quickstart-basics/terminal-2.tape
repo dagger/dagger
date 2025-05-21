@@ -1,6 +1,6 @@
 Source ../common/config.tape
 
-Output ../../recordings/terminal-2.gif
+Output ../../recordings/terminal-2.webm
 
 Source ../common/shell-nomod.tape
 

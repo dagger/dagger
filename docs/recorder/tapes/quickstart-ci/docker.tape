@@ -1,6 +1,6 @@
 Source ../common/config.tape
 
-Output ../../recordings/docker.gif
+Output ../../recordings/docker.webm
 
 Source ../common/start.tape
 

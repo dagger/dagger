@@ -1,6 +1,6 @@
 Source ../common/config.tape
 
-Output ../../recordings/build-service.gif
+Output ../../recordings/build-service.webm
 
 Hide
 Type `cd hello-dagger`

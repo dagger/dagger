@@ -1,6 +1,6 @@
 Source ../common/config.tape
 
-Output ../../recordings/buildenv-terminal.gif
+Output ../../recordings/buildenv-terminal.webm
 
 Hide
 Type `cd hello-dagger`

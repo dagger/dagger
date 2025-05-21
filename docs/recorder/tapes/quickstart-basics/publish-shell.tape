@@ -1,6 +1,6 @@
 Source ../common/config.tape
 
-Output ../../recordings/publish-shell.gif
+Output ../../recordings/publish-shell.webm
 
 Source ../common/shell-nomod.tape
 
