@@ -99,8 +99,6 @@ type ModuleSource struct {
 	CodegenConfig          *modules.ModuleCodegenConfig
 	ModuleConfigUserFields modules.ModuleConfigUserFields
 
-	// FIXME: platform field (but which type?)
-
 	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
 	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.

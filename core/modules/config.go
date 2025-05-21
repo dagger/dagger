@@ -30,7 +30,6 @@ func ParseModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
 		return nil, fmt.Errorf("module requires dagger %s, but you have %s", meta.EngineVersion, engine.Version)
 	}
 
-	// FIXME: change config schema (unmarshaled below) to include platform module
 	var modCfg ModuleConfigWithUserFields
 	if err := json.Unmarshal(src, &modCfg); err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)

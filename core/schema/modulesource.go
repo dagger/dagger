@@ -2149,10 +2149,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// FIXME: if a platform module is defined, load that,
-	// then apply everything else to our platform module instead of us.
-	// BUT with our context, not the platforms's
-	// basically the platform module is our surrogate
+	// FIXME: fix platform module loading, so that:
+	// 1) the platform SDK has access to the actual platform module context (at the moment it's overridden by the target context)
+	// 2) still use the target context for everything else (ie. resolving defaultPath)
 	sdk := src.Self.SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}
