@@ -2123,6 +2123,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withSymlink",
+			"p": "Dagger/Container.html#method_withSymlink",
+			"d": "<p>Return a snapshot with a symlink</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withUnixSocket",
 			"p": "Dagger/Container.html#method_withUnixSocket",
 			"d": "<p>Retrieves this container plus a socket forwarded to the given Unix socket path.</p>"
@@ -2402,6 +2408,12 @@
 			"n": "Dagger\\Directory::withNewFile",
 			"p": "Dagger/Directory.html#method_withNewFile",
 			"d": "<p>Return a snapshot with a new file added</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withSymlink",
+			"p": "Dagger/Directory.html#method_withSymlink",
+			"d": "<p>Return a snapshot with a symlink</p>"
 		},
 		{
 			"t": "M",

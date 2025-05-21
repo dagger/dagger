@@ -1,0 +1,6 @@
+kind: Added
+body: New `container.WithSymlink` and `directory.WithSymlink` API for creating symbolic links
+time: 2025-06-02T09:46:11.680149179-07:00
+custom:
+    Author: alexcb
+    PR: "10435"
