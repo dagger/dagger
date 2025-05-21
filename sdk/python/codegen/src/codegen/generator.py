@@ -539,11 +539,15 @@ class _ObjectField:
         self.is_void = self.is_leaf and self.named_type.name == "Void"
         self.type = format_output_type(field.type).replace("Query", "Client")
 
-        # Currently, `sync` is the only field where the error is all we
-        # care about but more could be added later.
-        # To avoid wasting a result, we return the ID which is a leaf value
-        # and triggers execution, but then convert to object in the SDK to
-        # allow continued chaining.
+        # Any field in the API that returns an ID for its parent object should
+        # return the binding for the object instead in the SDK to allow continued
+        # chaining, except if it's called "id".
+        #
+        # For example, the API `Service { start: ServiceID }` should produce
+        # the following binding signature:
+        # >>> class Service:
+        # ...     async def start(self) -> Self: ...
+        #
         self.convert_id = False
         if name != "id" and is_id_type(field.type) and self.is_leaf:
             converted = type_from_id(self.named_type)
@@ -552,7 +556,6 @@ class _ObjectField:
                 self.convert_id = True
 
         self.is_sync = self.convert_id and self.name == "sync"
-        self.id_query_field = id_query_field(self.named_type)
 
     @joiner
     def __str__(self) -> Iterator[str]:
@@ -591,7 +594,7 @@ class _ObjectField:
         return sig
 
     @joiner
-    def func_body(self) -> Iterator[str]:  # noqa: C901, PLR0912
+    def func_body(self) -> Iterator[str]:
         if docstring := self.func_doc():
             yield doc(docstring)
 
@@ -613,15 +616,11 @@ class _ObjectField:
             yield "_args = ["
             yield from (indent(arg.as_arg()) for arg in self.args)
             yield "]"
-        elif not self.is_sync:
+        else:
             yield "_args: list[Arg] = []"
 
-        if self.is_sync:
-            args = ["self"]
-            if self.graphql_name != "sync":
-                args.append(f'"{self.graphql_name}"')
-            if self.args:
-                args.append("_args")
+        if self.convert_id:
+            args = ("self", f'"{self.graphql_name}"', "_args")
             yield f"return await self._ctx.execute_sync({', '.join(args)})"
             return
 
@@ -629,17 +628,6 @@ class _ObjectField:
 
         if not self.is_exec:
             yield f"return {self.type}(_ctx)"
-        elif self.convert_id:
-            if _field := self.id_query_field:
-                yield f"_id = await _ctx.execute({self.named_type.name})"
-                yield (
-                    f'_ctx = Client.from_context(_ctx)._select("{_field}",'
-                    ' [Arg("id", _id)])'
-                )
-                yield f"return {self.type}(_ctx)"
-            else:
-                yield "await _ctx.execute()"
-                yield "return self"
         elif self.is_list:
             yield f"return await _ctx.execute_object_list({self.named_type.name})"
         elif self.is_void:

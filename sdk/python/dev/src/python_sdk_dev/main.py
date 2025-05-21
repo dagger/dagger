@@ -39,6 +39,7 @@ class PythonSdkDev:
                     "!dev/src/**/*.py",
                     "!docs/**/*.py",
                     "!docs/**/*.rst",
+                    "!runtime/Dockerfile",
                     "!src/**/*.py",
                     "!src/**/py.typed",
                     "!tests/**/*.py",
