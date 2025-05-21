@@ -342,6 +342,8 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 	// it in the error message
 
 	// get the mnt corresponding to the metadata where stdout/stderr are stored
+
+	// XXX: capture this! we can do it here!
 	var metaMountResult bksolver.Result
 	for i, mnt := range execOp.Exec.Mounts {
 		if mnt.Dest == MetaMountDestPath {

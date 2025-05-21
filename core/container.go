@@ -1676,22 +1676,29 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
-	}
+	// XXX: nope
+	// container, err := container.WithExec(ctx, ContainerExecOpts{
+	// 	Args:                          cmdargs,
+	// 	UseEntrypoint:                 useEntrypoint,
+	// 	ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+	// 	InsecureRootCapabilities:      args.InsecureRootCapabilities,
+	// 	Expand:                        args.Expand,
+	// 	NoInit:                        args.NoInit,
+	// })
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
-		Container: container,
+		Creator:                                trace.SpanContextFromContext(ctx),
+		Query:                                  container.Query,
+		Container:                              container,
+		ContainerArgs:                          cmdargs,
+		ContainerUseEntrypoint:                 useEntrypoint,
+		ContainerExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		ContainerInsecureRootCapabilities:      args.InsecureRootCapabilities,
+		ContainerExpand:                        args.Expand,
+		ContainerNoInit:                        args.NoInit,
 	}, nil
 }
 
