@@ -2132,11 +2132,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	var platformTarget dagql.Instance[*core.ModuleSource]
 	if src.Self.Platform.Self != nil {
-		platformTarget = src
 		src = src.Self.Platform
-		src.Self.ContextDirectory = platformTarget.Self.ContextDirectory
+		// FIXME: adopt the target module's context
 		// FIXME: adopt the target module's name
 	}
 	// FIXME: fix platform module loading, so that:
