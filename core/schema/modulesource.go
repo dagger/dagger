@@ -2132,7 +2132,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	var origContextDir dagql.Instance[*core.Directory]
 	if src.Self.Platform.Self != nil {
+		origContextDir = src.Self.ContextDirectory
 		src = src.Self.Platform
 		// FIXME: adopt the target module's context
 		// FIXME: adopt the target module's name
@@ -2205,7 +2207,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, fmt.Errorf("failed to install no-sdk module %q: %w", modName, err)
 		}
 	}
-
+	// If there's a platform module, switch context dir at the last moment
+	if origContextDir.Self != nil {
+		mod.Source.Self.ContextDirectory = origContextDir
+	}
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, src, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
