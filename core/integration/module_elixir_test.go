@@ -193,6 +193,17 @@ func (ElixirSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "bar", out)
 }
 
+func (ElixirSuite) TestConstructorArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := elixirModule(t, c, "constructor-function").
+		With(daggerCall("--name", "Elixir", "greeting")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello, Elixir!", out)
+}
+
 // Ensure the module is working properly with the `Req` adapter.
 func (ElixirSuite) TestReqAdapter(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
