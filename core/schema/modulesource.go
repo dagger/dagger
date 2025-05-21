@@ -585,6 +585,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	// load this module source's context directory and deps in parallel
+	// FIXME: also load the platform module
 	var eg errgroup.Group
 	eg.Go(func() error {
 		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
@@ -600,6 +601,17 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 		return nil
 	})
+
+	if pcfg := gitSrc.ConfigPlatform; pcfg != nil {
+		eg.Go(func() error {
+			var err error
+			gitSrc.Platform, err = core.ResolveDepToSource(ctx, bk, s.dag, gitSrc, pcfg.Source, pcfg.Pin, pcfg.Name)
+			if err != nil {
+				return fmt.Errorf("failed to resolve dep to source: %w", err)
+			}
+			return nil
+		})
+	}
 
 	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
@@ -765,6 +777,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+	src.ConfigPlatform = modCfg.Platform
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -831,6 +844,9 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		// always load the config file
 		src.SourceRootSubpath + "/" + modules.Filename,
 	}
+
+	// FIXME: if we're a platform module, load the parent's context
+	// (but how?)
 
 	if src.SourceSubpath != "" {
 		// load the source dir if set
@@ -2101,10 +2117,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// FIXME: if an entrypoint is defined, load that,
-	// then apply everything else to the entrypoint instead of us.
-	// BUT with our context, not the entrypoint's
-	// basically the entrypoint is our surrogate
+	// FIXME: if a platform module is defined, load that,
+	// then apply everything else to our platform module instead of us.
+	// BUT with our context, not the platforms's
+	// basically the platform module is our surrogate
 	sdk := src.Self.SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}

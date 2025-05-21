@@ -99,6 +99,8 @@ type ModuleSource struct {
 	CodegenConfig          *modules.ModuleCodegenConfig
 	ModuleConfigUserFields modules.ModuleConfigUserFields
 
+	// FIXME: platform field (but which type?)
+
 	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
 	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.
@@ -113,8 +115,9 @@ type ModuleSource struct {
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
-
+	Dependencies   []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+	ConfigPlatform *modules.ModuleConfigDependency
+	Platform       dagql.Instance[*ModuleSource] `field:"true" name:"platform" doc:"The platform module of the module source."`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
 
@@ -302,7 +305,7 @@ func (src *ModuleSource) LoadContext(
 	path string,
 	ignore []string,
 ) (inst dagql.Instance[*Directory], err error) {
-	// FIXME: if this is an entrypoint module, load the context from the parent module
+	// FIXME: if this is an platform module, load the context from the parent module
 	// (the module that we are the entrypoint for)
 	bk, err := src.Query.Buildkit(ctx)
 	if err != nil {
