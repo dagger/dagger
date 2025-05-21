@@ -63,11 +63,8 @@ pagination_prev: null
 // Build the docs website
 func (d Docs) Site() *dagger.Directory {
 	opts := dagger.DocusaurusOpts{
-		Dir:  "/src/docs",
+		Dir:  "./docs",
 		Yarn: true,
-		// HACK: cache seems to cause weird ephemeral errors occasionally -
-		// probably because of cache sharing
-		DisableCache: true,
 	}
 	return dag.Docusaurus(d.Source, opts).Build()
 }
