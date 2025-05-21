@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core/modules"
 )
 
 var (
@@ -27,13 +27,17 @@ var (
 	outputSchema string
 	merge        bool
 
-	clientOnly               bool
-	dependenciesJSONFilePath string
+	clientOnly bool
 
 	dev    bool
 	isInit bool
 
 	bundle bool
+
+	moduleSourceID string
+
+	//go:embed modsourcedeps.graphql
+	loadModuleSourceDepsQuery string
 )
 
 var rootCmd = &cobra.Command{
@@ -62,8 +66,8 @@ func init() {
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
-	rootCmd.Flags().StringVar(&dependenciesJSONFilePath, "dependencies-json-file-path", "", "file containing the list of dependencies used by the module")
 	rootCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
+	rootCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module source to generate code for")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -81,6 +85,18 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		ClientOnly: clientOnly,
 		Dev:        dev,
 		Bundle:     bundle,
+	}
+
+	// If a module source ID is provided or no introspection JSON is provided, we will query
+	// the engine so we can create a connection here.
+	if moduleSourceID != "" || introspectionJSONPath == "" {
+		dag, err := dagger.Connect(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to connect to engine: %w", err)
+		}
+		defer dag.Close()
+
+		cfg.Dag = dag
 	}
 
 	if moduleName != "" {
@@ -112,18 +128,29 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		cfg.IntrospectionJSON = string(introspectionJSON)
 	}
 
-	if dependenciesJSONFilePath != "" {
-		dependenciesJSON, err := os.ReadFile(dependenciesJSONFilePath)
+	if moduleSourceID != "" {
+		var res struct {
+			Source struct {
+				Dependencies []generator.ModuleSourceDependencies
+			}
+		}
+
+		err := cfg.Dag.Do(ctx,
+			&dagger.Request{
+				Query:  loadModuleSourceDepsQuery,
+				OpName: "ModuleSourceDependencies",
+				Variables: map[string]any{
+					"source": dagger.ModuleSourceID(moduleSourceID),
+				},
+			},
+			&dagger.Response{
+				Data: &res,
+			})
 		if err != nil {
-			return fmt.Errorf("read dependencies json: %w", err)
+			return fmt.Errorf("failed to load module source dependencies: %w", err)
 		}
 
-		var gitDependencies []modules.ModuleConfigDependency
-		if err := json.Unmarshal(dependenciesJSON, &gitDependencies); err != nil {
-			return fmt.Errorf("failed to unmarshal dependencies json: %w", err)
-		}
-
-		cfg.GitDependencies = gitDependencies
+		cfg.ModuleDependencies = res.Source.Dependencies
 	}
 
 	return Generate(ctx, cfg)

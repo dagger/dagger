@@ -17,35 +17,36 @@ import { Context, connect as _connect, connection as _connection, ConnectOpts, C
 
 {{ if IsClientOnly }}
 async function serveModuleDependencies(client: Client): Promise<void> {
-  {{ range $i, $dep := GitDependencies -}}
+  {{- /* Store the dependencies in a variable to avoid duplicating the code */ -}}
+  {{- $dependencies := Dependencies -}}
+
+  {{- /* Loop over the Git dependencies and serve them */ -}}
+  {{- range $i, $dep := $dependencies -}}
+    {{- if eq $dep.Kind "GIT_SOURCE" }}
   await client.moduleSource(
-    "{{ $dep.Source }}", 
-    { refPin: "{{ $dep.Pin }}" },
+      "{{ $dep.Source }}", 
+      { refPin: "{{ $dep.Pin }}" },
     )
     .withName("{{ $dep.Name }}")
     .asModule()
     .serve()
-  {{ end }}
+    {{ end -}}
+  {{- end -}}
 
-  const modSrc = await client.moduleSource(".")
+  {{/* Serve the local module if there are any local dependencies */}}
+
+  const modSrc = client.moduleSource(".")
   const configExist = await modSrc.configExists()
+
+  {{- if (HasLocalDependencies) }}
   if (!configExist) {
+    console.error("WARNING: dagger.json not found but is required to load local dependencies or the module itself")
     return
   }
+  {{- end }}
 
-  const dependencies = await modSrc.dependencies()
-  await Promise.all(dependencies.map(async (dep) => {
-    const kind = await dep.kind()
-    if (kind === ModuleSourceKind.GitSource) {
-      return
-    }
-
-    await dep.asModule().serve()
-  }))
-
-  const sdkSource = await modSrc.sdk().source()
-  if (sdkSource !== null && sdkSource !== "") {
-    await modSrc.asModule().serve()
+  if (configExist) {
+    await modSrc.asModule().serve({ includeDependencies: true })
   }
 }
 

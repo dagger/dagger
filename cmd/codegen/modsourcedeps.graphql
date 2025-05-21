@@ -1,0 +1,10 @@
+query ModuleSourceDependencies($source: ModuleSourceID!) {
+  source: loadModuleSourceFromID(id: $source) {
+    dependencies {
+      kind
+      moduleOriginalName
+      pin
+      asString
+    }
+  }
+}
