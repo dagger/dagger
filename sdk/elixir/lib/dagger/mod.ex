@@ -41,8 +41,16 @@ defmodule Dagger.Mod do
     |> Encoder.validate_and_encode(Dagger.Module)
   end
 
-  # Invoke function.
+  # Constructor call.
+  def invoke(dag, module, _parent, _parent_name, "", input_args) do
+    fun_def = module.__object__(:function, :init)
+    args = decode_args!(dag, input_args, fun_def.args)
+    return_type = fun_def.return
 
+    execute_function(module, :init, args, return_type)
+  end
+
+  # Invoke function.
   def invoke(dag, module, parent, _parent_name, fn_name, input_args) do
     fun_name = fn_name |> Macro.underscore() |> String.to_existing_atom()
     fun_def = module.__object__(:function, fun_name)
@@ -50,6 +58,10 @@ defmodule Dagger.Mod do
     args = if(fun_def.self, do: [parent | args], else: args)
     return_type = fun_def.return
 
+    execute_function(module, fun_name, args, return_type)
+  end
+
+  defp execute_function(module, fun_name, args, return_type) do
     case apply(module, fun_name, args) do
       {:error, _} = error -> error
       {:ok, result} -> Encoder.validate_and_encode(result, return_type)

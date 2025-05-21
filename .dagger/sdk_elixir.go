@@ -127,15 +127,11 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 }
 
 func (t ElixirSDK) sdkDev() *dagger.ElixirSDKDev {
-	return dag.ElixirSDKDev().Init()
+	return dag.ElixirSDKDev()
 }
 
 func (t ElixirSDK) sdkDevWithInstaller(
 	installer func(*dagger.Container) *dagger.Container,
 ) *dagger.ElixirSDKDev {
-	return t.sdkDev().
-		With(func(sdkDev *dagger.ElixirSDKDev) *dagger.ElixirSDKDev {
-			ctr := sdkDev.Container().With(installer)
-			return dag.ElixirSDKDev().Init(dagger.ElixirSDKDevInitOpts{Container: ctr})
-		})
+	return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{Container: t.sdkDev().Container().With(installer)})
 }
