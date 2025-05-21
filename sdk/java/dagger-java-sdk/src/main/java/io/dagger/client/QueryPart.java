@@ -1,8 +1,7 @@
 package io.dagger.client;
 
 import static io.smallrye.graphql.client.core.Field.field;
-
-import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.client.exceptions.DaggerQueryException;
 import io.smallrye.graphql.client.core.Field;
 import java.util.concurrent.ExecutionException;
 

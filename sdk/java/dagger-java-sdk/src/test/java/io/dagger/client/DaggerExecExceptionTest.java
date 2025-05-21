@@ -1,28 +1,33 @@
 package io.dagger.client;
 
+import static io.dagger.client.exceptions.ExceptionConstants.CMD_KEY;
+import static io.dagger.client.exceptions.ExceptionConstants.EXIT_CODE_KEY;
 import static io.dagger.client.exceptions.ExceptionConstants.TYPE_EXEC_ERROR_VALUE;
 import static io.dagger.client.exceptions.ExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import io.dagger.client.exceptions.DaggerQueryException;
+import io.dagger.client.exceptions.DaggerExecException;
 import io.smallrye.graphql.client.GraphQLError;
+import jakarta.json.Json;
 
-public class DaggerQueryExceptionTest {
+public class DaggerExecExceptionTest {
 
   @Test
-  void shouldReturnDefaultMessage() {
+  void shouldReturnEnanchedMessage() {
     GraphQLError error =
         buildError("ERROR", new Object[] {"container", "from", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
+            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "1", CMD_KEY,
+                Json.createArrayBuilder().add("cat").add("WRONG").build()));
     GraphQLError error2 =
         buildError("ERROR2", new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
+            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "2", CMD_KEY,
+                Json.createArrayBuilder().add("cat").add("WRONG2").build()));
 
-    String result = new DaggerQueryException(error, error2).getMessage();
+    String result = new DaggerExecException(error, error2).getMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\n";
     assertThat(result).isEqualTo(expected);
   }
 

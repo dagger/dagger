@@ -10,6 +10,7 @@ import io.dagger.client.exception.DaggerQueryException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import io.dagger.client.exceptions.DaggerQueryException;
 
 public class ClientIT {
 
