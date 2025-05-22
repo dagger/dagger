@@ -63,6 +63,7 @@ type frontendPretty struct {
 	promptFg        termenv.Color
 	editline        *editline.Model
 	editlineFocused bool
+	autoModeSwitch  bool
 	flushed         map[dagui.SpanID]bool
 	scrollback      *strings.Builder
 	shellRunning    bool
@@ -1083,6 +1084,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
+			fe.enterNavMode(true)
+
 			return fe, tea.Batch(
 				promptCmd,
 				func() tea.Msg {
@@ -1100,11 +1103,13 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		} else {
 			fe.promptFg = termenv.ANSIRed
 		}
-		promptCmd := fe.updatePrompt()
-		// NOTE: we switch back from the alt screen only when the scrollback is
-		// written
+		var cmd tea.Cmd
+		if fe.autoModeSwitch {
+			cmd = tea.Batch(cmd, fe.enterInsertMode(true))
+		}
+		cmd = tea.Batch(cmd, fe.updatePrompt())
 		fe.shellRunning = false
-		return fe, promptCmd
+		return fe, cmd
 
 	case UpdatePromptMsg:
 		return fe, fe.updatePrompt()
@@ -1180,6 +1185,22 @@ func (fe *frontendPretty) handleBoolPromptKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+func (fe *frontendPretty) enterNavMode(auto bool) {
+	fe.autoModeSwitch = auto
+	fe.editlineFocused = false
+	fe.editline.Blur()
+}
+
+func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
+	fe.autoModeSwitch = auto
+	if fe.editline != nil {
+		fe.editlineFocused = true
+		fe.updatePrompt()
+		return fe.editline.Focus()
+	}
+	return nil
+}
+
 func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	defer func() {
 		// update the prompt in all cases since e.g. going through history
@@ -1199,8 +1220,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	case "ctrl+l":
 		return fe.clearScrollback()
 	case "esc":
-		fe.editlineFocused = false
-		fe.editline.Blur()
+		fe.enterNavMode(false)
 		return nil
 	case "alt++", "alt+=":
 		fe.Verbosity++
@@ -1301,12 +1321,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.recalculateViewLocked()
 		return nil
 	case "tab", "i":
-		if fe.editline != nil {
-			fe.editlineFocused = true
-			fe.updatePrompt()
-			return fe.editline.Focus()
-		}
-		return nil
+		return fe.enterInsertMode(false)
 	}
 
 	switch lastKey { //nolint:gocritic
