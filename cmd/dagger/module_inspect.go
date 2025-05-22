@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -983,6 +984,7 @@ type modFunctionArg struct {
 	TypeDef      *modTypeDef
 	DefaultValue dagger.JSON
 	DefaultPath  string
+	DefaultEnv   string
 	Ignore       []string
 	flagName     string
 	once         sync.Once
@@ -1035,7 +1037,7 @@ func (r *modFunctionArg) Long() string {
 }
 
 func (r *modFunctionArg) IsRequired() bool {
-	return !r.TypeDef.Optional && r.DefaultValue == ""
+	return !r.TypeDef.Optional && r.DefaultValue == "" && r.DefaultEnv == ""
 }
 
 func (r *modFunctionArg) IsUnsupportedFlag() bool {
@@ -1048,6 +1050,16 @@ func (r *modFunctionArg) IsUnsupportedFlag() bool {
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 	var val T
 	err := json.Unmarshal([]byte(r.DefaultValue), &val)
+
+	if r.DefaultEnv != "" {
+		env, ok := os.LookupEnv(r.DefaultEnv)
+		if !ok {
+			return val, fmt.Errorf("environment variable %q not set", r.DefaultEnv)
+		}
+
+		err = json.Unmarshal([]byte(env), &val)
+	}
+
 	return val, err
 }
 
@@ -1059,6 +1071,10 @@ func (r *modFunctionArg) defValue() string {
 	if r.DefaultValue == "" {
 		return ""
 	}
+	if r.DefaultEnv == "" {
+		return ""
+	}
+
 	t := r.TypeDef
 	switch t.Kind {
 	case dagger.TypeDefKindStringKind:

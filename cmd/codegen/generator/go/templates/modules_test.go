@@ -97,6 +97,14 @@ func TestParsePragmaComment(t *testing.T) {
 			},
 			rest: "line 1\r\nline 2\r\nline 3",
 		},
+		{
+			name:    "default environment variable",
+			comment: "+defaultEnv=MY_VAR",
+			expected: map[string]string{
+				"defaultEnv": "MY_VAR",
+			},
+			rest: "",
+		},
 	}
 
 	for _, test := range tests {
