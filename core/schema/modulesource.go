@@ -479,7 +479,16 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	localSrc.Digest = localSrc.CalcDigest().String()
 
-	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
+	if err != nil {
+		return inst, err
+	}
+	for i, depCfg := range localSrc.ConfigDependencies {
+		if depCfg.Platform {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
+	}
+	return inst, nil
 }
 
 func (s *moduleSourceSchema) gitModuleSource(
@@ -643,6 +652,11 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
+	for i, depCfg := range gitSrc.ConfigDependencies {
+		if depCfg.Platform {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
+	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -765,6 +779,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, contextDir, dirSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	for i, depCfg := range dirSrc.ConfigDependencies {
+		if depCfg.Platform {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
 	}
 
 	dirSrc.Digest = dirSrc.CalcDigest().String()
