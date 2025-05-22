@@ -1,75 +1,5 @@
-defmodule ObjectMod do
-  @moduledoc false
-
-  use Dagger.Mod.Object, name: "ObjectMod"
-
-  defn accept_string(name: String.t()) :: String.t() do
-    "Hello, #{name}"
-  end
-
-  defn accept_string2(name: binary()) :: binary() do
-    "Hello, #{name}"
-  end
-
-  defn accept_integer(value: integer()) :: integer() do
-    value
-  end
-
-  defn accept_float(value: float()) :: float() do
-    value
-  end
-
-  defn accept_boolean(name: boolean()) :: String.t() do
-    "Hello, #{name}"
-  end
-
-  defn empty_args() :: String.t() do
-    "Empty args"
-  end
-
-  defn accept_and_return_module(container: Dagger.Container.t()) :: Dagger.Container.t() do
-    container
-  end
-
-  defn accept_list(alist: list(String.t())) :: String.t() do
-    Enum.join(alist, ",")
-  end
-
-  defn accept_list2(alist: [String.t()]) :: String.t() do
-    Enum.join(alist, ",")
-  end
-
-  defn optional_arg(s: String.t() | nil) :: String.t() do
-    "Hello, #{s}"
-  end
-
-  defn type_option(
-         dir:
-           {Dagger.Directory.t() | nil,
-            doc: "The directory to run on.",
-            default_path: "/sdk/elixir",
-            ignore: ["deps", "_build"]}
-       ) :: String.t() do
-    Dagger.Directory.id(dir)
-  end
-
-  defn return_void() :: Dagger.Void.t() do
-    :ok
-  end
-
-  object do
-  end
-
-  defn only_self_arg(_self) :: Dagger.Void.t() do
-    :ok
-  end
-
-  defn mix_self_and_args(_self, name: String.t()) :: Dagger.Void.t() do
-    name
-  end
-end
-
 defmodule PrimitiveTypeArgs do
+  @moduledoc false
   use Dagger.Mod.Object, name: "PrimitiveTypeArgs"
 
   defn accept_string(name: String.t()) :: String.t() do
@@ -94,6 +24,7 @@ defmodule PrimitiveTypeArgs do
 end
 
 defmodule EmptyArgs do
+  @moduledoc false
   use Dagger.Mod.Object, name: "EmptyArgs"
 
   defn empty_args() :: String.t() do
@@ -102,6 +33,7 @@ defmodule EmptyArgs do
 end
 
 defmodule ObjectArgAndReturn do
+  @moduledoc false
   use Dagger.Mod.Object, name: "ObjectArgAndReturn"
 
   defn accept_and_return_module(container: Dagger.Container.t()) :: Dagger.Container.t() do
@@ -110,6 +42,7 @@ defmodule ObjectArgAndReturn do
 end
 
 defmodule ListArgs do
+  @moduledoc false
   use Dagger.Mod.Object, name: "ListArg"
 
   defn accept_list(alist: list(String.t())) :: String.t() do
@@ -122,6 +55,7 @@ defmodule ListArgs do
 end
 
 defmodule OptionalArgs do
+  @moduledoc false
   use Dagger.Mod.Object, name: "OptionalArgs"
 
   defn optional_arg(s: String.t() | nil) :: String.t() do
@@ -130,6 +64,7 @@ defmodule OptionalArgs do
 end
 
 defmodule ArgOptions do
+  @moduledoc false
   use Dagger.Mod.Object, name: "ArgOptions"
 
   defn type_option(
@@ -144,6 +79,7 @@ defmodule ArgOptions do
 end
 
 defmodule ReturnVoid do
+  @moduledoc false
   use Dagger.Mod.Object, name: "ReturnVoid"
 
   defn return_void() :: Dagger.Void.t() do
@@ -152,6 +88,7 @@ defmodule ReturnVoid do
 end
 
 defmodule SelfObject do
+  @moduledoc false
   use Dagger.Mod.Object, name: "SelfObject"
 
   object do
@@ -167,6 +104,7 @@ defmodule SelfObject do
 end
 
 defmodule ConstructorFunction do
+  @moduledoc false
   use Dagger.Mod.Object, name: "ConstructorFunction"
 
   object do
