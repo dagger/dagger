@@ -190,6 +190,9 @@ type ModuleConfigDependency struct {
 
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
+
+	// Load this dependency as a platform module
+	Platform bool `json:"platform,omitempty"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
