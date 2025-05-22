@@ -11,7 +11,7 @@ defmodule Dagger.Mod.ModuleTest do
   end
 
   describe "define/1" do
-    test "register primitive type arguments", %{dag: dag} do
+    test "primitive type arguments", %{dag: dag} do
       assert {:ok, functions} =
                root_object(dag, PrimitiveTypeArgs) |> Dagger.ObjectTypeDef.functions()
 
