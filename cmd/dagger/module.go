@@ -500,6 +500,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 4. Ensure that a module implementation exists, and create a starter template if not
 5. Generate the latest client bindings for the Dagger API and installed dependencies
 `,
+	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -686,6 +687,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 		daDaggerverse,
 	),
 	GroupID: moduleGroup.ID,
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
