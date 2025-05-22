@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -230,9 +231,14 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 
+		// Inherit visibility from the class
+		prefix := ""
+		if strings.HasPrefix(class.TypeName(), "_") {
+			prefix = "_"
+		}
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Name:        fmt.Sprintf("%sload%sFromID", prefix, class.TypeName()),
 				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
 				Type:        class.Typed(),
 				Args: NewInputSpecs(
