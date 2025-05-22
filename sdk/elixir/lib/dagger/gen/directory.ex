@@ -369,6 +369,23 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return a snapshot with a symlink
+  """
+  @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Directory.t()
+  def with_symlink(%__MODULE__{} = directory, target, link_name) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withSymlink")
+      |> QB.put_arg("target", target)
+      |> QB.put_arg("linkName", link_name)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Retrieves this directory with all file/dir timestamps set to the given time.
   """
   @spec with_timestamps(t(), integer()) :: Dagger.Directory.t()

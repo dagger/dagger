@@ -1453,3 +1453,65 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		})
 	})
 }
+
+func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("symlink in same directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("some-file", "some-content").
+			WithSymlink("some-file", "symlink-to-some-file")
+
+		ctr := c.Container().From(alpineImage).WithDirectory("/test-dir", dir)
+
+		// test the symlink is an actual symlink
+		_, err := ctr.WithExec([]string{"test", "-L", "/test-dir/symlink-to-some-file"}).Stdout(ctx)
+		require.NoError(t, err)
+
+		symlinkContents, err := dir.File("symlink-to-some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", symlinkContents)
+
+		symlinkContents, err = dir.WithNewFile("some-file", "overwritten-contents").File("symlink-to-some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "overwritten-contents", symlinkContents)
+	})
+
+	t.Run("symlink to parent directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithSymlink("../root", "its-root")
+		f := c.Container().From(alpineImage).
+			WithDirectory("/test-dir", dir).
+			WithNewFile("/test-dir/its-root/f", "data").
+			File("/root/f")
+		s, err := f.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink with abs path", func(ctx context.Context, t *testctx.T) {
+		s, err := c.Directory().
+			WithNewFile("/some-file", "some-content").
+			WithSymlink("/some-file", "/symlink-to-some-file").
+			File("symlink-to-some-file").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", s)
+	})
+
+	t.Run("symlink with abs path mounted as a subdir", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().
+			WithNewFile("/some-file", "some-content").
+			WithSymlink("/some-file", "/symlink-to-some-file")
+
+		d2 := c.Directory().
+			WithNewFile("/some-file", "other-content").
+			WithDirectory("/sub-dir", d)
+
+		s, err := d2.
+			File("sub-dir/symlink-to-some-file").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other-content", s)
+	})
+}

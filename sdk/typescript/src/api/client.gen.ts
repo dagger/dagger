@@ -3342,6 +3342,16 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   */
+  withSymlink = (target: string, linkName: string): Directory => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName })
+    return new Directory(ctx)
+  }
+
+  /**
    * Retrieves this directory with all file/dir timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *
