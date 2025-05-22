@@ -57,6 +57,7 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	return &core.EngineCache{
 		Query:         parent.Query,
 		ReservedSpace: int(policy.ReservedSpace),
+		TargetSpace:   int(policy.TargetSpace),
 		MaxUsedSpace:  int(policy.MaxUsedSpace),
 		MinFreeSpace:  int(policy.MinFreeSpace),
 		KeepBytes:     int(policy.ReservedSpace),

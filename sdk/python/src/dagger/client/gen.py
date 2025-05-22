@@ -3392,7 +3392,9 @@ class EngineCache(Type):
         await _ctx.execute()
 
     async def reserved_space(self) -> int:
-        """Returns
+        """The minimum amount of disk space this policy is guaranteed to retain.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -3408,6 +3410,27 @@ class EngineCache(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("reservedSpace", _args)
+        return await _ctx.execute(int)
+
+    async def target_space(self) -> int:
+        """The target number of bytes to keep when pruning.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("targetSpace", _args)
         return await _ctx.execute(int)
 
 

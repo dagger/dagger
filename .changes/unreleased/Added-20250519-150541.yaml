@@ -1,0 +1,9 @@
+kind: Added
+body: |
+    New `gc.sweepSize` setting for `engine.json`
+
+    This setting allows controlling how much data to clear in a single GC sweep.
+time: 2025-05-19T15:05:41.803036267+01:00
+custom:
+    Author: jedevc
+    PR: "10420"
