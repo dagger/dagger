@@ -1675,6 +1675,10 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
+	}
+
 	// XXX: nope
 	// container, err := container.WithExec(ctx, ContainerExecOpts{
 	// 	Args:                          cmdargs,
@@ -1693,7 +1697,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		Query:                                  container.Query,
 		Container:                              container,
 		ContainerArgs:                          cmdargs,
-		ContainerUseEntrypoint:                 useEntrypoint,
 		ContainerExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		ContainerInsecureRootCapabilities:      args.InsecureRootCapabilities,
 		ContainerExpand:                        args.Expand,

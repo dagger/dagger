@@ -48,7 +48,6 @@ type Service struct {
 	// Container is the container to run as a service.
 	Container                              *Container
 	ContainerArgs                          []string
-	ContainerUseEntrypoint                 bool
 	ContainerExperimentalPrivilegedNesting bool
 	ContainerInsecureRootCapabilities      bool
 	ContainerExpand                        bool
@@ -298,8 +297,8 @@ func (svc *Service) startContainer(
 	// 	}
 	// }
 	execMD, err := ctr.execMeta(ctx, ContainerExecOpts{
+		// XXX: these don't all need to go here
 		Args:                          svc.ContainerArgs,
-		UseEntrypoint:                 svc.ContainerUseEntrypoint,
 		ExperimentalPrivilegedNesting: svc.ContainerExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      svc.ContainerInsecureRootCapabilities,
 		Expand:                        svc.ContainerExpand,
