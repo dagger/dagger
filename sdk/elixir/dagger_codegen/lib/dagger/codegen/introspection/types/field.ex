@@ -26,7 +26,7 @@ defmodule Dagger.Codegen.Introspection.Types.Field do
     %__MODULE__{
       args: Enum.map(args, &Dagger.Codegen.Introspection.Types.InputValue.from_map/1),
       deprecation_reason:
-        unless deprecation_reason == :null do
+        if not is_nil(deprecation_reason) do
           deprecation_reason
         end,
       description: description,
