@@ -1229,7 +1229,15 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	fe.pressedKeyAt = time.Now()
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return fe.quit(ErrInterrupted)
+		if fe.shell != nil {
+			// in shell mode, always just interrupt, don't quit; use Ctrl+D to quit
+			if fe.shellInterrupt != nil {
+				fe.shellInterrupt(errors.New("interrupted"))
+			}
+			fe.editline.Reset()
+		} else {
+			return fe.quit(ErrInterrupted)
+		}
 	case "ctrl+\\": // SIGQUIT
 		fe.program.ReleaseTerminal()
 		sigquit()
