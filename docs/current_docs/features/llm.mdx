@@ -88,12 +88,36 @@ Model Context Protocol (MCP) support in Dagger can be broken into two categories
 
 ### Expose MCP outside Dagger
 
-Dagger has built-in MCP support that allows you to easily expose Dagger modules as an MCP server. This allows you to configure a client (such as Claude Desktop, Cursor, Goose CLI/Desktop) to consume modules from [the Daggerverse](https://daggerverse.dev) or any Git repository as native MCP servers.
+Dagger has built-in experimental MCP support that allows you to easily serve a Dagger module (and optionally Dagger core API functions) as an MCP server. The MCP client/agent must implement the [dynamic tool discovery and updates](https://modelcontextprotocol.io/docs/concepts/tools#tool-discovery-and-updates) portion of protocol. In our testing, only [Goose](https://github.com/block/goose) fully implements this today.
 
 ```mermaid
 flowchart TD
-    A["MCP Client<br>e.g. Claude Desktop / Cursor / Goose"] -- "dagger -m &lt;module&gt; mcp (stdio)" --> C["Dagger MCP Server: tools"]
-    C --> E["Dagger module: functions"]
+    A["MCP Client<br>e.g. Goose"] -- "dagger -m &lt;module&gt; mcp " <--> B["Dagger MCP Server: tools"]
+    B <--> C["Dagger module: functions"]
+```
+
+Sample Goose Config:
+```
+extensions:
+  dagger:
+    name: Demo
+    description: "Dagger module and core API as MCP server in Goose"
+    enabled: true
+    cmd: /opt/homebrew/bin/dagger   # your dagger cli >= 0.18.6
+    args:
+    - -m
+    - github.com/jpadams/daggerverse/trivy  # dagger module to use
+    - mcp
+    - --env-privileged     # add core api: host, container, directory, git, ...
+    envs:
+      DAGGER_CLOUD_TOKEN: <your https://dagger.cloud token>
+      OPENAI_API_KEY: <your key>
+    type: stdio
+    timeout: 300
+GOOSE_PROVIDER: openai
+GOOSE_MODEL: gpt-4o
+OPENAI_BASE_PATH: v1/chat/completions
+OPENAI_HOST: https://api.openai.com
 ```
 
 :::warning
