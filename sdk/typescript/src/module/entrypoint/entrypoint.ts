@@ -7,7 +7,7 @@ import { load } from "./load.js"
 import { register } from "./register.js"
 
 export async function entrypoint(files: string[]) {
-  // Start a Dagger session to get the call context
+  // Start a Dagger session to get the cƒall context
   await connection(
     async () => {
       const fnCall = dag.currentFunctionCall()
@@ -45,16 +45,9 @@ export async function entrypoint(files: string[]) {
             parentArgs,
             fnArgs: args,
           })
-        } catch (e) {
-          if (e instanceof Error) {
-            if (e.cause) {
-              console.error(`${e.cause}`)
-            }
-            console.error(`Error: ${e.message}`)
-          } else {
-            console.error(e)
-          }
-          process.exit(1)
+        } catch (e: unknown) {
+          await fnCall.returnError(dag.error(stringifyError(e)))
+          return
         }
       }
 
@@ -70,4 +63,33 @@ export async function entrypoint(files: string[]) {
     },
     { LogOutput: process.stdout },
   )
+}
+
+/**
+ * Take the error thrown by the user module and stringify it so it can
+ * be returned to Dagger.
+ *
+ * If the error is an instande of Error, we stringify the message and the cause.
+ * If the error is not an instance of Error (which is the case for unexpected errors happening
+ * inside the code), we try to stringify it, if it fails we convert it to a string.
+ *
+ * Hopefully, this will be enough to make the error readable by the user.
+ * If the stringify fails, it will fails when calling `returnError` and should
+ * still be displayed to the user and Cloud.
+ */
+function stringifyError(e: unknown): string {
+  if (e instanceof Error) {
+    let error = `${e.name}: ${e.message}`
+    if (e.cause) {
+      error += `: ${e.cause}`
+    }
+
+    return error
+  }
+
+  try {
+    return JSON.stringify(e)
+  } catch {
+    return String(e)
+  }
 }
