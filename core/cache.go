@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -34,7 +35,7 @@ func NewCache(keys ...string) *CacheVolume {
 
 func (cache *CacheVolume) Clone() *CacheVolume {
 	cp := *cache
-	cp.Keys = cloneSlice(cp.Keys)
+	cp.Keys = slices.Clone(cp.Keys)
 	return &cp
 }
 

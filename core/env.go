@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -54,11 +55,11 @@ func (env *Env) MCP() *MCP {
 
 func (env *Env) Clone() *Env {
 	cp := *env
-	cp.inputsByName = cloneMap(cp.inputsByName)
-	cp.outputsByName = cloneMap(cp.outputsByName)
-	cp.objsByID = cloneMap(cp.objsByID)
-	cp.typeCounts = cloneMap(cp.typeCounts)
-	cp.idByHash = cloneMap(cp.idByHash)
+	cp.inputsByName = maps.Clone(cp.inputsByName)
+	cp.outputsByName = maps.Clone(cp.outputsByName)
+	cp.objsByID = maps.Clone(cp.objsByID)
+	cp.typeCounts = maps.Clone(cp.typeCounts)
+	cp.idByHash = maps.Clone(cp.idByHash)
 	for name, bnd := range cp.outputsByName {
 		// clone output bindings, since they mutate
 		cp.outputsByName[name] = bnd.Clone()

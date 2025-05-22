@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"maps"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -192,39 +191,13 @@ func parseUID(str string) (int, error) {
 	return int(uid), nil
 }
 
-func cloneSlice[T any](src []T) []T {
-	dst := make([]T, len(src))
-	copy(dst, src)
-	return dst
-}
-
-func cloneMap[K comparable, T any](src map[K]T) map[K]T {
-	if src == nil {
-		return src
-	}
-	dst := make(map[K]T, len(src))
-	maps.Copy(dst, src)
-	return dst
-}
-
-func parseKeyValue(env string) (string, string) {
-	parts := strings.SplitN(env, "=", 2)
-
-	v := ""
-	if len(parts) > 1 {
-		v = parts[1]
-	}
-
-	return parts[0], v
-}
-
 // AddEnv adds or updates an environment variable in 'env'.
 func AddEnv(env []string, name, value string) []string {
 	// Implementation from the dockerfile2llb project.
 	gotOne := false
 
 	for i, envVar := range env {
-		k, _ := parseKeyValue(envVar)
+		k, _, _ := strings.Cut(envVar, "=")
 		if shell.EqualEnvKeys(k, name) {
 			env[i] = fmt.Sprintf("%s=%s", name, value)
 			gotOne = true
@@ -242,7 +215,7 @@ func AddEnv(env []string, name, value string) []string {
 // LookupEnv returns the value of an environment variable.
 func LookupEnv(env []string, name string) (string, bool) {
 	for _, envVar := range env {
-		k, v := parseKeyValue(envVar)
+		k, v, _ := strings.Cut(envVar, "=")
 		if shell.EqualEnvKeys(k, name) {
 			return v, true
 		}
@@ -254,7 +227,7 @@ func LookupEnv(env []string, name string) (string, bool) {
 // key and value, and original string.
 func WalkEnv(env []string, fn func(string, string, string)) {
 	for _, envVar := range env {
-		key, value := parseKeyValue(envVar)
+		key, value, _ := strings.Cut(envVar, "=")
 		fn(key, value, envVar)
 	}
 }
@@ -300,33 +273,4 @@ func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
 
 func ptr[T any](v T) *T {
 	return &v
-}
-
-// SliceSet is a generic type that represents a set implemented as a slice.
-// TODO: it can eventually be replaced with a more performant underlying
-// data structure like a tree since the current implementation is O(n) but
-// it's fine as it's used ofor small sets currently.
-type SliceSet[T comparable] []T
-
-// Append adds an element to the SliceSet if it's not already present.
-func (s *SliceSet[T]) Append(element T) {
-	if slices.Contains(*s, element) {
-		return
-	}
-	*s = append(*s, element)
-}
-
-// ImportFromEngineHost is a hack to import data from a specified host directory into
-// buildkit - this is useful if we already have the content on the host - and
-// need to get it into buildkit somehow.
-func ImportFromEngineHost(bk *buildkit.Client, path string, includePatterns []string, opts ...llb.ConstraintsOpt) llb.State {
-	localOpts := []llb.LocalOption{
-		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
-		llb.SharedKeyHint(bk.ID()),
-		llb.IncludePatterns(includePatterns),
-	}
-	for _, opt := range opts {
-		localOpts = append(localOpts, opt)
-	}
-	return llb.Local(path, localOpts...)
 }

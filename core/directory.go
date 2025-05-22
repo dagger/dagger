@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -105,7 +106,7 @@ func NewDirectorySt(ctx context.Context, query *Query, st llb.State, dir string,
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {
 	cp := *dir
-	cp.Services = cloneSlice(cp.Services)
+	cp.Services = slices.Clone(cp.Services)
 	return &cp
 }
 
