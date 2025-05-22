@@ -183,6 +183,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	cache := container.Query.BuildkitCache()
 	session := container.Query.BuildkitSession()
 
+	var meta *executor.Meta
+
 	mmname := fmt.Sprintf("exec %s", strings.Join(args, " "))
 	fmt.Println("mounts", op.Mounts)
 	mm := bkmounts.NewMountManager(mmname, cache, session)
@@ -221,8 +223,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				}
 			}
 
-			// XXX: interactive isn't working :(
 			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
+			rerr = buildkit.InteractiveError{
+				ExecError: rerr.(*errdefs.ExecError),
+				Mounts:    op.Mounts,
+				ExecMD:    execMD,
+				Meta:      meta,
+				// Secretenv: secretEnvs, // XXX: here
+			}
 		} else {
 			// Only release actives if err is nil.
 			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
@@ -252,9 +260,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		})
 	}
 
-	meta := executor.Meta{
+	meta = &executor.Meta{
 		Args: args,
-		Env:  slices.Clone(cfg.Env), // XXX: + more
+		Env:  slices.Clone(cfg.Env),
 		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
 		User: cfg.User,
 		// Hostname:       e.op.Meta.Hostname, // empty seems right?
@@ -298,7 +306,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	worker = worker.ExecWorker(trace.SpanContextFromContext(ctx), *execMD)
 	exec := worker.Executor()
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
-		Meta: meta,
+		Meta: *meta,
 	}, nil)
 
 	for i, ref := range p.OutputRefs {
