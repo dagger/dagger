@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'shell: fixed parsing arguments with list of objects'
+time: 2025-05-22T00:02:42.579376Z
+custom:
+    Author: helderco
+    PR: "10441"
