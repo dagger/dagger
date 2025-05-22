@@ -611,7 +611,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 // loadContextualArg loads a contextual argument from the module context directory.
 //
 // For Directory, it will load the directory from the module context directory.
-// For file, it will loa the directory containing the file and then query the file ID from this directory.
+// For file, it will load the directory containing the file and then query the file ID from this directory.
 //
 // This functions returns the ID of the loaded object.
 func (fn *ModuleFunction) loadContextualArg(
@@ -627,11 +627,16 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
 	}
 
+	// Use context module if set (this is used for the platform module feature)
+	contextSource := fn.mod.Source.Self
+	if fn.mod.Source.Self.ContextModule.Self != nil {
+		contextSource = fn.mod.Source.Self.ContextModule.Self
+	}
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
 
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := contextSource.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -645,7 +650,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
+		dir, err := contextSource.LoadContext(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
