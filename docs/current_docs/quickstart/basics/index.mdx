@@ -14,6 +14,15 @@ Welcome to Dagger, a general-purpose composition engine for containerized workfl
 
 Dagger is a modular, composable platform designed to replace complex systems glued together with artisanal scripts - for example, complex integration testing environments, data processing pipelines, and AI agent workflows. It is open source and works with any compute platform or technology stack, automatically optimizing for speed and cost.
 
+## Requirements
+
+This quickstart will take you approximately 10 minutes to complete. You should be familiar with programming in Go, Python, TypeScript, PHP, or Java.
+
+Before beginning, ensure that:
+- you have [installed the Dagger CLI](../../install.mdx).
+- you have a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
+- you have a GitHub account (optional, only if configuring Dagger Cloud)
+
 ## Create containers
 
 Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../api/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../api/index.mdx#calling-the-dagger-api) from the shell ([Dagger Shell](../../features/shell.mdx)) or from code ([custom Dagger Functions](../../api/custom-functions.mdx) written in a programming language).
