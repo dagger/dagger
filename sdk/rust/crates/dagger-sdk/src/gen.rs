@@ -1802,6 +1802,10 @@ pub struct ContainerAsTarballOpts {
     /// Used for multi-platform images.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+    /// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    /// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    #[builder(setter(into, strip_option), default)]
+    pub rewrite_timestamp: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerBuildOpts<'a> {
@@ -1847,6 +1851,10 @@ pub struct ContainerExportOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+    /// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    /// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    #[builder(setter(into, strip_option), default)]
+    pub rewrite_timestamp: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
@@ -1874,6 +1882,10 @@ pub struct ContainerPublishOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+    /// Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.
+    /// Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.
+    #[builder(setter(into, strip_option), default)]
+    pub rewrite_timestamp: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerTerminalOpts<'a> {
@@ -2243,6 +2255,9 @@ impl Container {
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
         }
+        if let Some(rewrite_timestamp) = opts.rewrite_timestamp {
+            query = query.arg("rewriteTimestamp", rewrite_timestamp);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -2459,6 +2474,9 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        if let Some(rewrite_timestamp) = opts.rewrite_timestamp {
+            query = query.arg("rewriteTimestamp", rewrite_timestamp);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the list of exposed ports.
@@ -2646,6 +2664,9 @@ impl Container {
         }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
+        }
+        if let Some(rewrite_timestamp) = opts.rewrite_timestamp {
+            query = query.arg("rewriteTimestamp", rewrite_timestamp);
         }
         query.execute(self.graphql_client.clone()).await
     }
