@@ -720,6 +720,13 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryExistsOpts = {
+  /**
+   * If specified, check that the path is a "file", "dir", or "symlink".
+   */
+  expectedType?: string
+}
+
 export type DirectoryExportOpts = {
   /**
    * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
@@ -3046,6 +3053,7 @@ export class CurrentModule extends BaseClient {
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
+  private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
@@ -3057,6 +3065,7 @@ export class Directory extends BaseClient {
     ctx?: Context,
     _id?: DirectoryID,
     _digest?: string,
+    _exists?: boolean,
     _export?: string,
     _name?: string,
     _sync?: DirectoryID,
@@ -3065,6 +3074,7 @@ export class Directory extends BaseClient {
 
     this._id = _id
     this._digest = _digest
+    this._exists = _exists
     this._export = _export
     this._name = _name
     this._sync = _sync
@@ -3174,6 +3184,26 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("entries", { ...opts })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * check if a file or directory exists
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.expectedType If specified, check that the path is a "file", "dir", or "symlink".
+   */
+  exists = async (
+    path: string,
+    opts?: DirectoryExistsOpts,
+  ): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const ctx = this._ctx.select("exists", { path, ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

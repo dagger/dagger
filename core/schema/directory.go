@@ -96,6 +96,12 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
 			),
+		dagql.NodeFunc("exists", s.exists).
+			Doc(`check if a file or directory exists`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("expectedType").Doc(`If specified, check that the path is a "file", "dir", or "symlink".`),
+			),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
@@ -365,6 +371,20 @@ type withoutFilesArgs struct {
 
 func (s *directorySchema) withoutFiles(ctx context.Context, parent *core.Directory, args withoutFilesArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Paths...)
+}
+
+type existsArgs struct {
+	Path         string
+	ExpectedType dagql.Optional[dagql.String]
+}
+
+func (s *directorySchema) exists(ctx context.Context, parent dagql.Instance[*core.Directory], args existsArgs) (dagql.Boolean, error) {
+	if !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.exists)
+	}
+
+	exists, err := parent.Self.Exists(ctx, s.srv, args.Path, args.ExpectedType.Value.String())
+	return dagql.NewBoolean(exists), err
 }
 
 type diffArgs struct {
