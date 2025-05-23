@@ -134,7 +134,7 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`Append the provided dependencies to the module source's dependency list.`).
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to append.`),
-				dagql.Arg("platform").Doc(`Install as platform dependencies (executed in the parent's context directory)`),
+				dagql.Arg("inline").Doc(`Make the dependencies inline (executed in the parent's context)`),
 			),
 
 		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
@@ -485,7 +485,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		return inst, err
 	}
 	for i, depCfg := range localSrc.ConfigDependencies {
-		if depCfg.Platform {
+		if depCfg.Inline {
 			inst.Self.Dependencies[i].Self.ContextModule = inst
 		}
 	}
@@ -654,7 +654,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 	for i, depCfg := range gitSrc.ConfigDependencies {
-		if depCfg.Platform {
+		if depCfg.Inline {
 			inst.Self.Dependencies[i].Self.ContextModule = inst
 		}
 	}
@@ -782,7 +782,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 	for i, depCfg := range dirSrc.ConfigDependencies {
-		if depCfg.Platform {
+		if depCfg.Inline {
 			inst.Self.Dependencies[i].Self.ContextModule = inst
 		}
 	}
@@ -1245,7 +1245,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	parent dagql.Instance[*core.ModuleSource],
 	args struct {
 		Dependencies []core.ModuleSourceID
-		Platform     dagql.Optional[dagql.Boolean]
+		Inline       dagql.Optional[dagql.Boolean]
 	},
 ) (inst dagql.Instance[*core.ModuleSource], _ error) {
 	parentSrc := parent.Self.Clone()
@@ -1254,6 +1254,8 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
+	// We instantiate early, for the purposes of inline dependencies
+	// We will re-instantiate later in this function before returning the result
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, parent, parentSrc)
 	if err != nil {
 		return inst, err
@@ -1261,7 +1263,8 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	// do some sanity checks on the provided deps
 	var allDeps []dagql.Instance[*core.ModuleSource]
 	for _, newDep := range newDeps {
-		if args.Platform.Valid && args.Platform.Value.Bool() {
+		if args.Inline.Valid && args.Inline.Value.Bool() {
+			// Set ContextModule to a non-null value, to trigger serializing 'inline:true' in the config
 			newDep.Self.ContextModule = inst
 		}
 		switch parentSrc.Kind {
@@ -1655,7 +1658,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			// 'platform' is a dependency annotation, but there is no core type for a dependency: ModuleSource.Dependencies is an array of ModuleSource.
 			// So, we use ContextModule as a shadow boolean flag, since it is exclusively used to implement the platform flag anyway
 			// To clean this up, create a new Dependency type and make ModuleSource.Dependencies an array of that type. A dependency would have 2 fields: the modulesource of the dep, and the platform annotation.
-			Platform: (depSrc.Self.ContextModule.Self != nil),
+			Inline: (depSrc.Self.ContextModule.Self != nil),
 		}
 		modCfg.Dependencies[i] = depCfg
 
