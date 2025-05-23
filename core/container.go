@@ -1747,22 +1747,6 @@ type ContainerAsServiceArgs struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, error) {
-	if container.Meta == nil {
-		var err error
-		container, err = container.WithExec(ctx, ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
-	}, nil
-}
-
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
 	if len(args.Args) == 0 &&
 		len(container.Config.Cmd) == 0 &&

@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type serviceSchema struct {
@@ -18,7 +19,7 @@ var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Install() {
 	dagql.Fields[*core.Container]{
-		dagql.Func("asService", s.containerAsServiceLegacy).
+		dagql.NodeFunc("asService", s.containerAsServiceLegacy).
 			View(BeforeVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
@@ -142,8 +143,31 @@ func (s *serviceSchema) Install() {
 	}.Install(s.srv)
 }
 
-func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
-	return parent.AsServiceLegacy(ctx)
+func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dagql.Instance[*core.Container], args struct{}) (inst dagql.Instance[*core.Service], _ error) {
+	var ctr dagql.Instance[*core.Container]
+	if parent.Self.Meta == nil {
+		if err := s.srv.Select(ctx, parent, &ctr, dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{},
+				},
+				{
+					Name:  "useEntrypoint",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		}); err != nil {
+			return inst, err
+		}
+	}
+
+	svc := &core.Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Container: ctr.Self,
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, svc)
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
