@@ -1,7 +1,7 @@
 # Relative to current directory
 Source config.tape
 
-Output features/build-export.gif
+Output features/build-export.webm
 
 Sleep 1s
 

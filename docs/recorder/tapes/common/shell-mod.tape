@@ -1,5 +1,6 @@
 Hide
-Type "dagger --no-mod"
+
+Type "dagger"
 Sleep 1s
 Enter
 
@@ -8,5 +9,3 @@ Wait+Screen@120s /Dagger interactive shell/
 Ctrl+L
 
 Show
-
-Sleep 1s
