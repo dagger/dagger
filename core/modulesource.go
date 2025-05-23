@@ -113,8 +113,9 @@ type ModuleSource struct {
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
-
+	Dependencies   []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+	ConfigPlatform *modules.ModuleConfigDependency
+	Platform       dagql.Instance[*ModuleSource] `field:"true" name:"platform" doc:"The platform module of the module source."`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
 
