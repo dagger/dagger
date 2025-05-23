@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -303,7 +302,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// FIXME: this abstraction is now irrelevant - we don't need to do buildkit smuggling anymore
 	worker := op.opt.Worker.(*buildkit.Worker)
-	worker = worker.ExecWorker(trace.SpanContextFromContext(ctx), *execMD)
+	worker = worker.ExecWorker(op.opt.CauseCtx, *execMD)
 	exec := worker.Executor()
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
 		Meta: *meta,

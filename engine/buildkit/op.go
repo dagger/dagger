@@ -13,6 +13,7 @@ import (
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type CustomOpWrapper struct {
@@ -21,6 +22,7 @@ type CustomOpWrapper struct {
 
 	ClientMetadata engine.ClientMetadata
 
+	causeCtx trace.SpanContext
 	server   dagqlServer
 	original solver.Op
 	worker   worker.Worker
@@ -38,9 +40,9 @@ type CustomOpBackend interface {
 }
 
 type OpOpts struct {
-	Server *dagql.Server
-
-	Worker worker.Worker
+	CauseCtx trace.SpanContext
+	Server   *dagql.Server
+	Worker   worker.Worker
 }
 
 var customOps = map[string]CustomOp{}
@@ -116,8 +118,9 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 	}
 
 	res, err := op.Backend.Exec(ctx, g, inputs, OpOpts{
-		Server: server,
-		Worker: op.worker,
+		CauseCtx: op.causeCtx,
+		Server:   server,
+		Worker:   op.worker,
 	})
 	return res, err
 }
@@ -141,6 +144,7 @@ func (w *Worker) customOpFromVtx(vtx solver.Vertex, s frontend.FrontendLLBBridge
 		if err != nil {
 			return customOp, ok, err
 		}
+		customOp.causeCtx = SpanContextFromDescription(vtx.Options().Description)
 		customOp.original = op
 		customOp.server = w.dagqlServer
 		customOp.worker = w
