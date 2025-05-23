@@ -45,25 +45,27 @@ var clientCmd = &cobra.Command{
 }
 
 var clientInstallCmd = &cobra.Command{
-	Use:     "install [options] [path]",
+	Use:     "install [options] generator [path]",
 	Aliases: []string{"use"},
 	Short:   "Generate a new Dagger client from the Dagger module",
-	Example: "dagger client install --generator=go ./dagger",
+	Example: "dagger client install go ./dagger",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			if generator == "" {
-				return fmt.Errorf("generator must set (ts, go, python or custom generator)")
-			}
-
 			// default the output to the current working directory if it doesn't exist yet
 			cwd, err := pathutil.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
 
-			outputPath := filepath.Join(cwd, "dagger")
-			if len(args) > 0 {
-				outputPath = args[0]
+			switch len(args) {
+			case 0:
+				return fmt.Errorf("generator must set (ts, go, python or custom generator)")
+			case 1:
+				generator = args[0]
+				outputPath = filepath.Join(cwd, "dagger")
+			case 2:
+				generator = args[0]
+				outputPath = args[1]
 			}
 
 			if filepath.IsAbs(outputPath) {

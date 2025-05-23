@@ -1099,7 +1099,7 @@ export class Generator {
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerExec("client", "install", "--generator=./generator"))
+				With(daggerExec("client", "install", "./generator"))
 
 			out, err := moduleSrc.File("hello.txt").Contents(ctx)
 			require.NoError(t, err)
