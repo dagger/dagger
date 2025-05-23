@@ -1,21 +1,39 @@
 package core
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
+
+	bkcache "github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/executor"
+	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
+	"github.com/moby/buildkit/identity"
+	bksession "github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/secrets"
+	bksolver "github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/llbsolver/errdefs"
+	bkmounts "github.com/moby/buildkit/solver/llbsolver/mounts"
+	"github.com/moby/buildkit/solver/pb"
+	utilsystem "github.com/moby/buildkit/util/system"
+	"github.com/moby/buildkit/worker"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/identity"
-	"github.com/pkg/errors"
 )
 
 var ErrNoCommand = errors.New("no command has been set")
@@ -57,27 +75,7 @@ type ContainerExecOpts struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
-	container = container.Clone()
-
-	cfg := container.Config
-	mounts := container.Mounts
-	platform := container.Platform
-	if platform.OS == "" {
-		platform = container.Query.Platform()
-	}
-
-	args, err := container.command(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	runOpts := []llb.RunOption{
-		llb.Args(args),
-		buildkit.WithTracePropagation(ctx),
-		buildkit.WithPassthrough(),
-	}
-
+func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts) (*buildkit.ExecutionMetadata, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -99,12 +97,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
-
 	if opts.NoInit {
 		execMD.NoInit = true
-		// include an env var (which will be removed before the exec actually runs) so that execs with
-		// inits disabled will be cached differently than those with them enabled by buildkit
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
 	}
 
 	mod, err := container.Query.CurrentModule(ctx)
@@ -131,222 +125,273 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if execMD.ClientID == "" {
 			execMD.ClientID = identity.NewID()
 		}
-
-		// include the engine version so that these execs get invalidated if the engine/API change
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
 	}
 
-	if execMD.CachePerSession {
-		// include the SessionID here so that we bust cache once-per-session
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
-	}
-
-	if execMD.CacheByCall {
-		// include a digest of the current call so that we scope of the cache of the ExecOp to this call's args
-		// and receiver values. Currently only used for module function calls.
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
-	}
-
-	metaSt, metaSourcePath := metaMount(ctx, opts.Stdin)
-
-	// create mount point for the executor to write stdout/stderr/exitcode to
-	runOpts = append(runOpts,
-		llb.AddMount(buildkit.MetaMountDestPath, metaSt, llb.SourcePath(metaSourcePath)))
-
-	if opts.RedirectStdout != "" {
-		// ensure this path is in the cache key
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStdoutEnv, opts.RedirectStdout))
-	}
-
-	if opts.RedirectStderr != "" {
-		// ensure this path is in the cache key
-		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStderrEnv, opts.RedirectStderr))
-	}
-
-	var aliasStrs []string
 	for _, bnd := range container.Services {
 		for _, alias := range bnd.Aliases {
 			execMD.HostAliases[bnd.Hostname] = append(execMD.HostAliases[bnd.Hostname], alias)
-			aliasStrs = append(aliasStrs, bnd.Hostname+"="+alias)
 		}
-	}
-	if len(aliasStrs) > 0 {
-		// ensure these are in the cache key, sort them for stability
-		slices.Sort(aliasStrs)
-		runOpts = append(runOpts,
-			llb.AddEnv(buildkit.DaggerHostnameAliasesEnv, strings.Join(aliasStrs, ",")))
-	}
-
-	if cfg.User != "" {
-		runOpts = append(runOpts, llb.User(cfg.User))
-	}
-
-	if cfg.WorkingDir != "" {
-		runOpts = append(runOpts, llb.Dir(cfg.WorkingDir))
-	}
-
-	for _, env := range cfg.Env {
-		name, val, ok := strings.Cut(env, "=")
-		if !ok {
-			// it's OK to not be OK
-			// we'll just set an empty env
-			_ = ok
-		}
-
-		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.ID().Digest().String())}
-
-		var secretDest string
 		switch {
 		case secret.EnvName != "":
-			secretDest = secret.EnvName
-			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
 			execMD.SecretEnvNames = append(execMD.SecretEnvNames, secret.EnvName)
 		case secret.MountPath != "":
-			secretDest = secret.MountPath
 			execMD.SecretFilePaths = append(execMD.SecretFilePaths, secret.MountPath)
-			if secret.Owner != nil {
-				secretOpts = append(secretOpts, llb.SecretFileOpt(
-					secret.Owner.UID,
-					secret.Owner.GID,
-					int(secret.Mode),
-				))
-			}
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
-
-		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
 	}
 
-	for _, ctrSocket := range container.Sockets {
-		if ctrSocket.ContainerPath == "" {
-			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
-		}
+	return &execMD, nil
+}
 
-		socketOpts := []llb.SSHOption{
-			llb.SSHID(ctrSocket.Source.LLBID()),
-			llb.SSHSocketTarget(ctrSocket.ContainerPath),
-		}
+func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (_ *Container, rerr error) { //nolint:gocyclo
+	container = container.Clone()
 
-		if ctrSocket.Owner != nil {
-			socketOpts = append(socketOpts,
-				llb.SSHSocketOpt(
-					ctrSocket.ContainerPath,
-					ctrSocket.Owner.UID,
-					ctrSocket.Owner.GID,
-					0o600, // preserve default
-				))
-		}
+	cfg := container.Config
 
-		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
+	platform := container.Platform
+	if platform.OS == "" {
+		platform = container.Query.Platform()
 	}
 
-	for _, mnt := range mounts {
-		srcSt, err := mnt.SourceState()
-		if err != nil {
-			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
-		}
+	args, err := container.command(opts)
+	if err != nil {
+		return nil, err
+	}
 
-		mountOpts := []llb.MountOption{}
+	execMD, err := container.execMeta(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
 
-		if mnt.SourcePath != "" {
-			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
-		}
+	op, ok := DagOpFromContext[ContainerDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
 
-		if mnt.CacheVolumeID != "" {
-			var sharingMode llb.CacheMountSharingMode
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				sharingMode = llb.CacheMountShared
-			case CacheSharingModePrivate:
-				sharingMode = llb.CacheMountPrivate
-			case CacheSharingModeLocked:
-				sharingMode = llb.CacheMountLocked
-			default:
-				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+	refs := op.Inputs()
+	workerRefs := make([]*worker.WorkerRef, 0, len(refs))
+	for _, ref := range refs {
+		// XXX: PrepareMounts needs this (but only uses ImmutableRef)
+		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
+	}
+
+	cache := container.Query.BuildkitCache()
+	session := container.Query.BuildkitSession()
+
+	var meta *executor.Meta
+
+	mmname := fmt.Sprintf("exec %s", strings.Join(args, " "))
+	fmt.Println("mounts", op.Mounts)
+	mm := bkmounts.NewMountManager(mmname, cache, session)
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, op.Group(), cfg.WorkingDir, op.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(args, " "))
+		return cache.New(ctx, ref, op.Group(), bkcache.WithDescription(desc))
+	}, runtime.GOOS)
+	defer func() {
+		if rerr != nil {
+			execInputs := make([]bksolver.Result, len(op.Mounts))
+			for i, m := range op.Mounts {
+				if m.Input == -1 {
+					continue
+				}
+				execInputs[i] = op.inputs[m.Input].Clone()
+			}
+			execMounts := make([]bksolver.Result, len(op.Mounts))
+			copy(execMounts, execInputs)
+			results, err := extractContainerBkOutputs(ctx, container, op.opt.Worker, op.Mounts)
+			if err != nil {
+				return
+			}
+			for i, res := range results {
+				execMounts[p.OutputRefs[i].MountIndex] = res
+			}
+			for _, active := range p.Actives {
+				if active.NoCommit {
+					active.Ref.Release(context.TODO())
+				} else {
+					ref, cerr := active.Ref.Commit(ctx)
+					if cerr != nil {
+						rerr = fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err)
+						continue
+					}
+					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, op.opt.Worker)
+				}
 			}
 
-			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheVolumeID, sharingMode))
+			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
+			rerr = buildkit.InteractiveError{
+				ExecError: rerr.(*errdefs.ExecError),
+				Mounts:    op.Mounts,
+				ExecMD:    execMD,
+				Meta:      meta,
+				// Secretenv: secretEnvs, // XXX: here
+			}
+		} else {
+			// Only release actives if err is nil.
+			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
+				p.Actives[i].Ref.Release(context.TODO())
+			}
 		}
-
-		if mnt.Tmpfs {
-			mountOpts = append(mountOpts, llb.Tmpfs(llb.TmpfsSize(int64(mnt.Size))))
+		for _, o := range p.OutputRefs {
+			if o.Ref != nil {
+				o.Ref.Release(context.TODO())
+			}
 		}
-
-		if mnt.Readonly {
-			mountOpts = append(mountOpts, llb.Readonly)
-		}
-
-		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
+	}()
+	if err != nil {
+		return nil, err
 	}
+
+	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
+	if err != nil {
+		return nil, err
+	}
+	if emu != nil {
+		args = append([]string{qemuMountName}, args...)
+		p.Mounts = append(p.Mounts, executor.Mount{
+			Readonly: true,
+			Src:      emu,
+			Dest:     qemuMountName,
+		})
+	}
+
+	meta = &executor.Meta{
+		Args: args,
+		Env:  slices.Clone(cfg.Env),
+		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
+		User: cfg.User,
+		// Hostname:       e.op.Meta.Hostname, // empty seems right?
+		ReadonlyRootFS: p.ReadonlyRootFS,
+		// ExtraHosts:     extraHosts,
+		// Ulimit:                    e.op.Meta.Ulimit,
+		// CgroupParent:              e.op.Meta.CgroupParent,
+		// NetMode:                   e.op.Network,
+		RemoveMountStubsRecursive: true,
+	}
+	if opts.InsecureRootCapabilities {
+		meta.SecurityMode = pb.SecurityMode_INSECURE
+	}
+
+	// if e.op.Meta.ProxyEnv != nil {
+	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
+	// }
+	meta.Env = addDefaultEnvvar(meta.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+
+	secretEnvs := []*pb.SecretEnv{}
+	for _, secret := range container.Secrets {
+		if secret.EnvName != "" {
+			secretEnvs = append(secretEnvs, &pb.SecretEnv{
+				ID:   secret.Secret.ID().Digest().String(),
+				Name: secret.EnvName,
+			})
+		}
+	}
+	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
+	if err != nil {
+		return nil, err
+	}
+	meta.Env = append(meta.Env, secretEnv...)
 
 	if opts.Expect != ReturnSuccess {
-		runOpts = append(runOpts, llb.ValidExitCodes(opts.Expect.ReturnCodes()...))
+		meta.ValidExitCodes = opts.Expect.ReturnCodes()
 	}
 
-	if opts.InsecureRootCapabilities {
-		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
-	}
+	// FIXME: this abstraction is now irrelevant - we don't need to do buildkit smuggling anymore
+	worker := op.opt.Worker.(*buildkit.Worker)
+	worker = worker.ExecWorker(op.opt.CauseCtx, *execMD)
+	exec := worker.Executor()
+	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
+		Meta: *meta,
+	}, nil)
 
-	fsSt, err := container.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
-	}
+	for i, ref := range p.OutputRefs {
+		mount := op.Mounts[ref.MountIndex]
 
-	execMDOpt, err := execMD.AsConstraintsOpt()
-	if err != nil {
-		return nil, fmt.Errorf("execution metadata: %w", err)
-	}
-	runOpts = append(runOpts, execMDOpt)
-	execSt := fsSt.Run(runOpts...)
-
-	marshalOpts := []llb.ConstraintsOpt{
-		llb.Platform(platform.Spec()),
-		execMDOpt,
-	}
-	if opts.ExperimentalPrivilegedNesting {
-		marshalOpts = append(marshalOpts, llb.SkipEdgeMerge)
-	}
-	execDef, err := execSt.Root().Marshal(ctx, marshalOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	container.FS = execDef.ToPB()
-
-	metaDef, err := execSt.GetMount(buildkit.MetaMountDestPath).Marshal(ctx, marshalOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("get meta mount: %w", err)
-	}
-
-	container.Meta = metaDef.ToPB()
-
-	for i, mnt := range mounts {
-		if mnt.Tmpfs || mnt.CacheVolumeID != "" {
-			continue
+		// commit all refs
+		var err error
+		var iref bkcache.ImmutableRef
+		if mutable, ok := ref.Ref.(bkcache.MutableRef); ok {
+			iref, err = mutable.Commit(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("error committing %s: %w", mutable.ID(), err)
+			}
+		} else {
+			iref = ref.Ref.(bkcache.ImmutableRef)
 		}
 
-		mountSt := execSt.GetMount(mnt.Target)
-
-		// propagate any changes to regular mounts to subsequent containers
-		execMountDef, err := mountSt.Marshal(ctx, marshalOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
+		// put the ref to the right mount point
+		switch mount.Output {
+		case 0:
+			container.FSResult = iref
+		case 1:
+			container.MetaResult = iref
+		default:
+			container.Mounts[mount.Output-2].Result = iref
 		}
 
-		mounts[i].Source = execMountDef.ToPB()
+		// prevent the result from being released by the defer
+		p.OutputRefs[i].Ref = nil
 	}
 
-	container.Mounts = mounts
-
-	// set image ref to empty string
-	container.ImageRef = ""
+	if execErr != nil {
+		return nil, fmt.Errorf("process %q did not complete successfully: %w", strings.Join(args, " "), execErr)
+	}
 
 	return container, nil
+}
+
+func addDefaultEnvvar(env []string, k, v string) []string {
+	for _, e := range env {
+		if strings.HasPrefix(e, k+"=") {
+			return env
+		}
+	}
+	return append(env, k+"="+v)
+}
+
+// XXX:
+func loadSecretEnv(ctx context.Context, g bksession.Group, sm *bksession.Manager, secretenv []*pb.SecretEnv) ([]string, error) {
+	if len(secretenv) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(secretenv))
+	eg, gctx := errgroup.WithContext(ctx)
+	var mu sync.Mutex
+	for _, sopt := range secretenv {
+		id := sopt.ID
+		eg.Go(func() error {
+			if id == "" {
+				return fmt.Errorf("secret ID missing for %q environment variable", sopt.Name)
+			}
+			var dt []byte
+			var err error
+			err = sm.Any(gctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
+				dt, err = secrets.GetSecret(ctx, caller, id)
+				if err != nil {
+					if errors.Is(err, secrets.ErrNotFound) && sopt.Optional {
+						return nil
+					}
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			out = append(out, fmt.Sprintf("%s=%s", sopt.Name, string(dt)))
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (container *Container) Stdout(ctx context.Context) (string, error) {
@@ -397,6 +442,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	return string(content), nil
 }
 
+// XXX: clean this up! meta mount shouldn't be everywhere like this
 func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {

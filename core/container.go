@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -58,7 +59,8 @@ type Container struct {
 	Query *Query
 
 	// The container's root filesystem.
-	FS *pb.Definition
+	FS       *pb.Definition
+	FSResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig
@@ -70,7 +72,8 @@ type Container struct {
 	Mounts ContainerMounts
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *pb.Definition
+	Meta       *pb.Definition
+	MetaResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -170,6 +173,32 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
+var _ dagql.OnReleaser = (*Container)(nil)
+
+func (container *Container) OnRelease(ctx context.Context) error {
+	if container.FSResult != nil {
+		err := container.FSResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if container.MetaResult != nil {
+		err := container.MetaResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, mount := range container.Mounts {
+		if mount.Result != nil {
+			err := mount.Result.Release(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
 // provided via the API. It primarily exists to distinguish an unspecified
 // ownership from UID/GID 0 (root) ownership.
@@ -229,6 +258,7 @@ func (container *Container) MetaState() (*llb.State, error) {
 type ContainerMount struct {
 	// The source of the mount.
 	Source *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string
@@ -1625,23 +1655,6 @@ type ContainerAsServiceArgs struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, error) {
-	if container.Meta == nil {
-		var err error
-		container, err = container.WithExec(ctx, ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
-		Container: container,
-	}, nil
-}
-
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
 	if len(args.Args) == 0 &&
 		len(container.Config.Cmd) == 0 &&
@@ -1662,22 +1675,32 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
+	// XXX: nope
+	// container, err := container.WithExec(ctx, ContainerExecOpts{
+	// 	Args:                          cmdargs,
+	// 	UseEntrypoint:                 useEntrypoint,
+	// 	ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+	// 	InsecureRootCapabilities:      args.InsecureRootCapabilities,
+	// 	Expand:                        args.Expand,
+	// 	NoInit:                        args.NoInit,
+	// })
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
-		Container: container,
+		Creator:                                trace.SpanContextFromContext(ctx),
+		Query:                                  container.Query,
+		Container:                              container,
+		ContainerArgs:                          cmdargs,
+		ContainerExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		ContainerInsecureRootCapabilities:      args.InsecureRootCapabilities,
+		ContainerExpand:                        args.Expand,
+		ContainerNoInit:                        args.NoInit,
 	}, nil
 }
 
