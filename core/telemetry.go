@@ -37,8 +37,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		// very uninteresting spans
 		return ctx, dagql.NoopDone
 	}
-	if DagOpInContext[RawDagOp](ctx) || DagOpInContext[FSDagOp](ctx) {
+	if DagOpInContext[RawDagOp](ctx) || DagOpInContext[FSDagOp](ctx) || DagOpInContext[ContainerDagOp](ctx) {
 		// dagops are all self calls, no need to emit additional spans here
+		// FIXME: we lose telemetry.SpanStdio info from here
 		return ctx, dagql.NoopDone
 	}
 
