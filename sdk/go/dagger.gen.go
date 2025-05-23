@@ -7474,6 +7474,15 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
+// If set, use this module's context directory instead of our own when loading default directory paths
+func (r *ModuleSource) ContextModule() *ModuleSource {
+	q := r.query.Select("contextModule")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // The dependencies of the module source.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("dependencies")
@@ -7781,9 +7790,21 @@ func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSou
 	}
 }
 
+// ModuleSourceWithDependenciesOpts contains options for ModuleSource.WithDependencies
+type ModuleSourceWithDependenciesOpts struct {
+	// Install as platform dependencies (executed in the parent's context directory)
+	Platform bool
+}
+
 // Append the provided dependencies to the module source's dependency list.
-func (r *ModuleSource) WithDependencies(dependencies []*ModuleSource) *ModuleSource {
+func (r *ModuleSource) WithDependencies(dependencies []*ModuleSource, opts ...ModuleSourceWithDependenciesOpts) *ModuleSource {
 	q := r.query.Select("withDependencies")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
