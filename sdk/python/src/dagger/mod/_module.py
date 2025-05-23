@@ -11,7 +11,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
 import anyio
-import anyio.to_thread
 import cattrs
 import cattrs.gen
 from typing_extensions import dataclass_transform, overload
@@ -19,7 +18,7 @@ from typing_extensions import dataclass_transform, overload
 import dagger
 from dagger import dag
 from dagger.mod._arguments import Parameter
-from dagger.mod._converter import make_converter, to_typedef
+from dagger.mod._converter import make_converter, to_error, to_typedef
 from dagger.mod._exceptions import (
     ConversionError,
     FatalError,
@@ -78,25 +77,24 @@ class Module:
         self.name = name
         self._main = self.get_object(to_pascal_case(name))
 
-    def __call__(self) -> None:
-        anyio.run(self._run)
+    def __call__(self) -> int | None:
+        return anyio.run(self._run)
 
     async def _run(self):
         async with await dagger.connect():
-            await self.serve()
+            try:
+                await self.serve()
+            except Exception as e:
+                await dag.current_function_call().return_error(to_error(e))
+                return 2
 
     async def serve(self):
         self.set_module_name(await dag.current_module().name())
 
-        try:
-            if parent_name := await dag.current_function_call().parent_name():
-                result = await self._invoke(parent_name)
-            else:
-                result = await self._register()
-        except FunctionError as e:
-            logger.exception("Error while executing function")
-            await dag.current_function_call().return_error(dag.error(str(e)))
-            raise SystemExit(2) from None
+        if parent_name := await dag.current_function_call().parent_name():
+            result = await self._invoke(parent_name)
+        else:
+            result = await self._register()
 
         try:
             output = json.dumps(result)
@@ -279,7 +277,19 @@ class Module:
 
             fn = obj_type.get_bound_function(parent, name)
 
-        inputs = await self._convert_inputs(fn.parameters, raw_inputs)
+        try:
+            inputs = await self._convert_inputs(fn.parameters, raw_inputs)
+        except UserError:
+            logger.exception(
+                "Unable to convert inputs from API into expected Python types. "
+                "Please double check if arguments use supported types.",
+                extra={
+                    "function": name,
+                    "inputs": raw_inputs,
+                },
+            )
+            raise
+
         bound = fn.bind_arguments(**inputs)
 
         if logger.isEnabledFor(logging.DEBUG):
@@ -290,6 +300,7 @@ class Module:
         try:
             result = await self.call(fn.wrapped, *bound.args, **bound.kwargs)
         except Exception as e:
+            logger.exception("Unhandled error while executing function")
             raise FunctionError(e) from e
 
         if inspect.iscoroutine(result):

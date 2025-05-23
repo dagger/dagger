@@ -1,7 +1,9 @@
 import enum
 import functools
 import inspect
+import json
 import logging
+import traceback
 import typing
 
 from beartype.door import TypeHint
@@ -12,6 +14,7 @@ from dagger import dag
 from dagger.client._core import Arg
 from dagger.client._guards import is_id_type, is_id_type_subclass
 from dagger.client.base import Interface, Scalar, Type
+from dagger.mod._exceptions import FunctionError
 from dagger.mod._resolver import Function
 from dagger.mod._utils import (
     get_doc,
@@ -222,3 +225,21 @@ def to_typedef(annotation: typing.Any) -> "TypeDef":  # noqa: C901, PLR0911
 
     msg = f"Unsupported type: {typ.hint!r}"
     raise TypeError(msg)
+
+
+def to_error(exc: Exception) -> dagger.Error:
+    dag_err = dag.error(str(exc))
+
+    dag_err.with_value(
+        "traceback",
+        dagger.JSON(json.dumps(traceback.format_exc())),
+    )
+
+    if isinstance(exc, FunctionError):
+        exc = exc.args[0]
+
+    if isinstance(exc, dagger.QueryError):
+        for key, value in exc.error.extensions.items():
+            dag_err.with_value(key, dagger.JSON(json.dumps(value)))
+
+    return dag_err

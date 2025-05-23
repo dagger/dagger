@@ -164,7 +164,7 @@ class Function(Generic[P, R]):
             bound = self.signature.bind(*args, **kwargs)
             bound.apply_defaults()
         except TypeError as e:
-            msg = f"Unable to bind arguments: {e}"
+            msg = f"Unable to bind input values to arguments: {e}"
             raise UserError(msg) from e
         return bound
 
