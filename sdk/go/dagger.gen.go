@@ -7792,17 +7792,17 @@ func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSou
 
 // ModuleSourceWithDependenciesOpts contains options for ModuleSource.WithDependencies
 type ModuleSourceWithDependenciesOpts struct {
-	// Install as platform dependencies (executed in the parent's context directory)
-	Platform bool
+	// Make the dependencies inline (executed in the parent's context)
+	Inline bool
 }
 
 // Append the provided dependencies to the module source's dependency list.
 func (r *ModuleSource) WithDependencies(dependencies []*ModuleSource, opts ...ModuleSourceWithDependenciesOpts) *ModuleSource {
 	q := r.query.Select("withDependencies")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
+		// `inline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Inline) {
+			q = q.Arg("inline", opts[i].Inline)
 		}
 	}
 	q = q.Arg("dependencies", dependencies)
