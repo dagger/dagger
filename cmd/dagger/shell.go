@@ -37,7 +37,7 @@ var (
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
 	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "M", false, "Don't load module during shell startup (mutually exclusive with --mod)")
-	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
+	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-0', 'gpt-4.1')")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
