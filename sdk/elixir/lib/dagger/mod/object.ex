@@ -103,6 +103,27 @@ defmodule Dagger.Mod.Object do
     {module_doc, function_docs}
   end
 
+  defmacro __before_compile__(env) do
+    required_fields = Module.get_attribute(env.module, :required_fields) || []
+    optional_fields = Module.get_attribute(env.module, :optional_fields) || []
+    fields = required_fields ++ optional_fields
+
+    if fields == [] do
+      quote do
+      end
+    else
+      fields = Macro.escape(fields)
+
+      quote do
+        defimpl Nestru.Decoder do
+          def decode_fields_hint(_empty_struct, _context, _value) do
+            {:ok, Dagger.Mod.Object.decoder_hint(unquote(fields))}
+          end
+        end
+      end
+    end
+  end
+
   defmacro __using__(opts) do
     name = opts[:name]
 
@@ -112,6 +133,8 @@ defmodule Dagger.Mod.Object do
 
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
       Module.register_attribute(__MODULE__, :field, accumulate: true, persist: true)
+
+      @before_compile Dagger.Mod.Object
 
       # Get an object name
       def __object__(:name), do: unquote(name)
@@ -175,7 +198,7 @@ defmodule Dagger.Mod.Object do
       # TODO: convert fields into typespec.
       @type t() :: %__MODULE__{}
 
-      @derive [Jason.Encoder, {Nestru.Decoder, hint: Dagger.Mod.Object.decoder_hint(fields)}]
+      @derive Jason.Encoder
       @enforce_keys Keyword.keys(required_fields)
       defstruct fields |> Keyword.keys() |> Enum.sort()
     end
