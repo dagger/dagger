@@ -5,8 +5,8 @@ defmodule Dagger.Mod.ObjectTest do
   alias Dagger.Mod.Object.FieldDef
 
   describe "defn/2" do
-    test "store function information" do
-      assert ObjectMod.__object__(:functions) == [
+    test "primitive type arguments" do
+      assert PrimitiveTypeArgs.__object__(:functions) == [
                accept_string: %FunctionDef{
                  self: false,
                  args: [
@@ -41,8 +41,18 @@ defmodule Dagger.Mod.ObjectTest do
                    name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :boolean}]
                  ],
                  return: :string
-               },
-               empty_args: %FunctionDef{self: false, args: [], return: :string},
+               }
+             ]
+    end
+
+    test "empty arguments" do
+      assert EmptyArgs.__object__(:functions) == [
+               empty_args: %FunctionDef{self: false, args: [], return: :string}
+             ]
+    end
+
+    test "accept and return object" do
+      assert ObjectArgAndReturn.__object__(:functions) == [
                accept_and_return_module: %FunctionDef{
                  self: false,
                  args: [
@@ -54,7 +64,12 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: Dagger.Container
-               },
+               }
+             ]
+    end
+
+    test "list arguments" do
+      assert ListArgs.__object__(:functions) == [
                accept_list: %FunctionDef{
                  self: false,
                  args: [
@@ -78,7 +93,12 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               },
+               }
+             ]
+    end
+
+    test "optional arguments" do
+      assert OptionalArgs.__object__(:functions) == [
                optional_arg: %FunctionDef{
                  self: false,
                  args: [
@@ -90,7 +110,12 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               },
+               }
+             ]
+    end
+
+    test "argument options" do
+      assert ArgOptions.__object__(:functions) == [
                type_option: %FunctionDef{
                  self: false,
                  args: [
@@ -102,8 +127,18 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               },
-               return_void: %FunctionDef{self: false, args: [], return: Dagger.Void},
+               }
+             ]
+    end
+
+    test "return void" do
+      assert ReturnVoid.__object__(:functions) == [
+               return_void: %FunctionDef{self: false, args: [], return: Dagger.Void}
+             ]
+    end
+
+    test "self object" do
+      assert SelfObject.__object__(:functions) == [
                only_self_arg: %FunctionDef{self: true, args: [], return: Dagger.Void},
                mix_self_and_args: %FunctionDef{
                  self: true,

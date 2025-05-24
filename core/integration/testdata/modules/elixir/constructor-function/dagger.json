@@ -1,0 +1,7 @@
+{
+  "name": "constructor-function",
+  "engineVersion": "v0.18.8",
+  "sdk": {
+    "source": "../../sdk/elixir"
+  }
+}
