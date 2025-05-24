@@ -25,6 +25,11 @@ func (s environmentSchema) Install() {
 			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
+		dagql.NodeFunc("withBinding", s.withBinding).
+			Doc("bind an object to the env").
+			Args(
+				dagql.Arg("object").Doc("The object to bind"),
+			),
 		dagql.Func("inputs", s.inputs).
 			Doc("return all input values for the environment"),
 		dagql.Func("input", s.input).
@@ -108,6 +113,26 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 
 func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
 	return env.Outputs(), nil
+}
+
+func (s environmentSchema) withBinding(ctx context.Context, env dagql.Instance[*core.Env], args struct {
+	Object core.ID
+}) (inst dagql.Instance[*core.Env], _ error) {
+	// FIXME: hardcoded cast as container
+	//var id = new(call.ID)
+	//if err := id.Decode(args.Object.String()); err != nil {
+	//	return inst, err
+	//}
+	var ctrID dagql.ID[*core.Container]
+	if err := ctrID.Decode(args.Object.String()); err != nil {
+		return inst, err
+	}
+	ctr, err := ctrID.Load(ctx, s.srv)
+	err = s.srv.Select(ctx, ctr, ctr, dagql.Selector{Field: "terminal"})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, env, env.Self)
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
