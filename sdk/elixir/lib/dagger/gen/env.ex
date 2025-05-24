@@ -16,6 +16,42 @@ defmodule Dagger.Env do
   @type t() :: %__MODULE__{}
 
   @doc """
+  retrieve an object binding
+  """
+  @spec binding(t(), String.t()) :: Dagger.Binding.t()
+  def binding(%__MODULE__{} = env, name) do
+    query_builder =
+      env.query_builder |> QB.select("binding") |> QB.put_arg("name", name)
+
+    %Dagger.Binding{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  return all object bindings
+  """
+  @spec bindings(t()) :: {:ok, [Dagger.Binding.t()]} | {:error, term()}
+  def bindings(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("bindings") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(env.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Binding{
+           query_builder:
+             QB.query()
+             |> QB.select("loadBindingFromID")
+             |> QB.put_arg("id", id),
+           client: env.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   A unique identifier for this Env.
   """
   @spec id(t()) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
@@ -96,6 +132,25 @@ defmodule Dagger.Env do
          }
        end}
     end
+  end
+
+  @doc """
+  bind an object to the env
+  """
+  @spec with_binding(t(), String.t(), String.t(), [{:description, String.t() | nil}]) ::
+          Dagger.Env.t()
+  def with_binding(%__MODULE__{} = env, name, value, optional_args \\ []) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withBinding")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
+      |> QB.maybe_put_arg("description", optional_args[:description])
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
   end
 
   @doc """
