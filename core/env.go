@@ -107,6 +107,16 @@ func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env 
 	return env
 }
 
+// Add an input (read-only) binding to the environment
+func (env *Env) WithBinding(name string, object dagql.Object, description string) *Env {
+	env = env.Clone()
+	binding := &Binding{Key: name, Value: object, Description: description, env: env}
+	_ = binding.ID() // If val is an object, force its ingestion
+	// FIXME: rename 'inputs' to 'bindings' internally
+	env.inputsByName[name] = binding
+	return env
+}
+
 // Register the desire for a binding in the environment
 func (env *Env) WithOutput(key string, expectedType dagql.Type, description string) *Env {
 	env = env.Clone()
@@ -139,6 +149,11 @@ func (env *Env) Outputs() []*Binding {
 
 // List all inputs in the environment
 func (env *Env) Inputs() []*Binding {
+	return env.Bindings()
+}
+
+// List all bindings
+func (env *Env) Bindings() []*Binding {
 	res := make([]*Binding, 0, len(env.inputsByName))
 	for _, v := range env.inputsByName {
 		res = append(res, v)
@@ -148,22 +163,32 @@ func (env *Env) Inputs() []*Binding {
 
 // Lookup an input binding
 func (env *Env) Input(key string) (*Binding, bool) {
+	return env.Binding(key)
+}
+
+// Lookup a binding
+func (env *Env) Binding(name string) (*Binding, bool) {
 	// next check for values by ID
-	if val, exists := env.objsByID[key]; exists {
+	if val, exists := env.objsByID[name]; exists {
 		return val, true
 	}
 	// next check for values by name
-	if val, exists := env.inputsByName[key]; exists {
+	if val, exists := env.inputsByName[name]; exists {
 		return val, true
 	}
 	return nil, false
 }
 
 // Remove an input
-func (env *Env) WithoutInput(key string) *Env {
+func (env *Env) WithoutBinding(name string) *Env {
 	env = env.Clone()
-	delete(env.inputsByName, key)
+	delete(env.inputsByName, name)
 	return env
+}
+
+// Remove an input
+func (env *Env) WithoutInput(key string) *Env {
+	return env.WithoutBinding(key)
 }
 
 func (env *Env) Ingest(obj dagql.Object, desc string) string {

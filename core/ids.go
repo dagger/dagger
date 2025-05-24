@@ -1,10 +1,30 @@
 package core
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type ID = dagql.String
+type ID dagql.String
+
+func (id ID) Load(ctx context.Context, srv *dagql.Server) (dagql.Object, error) {
+	var callID = new(call.ID)
+	err := callID.Decode(dagql.String(id).String())
+	if err != nil {
+		return nil, err
+	}
+	return srv.Load(ctx, callID)
+}
+
+func (ID) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Object", // FIXME: ID?
+		NonNull:   true,
+	}
+}
 
 type ContainerID = dagql.ID[*Container]
 
