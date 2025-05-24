@@ -1262,6 +1262,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.program.ReleaseTerminal()
 		sigquit()
 		return nil
+	case "E":
+		fe.NoExit = true
+		return nil
 	case "down", "j":
 		fe.goDown()
 		return nil
