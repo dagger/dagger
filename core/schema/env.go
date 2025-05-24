@@ -25,10 +25,19 @@ func (s environmentSchema) Install() {
 			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
-		dagql.NodeFunc("withBinding", s.withBinding).
+		dagql.Func("withBinding", s.withBinding).
 			Doc("bind an object to the env").
 			Args(
-				dagql.Arg("object").Doc("The object to bind"),
+				dagql.Arg("name").Doc("Binding name"),
+				dagql.Arg("value").Doc("Object to bind"),
+				dagql.Arg("description").Doc("Binding description"),
+			),
+		dagql.Func("bindings", s.bindings).
+			Doc("return all object bindings"),
+		dagql.Func("binding", s.binding).
+			Doc("retrieve an object binding").
+			Args(
+				dagql.Arg("name").Doc("The binding name"),
 			),
 		dagql.Func("inputs", s.inputs).
 			Doc("return all input values for the environment"),
@@ -115,24 +124,30 @@ func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args stru
 	return env.Outputs(), nil
 }
 
-func (s environmentSchema) withBinding(ctx context.Context, env dagql.Instance[*core.Env], args struct {
-	Object core.ID
-}) (inst dagql.Instance[*core.Env], _ error) {
-	// FIXME: hardcoded cast as container
-	//var id = new(call.ID)
-	//if err := id.Decode(args.Object.String()); err != nil {
-	//	return inst, err
-	//}
-	var ctrID dagql.ID[*core.Container]
-	if err := ctrID.Decode(args.Object.String()); err != nil {
-		return inst, err
-	}
-	ctr, err := ctrID.Load(ctx, s.srv)
-	err = s.srv.Select(ctx, ctr, ctr, dagql.Selector{Field: "terminal"})
+func (s environmentSchema) withBinding(ctx context.Context, env *core.Env, args struct {
+	Name        dagql.String
+	Value       dagql.String
+	Description dagql.Optional[dagql.String]
+}) (*core.Env, error) {
+	obj, err := core.ID(args.Value).Load(ctx, s.srv)
 	if err != nil {
-		return inst, err
+		return nil, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, env, env.Self)
+	return env.WithBinding(args.Name.String(), obj, args.Description.GetOr("").String()), nil
+}
+
+func (s environmentSchema) binding(ctx context.Context, env *core.Env, args struct {
+	Name string
+}) (*core.Binding, error) {
+	b, found := env.Binding(args.Name)
+	if found {
+		return b, nil
+	}
+	return nil, fmt.Errorf("binding not found: %s", args.Name)
+}
+
+func (s environmentSchema) bindings(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+	return env.Bindings(), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {

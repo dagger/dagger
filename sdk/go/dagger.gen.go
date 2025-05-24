@@ -3689,6 +3689,49 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
+// retrieve an object binding
+func (r *Env) Binding(name string) *Binding {
+	q := r.query.Select("binding")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all object bindings
+func (r *Env) Bindings(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("bindings")
+
+	q = q.Select("id")
+
+	type bindings struct {
+		Id BindingID
+	}
+
+	convert := func(fields []bindings) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []bindings
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -3813,6 +3856,29 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	}
 
 	return convert(response), nil
+}
+
+// EnvWithBindingOpts contains options for Env.WithBinding
+type EnvWithBindingOpts struct {
+	// Binding description
+	Description string
+}
+
+// bind an object to the env
+func (r *Env) WithBinding(name string, value string, opts ...EnvWithBindingOpts) *Env {
+	q := r.query.Select("withBinding")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Env{
+		query: q,
+	}
 }
 
 // Create or update a binding of type CacheVolume in the environment
