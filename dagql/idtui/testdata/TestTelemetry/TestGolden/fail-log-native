@@ -1,19 +1,19 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
+● viztest: Viztest! X.Xs
 ✘ .failLogNative: Void X.Xs
 ┃ im doing a lot of work
 ┃ and then failing

@@ -18,25 +18,25 @@ vterm_lite_test.go
 
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ Host.directory(path: "/app/dagql/idtui"): Directory! X.Xs
-│ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) X.Xs
-
-✔ viztest: Viztest! X.Xs
-✔ .list(
-│ │ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
+▼ Host.directory(path: "/app/dagql/idtui"): Directory! X.Xs
+╰─● upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) X.Xs
+ 
+● viztest: Viztest! X.Xs
+▼ .list(
+│ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
 │ ): String! X.Xs
 ┃ debug.go
 ┃ demos
@@ -53,7 +53,7 @@ Expected stderr:
 ┃ vterm.go
 ┃ vterm_lite.go
 ┃ vterm_lite_test.go
-│ ✔ Directory.entries: [String!]! X.Xs
+╰─● Directory.entries: [String!]! X.Xs
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

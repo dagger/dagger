@@ -1,26 +1,26 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✘ .failEffect: Container! X.Xs
+● viztest: Viztest! X.Xs
+▼ .failEffect: Container! X.Xs
 ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
-│ ✔ container: Container! X.Xs
-│ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ ✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
-│ ┃ this is a failing effect
-│ ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+├─● container: Container! X.Xs
+├─$ .from(address: "alpine"): Container! X.Xs CACHED
+╰─✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
+  ┃ this is a failing effect
+  ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 
 Error logs:
 
