@@ -77,7 +77,9 @@ func withEngine(
 			params.LogLevel = slog.LevelDebug
 		}
 
-		if params.RunnerHost == "" {
+		if useCloudEngine {
+			params.RunnerHost = "dagger-cloud://default-engine-config.dagger.cloud"
+		} else if params.RunnerHost == "" {
 			params.RunnerHost = RunnerHost
 		}
 
