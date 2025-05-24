@@ -7176,6 +7176,27 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-binding" href="#Env-binding"><code>binding</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
+                        <td> retrieve an object binding </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The binding name</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-bindings" href="#Env-bindings"><code>bindings</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
+                        <td> return all object bindings </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-id" href="#Env-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span> </td>
                         <td> A unique identifier for this Env. </td>
@@ -7219,6 +7240,31 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-outputs" href="#Env-outputs"><code>outputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
                         <td> return all output values for the environment </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withBinding" href="#Env-withBinding"><code>withBinding</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> bind an object to the env </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Binding name</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Object to bind</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Binding description</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeInput" href="#Env-withCacheVolumeInput"><code>withCacheVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>

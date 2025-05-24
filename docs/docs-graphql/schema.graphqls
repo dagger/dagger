@@ -1886,6 +1886,15 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
+  """retrieve an object binding"""
+  binding(
+    """The binding name"""
+    name: String!
+  ): Binding!
+
+  """return all object bindings"""
+  bindings: [Binding!]!
+
   """A unique identifier for this Env."""
   id: EnvID!
 
@@ -1900,6 +1909,18 @@ type Env {
 
   """return all output values for the environment"""
   outputs: [Binding!]!
+
+  """bind an object to the env"""
+  withBinding(
+    """Binding name"""
+    name: String!
+
+    """Object to bind"""
+    value: String!
+
+    """Binding description"""
+    description: String
+  ): Env!
 
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(

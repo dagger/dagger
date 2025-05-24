@@ -5801,7 +5801,36 @@ pub struct Env {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvWithBindingOpts<'a> {
+    /// Binding description
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
 impl Env {
+    /// retrieve an object binding
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The binding name
+    pub fn binding(&self, name: impl Into<String>) -> Binding {
+        let mut query = self.selection.select("binding");
+        query = query.arg("name", name.into());
+        Binding {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// return all object bindings
+    pub fn bindings(&self) -> Vec<Binding> {
+        let query = self.selection.select("bindings");
+        vec![Binding {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// A unique identifier for this Env.
     pub async fn id(&self) -> Result<EnvId, DaggerError> {
         let query = self.selection.select("id");
@@ -5844,6 +5873,48 @@ impl Env {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// bind an object to the env
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Binding name
+    /// * `value` - Object to bind
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_binding(&self, name: impl Into<String>, value: impl Into<String>) -> Env {
+        let mut query = self.selection.select("withBinding");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// bind an object to the env
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Binding name
+    /// * `value` - Object to bind
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_binding_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+        opts: EnvWithBindingOpts<'a>,
+    ) -> Env {
+        let mut query = self.selection.select("withBinding");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Create or update a binding of type CacheVolume in the environment
     ///
