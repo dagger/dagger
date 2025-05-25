@@ -674,6 +674,13 @@ defimpl Jason.Encoder, for: Dagger.Env do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Env do
+  def encode(env, _encoder) do
+    {:ok, id} = Dagger.Env.id(env)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Env do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_env_from_id(Dagger.Global.dag(), id)}

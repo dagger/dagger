@@ -139,6 +139,13 @@ defimpl Jason.Encoder, for: Dagger.ObjectTypeDef do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.ObjectTypeDef do
+  def encode(object_type_def, _encoder) do
+    {:ok, id} = Dagger.ObjectTypeDef.id(object_type_def)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.ObjectTypeDef do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_object_type_def_from_id(Dagger.Global.dag(), id)}

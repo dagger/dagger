@@ -274,6 +274,13 @@ defimpl Jason.Encoder, for: Dagger.LLM do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.LLM do
+  def encode(llm, _encoder) do
+    {:ok, id} = Dagger.LLM.id(llm)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.LLM do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_llm_from_id(Dagger.Global.dag(), id)}

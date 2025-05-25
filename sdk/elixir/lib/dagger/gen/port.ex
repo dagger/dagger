@@ -81,6 +81,13 @@ defimpl Jason.Encoder, for: Dagger.Port do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Port do
+  def encode(port, _encoder) do
+    {:ok, id} = Dagger.Port.id(port)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Port do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_port_from_id(Dagger.Global.dag(), id)}

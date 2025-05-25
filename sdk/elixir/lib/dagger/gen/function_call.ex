@@ -119,6 +119,13 @@ defimpl Jason.Encoder, for: Dagger.FunctionCall do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.FunctionCall do
+  def encode(function_call, _encoder) do
+    {:ok, id} = Dagger.FunctionCall.id(function_call)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.FunctionCall do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_function_call_from_id(Dagger.Global.dag(), id)}

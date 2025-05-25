@@ -26,7 +26,6 @@ defmodule Dagger.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.0"},
       {:nestru, "~> 1.0"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},

@@ -14,7 +14,7 @@ defmodule Dagger.Core.GraphQLClient.Httpc do
 
     case :httpc.request(:post, request, http_opts, options) do
       {:ok, {{_, status_code, _}, _, response}} ->
-        {:ok, status_code, response}
+        {:ok, status_code, IO.chardata_to_string(response)}
 
       otherwise ->
         otherwise

@@ -1,0 +1,13 @@
+kind: Added
+body: |-
+    The SDK is now using Elixir `JSON` by default.
+
+    The `Jason` is still support. If want to use it, please adbd `:jason` and put the config belows:
+
+    ```elixir
+    config :dagger, :jason_library, Jason
+    ```
+time: 2025-05-25T23:19:14.203945624+07:00
+custom:
+    Author: wingyplus
+    PR: "10469"

@@ -11,14 +11,14 @@ defmodule Dagger.Core.GraphQLClient do
             ) :: {:ok, status :: non_neg_integer(), response :: map()} | {:error, term()}
 
   @default_client Application.compile_env(:dagger, :client, Dagger.Core.GraphQLClient.Httpc)
+  @default_json_library Application.compile_env(:dagger, :json_library, JSON)
 
   @doc """
   Perform a request to GraphQL server.
   """
   def request(url, session_token, query, variables, opts \\ []) do
     client = Keyword.get(opts, :client) || @default_client
-    # TODO: change to json erlang standard library when support OTP 27 exclusively.
-    json = Keyword.get(opts, :json_library, Jason)
+    json = Keyword.get(opts, :json_library) || @default_json_library
     timeout = Keyword.get(opts, :timeout, :infinity)
     request = %{query: query, variables: variables}
 
@@ -27,8 +27,8 @@ defmodule Dagger.Core.GraphQLClient do
       |> with_basic_auth(session_token)
       |> with_traceparent()
 
-    with {:ok, request} <- json.encode(request),
-         {:ok, status, result} <- client.request(url, request, headers, timeout: timeout),
+    with {:ok, status, result} <-
+           client.request(url, json.encode!(request), headers, timeout: timeout),
          {:ok, map} <- json.decode(result) do
       response = Response.from_map(map)
 

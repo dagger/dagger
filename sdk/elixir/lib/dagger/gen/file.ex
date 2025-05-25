@@ -144,6 +144,13 @@ defimpl Jason.Encoder, for: Dagger.File do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.File do
+  def encode(file, _encoder) do
+    {:ok, id} = Dagger.File.id(file)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.File do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_file_from_id(Dagger.Global.dag(), id)}

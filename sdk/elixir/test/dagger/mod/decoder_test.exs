@@ -47,7 +47,7 @@ defmodule Dagger.Mod.DecoderTest do
     end
   end
 
-  defp json(value), do: Jason.encode!(value)
+  defp json(value), do: JSON.encode!(value)
 
   defp container_id(dag) do
     {:ok, container_id} = dag |> Dagger.Client.container() |> Dagger.Container.id()
