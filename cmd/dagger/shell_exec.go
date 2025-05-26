@@ -85,7 +85,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// with an interpreter builtin, the Dagger function is favored.
 	// To force the builtin to execute instead, prefix the command
 	// with "_". For example: "container | from $(_echo alpine)".
-	if after, ok := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); ok {
+	if after, found := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); found && isInterpBuiltin(after) {
 		args[0] = after
 		return args, nil
 	}
@@ -94,9 +94,9 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// builtins, but there's no way to directly call the interpreter
 	// command from there so we use ShellCommand just for the documentation
 	// (.help) but strip the builtin prefix here ('.') when executing.
-	if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
-		if name := strings.TrimPrefix(args[0], "."); isInterpBuiltin(name) {
-			args[0] = name
+	if after, ok := strings.CutPrefix(args[0], "."); ok && isInterpBuiltin(after) {
+		if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
+			args[0] = after
 			return args, nil
 		}
 	}

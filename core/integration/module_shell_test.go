@@ -997,4 +997,12 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 		requireErrOut(t, err, "reserved for internal use")
 	})
+
+	t.Run("unknown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`_container`)).
+			Sync(ctx)
+		requireErrOut(t, err, "does not exist")
+	})
 }

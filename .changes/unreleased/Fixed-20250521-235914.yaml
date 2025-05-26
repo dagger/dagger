@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'shell: fixed `_` prefix not being reserved for interpreter builtins'
+time: 2025-05-21T23:59:14.55937Z
+custom:
+    Author: helderco
+    PR: "10452"
