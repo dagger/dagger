@@ -1,0 +1,24 @@
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● viztest: Viztest! X.Xs
+● .pathArgs(
+  ┆ file: Host.file(path: "/app/dagql/idtui/golden_test.go"): File!
+  ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
+  ┆ contextFile: Directory.file(path: "main.go"): File!
+  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory!
+  ): Void X.Xs
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

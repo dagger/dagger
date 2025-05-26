@@ -31,9 +31,6 @@ Expected stderr:
  
 ● parsing command line arguments X.Xs
 
-▼ Host.directory(path: "/app/dagql/idtui"): Directory! X.Xs
-╰─● upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) X.Xs
- 
 ● viztest: Viztest! X.Xs
 ▼ .list(
 │ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!

@@ -485,3 +485,15 @@ func (*Viztest) NestedCalls(ctx context.Context) ([]string, error) {
 		Rootfs().
 		Entries(ctx)
 }
+
+func (*Viztest) PathArgs(
+	ctx context.Context,
+	file *dagger.File,
+	dir *dagger.Directory,
+	// +defaultPath=main.go
+	contextFile *dagger.File,
+	// +defaultPath=.
+	contextDir *dagger.Directory,
+) error {
+	return nil
+}
