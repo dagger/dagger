@@ -173,7 +173,7 @@ def test_core_sync(ctx: Context):
     assert handler.func_signature() == "async def sync(self) -> Self:"
 
     assert str(handler.func_body()).endswith(
-        "return await self._ctx.execute_sync(self)"
+        'return await self._ctx.execute_sync(self, "sync", _args)'
     )
 
 
