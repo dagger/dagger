@@ -17,6 +17,12 @@ Expected stderr:
 │ │ │ ✔ parseRefString: ./viztest X.Xs
 │ │ │ ✔ parseRefString: dep X.Xs
 │ │ │
+│ │ │ ✔ host: Host! X.Xs
+│ │ │ ✔ .directory(include: XXXXXXXXXXX): Directory! X.Xs
+│ │ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
+│ │ │ │ │ ✔ filesync X.Xs
+│ │ │ │ │ │ ✔ copy X.Xs
+│ │ │
 │ │ │ ✔ moduleSource(disableFindUp: true, refString: "/app/dagql/idtui/viztest/dep"): ModuleSource! X.Xs
 │ │ │ │ ✔ parseRefString: /app/dagql/idtui/viztest/dep X.Xs
 │ │ │ │
@@ -27,15 +33,8 @@ Expected stderr:
 │ │ │ │
 │ │ │ │ ✔ sdkForModule: go X.Xs
 │ │ │
-│ │ │ ✔ host: Host! X.Xs
-│ │ │ ✔ .directory(include: XXXXXXXXXXX): Directory! X.Xs
-│ │ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
-│ │ │ │ │ ✔ filesync X.Xs
-│ │ │ │ │ │ ✔ copy X.Xs
-│ │ │
 │ │ │ ✔ sdkForModule: go X.Xs
-│ │ │
-│ │ │ ✔ ModuleSource.withName(name: "dep"): ModuleSource! X.Xs
+│ │ │ ✔ .withName(name: "dep"): ModuleSource! X.Xs
 │ │ ✔ .configExists: Boolean! X.Xs
 │ │ ┃ true
 │ ✔ initializing module X.Xs
@@ -112,35 +111,36 @@ Expected stderr:
 │ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
 │ │
+│ │ ✔ ModuleSource.asString: String! X.Xs
+│ │ ┃ /app/dagql/idtui/viztest
+│ │
 │ │ ✔ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
+│ │
+│ │ ✔ ModuleSource.version: String! X.Xs
 │ │
 │ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
 │ │ ┃ .
 │ │
-│ │ ✔ ModuleSource.asString: String! X.Xs
-│ │ ┃ /app/dagql/idtui/viztest
-│ │
 │ │ ✔ ModuleSource.commit: String! X.Xs
-│ │
-│ │ ✔ ModuleSource.version: String! X.Xs
 │ │
 │ │ ✔ ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ │ ✔ Module.name: String! X.Xs
 │ │ ┃ viztest
 │ │
-│ │ ✔ Module.description: String! X.Xs
-│ │
 │ │ ✔ Module.dependencies: [Module!]! X.Xs
 │ │
 │ │ ✔ Missing.name: String! X.Xs
 │ │ ┃ dep
 │ │
-│ │ ✔ Missing.description: String! X.Xs
+│ │ ✔ Module.description: String! X.Xs
 │ │
 │ │ ✔ Missing.source: ModuleSource! X.Xs
-│ │ ✔ .digest: String! X.Xs
+│ │
+│ │ ✔ Missing.description: String! X.Xs
+│ │
+│ │ ✔ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
 │ │ ✔ ModuleSource.asString: String! X.Xs
