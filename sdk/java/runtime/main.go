@@ -35,9 +35,14 @@ type JavaSdk struct {
 }
 
 type moduleConfig struct {
-	name    string
-	subPath string
-	dirPath string
+	name          string
+	subPath       string
+	dirPath       string
+	pkgName       string
+	kebabName     string
+	camelName     string
+	version       string
+	moduleVersion string
 }
 
 func (c *moduleConfig) modulePath() string {
@@ -77,7 +82,7 @@ func (m *JavaSdk) Codegen(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	if err := m.setModuleConfig(ctx, modSource); err != nil {
+	if err := m.setModuleConfig(ctx, modSource, introspectionJSON); err != nil {
 		return nil, err
 	}
 	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
@@ -100,8 +105,8 @@ func (m *JavaSdk) Codegen(
 		}), nil
 }
 
-// codegenBase takes the user module code, add the generated SDK dependencies
-// if the user module code is empty, creates a default module content based on the template from the SDK
+// codegenBase takes the user module code, add the generated SDK dependencies.
+// If the user module code is empty, creates a default module content based on the template from the SDK
 // The generated container will *not* contain the SDK source code, but only the packages built from the SDK
 func (m *JavaSdk) codegenBase(
 	ctx context.Context,
@@ -122,12 +127,6 @@ func (m *JavaSdk) codegenBase(
 	if err != nil {
 		return nil, err
 	}
-	// Ensure the version in the pom.xml is the same as the introspection file
-	// This is updating the pom.xml whatever it's coming from the template or the user module
-	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
-	if err != nil {
-		return nil, err
-	}
 	ctr = ctr.
 		// set the version of the Dagger dependencies to the version of the introspection file
 		WithExec(m.mavenCommand(
@@ -135,7 +134,7 @@ func (m *JavaSdk) codegenBase(
 			"versions:set-property",
 			"-DgenerateBackupPoms=false",
 			"-Dproperty=dagger.module.deps",
-			fmt.Sprintf("-DnewVersion=%s", version),
+			fmt.Sprintf("-DnewVersion=%s", m.moduleConfig.moduleVersion),
 		))
 	return ctr, nil
 }
@@ -152,24 +151,41 @@ func (m *JavaSdk) buildJavaDependencies(
 	if err != nil {
 		return nil, err
 	}
-	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
-	if err != nil {
-		return nil, err
-	}
-	return ctr.
+	ctr = ctr.
 		// Cache maven dependencies
 		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2"), dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
-		// Mount the introspection JSON file used to generate the SDK
-		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
 		WithDirectory(GenPath, m.SDKSourceDir).
-		WithWorkdir(GenPath).
+		WithWorkdir(GenPath)
+	// build the SDK and tools if required
+	for _, project := range []string{
+		"dagger-codegen-maven-plugin",
+		"dagger-java-sdk",
+		"dagger-java-annotation-processor",
+	} {
+		if exitCode, _ := ctr.WithExec(
+			m.mavenCommand(
+				"mvn", "-o", "dependency:get",
+				fmt.Sprintf("-Dartifact=io.dagger:%s:%s", project, m.moduleConfig.version)),
+			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).ExitCode(ctx); exitCode != 0 {
+			_, err = ctr.WithExec(m.mavenCommand(
+				"mvn", "--projects", "dagger-codegen-maven-plugin", "install", "-DskipTests",
+			)).ExitCode(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return ctr.
+		// Mount the introspection JSON file used to generate the SDK
+		WithMountedFile("/schema.json", introspectionJSON).
+		WithExec([]string{"cat", "/schema.json"}).
 		// Set the version of the dependencies we are building to the version of the introspection file
 		WithExec(m.mavenCommand(
 			"mvn",
 			"versions:set",
 			"-DgenerateBackupPoms=false",
-			fmt.Sprintf("-DnewVersion=%s", version),
+			fmt.Sprintf("-DnewVersion=%s", m.moduleConfig.moduleVersion),
 		)).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
@@ -196,11 +212,6 @@ func (m *JavaSdk) addTemplate(
 	ctx context.Context,
 	ctr *dagger.Container,
 ) (*dagger.Container, error) {
-	name := m.moduleConfig.name
-	pkgName := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(name), "-", ""), "_", "")
-	kebabName := strcase.ToKebab(name)
-	camelName := strcase.ToCamel(name)
-
 	// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
 	if _, err := ctr.File(filepath.Join(m.moduleConfig.modulePath(), "pom.xml")).Name(ctx); err == nil {
 		return ctr, nil
@@ -211,8 +222,9 @@ func (m *JavaSdk) addTemplate(
 	}
 
 	changes := []repl{
-		{"dagger-module-placeholder", kebabName},
-		{"daggermoduleplaceholder", pkgName},
+		{"dagger-module-placeholder", m.moduleConfig.kebabName},
+		{"dagger-module-typedefs-placeholder", m.moduleConfig.kebabName + "-typedefs"},
+		{"daggermoduleplaceholder", m.moduleConfig.pkgName},
 	}
 
 	// Edit template content so that they match the dagger module name
@@ -223,7 +235,7 @@ func (m *JavaSdk) addTemplate(
 		return ctr, fmt.Errorf("could not add template: %w", err)
 	}
 
-	changes = append(changes, repl{"DaggerModule", camelName})
+	changes = append(changes, repl{"DaggerModule", m.moduleConfig.camelName})
 	daggerModuleJava, err := m.replace(ctx, templateDir,
 		filepath.Join("src", "main", "java", "io", "dagger", "modules", "daggermodule", "DaggerModule.java"),
 		changes...)
@@ -240,8 +252,8 @@ func (m *JavaSdk) addTemplate(
 	// And copy them to the container, renamed to match the dagger module name
 	ctr = ctr.
 		WithNewFile(absPath("pom.xml"), pomXML).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, fmt.Sprintf("%s.java", camelName)), daggerModuleJava).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, "package-info.java"), packageInfoJava)
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", m.moduleConfig.pkgName, fmt.Sprintf("%s.java", m.moduleConfig.camelName)), daggerModuleJava).
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", m.moduleConfig.pkgName, "package-info.java"), packageInfoJava)
 
 	return ctr, nil
 }
@@ -267,16 +279,24 @@ func (m *JavaSdk) generateCode(
 			"clean",
 			"compile",
 		))
+	typeDefsCtr, err := m.buildTypeDefs(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
 	return dag.
 		Directory().
 		// copy all user files
 		WithDirectory(
 			m.moduleConfig.modulePath(),
 			ctr.Directory(m.moduleConfig.modulePath())).
-		// copy the generated entrypoint under target/generated-sources/annotations
+		// copy the generated entrypoint under target/generated-sources/entrypoint
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "entrypoint"),
 			entrypoint.Directory(filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "annotations"))).
+		// copy the generated typedefs entrypoint under target/generated-sources/typedefs
+		WithDirectory(
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "typedefs"),
+			typeDefsCtr.Directory(filepath.Join(m.moduleConfig.modulePath(), "target", "generated"))).
 		// copy the sdk source code under target/generated-sources/dagger-io
 		// this is not really generated-sources, this is the sdk. But we don't want it as the user source code
 		// and we don't want to install it on the user machine. That way the java classes are made available
@@ -292,12 +312,44 @@ func (m *JavaSdk) generateCode(
 		Directory(ModSourceDirPath), nil
 }
 
+func (m *JavaSdk) ModuleTypeDefs(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Container, error) {
+	if err := m.setModuleConfig(ctx, modSource, introspectionJSON); err != nil {
+		return nil, err
+	}
+
+	// Get a container with the user module sources and the SDK packages built and installed
+	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	// Build the executable jar
+	jar, err := m.buildTypeDefsJar(ctx, mvnCtr)
+	if err != nil {
+		return nil, err
+	}
+
+	javaCtr, err := m.jreContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	javaCtr = javaCtr.
+		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
+		WithWorkdir(ModDirPath).
+		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
+
+	return javaCtr, nil
+}
+
 func (m *JavaSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	if err := m.setModuleConfig(ctx, modSource); err != nil {
+	if err := m.setModuleConfig(ctx, modSource, introspectionJSON); err != nil {
 		return nil, err
 	}
 
@@ -339,7 +391,72 @@ func (m *JavaSdk) buildJar(
 				"clean",
 				"package",
 				"-DskipTests",
-			)))
+			)),
+		m.moduleConfig.modulePath())
+}
+
+func (m *JavaSdk) buildTypeDefs(
+	ctx context.Context,
+	ctr *dagger.Container,
+) (*dagger.Container, error) {
+	out, err := ctr.WithExec([]string{"find", "src/main/java", "-name", "*.java"}).Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr.
+			WithExec(append([]string{
+				"javac",
+				"-cp", fmt.Sprintf("/root/.m2/repository/io/dagger/dagger-java-annotation-processor/%[1]s/dagger-java-annotation-processor-%[1]s-all.jar", m.moduleConfig.moduleVersion),
+				"-processor", "io.dagger.annotation.processor.TypeDefs",
+				"-proc:only",
+				"-d", "target/generated",
+			}, strings.Split(strings.TrimSpace(out), "\n")...)),
+		nil
+}
+
+// buildTypeDefsJar builds and returns the generated jar to register types
+func (m *JavaSdk) buildTypeDefsJar(
+	ctx context.Context,
+	ctr *dagger.Container,
+) (*dagger.File, error) {
+	templateDir := dag.CurrentModule().Source().Directory("template")
+	typeDefsPomXML, err := m.replace(ctx, templateDir,
+		"typedefs/pom.xml",
+		repl{"dagger-module-typedefs-placeholder", m.moduleConfig.kebabName + "-typedefs"},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	typeDefsCtr, err := m.buildTypeDefs(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.finalJar(ctx,
+		typeDefsCtr.
+			WithWorkdir(filepath.Join(m.moduleConfig.modulePath(), "typedefs")).
+			WithExec([]string{"mkdir", "-p", "src/main/java/io/dagger/gen/entrypoint"}).
+			WithExec([]string{
+				"cp",
+				"../target/generated/io/dagger/gen/entrypoint/TypeDefs.java",
+				"src/main/java/io/dagger/gen/entrypoint/TypeDefs.java",
+			}).
+			WithNewFile("pom.xml", typeDefsPomXML).
+			WithExec(m.mavenCommand(
+				"mvn",
+				"versions:set-property",
+				"-DgenerateBackupPoms=false",
+				"-Dproperty=dagger.module.deps",
+				fmt.Sprintf("-DnewVersion=%s", m.moduleConfig.moduleVersion),
+			)).
+			WithExec(m.mavenCommand(
+				"mvn",
+				"clean",
+				"package",
+				"-DskipTests")),
+		filepath.Join(m.moduleConfig.modulePath(), "typedefs"))
 }
 
 // finalJar will return the jar corresponding to the user module built
@@ -350,6 +467,7 @@ func (m *JavaSdk) buildJar(
 func (m *JavaSdk) finalJar(
 	ctx context.Context,
 	ctr *dagger.Container,
+	rootDir string,
 ) (*dagger.File, error) {
 	artifactID, err := ctr.
 		WithExec(m.mavenCommand("mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.artifactId", "-q", "-DforceStdout")).
@@ -365,7 +483,7 @@ func (m *JavaSdk) finalJar(
 	}
 	jarFileName := fmt.Sprintf("%s-%s.jar", artifactID, version)
 
-	return ctr.File(filepath.Join(m.moduleConfig.modulePath(), "target", jarFileName)), nil
+	return ctr.File(filepath.Join(rootDir, "target", jarFileName)), nil
 }
 
 func (m *JavaSdk) mvnContainer(ctx context.Context) (*dagger.Container, error) {
@@ -391,11 +509,14 @@ func disableSVEOnArm64(ctx context.Context, ctr *dagger.Container) (*dagger.Cont
 	return ctr, nil
 }
 
-func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) error {
+func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) error {
 	modName, err := modSource.ModuleName(ctx)
 	if err != nil {
 		return err
 	}
+	pkgName := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(modName), "-", ""), "_", "")
+	kebabName := strcase.ToKebab(modName)
+	camelName := strcase.ToCamel(modName)
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return err
@@ -404,16 +525,26 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	if err != nil {
 		return err
 	}
+	version, err := m.getDaggerVersion(ctx, introspectionJSON)
+	if err != nil {
+		return err
+	}
+	moduleVersion := m.getDaggerVersionForModule(version)
 	m.moduleConfig = moduleConfig{
-		name:    modName,
-		subPath: subPath,
-		dirPath: dirPath,
+		name:          modName,
+		pkgName:       pkgName,
+		kebabName:     kebabName,
+		camelName:     camelName,
+		subPath:       subPath,
+		dirPath:       dirPath,
+		version:       version,
+		moduleVersion: moduleVersion,
 	}
 
 	return nil
 }
 
-func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
+func (m *JavaSdk) getDaggerVersion(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
 	content, err := introspectionJSON.Contents(ctx)
 	if err != nil {
 		return "", err
@@ -422,11 +553,15 @@ func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJS
 	if err = json.Unmarshal([]byte(content), &introspectJSON); err != nil {
 		return "", err
 	}
+	return strings.TrimPrefix(introspectJSON.SchemaVersion, "v"), nil
+}
+
+func (m *JavaSdk) getDaggerVersionForModule(version string) string {
 	return fmt.Sprintf(
 		"%s-%s-module",
-		strings.TrimPrefix(introspectJSON.SchemaVersion, "v"),
+		version,
 		m.moduleConfig.name,
-	), nil
+	)
 }
 
 type IntrospectJSON struct {
