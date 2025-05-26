@@ -128,11 +128,12 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		}
 
 		if ok {
+			slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
 			// NB: this is defense-in-depth to prevent SDKs or some other future
 			// component from allowing modules to extend external objects.
-			return fmt.Errorf("type %q is already defined by module %q",
-				objDef.Name,
-				modType.SourceMod().Name())
+			//return fmt.Errorf("type %q is already defined by module %q",
+			//	objDef.Name,
+			//	modType.SourceMod().Name())
 		}
 
 		obj := &ModuleObject{
