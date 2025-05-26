@@ -121,6 +121,8 @@ Expected stderr:
 │ ├─▼ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
+│ │ ✔ ModuleSource.version: String! X.Xs
+│ │
 │ ├─▼ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
