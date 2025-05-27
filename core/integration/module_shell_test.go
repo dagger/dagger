@@ -846,13 +846,32 @@ func (ShellSuite) TestDirectoryFlag(ctx context.Context, t *testctx.T) {
 }
 
 func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
 	script := fmt.Sprintf("directory | with-directory / $(container | from %s | directory /etc) --include=passwd,shadow | entries", alpineImage)
+
+	c := connect(ctx, t)
 	out, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		Stdout(ctx)
+
 	require.NoError(t, err)
 	require.Equal(t, "passwd\nshadow\n", out)
+}
+
+func (ShellSuite) TestObjectSliceArgument(ctx context.Context, t *testctx.T) {
+	script := fmt.Sprintf(`
+arm64=$(container --platform linux/arm64 | from %[1]s)
+amd64=$(container --platform linux/amd64 | from %[1]s)
+container | export container.tar --platform-variants $arm64,$amd64
+`, alpineImage)
+
+	c := connect(ctx, t)
+	size, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		File("container.tar").
+		Size(ctx)
+
+	require.NoError(t, err)
+	require.Greater(t, size, 0)
 }
 
 func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
@@ -996,5 +1015,13 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 			With(daggerShell(`__dag`)).
 			Sync(ctx)
 		requireErrOut(t, err, "reserved for internal use")
+	})
+
+	t.Run("unknown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`_container`)).
+			Sync(ctx)
+		requireErrOut(t, err, "does not exist")
 	})
 }
