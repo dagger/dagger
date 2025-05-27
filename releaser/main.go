@@ -398,6 +398,10 @@ func (r *Releaser) Publish(
 			Name: "🍺 Homebrew Core",
 			Link: "https://github.com/Homebrew/homebrew-core/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
 		})
+		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
+			Name: "🪟 Winget pkgs",
+			Link: "https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
+		})
 
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "🌌 Daggerverse",
