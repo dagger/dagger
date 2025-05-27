@@ -89,7 +89,7 @@ jobs:
   dagger-io-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-18-8-4c
+    runs-on: dagger-g3-v0-18-9-4c
     steps:
       # Configure credentials to clone dagger modules
       - uses: de-vri-es/setup-git-credentials@v2
