@@ -1118,6 +1118,16 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		clientVersion = engine.Version
 	}
 
+	var sourceDateEpoch *time.Time = nil
+	sourceDateEpochEnv := os.Getenv("SOURCE_DATE_EPOCH")
+	if sourceDateEpochEnv != "" {
+		sde, err := strconv.ParseInt(sourceDateEpochEnv, 10, 64)
+		if err == nil {
+			var sdePtr = time.Unix(sde, 0)
+			sourceDateEpoch = &sdePtr
+		}
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
@@ -1134,6 +1144,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
+		SourceDateEpoch:           sourceDateEpoch,
 	}
 }
 
