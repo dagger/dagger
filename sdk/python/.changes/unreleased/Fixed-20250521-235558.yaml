@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed incorrect client bindings for Service start and stop
-time: 2025-05-21T23:55:58.8824Z
-custom:
-    Author: helderco
-    PR: "10451"
