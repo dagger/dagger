@@ -358,6 +358,7 @@ func (r *Releaser) Publish(
 				artifacts[i] = artifact
 
 				if err := component.publish(); err != nil {
+					artifact.Notify = false
 					artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 					return nil
 				}
