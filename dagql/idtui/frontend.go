@@ -301,7 +301,6 @@ func (r *renderer) renderCall(
 					r.fancyIndent(out, row, true, false)
 					indentLevel -= row.Depth
 					indentLevel -= 1
-					// r.indent(out, 1)
 				}
 				r.indent(out, indentLevel)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
@@ -481,8 +480,11 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
-func (r *renderer) renderCached(out TermOutput, span *dagui.Span) {
-	if !span.IsRunningOrEffectsRunning() && span.IsCached() {
+func (r *renderer) renderStatus(out TermOutput, span *dagui.Span) {
+	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
+	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
 	}
