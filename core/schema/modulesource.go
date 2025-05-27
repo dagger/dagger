@@ -422,6 +422,10 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
+		if err := s.loadPlatformModule(ctx, bk, localSrc); err != nil {
+			return inst, err
+		}
+
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
@@ -584,6 +588,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
+	if err := s.loadPlatformModule(ctx, bk, gitSrc); err != nil {
+		return inst, err
+	}
+
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -635,6 +643,23 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.WithPostCall(secretTransferPostCall), nil
+}
+
+func (s *moduleSourceSchema) loadPlatformModule(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource) error {
+	// If we have a platform module, load it
+	pcfg := src.ConfigPlatform
+	if pcfg == nil {
+		return nil
+	}
+	platform, err := core.ResolveDepToSource(ctx, bk, s.dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+	if err != nil {
+		return fmt.Errorf("failed to resolve dep to source: %w", err)
+	}
+	src.Platform = platform
+	return nil
 }
 
 type directoryAsModuleArgs struct {
@@ -759,12 +784,18 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	// sdk and platform can't both be set
+	if src.SDK != nil && src.Platform.Self != nil {
+		return fmt.Errorf("sdk and platform can't both be set")
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+	src.ConfigPlatform = modCfg.Platform
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -2101,11 +2132,20 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	var origContextDir dagql.Instance[*core.Directory]
+	if src.Self.Platform.Self != nil {
+		origContextDir = src.Self.ContextDirectory
+		src = src.Self.Platform
+		// FIXME: adopt the target module's context
+		// FIXME: adopt the target module's name
+	}
+	// FIXME: fix platform module loading, so that:
+	// 1) the platform SDK has access to the actual platform module context (at the moment it's overridden by the target context)
+	// 2) still use the target context for everything else (ie. resolving defaultPath)
 	sdk := src.Self.SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}
 	}
-
 	mod := &core.Module{
 		Query: src.Self.Query,
 
@@ -2167,7 +2207,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, fmt.Errorf("failed to install no-sdk module %q: %w", modName, err)
 		}
 	}
-
+	// If there's a platform module, switch context dir at the last moment
+	if origContextDir.Self != nil {
+		mod.Source.Self.ContextDirectory = origContextDir
+	}
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, src, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
