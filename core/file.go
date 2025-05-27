@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"slices"
 	"time"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -125,7 +126,7 @@ func NewFileSt(ctx context.Context, query *Query, st llb.State, file string, pla
 // WithXXX method.
 func (file *File) Clone() *File {
 	cp := *file
-	cp.Services = cloneSlice(cp.Services)
+	cp.Services = slices.Clone(cp.Services)
 	return &cp
 }
 

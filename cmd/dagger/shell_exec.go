@@ -85,7 +85,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// with an interpreter builtin, the Dagger function is favored.
 	// To force the builtin to execute instead, prefix the command
 	// with "_". For example: "container | from $(_echo alpine)".
-	if after, ok := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); ok {
+	if after, found := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); found && isInterpBuiltin(after) {
 		args[0] = after
 		return args, nil
 	}
@@ -94,9 +94,9 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// builtins, but there's no way to directly call the interpreter
 	// command from there so we use ShellCommand just for the documentation
 	// (.help) but strip the builtin prefix here ('.') when executing.
-	if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
-		if name := strings.TrimPrefix(args[0], "."); isInterpBuiltin(name) {
-			args[0] = name
+	if after, ok := strings.CutPrefix(args[0], "."); ok && isInterpBuiltin(after) {
+		if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
+			args[0] = after
 			return args, nil
 		}
 	}
@@ -564,8 +564,8 @@ func (h *shellCallHandler) parseArgumentValues(
 	}
 
 	// Parse arguments using flags to get the values matched with the right
-	// argument definition. Bypass the flag if the argument value comes from
-	// a command expansion, otherwise set the flag value.
+	// argument definition. Bypass the flag if the argument value is an object
+	// ID, otherwise set the flag value.
 	f := func(flag *pflag.Flag, value string) error {
 		a, err := fn.GetArg(flag.Name)
 		if err != nil {
@@ -575,20 +575,34 @@ func (h *shellCallHandler) parseArgumentValues(
 		if err != nil {
 			return fmt.Errorf("cannot expand function argument %q: %w", a.FlagName(), err)
 		}
-		if v == nil {
-			return fmt.Errorf("unexpected nil value while expanding function argument %q", a.FlagName())
+
+		// Bypass will only be true if the value is a resolved state returning
+		// an object ID. Since custom flags don't support object ID values
+		// bypass calling flag.Get() for this argument in that case. An
+		// object ID is already a final value.
+		if !bypass {
+			return flags.Set(flag.Name, v)
 		}
-		// Flags only support setting their values from strings, so if
-		// anything else is returned, we just ignore it.
-		// TODO: try to validate this more to avoid surprises
-		if sval, ok := v.(string); ok && !bypass {
-			return flags.Set(flag.Name, sval)
+
+		if a.TypeDef.Kind == dagger.TypeDefKindListKind {
+			// Final values are of type `any` and for a slice flag each
+			// element will go through this parsing function independently.
+			// For non object IDs the `flags.Set()` above already handles this
+			// (for slice flags).
+			if curr, exists := values[a.Name]; exists {
+				list, ok := curr.([]string)
+				if !ok {
+					return fmt.Errorf("expected an object ID string for function argument %q, got %T", a.FlagName(), curr)
+				}
+				values[a.Name] = append(list, v)
+				return nil
+			}
+
+			values[a.Name] = []string{v}
+			return nil
 		}
-		// This will bypass using a flag for this argument since we're
-		// saying it's a final value already.
-		if bypass {
-			values[a.Name] = v
-		}
+
+		values[a.Name] = v
 		return nil
 	}
 	if err := flags.ParseAll(newArgs, f); err != nil {
@@ -621,7 +635,7 @@ func (h *shellCallHandler) parseArgumentValues(
 //
 // This happens most commonly when argument is the result of command expansion
 // from a sub-shell.
-func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg *modFunctionArg) (rval any, bypass bool, rerr error) {
+func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg *modFunctionArg) (rval string, bypass bool, rerr error) {
 	argType := arg.TypeDef
 	states := FindStateTokens(value)
 
@@ -654,14 +668,18 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 	// Otherwise it may be an object that we want to bypass (for its ID)
 	st, err := h.state.Extract(ctx, GetStateKey(value))
 	if err != nil {
-		return nil, false, err
+		return "", false, err
 	}
 	r, err := h.StateResult(ctx, st)
 	if err != nil {
-		return nil, false, err
+		return "", false, err
 	}
 	if r.IsObject() {
-		return r.Value, true, err
+		id, ok := r.Value.(string)
+		if !ok {
+			return id, true, fmt.Errorf("expected an object ID string, got %T", r.Value)
+		}
+		return id, true, nil
 	}
 	s, err := r.String()
 	return s, false, err

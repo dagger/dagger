@@ -1344,7 +1344,8 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -2983,7 +2984,8 @@ class Directory(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -4996,7 +4998,8 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -6507,7 +6510,8 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -7012,7 +7016,8 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -7615,7 +7620,8 @@ class ModuleSource(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -9201,10 +9207,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("start", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "start", _args)
 
     async def stop(self, *, kill: bool | None = False) -> Self:
         """Stop the service.
@@ -9224,10 +9227,7 @@ class Service(Type):
         _args = [
             Arg("kill", kill, False),
         ]
-        _ctx = self._select("stop", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "stop", _args)
 
     async def up(
         self,
@@ -9472,7 +9472,8 @@ class Terminal(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()

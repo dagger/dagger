@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +34,7 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = anthropic.ModelClaude3_5SonnetLatest
+	modelDefaultAnthropic = string(anthropic.ModelClaude3_5SonnetLatest)
 	modelDefaultGoogle    = "gemini-2.0-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
@@ -479,7 +480,7 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
-	cp.messages = cloneSlice(cp.messages)
+	cp.messages = slices.Clone(cp.messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
 	cp.endpointMtx = &sync.Mutex{}

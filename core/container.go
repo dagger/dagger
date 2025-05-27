@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -155,18 +156,18 @@ func NewContainer(root *Query, platform Platform) (*Container, error) {
 // WithXXX method.
 func (container *Container) Clone() *Container {
 	cp := *container
-	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
-	cp.Config.Env = cloneSlice(cp.Config.Env)
-	cp.Config.Entrypoint = cloneSlice(cp.Config.Entrypoint)
-	cp.Config.Cmd = cloneSlice(cp.Config.Cmd)
-	cp.Config.Volumes = cloneMap(cp.Config.Volumes)
-	cp.Config.Labels = cloneMap(cp.Config.Labels)
-	cp.Mounts = cloneSlice(cp.Mounts)
-	cp.Secrets = cloneSlice(cp.Secrets)
-	cp.Sockets = cloneSlice(cp.Sockets)
-	cp.Ports = cloneSlice(cp.Ports)
-	cp.Services = cloneSlice(cp.Services)
-	cp.SystemEnvNames = cloneSlice(cp.SystemEnvNames)
+	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
+	cp.Config.Env = slices.Clone(cp.Config.Env)
+	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
+	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
+	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
+	cp.Config.Labels = maps.Clone(cp.Config.Labels)
+	cp.Mounts = slices.Clone(cp.Mounts)
+	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.Sockets = slices.Clone(cp.Sockets)
+	cp.Ports = slices.Clone(cp.Ports)
+	cp.Services = slices.Clone(cp.Services)
+	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
 }
 

@@ -70,7 +70,7 @@ func (m *MCP) DefaultSystemPrompt() string {
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
-	cp.selectedMethods = cloneMap(cp.selectedMethods)
+	cp.selectedMethods = maps.Clone(cp.selectedMethods)
 	cp.returned = false
 	return &cp
 }
@@ -1076,7 +1076,7 @@ NOTE: you must select methods before chaining them`,
 					if call.Args == nil {
 						call.Args = make(map[string]any)
 					}
-					args := cloneMap(call.Args)
+					args := maps.Clone(call.Args)
 					if i > 0 {
 						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
 							// override, since the whole point is to chain from the previous
