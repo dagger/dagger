@@ -71,6 +71,8 @@ const (
 	LinkPurposeAttr = "dagger.io/link.purpose"
 	// The linked span caused the current span to run - in other words, this span
 	// is a continuation, or effect, of the other one.
+	//
+	// This is the default if no explicit purpose is given.
 	LinkPurposeCause = "cause"
 	// The linked span is the origin of the error bubbled up by the current span.
 	LinkPurposeErrorOrigin = "error_origin"
