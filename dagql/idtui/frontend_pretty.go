@@ -1793,18 +1793,23 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		}
 
 		// Print each wrapped line with proper indentation
+		first := true
 		for line := range strings.SplitSeq(errText, "\n") {
-			if line == "" {
-				continue
-			}
-
 			fmt.Fprint(out, prefix)
 			r.fancyIndent(out, row, false, false)
+			var symbol string
+			if first {
+				symbol = "!"
+			} else {
+				symbol = " "
+			}
 			fmt.Fprintf(out,
-				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+				out.String("%s %s").Foreground(termenv.ANSIYellow).String(),
+				symbol,
 				line,
 			)
 			fmt.Fprintln(out)
+			first = false
 		}
 	}
 }
@@ -1885,9 +1890,8 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
-		// r.renderStatus(out, span, chained)
 		r.renderMetrics(out, span)
-		r.renderCached(out, span)
+		r.renderStatus(out, span)
 	}
 
 	fmt.Fprintln(out)
