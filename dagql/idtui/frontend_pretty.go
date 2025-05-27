@@ -386,7 +386,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -627,7 +627,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		progHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -1410,7 +1410,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 
 	// Create buffer for flushing
 	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
-	r := newRenderer(fe.db, 100, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
