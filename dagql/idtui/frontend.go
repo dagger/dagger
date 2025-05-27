@@ -285,6 +285,10 @@ func (r *renderer) renderCall(
 				needIndent = true
 				break
 			}
+			if r.maxLiteralLen > 0 && r.renderedLen(arg.GetValue()) > r.maxLiteralLen {
+				needIndent = true
+				break
+			}
 		}
 		if needIndent {
 			fmt.Fprint(out, r.newline)
@@ -355,6 +359,16 @@ func (r *renderer) renderCall(
 	}
 
 	return nil
+}
+
+func (r *renderer) renderedLen(lit *callpbv1.Literal) int {
+	var buf strings.Builder
+	r.renderLiteral(
+		termenv.NewOutput(&buf,
+			// no colors, so we can more accurately estimate size without ANSI sequences in the way
+			termenv.WithProfile(termenv.Ascii)),
+		lit)
+	return buf.Len()
 }
 
 func (r *renderer) renderSpan(
