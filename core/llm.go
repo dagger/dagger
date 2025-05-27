@@ -33,7 +33,7 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = anthropic.ModelClaude3_5SonnetLatest
+	modelDefaultAnthropic = string(anthropic.ModelClaude3_5SonnetLatest)
 	modelDefaultGoogle    = "gemini-2.0-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
