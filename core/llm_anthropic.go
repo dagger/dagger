@@ -137,7 +137,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		// add tool usage blocks first so they get cached when setting
 		// CacheControl below
 		for _, call := range msg.ToolCalls {
-			blocks = append(blocks, anthropic.ContentBlockParamOfRequestToolUseBlock(call.ID, call.Function.Arguments, call.Function.Name))
+			blocks = append(blocks, anthropic.NewToolUseBlock(call.ID, call.Function.Arguments, call.Function.Name))
 		}
 
 		// enable caching based on simple token usage heuristic
@@ -150,12 +150,12 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		if len(blocks) > 0 {
 			lastBlock := &blocks[len(blocks)-1]
 			switch {
-			case lastBlock.OfRequestTextBlock != nil:
-				lastBlock.OfRequestTextBlock.CacheControl = cacheControl
-			case lastBlock.OfRequestToolUseBlock != nil:
-				lastBlock.OfRequestToolUseBlock.CacheControl = cacheControl
-			case lastBlock.OfRequestToolResultBlock != nil:
-				lastBlock.OfRequestToolResultBlock.CacheControl = cacheControl
+			case lastBlock.OfText != nil:
+				lastBlock.OfText.CacheControl = cacheControl
+			case lastBlock.OfToolUse != nil:
+				lastBlock.OfToolUse.CacheControl = cacheControl
+			case lastBlock.OfToolResult != nil:
+				lastBlock.OfToolResult.CacheControl = cacheControl
 			}
 		}
 
@@ -203,7 +203,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 
 	// Prepare parameters for the streaming call.
 	params := anthropic.MessageNewParams{
-		Model:     c.endpoint.Model,
+		Model:     anthropic.Model(c.endpoint.Model),
 		MaxTokens: int64(8192),
 		Messages:  messages,
 		Tools:     toolsConfig,
