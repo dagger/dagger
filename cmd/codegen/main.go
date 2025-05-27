@@ -29,8 +29,9 @@ var (
 
 	clientOnly bool
 
-	dev    bool
-	isInit bool
+	dev          bool
+	isInit       bool
+	typeDefsOnly bool
 
 	bundle bool
 
@@ -64,6 +65,7 @@ func init() {
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
+	rootCmd.Flags().BoolVar(&typeDefsOnly, "typedefs-only", false, "generate only type definitions (no client code)")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
 	rootCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
@@ -78,13 +80,14 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
 	cfg := generator.Config{
-		Lang:       generator.SDKLang(lang),
-		OutputDir:  outputDir,
-		Merge:      merge,
-		IsInit:     isInit,
-		ClientOnly: clientOnly,
-		Dev:        dev,
-		Bundle:     bundle,
+		Lang:         generator.SDKLang(lang),
+		OutputDir:    outputDir,
+		Merge:        merge,
+		IsInit:       isInit,
+		TypeDefsOnly: typeDefsOnly,
+		ClientOnly:   clientOnly,
+		Dev:          dev,
+		Bundle:       bundle,
 	}
 
 	// If a module source ID is provided or no introspection JSON is provided, we will query
