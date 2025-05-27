@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
@@ -86,26 +85,7 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) error {
-		defer telemetry.End(span, func() error {
-			if err != nil {
-				var extErr dagql.ExtendedError
-				if errors.As(err, &extErr) {
-					originCtx := trace.SpanContextFromContext(
-						telemetry.Propagator.Extract(ctx, telemetry.AnyMapCarrier(extErr.Extensions())),
-					)
-					if originCtx.IsValid() {
-						span.AddLink(trace.Link{
-							SpanContext: originCtx,
-							Attributes: []attribute.KeyValue{
-								attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeErrorOrigin),
-							},
-						})
-					}
-				}
-				return errors.New(unwrapError(err))
-			}
-			return nil
-		})
+		defer telemetry.End(span, func() error { return err })
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
@@ -308,15 +288,4 @@ func anyReturns(id *call.ID, types ...string) bool {
 	} else {
 		return false
 	}
-}
-
-// trim down unnecessary details from the error; we don't want to pollute
-// telemetry errors with large chains like container.withExec.withExec since
-// that info is better represented by the trace itself
-func unwrapError(rerr error) string {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		return gqlErr.Message
-	}
-	return rerr.Error()
 }
