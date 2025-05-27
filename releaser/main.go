@@ -229,21 +229,19 @@ func (r *Releaser) Publish(
 		return &report, nil
 	}
 
-	// FIXME: skip for v0.17.0 release, we'll do this manually
-	// if semver.IsValid(version) {
-	// 	artifact = &ReleaseReportArtifact{
-	// 		Name: "📖 Docs",
-	// 		Link: "https://docs.dagger.io",
-	// 	}
-	// 	if !dryRun {
-	// 		err = dag.Docs().Publish(ctx, netlifyToken)
-	// 		if err != nil {
-	// 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-	// 		}
-	// 	}
-	// 	report.Artifacts = append(report.Artifacts, artifact)
-	// }
-	_ = netlifyToken
+	if semver.IsValid(version) {
+		artifact = &ReleaseReportArtifact{
+			Name: "📖 Docs",
+			Link: "https://docs.dagger.io",
+		}
+		if !dryRun {
+			err = dag.Docs().Publish(ctx, netlifyToken)
+			if err != nil {
+				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+			}
+		}
+		report.Artifacts = append(report.Artifacts, artifact)
+	}
 
 	components := []struct {
 		name    string
