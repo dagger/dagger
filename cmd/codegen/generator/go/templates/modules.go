@@ -295,11 +295,18 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		tps, nextTps = nextTps, nil
 	}
 
-	return strings.Join([]string{
-		fmt.Sprintf("%#v", implementationCode),
-		mainSrc(funcs.CheckVersionCompatibility),
-		invokeSrc(objFunctionCases, createMod),
-	}, "\n"), nil
+	var out []string
+	if !funcs.cfg.TypeDefsOnly {
+		out = append(out, fmt.Sprintf("%#v", implementationCode))
+	}
+	out = append(out,
+		mainSrc(funcs.CheckVersionCompatibility, funcs.cfg.TypeDefsOnly),
+		registerSrc(createMod),
+	)
+	if !funcs.cfg.TypeDefsOnly {
+		out = append(out, invokeSrc(objFunctionCases))
+	}
+	return strings.Join(out, "\n"), nil
 }
 
 func dotLine(a *Statement, id string) *Statement {
@@ -307,61 +314,68 @@ func dotLine(a *Statement, id string) *Statement {
 }
 
 const (
-	parentJSONVar  = "parentJSON"
-	parentNameVar  = "parentName"
-	fnNameVar      = "fnName"
-	inputArgsVar   = "inputArgs"
-	invokeFuncName = "invoke"
+	parentJSONVar    = "parentJSON"
+	parentNameVar    = "parentName"
+	fnNameVar        = "fnName"
+	inputArgsVar     = "inputArgs"
+	invokeFuncName   = "invoke"
+	registerFuncName = "register"
 )
 
 // mainSrc returns the static part of the generated code. It calls out to the
 // "invoke" func, which is the mostly dynamically generated code that actually
 // calls the user's functions.
-func mainSrc(checkVersionCompatibility func(string) bool) string {
+func mainSrc(checkVersionCompatibility func(string) bool, typeDefsOnly bool) string {
 	// Ensure compatibility with modules that predate Void return value handling
 	voidRet := `err`
 	if !checkVersionCompatibility("v0.12.0") {
 		voidRet = `_, err`
 	}
 
-	return `func main() {
-	ctx := context.Background()
+	var dispatch string
+	if typeDefsOnly {
+		dispatch = `func dispatch(ctx context.Context) (rerr error) {
+	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("dagger-go-sdk"),
+		// TODO version?
+	))
+	defer telemetry.Close()
 
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
+	// A lot of the "work" actually happens when we're marshalling the return
+	// value, which entails getting object IDs, which happens in MarshalJSON,
+	// which has no ctx argument, so we use this lovely global variable.
+	setMarshalContext(ctx)
 
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
+	fnCall := dag.CurrentFunctionCall()
+	defer func() {
+		if rerr != nil {
+			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
+				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
 			}
 		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
+	}()
 
-func dispatch(ctx context.Context) (rerr error) {
+	result, err := register()
+	if err != nil {
+		var exec *dagger.ExecError
+		if errors.As(err, &exec) {
+			return exec.Unwrap()
+		}
+		return err
+	}
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	if ` + voidRet + ` := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		return fmt.Errorf("store return value: %w", err)
+	}
+	return nil
+}`
+	} else {
+		dispatch = `func dispatch(ctx context.Context) (rerr error) {
 	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String("dagger-go-sdk"),
@@ -431,10 +445,50 @@ func dispatch(ctx context.Context) (rerr error) {
 	}
 	return nil
 }`
+	}
+
+	return `func main() {
+	ctx := context.Background()
+
+	// Direct slog to the new stderr. This is only for dev time debugging, and
+	// runtime errors/warnings.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+
+	if err := dispatch(ctx); err != nil {
+		os.Exit(2)
+	}
+}
+
+func convertError(rerr error) *dagger.Error {
+	var gqlErr *gqlerror.Error
+	if errors.As(rerr, &gqlErr) {
+		dagErr := dag.Error(gqlErr.Message)
+		if gqlErr.Extensions != nil {
+			keys := make([]string, 0, len(gqlErr.Extensions))
+			for k := range gqlErr.Extensions {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				val, err := json.Marshal(gqlErr.Extensions[k])
+				if err != nil {
+					fmt.Println("failed to marshal error value:", err)
+				}
+				dagErr = dagErr.WithValue(k, dagger.JSON(val))
+			}
+		}
+		return dagErr
+	}
+	return dag.Error(rerr.Error())
+}
+
+` + dispatch
 }
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
-func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
+func invokeSrc(objFunctionCases map[string][]Code) string {
 	// each `case` statement for every object name, which makes up the body of the invoke func
 	objNames := []string{}
 	for objName := range objFunctionCases {
@@ -448,7 +502,7 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	}
 	// when the object name is empty, return the module definition
 	objCases = append(objCases, Case(Lit("")).Block(
-		Return(createMod, Nil()),
+		Return(Id(registerFuncName).Call()),
 	))
 	// default case (return error)
 	objCases = append(objCases, Default().Block(
@@ -477,6 +531,21 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 		// suppress warning if `inputArgs` is unused
 		Id("_").Op("=").Id(inputArgsVar),
 		objSwitch,
+	)
+
+	return fmt.Sprintf("%#v", invokeFunc)
+}
+
+// the source code of the register func, which exposes the module's defined types
+func registerSrc(createMod Code) string {
+	// func register(
+	invokeFunc := Func().Id(registerFuncName).Params().Params(
+		// ) (_ any,
+		Id("_").Id("any"),
+		// err error)
+		Id("err").Error(),
+	).Block(
+		Return(createMod, Nil()),
 	)
 
 	return fmt.Sprintf("%#v", invokeFunc)
