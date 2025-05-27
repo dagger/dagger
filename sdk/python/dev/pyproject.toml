@@ -2,11 +2,7 @@
 name = "python-sdk-dev"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["dagger-io ==0.18.4"]
-
-[tool.dagger]
-# Ensure the dev module works both with released and dev engine.
-uv-version = "0.6.14"
+dependencies = ["dagger-io"]
 
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
@@ -14,3 +10,4 @@ dagger-io = { path = "sdk", editable = true }
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
+
