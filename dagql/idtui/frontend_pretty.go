@@ -1794,7 +1794,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 
 		// Print each wrapped line with proper indentation
 		first := true
-		for line := range strings.SplitSeq(errText, "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(errText), "\n") {
 			fmt.Fprint(out, prefix)
 			r.fancyIndent(out, row, false, false)
 			var symbol string
