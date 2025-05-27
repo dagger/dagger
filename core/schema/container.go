@@ -463,6 +463,13 @@ func (s *containerSchema) Install() {
 				),
 			),
 
+		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
+			Doc(`Return a snapshot with a symlink`).
+			Args(
+				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
+				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
+			),
+
 		dagql.Func("stdout", s.stdout(false)).
 			View(AllVersion).
 			Doc(`The buffered standard output stream of the last executed command`,
@@ -880,6 +887,14 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 	args.Args = expandedArgs
 
 	return parent.WithExec(ctx, args.ContainerExecOpts)
+}
+
+func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args withSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
+	ctr, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
@@ -1878,7 +1893,7 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = op.Mount(ctx, bkref, func(out string) error {
+	err = core.MountRef(ctx, bkref, op.Group(), func(out string) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

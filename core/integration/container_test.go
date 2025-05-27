@@ -4997,3 +4997,96 @@ func main() {
 		require.Equal(t, "args: /bin/app,via-override-args", output)
 	})
 }
+
+func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("symlink can be created", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithWorkdir("/test").
+			WithNewFile("f", "data").
+			WithSymlink("f", "my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/test/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("symlink can be created above working dir", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("f", "data").
+			WithWorkdir("/test").
+			WithSymlink("../f", "my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/test/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("symlink can be created to root", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("f", "data").
+			WithSymlink("/", "/sub/my-symlink")
+
+		content, err := ctr.File("/sub/my-symlink/f").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink can be created to directory above working dir", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("other-dir/sub/f", "data").
+			WithWorkdir("/test").
+			WithSymlink("../other-dir/sub/", "my-symlink")
+
+		content, err := ctr.File("/test/my-symlink/f").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink can be used to read data", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithWorkdir("/test").
+			WithNewFile("f", "data").
+			WithSymlink("f", "my-symlink")
+
+		content, err := ctr.File("my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink work with mounted directory", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().WithNewFile("f", "data")
+		d2 := c.Directory().WithNewFile("f", "otherdata")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", d).
+			WithMountedDirectory("/mnt-to-other-dir", d2).
+			WithSymlink("f", "/mnt/my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/mnt/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+
+		content, err := ctr.File("/mnt/my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink work with mounted directory with workdir set", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().WithNewFile("sub/submarine/f", "data")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", d).
+			WithWorkdir("/mnt/sub").
+			WithSymlink("f", "submarine/my-symlink")
+
+		content, err := ctr.File("/mnt/sub/submarine/my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+}

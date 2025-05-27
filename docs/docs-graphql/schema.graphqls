@@ -1028,6 +1028,17 @@ type Container {
     service: ServiceID!
   ): Container!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+  ): Container!
+
   """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
   """
@@ -1508,6 +1519,17 @@ type Directory {
 
     """Permissions of the new file. Example: 0600"""
     permissions: Int = 420
+  ): Directory!
+
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
   ): Directory!
 
   """

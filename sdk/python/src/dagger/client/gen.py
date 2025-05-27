@@ -2172,6 +2172,25 @@ class Container(Type):
         _ctx = self._select("withServiceBinding", _args)
         return Container(_ctx)
 
+    def with_symlink(self, target: str, link_name: str) -> Self:
+        """Return a snapshot with a symlink
+
+        Parameters
+        ----------
+        target:
+            Location of the file or directory to link to (e.g.,
+            "/existing/file").
+        link_name:
+            Location where the symbolic link will be created (e.g., "/new-
+            file-link").
+        """
+        _args = [
+            Arg("target", target),
+            Arg("linkName", link_name),
+        ]
+        _ctx = self._select("withSymlink", _args)
+        return Container(_ctx)
+
     def with_unix_socket(
         self,
         path: str,
@@ -3161,6 +3180,25 @@ class Directory(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Directory(_ctx)
+
+    def with_symlink(self, target: str, link_name: str) -> Self:
+        """Return a snapshot with a symlink
+
+        Parameters
+        ----------
+        target:
+            Location of the file or directory to link to (e.g.,
+            "/existing/file").
+        link_name:
+            Location where the symbolic link will be created (e.g., "/new-
+            file-link").
+        """
+        _args = [
+            Arg("target", target),
+            Arg("linkName", link_name),
+        ]
+        _ctx = self._select("withSymlink", _args)
         return Directory(_ctx)
 
     def with_timestamps(self, timestamp: int) -> Self:

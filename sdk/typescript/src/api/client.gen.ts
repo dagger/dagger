@@ -2734,6 +2734,16 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   */
+  withSymlink = (target: string, linkName: string): Container => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
    * @param source Identifier of the socket to forward.
@@ -3338,6 +3348,16 @@ export class Directory extends BaseClient {
     opts?: DirectoryWithNewFileOpts,
   ): Directory => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   */
+  withSymlink = (target: string, linkName: string): Directory => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName })
     return new Directory(ctx)
   }
 

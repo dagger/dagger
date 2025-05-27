@@ -1041,6 +1041,23 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Return a snapshot with a symlink
+  """
+  @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Container.t()
+  def with_symlink(%__MODULE__{} = container, target, link_name) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withSymlink")
+      |> QB.put_arg("target", target)
+      |> QB.put_arg("linkName", link_name)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
   """
   @spec with_unix_socket(t(), String.t(), Dagger.Socket.t(), [
