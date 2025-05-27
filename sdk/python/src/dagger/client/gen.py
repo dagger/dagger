@@ -8377,6 +8377,7 @@ class Client(Root):
         keep_git_dir: bool | None = True,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
+        http_auth_username: str | None = None,
         http_auth_token: "Secret | None" = None,
         http_auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
@@ -8396,6 +8397,9 @@ class Client(Root):
             Set SSH known hosts
         ssh_auth_socket:
             Set SSH auth socket
+        http_auth_username:
+            Username used to populate the password during basic HTTP
+            Authorization
         http_auth_token:
             Secret used to populate the password during basic HTTP
             Authorization
@@ -8409,6 +8413,7 @@ class Client(Root):
             Arg("keepGitDir", keep_git_dir, True),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),
+            Arg("httpAuthUsername", http_auth_username, None),
             Arg("httpAuthToken", http_auth_token, None),
             Arg("httpAuthHeader", http_auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
