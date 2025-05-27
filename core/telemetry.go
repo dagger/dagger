@@ -90,8 +90,16 @@ func AroundFunc(
 			if err != nil {
 				var extErr dagql.ExtendedError
 				if errors.As(err, &extErr) {
-					if origin, ok := extErr.Extensions()["_origin"].(string); ok {
-						span.SetAttributes(attribute.String(telemetry.ErrorOriginAttr, origin))
+					originCtx := trace.SpanContextFromContext(
+						telemetry.Propagator.Extract(ctx, telemetry.AnyMapCarrier(extErr.Extensions())),
+					)
+					if originCtx.IsValid() {
+						span.AddLink(trace.Link{
+							SpanContext: originCtx,
+							Attributes: []attribute.KeyValue{
+								attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeErrorOrigin),
+							},
+						})
 					}
 				}
 				return errors.New(unwrapError(err))
@@ -102,19 +110,20 @@ func AroundFunc(
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
 		if err != nil {
-			return TrackOriginError{err, span}
+			return err
 		}
 		return nil
 	}
 }
 
-// TrackOriginError tracks the origin of an error by adding an _origin extended
-// field containing the span ID.
+// TrackOriginError tracks the origin of an error by propagating the trace
+// context into extended fields.
 //
-// If the inner error already has an _origin extended field, it takes precedence.
+// If the inner error already has a trace context propagated, it takes
+// precedence.
 type TrackOriginError struct {
 	Err    error
-	Origin trace.Span
+	Origin context.Context
 }
 
 var _ dagql.ExtendedError = TrackOriginError{}
@@ -124,9 +133,8 @@ func (e TrackOriginError) Error() string {
 }
 
 func (e TrackOriginError) Extensions() map[string]any {
-	exts := map[string]any{
-		"_origin": e.Origin.SpanContext().SpanID().String(),
-	}
+	exts := map[string]any{}
+	telemetry.Propagator.Inject(e.Origin, telemetry.AnyMapCarrier(exts))
 	var inner dagql.ExtendedError
 	if errors.As(e.Err, &inner) {
 		// NB: original origin takes priority by overwriting

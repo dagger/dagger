@@ -388,9 +388,13 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		return err
 	}
 
+	spanCtx := SpanContextFromDescription(opErr.Description)
+	if !spanCtx.IsValid() {
+		spanCtx = trace.SpanContextFromContext(ctx)
+	}
 	return &ExecError{
 		original: baseErr,
-		Origin:   trace.SpanContextFromContext(ctx).SpanID(),
+		Origin:   spanCtx,
 		Cmd:      execOp.Exec.Meta.Args,
 		ExitCode: exitCode,
 		Stdout:   strings.TrimSpace(string(stdoutBytes)),

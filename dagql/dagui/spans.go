@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
@@ -25,6 +24,8 @@ type Span struct {
 	FailedLinks   SpanSet `json:"-"`
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
+
+	ErrorOrigin *Span `json:"-"`
 
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
@@ -117,11 +118,10 @@ type SpanSnapshot struct {
 
 	Activity Activity `json:",omitzero"`
 
-	ParentID SpanID        `json:",omitzero"`
-	Links    []SpanContext `json:",omitempty"`
+	ParentID SpanID     `json:",omitzero"`
+	Links    []SpanLink `json:",omitempty"`
 
-	Status      sdktrace.Status `json:",omitzero"`
-	ErrorOrigin SpanID          `json:",omitzero"`
+	Status sdktrace.Status `json:",omitzero"`
 
 	// statuses derived from span and its effects
 	Failed_         bool     `json:",omitempty"`
@@ -162,6 +162,11 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+}
+
+type SpanLink struct {
+	SpanContext SpanContext
+	Purpose     string
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
@@ -210,10 +215,6 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
-
-	case telemetry.ErrorOriginAttr:
-		spanID, _ := trace.SpanIDFromHex(val.(string))
-		snapshot.ErrorOrigin = SpanID{SpanID: spanID}
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
