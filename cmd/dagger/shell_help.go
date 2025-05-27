@@ -435,10 +435,9 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 	meta := new(strings.Builder)
 	meta.WriteString(m.Name)
 
-	// Prefer description on main object
-	description := m.MainObject.AsObject.Description
+	description := m.Description
 	if description == "" {
-		description = m.Description
+		description = m.MainObject.AsObject.Description
 	}
 	if description != "" {
 		meta.WriteString("\n\n")
