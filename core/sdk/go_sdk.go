@@ -37,6 +37,10 @@ type goSDK struct {
 	rawConfig map[string]any
 }
 
+func (sdk *goSDK) HasModuleTypeDefs() bool {
+	return true
+}
+
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
@@ -170,7 +174,7 @@ func (sdk *goSDK) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, false)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +210,111 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
+func (sdk *goSDK) TypeDefs(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.Instance[*core.ModuleSource],
+) (_ *core.Container, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load typedefs")
+	defer telemetry.End(span, func() error { return rerr })
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := sdk.dag.Select(ctx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withoutUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString("/tmp/dagger-ssh-sock"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"find", ".",
+						"-maxdepth", "1",
+						"-type", "f",
+						"-name", "*.go",
+						"!", "-name", "dagger.gen.go",
+						"-delete",
+					},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"go", "build",
+						"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
+						"-o", goSDKRuntimePath,
+						".",
+					},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withEntrypoint",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						goSDKRuntimePath,
+					},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(RuntimeWorkdirPath),
+				},
+			},
+		},
+		// remove shared cache mounts from final container so module code can't
+		// do weird things with them like IPC, etc.
+		dagql.Selector{
+			Field: "withoutMount",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/go/pkg/mod"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withoutMount",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/root/.cache/go-build"),
+				},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
+	}
+	return ctr.Self, nil
+}
+
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (_ *core.Container, rerr error) {
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, false)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +392,7 @@ func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.Instance[*core.ModuleSource],
+	typedefsOnly bool,
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
@@ -332,6 +436,10 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 	if !src.Self.ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
+	}
+
+	if typedefsOnly {
+		codegenArgs = append(codegenArgs, "--typedefs-only")
 	}
 
 	selectors := []dagql.Selector{
