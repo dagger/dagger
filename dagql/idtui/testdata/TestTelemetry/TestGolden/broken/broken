@@ -5,25 +5,20 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
-! failed to serve module: input: moduleSource.asModule failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+▼ load module X.Xs ERROR
 ├─● finding module configuration X.Xs
-╰─▼ initializing module X.Xs
-  ! input: moduleSource.asModule failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-  ╰─▼ ModuleSource.asModule: Module! X.Xs
-    ! failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-    ├─▼ go SDK: load runtime X.Xs
-    │ ╰─✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
-    │   ┃ # dagger/broken
-    │   ┃ ./main.go:6:6: undefined: ctx
-    │   ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-    │  
-    ╰─✘ asModule getModDef X.Xs
-      ! failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+╰─▼ initializing module X.Xs ERROR
+  ╰─▼ ModuleSource.asModule: Module! X.Xs ERROR
+    ├─✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
+    │ ┃ # dagger/broken
+    │ ┃ ./main.go:6:6: undefined: ctx
+    │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+    │
+    ╰─✘ asModule getModDef X.Xs ERROR
 
 Error logs:
 
-✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
+✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
 # dagger/broken
 ./main.go:6:6: undefined: ctx
 ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1

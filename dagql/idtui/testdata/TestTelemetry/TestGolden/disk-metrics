@@ -46,72 +46,71 @@ Expected stderr:
 │ │ ├─▼ load dep modules X.Xs
 │ │ │ ╰─▼ ModuleSource.asModule: Module! X.Xs
 │ │ │   ├─● load dep modules X.Xs
-│ │ │   ├─▼ go SDK: load runtime X.Xs
-│ │ │   │ ├─● Container.directory(path: "/go/pkg/mod"): Directory! X.Xs
-│ │ │   │ │
-│ │ │   │ ├─● Container.directory(path: "/root/.cache/go-build"): Directory! X.Xs
-│ │ │   │ │
-│ │ │   │ ├─● Container.withMountedCache(
-│ │ │   │ │   ┆ path: "/go/pkg/mod"
-│ │ │   │ │   ┆ cache: cacheVolume(key: "gomod", namespace: "internal"): CacheVolume!
-│ │ │   │ │   ┆ source: Container.directory(path: "/go/pkg/mod"): Directory!
-│ │ │   │ │   ┆ sharing: SHARED
-│ │ │   │ │   ): Container! X.Xs
-│ │ │   │ ├─● .withMountedCache(
-│ │ │   │ │   ┆ path: "/root/.cache/go-build"
-│ │ │   │ │   ┆ cache: cacheVolume(key: "gobuild", namespace: "internal"): CacheVolume!
-│ │ │   │ │   ┆ source: Container.directory(path: "/root/.cache/go-build"): Directory!
-│ │ │   │ │   ┆ sharing: SHARED
-│ │ │   │ │   ): Container! X.Xs
-│ │ │   │ ├─● .__withSystemEnvVariable(name: "GOPROXY"): Container! X.Xs
-│ │ │   │ ├─● .__withSystemEnvVariable(name: "GODEBUG"): Container! X.Xs
-│ │ │   │ │
-│ │ │   │ ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
-│ │ │   │ │
-│ │ │   │ ├─$ Container.withMountedFile(
-│ │ │   │ │   ┆ path: "/schema.json"
-│ │ │   │ │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
-│ │ │   │ │   ): Container! X.Xs CACHED
-│ │ │   │ ├─● .withMountedDirectory(
-│ │ │   │ │   ┆ path: "/src"
-│ │ │   │ │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
-│ │ │   │ │   ): Container! X.Xs
-│ │ │   │ ├─● .withWorkdir(path: "/src"): Container! X.Xs
-│ │ │   │ ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
-│ │ │   │ ├─● .withoutDefaultArgs: Container! X.Xs
-│ │ │   │ ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "dep", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
-│ │ │   │ ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
-│ │ │   │ ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
-│ │ │   │ ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
-│ │ │   │ ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
-│ │ │   │ ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
-│ │ │   │ ╰─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
-│ │ │   │  
+│ │ │   │
+│ │ │   ├─● Container.directory(path: "/go/pkg/mod"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─● Container.directory(path: "/root/.cache/go-build"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─● Container.withMountedCache(
+│ │ │   │   ┆ path: "/go/pkg/mod"
+│ │ │   │   ┆ cache: cacheVolume(key: "gomod", namespace: "internal"): CacheVolume!
+│ │ │   │   ┆ source: Container.directory(path: "/go/pkg/mod"): Directory!
+│ │ │   │   ┆ sharing: SHARED
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .withMountedCache(
+│ │ │   │   ┆ path: "/root/.cache/go-build"
+│ │ │   │   ┆ cache: cacheVolume(key: "gobuild", namespace: "internal"): CacheVolume!
+│ │ │   │   ┆ source: Container.directory(path: "/root/.cache/go-build"): Directory!
+│ │ │   │   ┆ sharing: SHARED
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .__withSystemEnvVariable(name: "GOPROXY"): Container! X.Xs
+│ │ │   ├─● .__withSystemEnvVariable(name: "GODEBUG"): Container! X.Xs
+│ │ │   │
+│ │ │   ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─$ Container.withMountedFile(
+│ │ │   │   ┆ path: "/schema.json"
+│ │ │   │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
+│ │ │   │   ): Container! X.Xs CACHED
+│ │ │   ├─● .withMountedDirectory(
+│ │ │   │   ┆ path: "/src"
+│ │ │   │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .withWorkdir(path: "/src"): Container! X.Xs
+│ │ │   ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
+│ │ │   ├─● .withoutDefaultArgs: Container! X.Xs
+│ │ │   ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "dep", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
+│ │ │   ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
+│ │ │   ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
+│ │ │   ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
+│ │ │   ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
+│ │ │   ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
+│ │ │   ├─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
+│ │ │   │
 │ │ │   ╰─▼ asModule getModDef X.Xs
 │ │ │     ╰─● module: Module! X.Xs
 │ │ │      
-│ │ ├─▼ go SDK: load runtime X.Xs
-│ │ │ ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
-│ │ │ │
-│ │ │ ├─$ Container.withMountedFile(
-│ │ │ │   ┆ path: "/schema.json"
-│ │ │ │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
-│ │ │ │   ): Container! X.Xs CACHED
-│ │ │ ├─● .withMountedDirectory(
-│ │ │ │   ┆ path: "/src"
-│ │ │ │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
-│ │ │ │   ): Container! X.Xs
-│ │ │ ├─● .withWorkdir(path: "/src"): Container! X.Xs
-│ │ │ ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
-│ │ │ ├─● .withoutDefaultArgs: Container! X.Xs
-│ │ │ ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
-│ │ │ ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
-│ │ │ ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
-│ │ │ ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
-│ │ │ ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
-│ │ │ ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
-│ │ │ ╰─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
-│ │ │  
+│ │ ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
+│ │ │
+│ │ ├─$ Container.withMountedFile(
+│ │ │   ┆ path: "/schema.json"
+│ │ │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
+│ │ │   ): Container! X.Xs CACHED
+│ │ ├─● .withMountedDirectory(
+│ │ │   ┆ path: "/src"
+│ │ │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
+│ │ │   ): Container! X.Xs
+│ │ ├─● .withWorkdir(path: "/src"): Container! X.Xs
+│ │ ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
+│ │ ├─● .withoutDefaultArgs: Container! X.Xs
+│ │ ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
+│ │ ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
+│ │ ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
+│ │ ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
+│ │ ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
+│ │ ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
+│ │ ├─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
+│ │ │
 │ │ ╰─● asModule getModDef X.Xs
 │ ╰─● .serve(includeDependencies: true): Void X.Xs
 │  
@@ -122,20 +121,20 @@ Expected stderr:
 │ ├─● ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
-│ ├─● ModuleSource.commit: String! X.Xs
-│ │
-│ ├─● ModuleSource.version: String! X.Xs
-│ │
 │ ├─● ModuleSource.sourceRootSubpath: String! X.Xs
 │ │ ┃ .
 │ │
 │ ├─● ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
-│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
+│ ├─● ModuleSource.commit: String! X.Xs
+│ │
+│ ├─● ModuleSource.version: String! X.Xs
 │ │
 │ ├─● Module.name: String! X.Xs
 │ │ ┃ viztest
+│ │
+│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ ├─● Module.description: String! X.Xs
 │ │
@@ -144,11 +143,10 @@ Expected stderr:
 │ ├─● Missing.name: String! X.Xs
 │ │ ┃ dep
 │ │
-│ ├─● Missing.source: ModuleSource! X.Xs
-│ │
 │ ├─● Missing.description: String! X.Xs
 │ │
-│ ├─● ModuleSource.digest: String! X.Xs
+│ ├─● Missing.source: ModuleSource! X.Xs
+│ ├─● .digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
 │ ╰─● ModuleSource.asString: String! X.Xs

@@ -14,17 +14,17 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● viztest: Viztest! X.Xs
-▼ .failEffect: Container! X.Xs
+▼ .failEffect: Container! X.Xs ERROR
 ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 ├─● container: Container! X.Xs
 ├─$ .from(address: "alpine"): Container! X.Xs CACHED
-╰─✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
+╰─✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs ERROR
   ┃ this is a failing effect
   ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 
 Error logs:
 
-✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
+✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs ERROR
 this is a failing effect
 ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 

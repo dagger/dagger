@@ -14,14 +14,14 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● viztest: Viztest! X.Xs
-✘ .failLogNative: Void X.Xs
+✘ .failLogNative: Void X.Xs ERROR
 ┃ im doing a lot of work
 ┃ and then failing
 ! i failed
 
 Error logs:
 
-✘ .failLogNative: Void X.Xs
+✘ .failLogNative: Void X.Xs ERROR
 im doing a lot of work
 and then failing
 ! i failed

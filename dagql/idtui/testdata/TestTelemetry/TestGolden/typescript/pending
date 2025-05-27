@@ -14,19 +14,19 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● typescript: Typescript! X.Xs
-▼ .pending: Void X.Xs
+▼ .pending: Void X.Xs ERROR
 ┃ Error: process "false" did not complete successfully: exit code: 1
 ! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 ├─● .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
 ├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
-├─✘ .withExec(args: ["false"]): Container! X.Xs
+├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
 │ ! process "false" did not complete successfully: exit code: 1
 ╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
 Error logs:
 
-✘ .pending: Void X.Xs
+✘ .pending: Void X.Xs ERROR
 Error: process "false" did not complete successfully: exit code: 1
 ! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 
