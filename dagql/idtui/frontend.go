@@ -387,14 +387,7 @@ func (r *renderer) renderSpan(
 		quick.Highlight(out, name, "markdown", "terminal16", highlightStyle())
 	default:
 		label := out.String(name)
-		var isEffect bool
-		if span != nil {
-			for range span.CausalSpans {
-				isEffect = true
-				break
-			}
-		}
-		if isEffect {
+		if span != nil && span.IsEffect() {
 			label = label.Italic()
 		}
 		fmt.Fprint(out, label)

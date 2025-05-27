@@ -67,6 +67,15 @@ func (span *Span) Call() *callpbv1.Call {
 	return span.callCache
 }
 
+func (span *Span) IsEffect() bool {
+	for _, link := range span.Links {
+		if link.Purpose == telemetry.LinkPurposeCause {
+			return true
+		}
+	}
+	return false
+}
+
 func (span *Span) Base() *callpbv1.Call {
 	if span.baseCache != nil {
 		return span.baseCache

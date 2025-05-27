@@ -614,10 +614,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 
 	// associate the span to its parents and links
 	if span.ParentID.IsValid() &&
-		// If a span has links, don't bother associating it to its
-		// parent. We might want to use that info someday (the
-		// "unlazying" point), but no use case right now.
-		len(span.Links) == 0 {
+		// If a span is an effect, don't bother associating it to its parent. We
+		// might want to use that info someday (the "unlazying" point), but no use
+		// case right now.
+		!span.IsEffect() {
 		span.ParentSpan = db.initSpan(span.ParentID)
 		if span.ParentSpan.ChildSpans.Add(span) {
 			// if we're a new child, take a new snapshot for ChildCount

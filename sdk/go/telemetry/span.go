@@ -28,7 +28,12 @@ func Encapsulated() trace.SpanStartOption {
 }
 
 func Resume(ctx context.Context) trace.SpanStartOption {
-	return trace.WithLinks(trace.Link{SpanContext: trace.SpanContextFromContext(ctx)})
+	return trace.WithLinks(trace.Link{
+		SpanContext: trace.SpanContextFromContext(ctx),
+		Attributes: []attribute.KeyValue{
+			attribute.String(LinkPurposeAttr, LinkPurposeCause),
+		},
+	})
 }
 
 // Internal can be applied to a span to indicate that this span should not be
