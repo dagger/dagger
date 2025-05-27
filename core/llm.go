@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -68,10 +69,9 @@ type LLM struct {
 	model string
 
 	endpoint    *LLMEndpoint
-	endpointMtx *sync.Mutex
-
-	once *sync.Once
-	err  error
+	endpointMtx sync.Mutex
+	once        sync.Once
+	err         error
 
 	// History of messages
 	messages []ModelMessage
@@ -450,10 +450,15 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(),
-		once:        &sync.Once{},
-		endpointMtx: &sync.Mutex{},
+		mcp:         NewMCP(query, NewEnv()),
 	}, nil
+}
+
+//go:embed llm_dagger_prompt.md
+var defaultSystemPrompt string
+
+func (llm *LLM) DefaultSystemPrompt() string {
+	return defaultSystemPrompt
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -478,12 +483,13 @@ func (*LLM) Type() *ast.Type {
 }
 
 func (llm *LLM) Clone() *LLM {
-	cp := *llm
+	var cp LLM
+	cp.maxAPICalls = llm.maxAPICalls
+	cp.apiCalls = llm.apiCalls
+	cp.Query = llm.Query.Clone()
 	cp.messages = cloneSlice(cp.messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
-	cp.endpointMtx = &sync.Mutex{}
-	cp.once = &sync.Once{}
 	cp.err = nil
 	return &cp
 }
@@ -549,7 +555,7 @@ func (llm *LLM) WithPrompt(
 	srv *dagql.Server,
 ) (*LLM, error) {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Input(key); found {
+		if binding, found := llm.mcp.Env().Input(key); found {
 			return binding.String()
 		}
 		// leave unexpanded, perhaps it refers to an object var
@@ -623,7 +629,7 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	if llm.disableDefaultSystemPrompt {
 		return llm.messages
 	}
-	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
+	if prompt := llm.DefaultSystemPrompt(); prompt != "" {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
@@ -940,7 +946,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.Clone().MCP()
+	llm.mcp.SetEnv(env)
 	return llm
 }
 
