@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"dagger.io/dagger/querybuilder"
+	"dagger.io/dagger/telemetry"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -36,10 +37,23 @@ func assertNotNil(argName string, value any) {
 
 type DaggerObject = querybuilder.GraphQLMarshaller
 
+type gqlExtendedError struct {
+	inner *gqlerror.Error
+}
+
+var _ telemetry.ExtendedError = gqlExtendedError{}
+
+func (e gqlExtendedError) Error() string {
+	return e.inner.Message
+}
+
+func (e gqlExtendedError) Extensions() map[string]any {
+	return e.inner.Extensions
+}
+
 // getCustomError parses a GraphQL error into a more specific error type.
 func getCustomError(err error) error {
 	var gqlErr *gqlerror.Error
-
 	if !errors.As(err, &gqlErr) {
 		return nil
 	}
@@ -48,12 +62,12 @@ func getCustomError(err error) error {
 
 	typ, ok := ext["_type"].(string)
 	if !ok {
-		return nil
+		return gqlExtendedError{gqlErr}
 	}
 
 	if typ == "EXEC_ERROR" {
 		e := &ExecError{
-			original: err,
+			original: gqlErr,
 		}
 		if code, ok := ext["exitCode"].(float64); ok {
 			e.ExitCode = int(code)
@@ -74,20 +88,26 @@ func getCustomError(err error) error {
 		return e
 	}
 
-	return nil
+	return gqlExtendedError{gqlErr}
 }
 
 // ExecError is an API error from an exec operation.
 type ExecError struct {
-	original error
+	original *gqlerror.Error
 	Cmd      []string
 	ExitCode int
 	Stdout   string
 	Stderr   string
 }
 
+var _ telemetry.ExtendedError = (*ExecError)(nil)
+
 func (e *ExecError) Error() string {
 	return e.Message()
+}
+
+func (e *ExecError) Extensions() map[string]any {
+	return e.original.Extensions
 }
 
 func (e *ExecError) Message() string {
