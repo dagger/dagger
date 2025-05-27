@@ -1755,7 +1755,27 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
+func spanIsVisible(needle dagui.SpanID, haystack *dagui.TraceRow) bool {
+	for cur := haystack.PreviousVisual; cur != nil; cur = cur.PreviousVisual {
+		if cur.Span.ID == needle {
+			return true
+		}
+	}
+	if haystack.Span.ID == needle {
+		return true
+	}
+	for cur := haystack.NextVisual; cur != nil; cur = cur.NextVisual {
+		if cur.Span.ID == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if row.Span.ErrorOrigin.IsValid() && row.Span.ErrorOrigin != row.Span.ID { //&& spanIsVisible(row.Span.ErrorOrigin, row) {
+		return
+	}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
 		if errText == "" {

@@ -67,6 +67,9 @@ const (
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
+	// Indicates that this span's error bubbled up from somewhere else.
+	ErrorOriginAttr = "dagger.io/error.origin"
+
 	// NB: the following attributes are not currently used.
 
 	// Indicates that this span was a cache hit and did nothing.

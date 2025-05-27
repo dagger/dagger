@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -381,6 +382,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			errInst, err := id.Load(ctx, opts.Server)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
+			}
+			dagErr := errInst.Self
+			if dagErr.Extensions()["_origin"] == "" {
+				originJSON, _ := json.Marshal(
+					trace.SpanContextFromContext(ctx).SpanID().String(),
+				)
+				dagErr.Values = append(dagErr.Values, &ErrorValue{
+					Name:  "_origin",
+					Value: JSON(originJSON),
+				})
 			}
 			return nil, errInst.Self
 		}

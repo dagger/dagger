@@ -355,7 +355,7 @@ func (r Instance[T]) GetPostCall() (cache.PostCallFunc, Typed) {
 	return r.postCall, r
 }
 
-func NoopDone(res Typed, cached bool, rerr error) {}
+func NoopDone(res Typed, cached bool, rerr error) error { return rerr }
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
@@ -573,7 +573,7 @@ func (r Instance[T]) call(
 
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error)) {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error) error) {
 			return s.telemetry(ctx, r, newID)
 		}))
 	}

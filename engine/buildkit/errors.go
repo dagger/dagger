@@ -1,8 +1,13 @@
 package buildkit
 
+import (
+	"go.opentelemetry.io/otel/trace"
+)
+
 // ExecError is an error that occurred while executing an `Op_Exec`.
 type ExecError struct {
 	original error
+	Origin   trace.SpanID
 	Cmd      []string
 	ExitCode int
 	Stdout   string
@@ -20,6 +25,7 @@ func (e *ExecError) Unwrap() error {
 func (e *ExecError) Extensions() map[string]any {
 	return map[string]any{
 		"_type":    "EXEC_ERROR",
+		"_origin":  e.Origin.String(),
 		"cmd":      e.Cmd,
 		"exitCode": e.ExitCode,
 		"stdout":   e.Stdout,
