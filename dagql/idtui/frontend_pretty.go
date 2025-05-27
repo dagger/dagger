@@ -1774,7 +1774,7 @@ func spanIsVisible(needle dagui.SpanID, haystack *dagui.TraceRow) bool {
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	errOrigin := row.Span.ErrorOrigin
-	if errOrigin != nil && errOrigin.ID != row.Span.ID { //&& spanIsVisible(row.Span.ErrorOrigin, row) {
+	if errOrigin != nil && errOrigin.ID != row.Span.ID && spanIsVisible(errOrigin.ID, row) {
 		return
 	}
 	for _, span := range row.Span.Errors().Order {
