@@ -37,6 +37,9 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
+  """Retrieve the binding value, as type JSONValue"""
+  asJSONValue: JSONValue!
+
   """Retrieve the binding value, as type LLM"""
   asLLM: LLM!
 
@@ -1978,6 +1981,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type JSONValue in the environment"""
+  withJSONValueInput(
+    """The name of the binding"""
+    name: String!
+
+    """The JSONValue value to assign to the binding"""
+    value: JSONValueID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired JSONValue output to be assigned in the environment"""
+  withJSONValueOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type LLM in the environment"""
   withLLMInput(
     """The name of the binding"""
@@ -2777,6 +2801,52 @@ scalar InterfaceTypeDefID
 """An arbitrary JSON-encoded value."""
 scalar JSON
 
+type JSONValue {
+  """Return the JSON-encoded value, or a sub-value at the given path"""
+  get(
+    """The JSON path (dot-separated)"""
+    path: String!
+  ): JSON!
+
+  """Get a boolean value at the specified path."""
+  getBool(path: String!): Boolean!
+
+  """Get an integer value at the specified path."""
+  getInt(path: String!): Int!
+
+  """Get a value as raw JSON at the specified path."""
+  getJSON(path: String!): JSON!
+
+  """Get a string value at the specified path."""
+  getString(path: String!): String!
+
+  """A unique identifier for this JSONValue."""
+  id: JSONValueID!
+
+  """Set a boolean value at the specified path."""
+  setBoolean(path: String!, value: Boolean!): JSONValue!
+
+  """Set an integer value at the specified path."""
+  setInteger(path: String!, value: Int!): JSONValue!
+
+  """Set a value as raw JSON at the specified path"""
+  setJSON(path: String!, value: JSON!): JSONValue!
+
+  """Set a string value at the specified path."""
+  setString(path: String!, value: String!): JSONValue!
+
+  """Removes the value at the specified path. Empty path resets to null."""
+  unset(
+    """The JSON path (dot-separated)"""
+    path: String!
+  ): JSONValue!
+}
+
+"""
+The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+"""
+scalar JSONValueID
+
 type LLM {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
@@ -3465,6 +3535,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """Initialize an empty JSON value"""
+  json: JSONValue!
+
   """Initialize a Large Language Model (LLM)"""
   llm(
     """Model to use"""
@@ -3557,6 +3630,9 @@ type Query {
 
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
+
+  """Load a JSONValue from its ID."""
+  loadJSONValueFromID(id: JSONValueID!): JSONValue!
 
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
