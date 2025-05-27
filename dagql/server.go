@@ -73,7 +73,7 @@ type AroundFunc func(
 	context.Context,
 	Object,
 	*call.ID,
-) (context.Context, func(res Typed, cached bool, err error))
+) (context.Context, func(res Typed, cached bool, err error) error)
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.

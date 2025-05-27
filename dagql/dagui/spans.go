@@ -25,6 +25,8 @@ type Span struct {
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
 
+	ErrorOrigin *Span `json:"-"`
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
@@ -114,12 +116,12 @@ type SpanSnapshot struct {
 	StartTime time.Time
 	EndTime   time.Time
 
-	Activity Activity `json:",omitempty"`
+	Activity Activity `json:",omitzero"`
 
-	ParentID SpanID        `json:",omitempty"`
-	Links    []SpanContext `json:",omitempty"`
+	ParentID SpanID     `json:",omitzero"`
+	Links    []SpanLink `json:",omitempty"`
 
-	Status sdktrace.Status `json:",omitempty"`
+	Status sdktrace.Status `json:",omitzero"`
 
 	// statuses derived from span and its effects
 	Failed_         bool     `json:",omitempty"`
@@ -160,6 +162,11 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+}
+
+type SpanLink struct {
+	SpanContext SpanContext
+	Purpose     string
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {

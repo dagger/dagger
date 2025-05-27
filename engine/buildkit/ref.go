@@ -34,6 +34,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -387,8 +388,13 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		return err
 	}
 
+	spanCtx := SpanContextFromDescription(opErr.Description)
+	if !spanCtx.IsValid() {
+		spanCtx = trace.SpanContextFromContext(ctx)
+	}
 	return &ExecError{
 		original: baseErr,
+		Origin:   spanCtx,
 		Cmd:      execOp.Exec.Meta.Args,
 		ExitCode: exitCode,
 		Stdout:   strings.TrimSpace(string(stdoutBytes)),
