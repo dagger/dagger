@@ -154,6 +154,12 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	return client.HTTP(url, opts...)
 }
 
+// Initialize a JSON value
+func JSON() *dagger.JSONValue {
+	client := initClient()
+	return client.JSON()
+}
+
 // Initialize a Large Language Model (LLM)
 //
 // Experimental: LLM support is not yet stabilized
@@ -328,6 +334,12 @@ func LoadInputTypeDefFromID(id dagger.InputTypeDefID) *dagger.InputTypeDef {
 func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceTypeDef {
 	client := initClient()
 	return client.LoadInterfaceTypeDefFromID(id)
+}
+
+// Load a JSONValue from its ID.
+func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
+	client := initClient()
+	return client.LoadJSONValueFromID(id)
 }
 
 // Load a LLM from its ID.

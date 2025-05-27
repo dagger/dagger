@@ -1292,6 +1292,23 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
  */
 export type JSON = string & { __JSON: never }
 
+export type JSONValueContentsOpts = {
+  /**
+   * Pretty-print
+   */
+  pretty?: boolean
+
+  /**
+   * Optional line prefix
+   */
+  indent?: string
+}
+
+/**
+ * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ */
+export type JSONValueID = string & { __JSONValueID: never }
+
 /**
  * The `LLMID` scalar type represents an identifier for an object of type LLM.
  */
@@ -2119,6 +2136,14 @@ export class Binding extends BaseClient {
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type JSONValue
+   */
+  asJSONValue = (): JSONValue => {
+    const ctx = this._ctx.select("asJSONValue")
+    return new JSONValue(ctx)
   }
 
   /**
@@ -4989,6 +5014,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type JSONValue in the environment
+   * @param name The name of the binding
+   * @param value The JSONValue value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withJSONValueInput = (
+    name: string,
+    value: JSONValue,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withJSONValueInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired JSONValue output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withJSONValueOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type LLM in the environment
    * @param name The name of the binding
    * @param value The LLM value to assign to the binding
@@ -6789,6 +6843,201 @@ export class InterfaceTypeDef extends BaseClient {
   }
 }
 
+export class JSONValue extends BaseClient {
+  private readonly _id?: JSONValueID = undefined
+  private readonly _asBoolean?: boolean = undefined
+  private readonly _asInteger?: number = undefined
+  private readonly _asString?: string = undefined
+  private readonly _contents?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: JSONValueID,
+    _asBoolean?: boolean,
+    _asInteger?: number,
+    _asString?: string,
+    _contents?: JSON,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._asBoolean = _asBoolean
+    this._asInteger = _asInteger
+    this._asString = _asString
+    this._contents = _contents
+  }
+
+  /**
+   * A unique identifier for this JSONValue.
+   */
+  id = async (): Promise<JSONValueID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<JSONValueID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an array from json
+   */
+  asArray = async (): Promise<JSONValue[]> => {
+    type asArray = {
+      id: JSONValueID
+    }
+
+    const ctx = this._ctx.select("asArray").select("id")
+
+    const response: Awaited<asArray[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
+  }
+
+  /**
+   * Decode a boolean from json
+   */
+  asBoolean = async (): Promise<boolean> => {
+    if (this._asBoolean) {
+      return this._asBoolean
+    }
+
+    const ctx = this._ctx.select("asBoolean")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an integer from json
+   */
+  asInteger = async (): Promise<number> => {
+    if (this._asInteger) {
+      return this._asInteger
+    }
+
+    const ctx = this._ctx.select("asInteger")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode a string from json
+   */
+  asString = async (): Promise<string> => {
+    if (this._asString) {
+      return this._asString
+    }
+
+    const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the value encoded as json
+   * @param opts.pretty Pretty-print
+   * @param opts.indent Optional line prefix
+   */
+  contents = async (opts?: JSONValueContentsOpts): Promise<JSON> => {
+    if (this._contents) {
+      return this._contents
+    }
+
+    const ctx = this._ctx.select("contents", { ...opts })
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup the field at the given path, and return its value.
+   * @param path Path of the field to lookup, encoded as an array of field names
+   */
+  field = (path: string[]): JSONValue => {
+    const ctx = this._ctx.select("field", { path })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * List fields of the encoded object
+   */
+  fields = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("fields")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Encode a boolean to json
+   * @param value New boolean value
+   */
+  newBoolean = (value: boolean): JSONValue => {
+    const ctx = this._ctx.select("newBoolean", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode an integer to json
+   * @param value New integer value
+   */
+  newInteger = (value: number): JSONValue => {
+    const ctx = this._ctx.select("newInteger", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode a string to json
+   * @param value New string value
+   */
+  newString = (value: string): JSONValue => {
+    const ctx = this._ctx.select("newString", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Return a new json value, decoded from the given content
+   * @param contents New JSON-encoded contents
+   */
+  withContents = (contents: JSON): JSONValue => {
+    const ctx = this._ctx.select("withContents", { contents })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set a new field at the given path
+   * @param path Path of the field to set, encoded as an array of field names
+   * @param value The new value of the field
+   */
+  withField = (path: string[], value: JSONValue): JSONValue => {
+    const ctx = this._ctx.select("withField", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Call the provided function with current JSONValue.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: JSONValue) => JSONValue) => {
+    return arg(this)
+  }
+}
+
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
   private readonly _historyJSON?: JSON = undefined
@@ -8577,6 +8826,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a JSON value
+   */
+  json = (): JSONValue => {
+    const ctx = this._ctx.select("json")
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Initialize a Large Language Model (LLM)
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
@@ -8813,6 +9070,14 @@ export class Client extends BaseClient {
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
     const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
     return new InterfaceTypeDef(ctx)
+  }
+
+  /**
+   * Load a JSONValue from its ID.
+   */
+  loadJSONValueFromID = (id: JSONValueID): JSONValue => {
+    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    return new JSONValue(ctx)
   }
 
   /**

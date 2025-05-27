@@ -238,6 +238,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize a JSON value
+     */
+    public function json(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('json');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initialize a Large Language Model (LLM)
      */
     public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
@@ -531,6 +540,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInterfaceTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a JSONValue from its ID.
+     */
+    public function loadJSONValueFromID(JsonValueId|JsonValue $id): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadJSONValueFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
