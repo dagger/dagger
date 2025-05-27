@@ -627,7 +627,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	for _, linked := range span.Links {
 		linkedCtx := linked.SpanContext
 		switch linked.Purpose {
-		case telemetry.LinkPurposeCause:
+		case telemetry.LinkPurposeCause,
+			// By default, links imply a causal relationship.
+			//
+			// Two reasons:
+			// 1. Backward compatibility - this is how links are already interpreted.
+			// 2. Span links are almost always representing a causal relationship
+			// where the target of the link completed before the linking span.
+			// (Otherwise the linking span could just be a child span.)
+			"":
 			linked := db.initSpan(linkedCtx.SpanID)
 			linked.ChildSpans.Add(span)
 			linked.effectsViaLinks.Add(span)
