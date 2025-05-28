@@ -10,7 +10,7 @@ import (
 
 func (*JSONValue) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "JSONObject",
+		NamedType: "JSONValue",
 		NonNull:   true,
 	}
 }
@@ -20,29 +20,29 @@ type JSONValue struct {
 }
 
 // NewJSONValue constructs a JSONValue from any Go value.
-func NewJSONValue(v any) (JSONValue, error) {
+func NewJSONValue(v any) (*JSONValue, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return JSONValue{}, err
+		return &JSONValue{}, err
 	}
-	return JSONValue{data: b}, nil
+	return &JSONValue{data: b}, nil
 }
 
 // Set sets value at path (dot-separated).
 // "" or "." replaces the whole value.
-func (o JSONValue) Set(path string, value any) (JSONValue, error) {
+func (o *JSONValue) Set(path string, value any) (*JSONValue, error) {
 	if path == "" || path == "." {
 		b, err := json.Marshal(value)
 		if err != nil {
-			return JSONValue{}, err
+			return &JSONValue{}, err
 		}
-		return JSONValue{data: b}, nil
+		return &JSONValue{data: b}, nil
 	}
 
 	var root any
 	if len(o.data) != 0 {
 		if err := json.Unmarshal(o.data, &root); err != nil {
-			return JSONValue{}, err
+			return &JSONValue{}, err
 		}
 	}
 	obj, ok := root.(map[string]interface{})
@@ -68,20 +68,20 @@ func (o JSONValue) Set(path string, value any) (JSONValue, error) {
 
 	b, err := json.Marshal(obj)
 	if err != nil {
-		return JSONValue{}, err
+		return &JSONValue{}, err
 	}
-	return JSONValue{data: b}, nil
+	return &JSONValue{data: b}, nil
 }
 
 // Unset removes the value at path. "" or "." resets to null.
-func (o JSONValue) Unset(path string) (JSONValue, error) {
+func (o *JSONValue) Unset(path string) (*JSONValue, error) {
 	if path == "" || path == "." {
-		return JSONValue{data: []byte("null")}, nil
+		return &JSONValue{data: []byte("null")}, nil
 	}
 
 	var root any
 	if err := json.Unmarshal(o.data, &root); err != nil {
-		return JSONValue{}, err
+		return &JSONValue{}, err
 	}
 	obj, ok := root.(map[string]interface{})
 	if !ok {
@@ -104,13 +104,13 @@ func (o JSONValue) Unset(path string) (JSONValue, error) {
 
 	b, err := json.Marshal(obj)
 	if err != nil {
-		return JSONValue{}, err
+		return &JSONValue{}, err
 	}
-	return JSONValue{data: b}, nil
+	return &JSONValue{data: b}, nil
 }
 
 // Get returns the value at path. "" or "." returns the whole value.
-func (o JSONValue) Get(path string) (any, error) {
+func (o *JSONValue) Get(path string) (any, error) {
 	var root any
 	if err := json.Unmarshal(o.data, &root); err != nil {
 		return nil, err
@@ -134,4 +134,4 @@ func (o JSONValue) Get(path string) (any, error) {
 }
 
 // String returns the raw JSON.
-func (o JSONValue) String() string { return string(o.data) }
+func (o *JSONValue) String() string { return string(o.data) }
