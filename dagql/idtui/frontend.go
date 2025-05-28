@@ -487,16 +487,6 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
-func (r *renderer) renderStatus(out TermOutput, span *dagui.Span) {
-	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
-		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
-	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
-		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
-	}
-}
-
 var metricsVerbosity = map[string]int{
 	telemetry.IOStatDiskReadBytes:      3,
 	telemetry.IOStatDiskWriteBytes:     3,
