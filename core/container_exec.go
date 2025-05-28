@@ -190,7 +190,46 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	cache := container.Query.BuildkitCache()
 	session := container.Query.BuildkitSession()
 
-	var meta *executor.Meta
+	meta := executor.Meta{
+		Args: args,
+		Env:  slices.Clone(cfg.Env),
+		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
+		User: cfg.User,
+		// Hostname:       e.op.Meta.Hostname, // empty seems right?
+		ReadonlyRootFS: op.Mounts[0].Readonly,
+		// ExtraHosts:     extraHosts,
+		// Ulimit:                    e.op.Meta.Ulimit,
+		// CgroupParent:              e.op.Meta.CgroupParent,
+		// NetMode:                   e.op.Network,
+		RemoveMountStubsRecursive: true,
+	}
+	if opts.InsecureRootCapabilities {
+		meta.SecurityMode = pb.SecurityMode_INSECURE
+	}
+
+	// if e.op.Meta.ProxyEnv != nil {
+	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
+	// }
+	meta.Env = addDefaultEnvvar(meta.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+
+	secretEnvs := []*pb.SecretEnv{}
+	for _, secret := range container.Secrets {
+		if secret.EnvName != "" {
+			secretEnvs = append(secretEnvs, &pb.SecretEnv{
+				ID:   secret.Secret.ID().Digest().String(),
+				Name: secret.EnvName,
+			})
+		}
+	}
+	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
+	if err != nil {
+		return nil, err
+	}
+	meta.Env = append(meta.Env, secretEnv...)
+
+	if opts.Expect != ReturnSuccess {
+		meta.ValidExitCodes = opts.Expect.ReturnCodes()
+	}
 
 	mmname := fmt.Sprintf("exec %s", strings.Join(args, " "))
 	fmt.Println("name", mmname)
@@ -236,7 +275,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				ExecError: rerr.(*errdefs.ExecError),
 				Mounts:    op.Mounts,
 				ExecMD:    execMD,
-				Meta:      meta,
+				Meta:      &meta,
 				// Secretenv: secretEnvs, // XXX: here
 			}
 		} else {
@@ -268,53 +307,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		})
 	}
 
-	meta = &executor.Meta{
-		Args: args,
-		Env:  slices.Clone(cfg.Env),
-		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
-		User: cfg.User,
-		// Hostname:       e.op.Meta.Hostname, // empty seems right?
-		ReadonlyRootFS: p.ReadonlyRootFS,
-		// ExtraHosts:     extraHosts,
-		// Ulimit:                    e.op.Meta.Ulimit,
-		// CgroupParent:              e.op.Meta.CgroupParent,
-		// NetMode:                   e.op.Network,
-		RemoveMountStubsRecursive: true,
-	}
-	if opts.InsecureRootCapabilities {
-		meta.SecurityMode = pb.SecurityMode_INSECURE
-	}
-
-	// if e.op.Meta.ProxyEnv != nil {
-	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
-	// }
-	meta.Env = addDefaultEnvvar(meta.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
-
-	secretEnvs := []*pb.SecretEnv{}
-	for _, secret := range container.Secrets {
-		if secret.EnvName != "" {
-			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   secret.Secret.ID().Digest().String(),
-				Name: secret.EnvName,
-			})
-		}
-	}
-	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
-	if err != nil {
-		return nil, err
-	}
-	meta.Env = append(meta.Env, secretEnv...)
-
-	if opts.Expect != ReturnSuccess {
-		meta.ValidExitCodes = opts.Expect.ReturnCodes()
-	}
-
 	// FIXME: this abstraction is now irrelevant - we don't need to do buildkit smuggling anymore
 	worker := op.opt.Worker.(*buildkit.Worker)
 	worker = worker.ExecWorker(op.opt.CauseCtx, *execMD)
 	exec := worker.Executor()
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
-		Meta: *meta,
+		Meta: meta,
 	}, nil)
 
 	for i, ref := range p.OutputRefs {

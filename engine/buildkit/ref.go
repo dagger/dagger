@@ -324,6 +324,9 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 	var ierr InteractiveError
 	if errors.As(baseErr, &ierr) {
 		// XXX: secret env handling?
+		if ierr.Meta != nil {
+			return baseErr
+		}
 		exec := &bksolverpb.ExecOp{
 			Meta: &bksolverpb.Meta{
 				Args:     ierr.Meta.Args,
