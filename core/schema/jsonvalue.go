@@ -2,8 +2,8 @@ package schema
 
 import (
 	"context"
-	"fmt"
 	"encoding/json"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -18,14 +18,17 @@ var _ SchemaResolvers = &jsonvalueSchema{}
 func (s jsonvalueSchema) Install() {
 	// Top-level constructor: jsonvalue (creates new empty jsonvalue)
 	dagql.Fields[*core.Query]{
-		dagql.Func("jsonvalue", s.newJSONValue).
-			Doc("Create a new empty JSONValue"),
+		dagql.Func("json", s.newJSONValue).
+			Doc("Initialize an empty JSON value"),
 	}.Install(s.srv)
 
 	// Expose methods for JSONValue manipulation
 	dagql.Fields[*core.JSONValue]{
+		dagql.Func("get", s.unset).Doc("Return the JSON-encoded value, or a sub-value at the given path").Args(
+			dagql.Arg("path").Doc("The JSON path (dot-separated)"),
+		),
 		dagql.Func("unset", s.unset).Doc("Removes the value at the specified path. Empty path resets to null.").Args(
-			dagql.Arg("path").Doc("The JSON path (dot-separated)")
+			dagql.Arg("path").Doc("The JSON path (dot-separated)"),
 		),
 		dagql.Func("setString", s.setString).Doc("Set a string value at the specified path.").Args(
 			dagql.Arg("path"),
@@ -50,38 +53,38 @@ func (s jsonvalueSchema) newJSONValue(ctx context.Context, q *core.Query, args s
 	return &core.JSONValue{}, nil
 }
 
-func (s jsonvalueSchema) unset(ctx context.Context, obj *core.JSONValue, args struct{ Path string }) (*core.JSONValue, error) {
-	newobj, err := obj.data.Unset(args.Path)
-	if err != nil {
-		return nil, err
-	}
-	return &core.JSONValue{data: newobj}, nil
+func (s jsonvalueSchema) unset(ctx context.Context, obj *core.JSONValue, args struct{ Path dagql.String }) (*core.JSONValue, error) {
+	return obj.Unset(args.Path.String())
 }
 
-func (s jsonvalueSchema) setString(ctx context.Context, obj *core.JSONValue, args struct{ Path, Value string }) (*core.JSONValue, error) {
-	return s.setValue(obj, args.Path, args.Value)
+func (s jsonvalueSchema) setString(ctx context.Context, obj *core.JSONValue, args struct {
+	Path  dagql.String
+	Value dagql.String
+}) (*core.JSONValue, error) {
+	return obj.Set(args.Path.String(), args.Value.String())
 }
 
-func (s jsonvalueSchema) setInteger(ctx context.Context, obj *core.JSONValue, args struct{ Path string; Value int }) (*core.JSONValue, error) {
-	return s.setValue(obj, args.Path, args.Value)
+func (s jsonvalueSchema) setInteger(ctx context.Context, obj *core.JSONValue, args struct {
+	Path  dagql.String
+	Value dagql.Int
+}) (*core.JSONValue, error) {
+	return obj.Set(args.Path.String(), args.Value.Int())
 }
 
-func (s jsonvalueSchema) setBoolean(ctx context.Context, obj *core.JSONValue, args struct{ Path string; Value bool }) (*core.JSONValue, error) {
-	return s.setValue(obj, args.Path, args.Value)
+func (s jsonvalueSchema) setBoolean(ctx context.Context, obj *core.JSONValue, args struct {
+	Path  dagql.String
+	Value dagql.Boolean
+}) (*core.JSONValue, error) {
+	return obj.Set(args.Path.String(), args.Value.Bool())
 }
 
-func (s jsonvalueSchema) setJSON(ctx context.Context, obj *core.JSONValue, args struct{ Path string; Value core.JSON }) (*core.JSONValue, error) {
-	var raw any
-	if err := json.Unmarshal([]byte(args.Value), &raw); err != nil {
+func (s jsonvalueSchema) setJSON(ctx context.Context, obj *core.JSONValue, args struct {
+	Path  dagql.String
+	Value core.JSON
+}) (*core.JSONValue, error) {
+	var value any
+	if err := json.Unmarshal([]byte(args.Value), &value); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
-	return s.setValue(obj, args.Path, raw)
-}
-
-func (s jsonvalueSchema) setValue(obj *core.JSONValue, path string, value any) (*core.JSONValue, error) {
-	newobj, err := obj.data.Set(path, value)
-	if err != nil {
-		return nil, err
-	}
-	return &core.jsonvalue{data: newobj}, nil
+	return obj.Set(args.Path.String(), value)
 }
