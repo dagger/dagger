@@ -16,25 +16,25 @@ jobs:
   docs-lint-on-nf-type-01-remote-engine:
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-type-01-0.18.8
+      machine: nf-type-01-0.18.9
       function: check --targets=docs
 
   sdk-go-on-nf-type-01-remote-engine:
     needs: docs-lint-on-nf-type-01-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-type-01-0.18.8
+      machine: nf-type-01-0.18.9
       function: check --targets=sdk/go
 
   docs-lint-on-nf-type-02-remote-engine:
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-type-02-0.18.8
+      machine: nf-type-02-0.18.9
       function: check --targets=docs
 
   sdk-go-on-nf-type-02-remote-engine:
     needs: docs-lint-on-nf-type-02-remote-engine
     uses: ./.github/workflows/_dagger_on_northflank_remote_engine.yml
     with:
-      machine: nf-type-02-0.18.8
+      machine: nf-type-02-0.18.9
       function: check --targets=sdk/go

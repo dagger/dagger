@@ -129,7 +129,7 @@ func (h *Helm) chart() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
-				"helm",
+				"helm~3.17.3",
 				"kubectl",
 			},
 		}).
@@ -241,7 +241,7 @@ func (h *Helm) SetVersion(
 func (h *Helm) Publish(
 	ctx context.Context,
 	// The git ref to publish
-	// eg. "helm/dagger/v0.13.0"
+	// eg. "helm/chart/v0.13.0"
 	target string,
 
 	// +optional
@@ -252,7 +252,6 @@ func (h *Helm) Publish(
 	dryRun bool,
 ) error {
 	version := strings.TrimPrefix(target, "helm/chart/")
-	// 1. Package and publish on registry
 	_, err := h.chart().
 		With(func(c *dagger.Container) *dagger.Container {
 			if githubToken != nil {
@@ -265,6 +264,7 @@ func (h *Helm) Publish(
 				return c.WithExec([]string{"helm", "package", "."})
 			}
 			script := strings.Join([]string{
+				"set -x",
 				"helm registry login ghcr.io/dagger --username dagger --password $GITHUB_TOKEN",
 				"helm package .",
 				"helm push dagger-helm-" + strings.TrimPrefix(version, "v") + ".tgz oci://ghcr.io/dagger",

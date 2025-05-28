@@ -3,7 +3,7 @@ unreleasedDir: unreleased
 headerPath: header.tpl.md
 changelogPath: CHANGELOG.md
 versionExt: md
-versionFormat: '## {{.Version}} - {{.Time.Format "2006-01-02"}}'
+versionFormat: '## helm/chart/{{.Version}} - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
 changeFormat: |
   {{- $lines := .Body | splitn "\n" 2 -}}
