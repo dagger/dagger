@@ -33,7 +33,7 @@ type ModuleFunction struct {
 	root    *Query
 	mod     *Module
 	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
-	runtime *Container
+	runtime dagql.Instance[*Container]
 
 	metadata   *Function
 	returnType ModType
@@ -50,7 +50,7 @@ func NewModFunction(
 	root *Query,
 	mod *Module,
 	objDef *ObjectTypeDef,
-	runtime *Container,
+	runtime dagql.Instance[*Container],
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	returnType, ok, err := mod.ModTypeFor(ctx, metadata.ReturnType, true)
@@ -343,23 +343,50 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
-	ctr := fn.runtime
+	// hm
+	srv := dagql.CurrentDagqlServer(ctx)
 
-	metaDir, err := NewScratchDirectory(ctx, mod.Query, mod.Query.Platform())
+	var metaDir dagql.Instance[*Directory]
+	err = srv.Select(ctx, srv.Root(), &metaDir,
+		dagql.Selector{
+			Field: "directory",
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
+
+	// XXX: work out if we can somehow just talk to the worker directly
+	execMDEncoded, err := json.Marshal(execMD)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
+		return nil, err
 	}
+	var ctr dagql.Instance[*Container]
+	err = srv.Select(ctx, fn.runtime, &ctr,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modMetaDirPath)},
+				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
+				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
+				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
+				{Name: "nestedExecMetadata", Value: dagql.NewString(string(execMDEncoded))},
+			},
+		},
+	)
 
 	// Setup the Exec for the Function call and evaluate it
-	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		NestedExecMetadata:            &execMD,
-		UseEntrypoint:                 true,
-	})
+	// ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
+	// 	ExperimentalPrivilegedNesting: true,
+	// 	NestedExecMetadata:            &execMD,
+	// 	UseEntrypoint:                 true,
+	// })
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
@@ -369,7 +396,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	_, err = ctr.Evaluate(ctx)
+	_, err = ctr.Self.Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
@@ -391,7 +418,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	ctrOutputDir, err := ctr.Directory(ctx, modMetaDirPath)
+	ctrOutputDir, err := ctr.Self.Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
@@ -427,7 +454,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Get the client ID actually used during the function call - this might not
 	// be the same as execMD.ClientID if the function call was cached at the
 	// buildkit level
-	clientID, err := ctr.usedClientID(ctx)
+	clientID, err := ctr.Self.usedClientID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get used client id")
 	}

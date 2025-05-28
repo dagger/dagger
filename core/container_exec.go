@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -65,7 +66,8 @@ type ContainerExecOpts struct {
 	InsecureRootCapabilities bool `default:"false"`
 
 	// (Internal-only) If this is a nested exec, exec metadata to use for it
-	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
+	// NestedExecMetadata        *buildkit.ExecutionMetadata `name:"-"`
+	NestedExecMetadata string `default:""`
 
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
@@ -82,9 +84,15 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	execMD := buildkit.ExecutionMetadata{}
-	if opts.NestedExecMetadata != nil {
-		execMD = *opts.NestedExecMetadata
+	if mdEncoded := opts.NestedExecMetadata; mdEncoded != "" {
+		err := json.Unmarshal([]byte(mdEncoded), &execMD)
+		if err != nil {
+			return nil, err
+		}
 	}
+	// if opts.NestedExecMetadata != nil {
+	// 	execMD = *opts.NestedExecMetadata
+	// }
 	execMD.CallID = dagql.CurrentID(ctx)
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
@@ -185,6 +193,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	var meta *executor.Meta
 
 	mmname := fmt.Sprintf("exec %s", strings.Join(args, " "))
+	fmt.Println("name", mmname)
 	fmt.Println("mounts", op.Mounts)
 	mm := bkmounts.NewMountManager(mmname, cache, session)
 	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, op.Group(), cfg.WorkingDir, op.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
@@ -195,14 +204,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if rerr != nil {
 			execInputs := make([]bksolver.Result, len(op.Mounts))
 			for i, m := range op.Mounts {
-				if m.Input == -1 {
+				if m.Input == pb.Empty {
 					continue
 				}
 				execInputs[i] = op.inputs[m.Input].Clone()
 			}
 			execMounts := make([]bksolver.Result, len(op.Mounts))
 			copy(execMounts, execInputs)
-			results, err := extractContainerBkOutputs(ctx, container, op.opt.Worker, op.Mounts)
+			results, err := op.extractContainerBkOutputs(ctx, container, op.opt.Worker)
 			if err != nil {
 				return
 			}
@@ -309,8 +318,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}, nil)
 
 	for i, ref := range p.OutputRefs {
-		mount := op.Mounts[ref.MountIndex]
-
 		// commit all refs
 		var err error
 		var iref bkcache.ImmutableRef
@@ -324,13 +331,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		// put the ref to the right mount point
-		switch mount.Output {
+		switch ref.MountIndex {
 		case 0:
 			container.FSResult = iref
 		case 1:
 			container.MetaResult = iref
 		default:
-			container.Mounts[mount.Output-2].Result = iref
+			container.Mounts[ref.MountIndex-2].Result = iref
 		}
 
 		// prevent the result from being released by the defer

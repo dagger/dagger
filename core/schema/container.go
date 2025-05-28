@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -462,6 +463,7 @@ func (s *containerSchema) Install() {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
+				dagql.Arg("nestedExecMetadata"),
 			),
 
 		dagql.Func("stdout", s.stdout).
@@ -930,9 +932,15 @@ func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Ins
 	}
 
 	execMD := buildkit.ExecutionMetadata{}
-	if args.NestedExecMetadata != nil {
-		execMD = *args.NestedExecMetadata
+	if mdEncoded := args.NestedExecMetadata; mdEncoded != "" {
+		err := json.Unmarshal([]byte(mdEncoded), &execMD)
+		if err != nil {
+			return nil, err
+		}
 	}
+	// if args.NestedExecMetadata != nil {
+	// 	execMD = *args.NestedExecMetadata
+	// }
 
 	inputs := []string{}
 	if execMD.CacheByCall || true { // XXX: we should have a way of disabling the full id (while preserving the *current* args)
