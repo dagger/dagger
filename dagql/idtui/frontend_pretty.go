@@ -1918,7 +1918,7 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
-		if span.ErrorOrigin != nil {
+		if span.ErrorOrigin != nil && !fe.reportOnly {
 			color := termenv.ANSIBrightBlack
 			if time.Since(fe.pressedKeyAt) < keypressDuration && fe.FocusedSpan == span.ErrorOrigin.ID {
 				color = termenv.ANSIWhite
