@@ -530,6 +530,8 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
 var KeymapStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
 
+const keypressDuration = 500 * time.Millisecond
+
 func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
 	w := new(strings.Builder)
 	var showedKey bool
@@ -537,7 +539,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	for _, key := range fe.keys(out) {
 		mainKey := key.Keys()[0]
 		var pressed bool
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+		if time.Since(fe.pressedKeyAt) < keypressDuration {
 			pressed = slices.Contains(key.Keys(), fe.pressedKey)
 		}
 		if !key.Enabled() && !pressed {
@@ -1659,6 +1661,14 @@ func (fe *frontendPretty) goErrorOrigin() {
 		return
 	}
 	fe.FocusedSpan = focused.ErrorOrigin.ID
+	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
+	if focusedRow == nil {
+		return
+	}
+	for cur := focusedRow.Parent; cur != nil; cur = cur.Parent {
+		// expand parents of target span
+		fe.SpanExpanded[cur.Span.ID] = true
+	}
 	fe.recalculateViewLocked()
 }
 
@@ -1909,15 +1919,16 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
 		if span.ErrorOrigin != nil {
-			fmt.Fprintf(out, "%s%s%s %s",
-				out.String("E").Foreground(termenv.ANSIRed),
-				out.String("R").Foreground(termenv.ANSIRed).Underline(),
-				out.String("ROR").Foreground(termenv.ANSIRed),
-				out.String("↗").Foreground(termenv.ANSIBrightBlack),
+			color := termenv.ANSIBrightBlack
+			if time.Since(fe.pressedKeyAt) < keypressDuration && fe.FocusedSpan == span.ErrorOrigin.ID {
+				color = termenv.ANSIWhite
+			}
+			fmt.Fprintf(out, " %s %s",
+				out.String("r").Foreground(color).Bold(),
+				out.String("jump ↴").Foreground(color),
 			)
-		} else {
-			fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
 		}
 	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
 		fmt.Fprint(out, out.String(" "))
