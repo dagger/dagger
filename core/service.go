@@ -346,7 +346,7 @@ func (svc *Service) startContainer(
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
-	pbmounts, states, err := getAllContainerMounts(ctr)
+	pbmounts, states, _, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
