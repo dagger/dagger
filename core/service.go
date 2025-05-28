@@ -756,8 +756,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	ID       *call.ID
-	Service  *Service
+	Service  dagql.Instance[*Service]
 	Hostname string
 	Aliases  AliasSet
 }
