@@ -1305,6 +1305,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.pressedKey = "end"
 		fe.pressedKeyAt = time.Now()
 		return nil
+	case "r":
+		fe.goErrorOrigin()
+		return nil
 	case "esc":
 		fe.ZoomedSpan = fe.db.PrimarySpan
 		fe.recalculateViewLocked()
@@ -1639,6 +1642,19 @@ func (fe *frontendPretty) openOrGoIn() {
 	}
 }
 
+func (fe *frontendPretty) goErrorOrigin() {
+	fe.autoFocus = false
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
+		return
+	}
+	if focused.ErrorOrigin == nil {
+		return
+	}
+	fe.FocusedSpan = focused.ErrorOrigin.ID
+	fe.recalculateViewLocked()
+}
+
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
@@ -1755,26 +1771,10 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
-func spanIsVisible(needle dagui.SpanID, haystack *dagui.TraceRow) bool {
-	for cur := haystack.PreviousVisual; cur != nil; cur = cur.PreviousVisual {
-		if cur.Span.ID == needle {
-			return true
-		}
-	}
-	if haystack.Span.ID == needle {
-		return true
-	}
-	for cur := haystack.NextVisual; cur != nil; cur = cur.NextVisual {
-		if cur.Span.ID == needle {
-			return true
-		}
-	}
-	return false
-}
-
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	errOrigin := row.Span.ErrorOrigin
-	if errOrigin != nil && errOrigin.ID != row.Span.ID && spanIsVisible(errOrigin.ID, row) {
+	if row.Span.ErrorOrigin != nil {
+		// span's error originated elsewhere; don't repeat the message, the ERROR status
+		// links to its origin instead
 		return
 	}
 	for _, span := range row.Span.Errors().Order {

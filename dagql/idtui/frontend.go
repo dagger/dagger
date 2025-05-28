@@ -483,7 +483,16 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
 func (r *renderer) renderStatus(out TermOutput, span *dagui.Span) {
 	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
+		if span.ErrorOrigin != nil {
+			fmt.Fprintf(out, "%s%s%s %s",
+				out.String("E").Foreground(termenv.ANSIRed),
+				out.String("R").Foreground(termenv.ANSIRed).Underline(),
+				out.String("ROR").Foreground(termenv.ANSIRed),
+				out.String("↗").Foreground(termenv.ANSIBrightBlack),
+			)
+		} else {
+			fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
+		}
 	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
