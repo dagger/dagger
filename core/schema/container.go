@@ -625,7 +625,7 @@ func (s *containerSchema) Install() {
 				`This includes ports already exposed by the image, even if not explicitly added with dagger.`),
 
 		dagql.Func("withServiceBinding", s.withServiceBinding).
-			Doc(`Establish a runtime dependency on a from a container to a network service.`,
+			Doc(`Establish a runtime dependency from a container to a network service.`,
 				`The service will be started automatically when needed and detached
 				when it is no longer needed, executing the default command if none is
 				set.`,
