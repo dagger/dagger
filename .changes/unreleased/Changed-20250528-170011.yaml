@@ -1,0 +1,6 @@
+kind: Changed
+body: 'shell: use main object description as the fallback in `.help <module>`'
+time: 2025-05-28T17:00:11.736458Z
+custom:
+    Author: helderco
+    PR: "10487"
