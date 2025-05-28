@@ -591,7 +591,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 	var focused *dagui.Span
 	if fe.FocusedSpan.IsValid() {
-		focused, _ = fe.db.Spans.Map[fe.FocusedSpan]
+		focused = fe.db.Spans.Map[fe.FocusedSpan]
 	}
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
