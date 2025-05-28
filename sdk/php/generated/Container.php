@@ -867,7 +867,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Establish a runtime dependency on a from a container to a network service.
+     * Establish a runtime dependency from a container to a network service.
      *
      * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
      *
