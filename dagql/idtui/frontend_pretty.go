@@ -1804,7 +1804,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 				symbol = " "
 			}
 			fmt.Fprintf(out,
-				out.String("%s %s").Foreground(termenv.ANSIYellow).String(),
+				out.String("%s %s").Foreground(termenv.ANSIRed).String(),
 				symbol,
 				line,
 			)
