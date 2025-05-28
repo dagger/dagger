@@ -81,7 +81,7 @@ func End(span trace.Span, fn func() error) {
 					AnyMapCarrier(extErr.Extensions()),
 				),
 			)
-			if originCtx.IsValid() {
+			if originCtx.IsValid() && originCtx.SpanID() != span.SpanContext().SpanID() {
 				span.AddLink(trace.Link{
 					SpanContext: originCtx,
 					Attributes: []attribute.KeyValue{

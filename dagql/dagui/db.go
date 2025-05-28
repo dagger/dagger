@@ -641,6 +641,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			linked.effectsViaLinks.Add(span)
 			span.causesViaLinks.Add(linked)
 		case telemetry.LinkPurposeErrorOrigin:
+			if linkedCtx.SpanID == span.ID {
+				// defense in depth; it's technically possible to link to yourself, and
+				// we don't want to double-init the span since that'll leave a zombie
+				// span
+				continue
+			}
 			linked := db.initSpan(linkedCtx.SpanID)
 			span.ErrorOrigin = linked
 		}
