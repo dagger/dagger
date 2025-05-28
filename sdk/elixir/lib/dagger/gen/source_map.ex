@@ -4,6 +4,8 @@ defmodule Dagger.SourceMap do
   Source location information.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "SourceMap"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

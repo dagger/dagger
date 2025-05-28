@@ -7,6 +7,8 @@ defmodule Dagger.InputTypeDef do
   module accept input objects via their id rather than graphql input types.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "InputTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

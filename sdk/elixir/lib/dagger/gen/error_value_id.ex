@@ -4,5 +4,7 @@ defmodule Dagger.ErrorValueID do
   The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ErrorValueID"
+
   @type t() :: String.t()
 end

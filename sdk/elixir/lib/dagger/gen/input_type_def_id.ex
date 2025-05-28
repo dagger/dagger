@@ -4,5 +4,7 @@ defmodule Dagger.InputTypeDefID do
   The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "InputTypeDefID"
+
   @type t() :: String.t()
 end

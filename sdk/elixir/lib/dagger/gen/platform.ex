@@ -6,5 +6,7 @@ defmodule Dagger.Platform do
   The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "Platform"
+
   @type t() :: String.t()
 end

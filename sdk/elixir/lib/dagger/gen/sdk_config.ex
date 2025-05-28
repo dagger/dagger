@@ -4,6 +4,8 @@ defmodule Dagger.SDKConfig do
   The SDK config of the module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "SDKConfig"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

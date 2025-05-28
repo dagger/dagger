@@ -4,5 +4,7 @@ defmodule Dagger.BindingID do
   The `BindingID` scalar type represents an identifier for an object of type Binding.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "BindingID"
+
   @type t() :: String.t()
 end

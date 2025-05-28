@@ -4,6 +4,8 @@ defmodule Dagger.EngineCache do
   A cache storage for the Dagger engine
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EngineCache"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

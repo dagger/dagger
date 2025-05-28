@@ -4,6 +4,8 @@ defmodule Dagger.LLMTokenUsage do
   Dagger.LLMTokenUsage
   """
 
+  use Dagger.Core.Base, kind: :object, name: "LLMTokenUsage"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

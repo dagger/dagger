@@ -4,5 +4,7 @@ defmodule Dagger.LLMID do
   The `LLMID` scalar type represents an identifier for an object of type LLM.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "LLMID"
+
   @type t() :: String.t()
 end

@@ -4,6 +4,8 @@ defmodule Dagger.CurrentModule do
   Reflective module API provided to functions at runtime.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "CurrentModule"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

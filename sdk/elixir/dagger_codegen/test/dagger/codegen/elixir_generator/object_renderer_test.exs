@@ -12,6 +12,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         The root of the DAG.
         \"""
 
+        use Dagger.Core.Base, kind: :object, name: "Query"
+
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
 
@@ -45,6 +47,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         The root of the DAG.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Container"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -88,6 +92,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         An environment variable name and value.
         \"""
 
+        use Dagger.Core.Base, kind: :object, name: "EnvVariable"
+
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
 
@@ -118,6 +124,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         The root of the DAG.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Query"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -152,6 +160,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         The root of the DAG.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Container"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -196,6 +206,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         An active function call.
         \"""
 
+        use Dagger.Core.Base, kind: :object, name: "FunctionCall"
+
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
 
@@ -229,6 +241,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         A definition of a parameter or return type in a Module.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "TypeDef"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -264,6 +278,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         Dagger.GhaSettings
         \"""
 
+        use Dagger.Core.Base, kind: :object, name: "GhaSettings"
+
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
 
@@ -294,6 +310,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         The root of the DAG.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Directory"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -336,6 +354,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         A Dagger module.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Module"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
@@ -647,6 +667,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         Doc contains " and \\\\
         \"""
 
+        use Dagger.Core.Base, kind: :object, name: "Doc"
+
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB
 
@@ -695,6 +717,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         @moduledoc \"""
         The root of the DAG.
         \"""
+
+        use Dagger.Core.Base, kind: :object, name: "Query"
 
         alias Dagger.Core.Client
         alias Dagger.Core.QueryBuilder, as: QB

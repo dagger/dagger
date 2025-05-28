@@ -4,5 +4,7 @@ defmodule Dagger.PortID do
   The `PortID` scalar type represents an identifier for an object of type Port.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "PortID"
+
   @type t() :: String.t()
 end
