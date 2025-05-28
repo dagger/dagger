@@ -10,7 +10,6 @@ import (
 	"reflect"
 
 	"dagger.io/dagger/querybuilder"
-	"dagger.io/dagger/telemetry"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -41,7 +40,14 @@ type gqlExtendedError struct {
 	inner *gqlerror.Error
 }
 
-var _ telemetry.ExtendedError = gqlExtendedError{}
+// Same as telemetry.ExtendedError, but without the dependency, to simplify
+// client generation.
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+var _ extendedError = gqlExtendedError{}
 
 func (e gqlExtendedError) Error() string {
 	return e.inner.Message
@@ -100,7 +106,7 @@ type ExecError struct {
 	Stderr   string
 }
 
-var _ telemetry.ExtendedError = (*ExecError)(nil)
+var _ extendedError = (*ExecError)(nil)
 
 func (e *ExecError) Error() string {
 	return e.Message()
