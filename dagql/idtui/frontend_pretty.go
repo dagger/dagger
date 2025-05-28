@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -533,21 +534,20 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	var showedKey bool
 	// Blank line prior to keymap
 	for _, key := range fe.keys(out) {
-		if !key.Enabled() {
+		mainKey := key.Keys()[0]
+		var pressed bool
+		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+			pressed = slices.Contains(key.Keys(), fe.pressedKey)
+		}
+		if !key.Enabled() && !pressed {
 			continue
 		}
-		mainKey := key.Keys()[0]
+		keyStyle := style
+		if pressed {
+			keyStyle = keyStyle.Foreground(nil)
+		}
 		if showedKey {
 			fmt.Fprint(w, style.Render(" · "))
-		}
-		keyStyle := style
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
-			for _, k := range key.Keys() {
-				if k == fe.pressedKey {
-					keyStyle = keyStyle.Foreground(nil)
-					// Reverse(true)
-				}
-			}
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
@@ -598,14 +598,16 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("end", " "),
 			key.WithHelp("end", "last")),
 		key.NewBinding(key.WithKeys("enter"),
-			key.WithHelp("enter", "zoom"),
-			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+			key.WithHelp("enter", "zoom")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
 		key.NewBinding(key.WithKeys("E"),
 			key.WithHelp("E", noExitHelp)),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
+		key.NewBinding(key.WithKeys("esc"),
+			key.WithHelp("esc", "unzoom"),
+			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
 	}
 }
 
