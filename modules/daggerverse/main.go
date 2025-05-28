@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/go-github/v66/github"
@@ -116,109 +115,6 @@ Triggered by %s.
 	}
 
 	return nil
-}
-
-// Bump Dagger version: dagger call --github-token=env:GITHUB_PAT bump-dagger-version --from=0.13.7 --to=0.14.0
-func (h *Daggerverse) BumpDaggerVersion(
-	ctx context.Context,
-	// +defaultPath="../../.changes"
-	releases *dagger.Directory,
-	// Which version of Dagger are we bumping from - defaults to version n-1
-	// +optional
-	from string,
-	// Which version of Dagger are we bumping to
-	to string,
-
-	// +optional
-	githubAssignee string,
-) (err error) {
-	if from == "" {
-		from, err = dag.Container().From("alpine").
-			WithDirectory("/releases", releases).
-			WithWorkdir("/releases").
-			WithExec([]string{"sh", "-c", "ls v* | awk -F'[v.]' '{ print $2\".\"$3.\".\"$4 }' | sort -V | tail -n 2 | head -n 1"}).
-			Stdout(ctx)
-		if err != nil {
-			return err
-		}
-		from = strings.TrimSpace(from)
-	}
-
-	// get just the version, without the v semver prefix
-	from = strings.TrimPrefix(from, "v")
-	to = strings.TrimPrefix(to, "v")
-
-	fromDashed := strings.ReplaceAll(from, ".", "-")
-	toDashed := strings.ReplaceAll(to, ".", "-")
-	engineImage := fmt.Sprintf("registry.dagger.io/engine:v%s", to)
-
-	engine := dag.Container().From(engineImage).
-		WithExposedPort(1234).
-		WithDefaultArgs([]string{
-			"--addr", "tcp://0.0.0.0:1234",
-			"--network-cidr", "10.12.34.0/24",
-		}).AsService(dagger.ContainerAsServiceOpts{InsecureRootCapabilities: true, UseEntrypoint: true})
-
-	daggerio, err := dag.Container().From(engineImage).
-		WithDirectory("/dagger.io", h.clone()).
-		WithWorkdir("/dagger.io").
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf(`find .github/workflows -name '*daggerverse*' -exec sed -i 's/%s/%s/g' {} +`, fromDashed, toDashed),
-		}).
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf(`sed -i 's/\(DaggerVersion\s*=\s*"\)%s"/\1%s"/' daggerverse/dag/main.go`, from, to),
-		}).
-		WithServiceBinding("daggerverse-engine", engine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://daggerverse-engine:1234").
-		WithExec([]string{"nc", "-vzw", "1", "daggerverse-engine", "1234"}).
-		WithExec([]string{"dagger", "version"}).
-		WithExec([]string{"dagger", "core", "version"}).
-		WithExec([]string{"dagger", "--mod=daggerverse/dag", "develop"}).
-		WithExec([]string{"dagger", "--mod=daggerverse", "develop"}).
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf(`sed -i 's/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/v%s/' infra/ci/*/argocd/daggerverse-preview/appset.yaml`, to),
-		}).
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf(`sed -i 's/registry\.dagger\.io\/engine:v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/registry\.dagger\.io\/engine:v%s/' infra/ci/*/argocd/daggerverse-preview/manifests/deployment.base.yaml`, to),
-		}).
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf(`sed -i 's/registry\.dagger\.io\/engine:v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/registry\.dagger\.io\/engine:v%s/' infra/prod/*/argocd/daggerverse/deployment.yaml`, to),
-		}).
-		Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	daggerverse := dag.Go(daggerio.Directory("daggerverse")).Env().
-		WithExec([]string{"go", "get", fmt.Sprintf("dagger.io/dagger@v%s", to)}).
-		WithExec([]string{"go", "mod", "tidy"})
-	updated := daggerio.WithDirectory("daggerverse", daggerverse.Directory("."))
-
-	branch := fmt.Sprintf("dgvs-bump-dagger-from-%s-to-%s-with-dagger-main", from, to)
-	commitMsg := fmt.Sprintf("dgvs: Bump Dagger from %s to %s", from, to)
-
-	var assignees []string
-	if githubAssignee != "" {
-		assignees = append(assignees, githubAssignee)
-	}
-	err = h.Gh.WithSource(updated.Directory(".")).
-		WithGitExec([]string{"checkout", "-b", branch}).
-		WithGitExec([]string{"add", ".github", "daggerverse", "infra"}).
-		WithGitExec([]string{"config", "user.email", h.GitHubUserEmail}).
-		WithGitExec([]string{"config", "user.name", h.GitHubUser}).
-		WithGitExec([]string{"commit", "-am", commitMsg}).
-		WithGitExec([]string{"push", "-f", "origin", branch}).
-		PullRequest().Create(
-		ctx,
-		dagger.GhPullRequestCreateOpts{
-			Assignees: assignees,
-			Fill:      true,
-			Labels:    []string{"preview", "area/daggerverse"},
-			Head:      branch,
-		},
-	)
-
-	return err
 }
 
 func (h *Daggerverse) date() string {
