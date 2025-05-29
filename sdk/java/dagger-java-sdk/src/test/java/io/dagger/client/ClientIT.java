@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import io.dagger.client.exception.DaggerQueryException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 
 public class ClientIT {
 
@@ -75,8 +75,8 @@ public class ClientIT {
       try {
         client.container().from("alpine:3.16.2").withExec(List.of("false")).sync();
       } catch (DaggerExecException dee) {
-        assertThat(dee.getError()).isNotNull();
-        assertThat(dee.getError().getExtensions()).containsEntry("_type", "EXEC_ERROR");
+        assertThat(dee.getErrors()).hasSizeGreaterThan(0);
+        assertThat(dee.getErrors()[0].getExtensions()).containsEntry("_type", "EXEC_ERROR");
       }
     }
   }
@@ -84,13 +84,8 @@ public class ClientIT {
   @Test
   public void testList() throws Exception {
     try (AutoCloseableClient client = Dagger.connect()) {
-      List<EnvVariable> envs =
-          client
-              .container()
-              .from("alpine:3.16.2")
-              .withEnvVariable("FOO", "BAR")
-              .withEnvVariable("BAR", "BAZ")
-              .envVariables();
+      List<EnvVariable> envs = client.container().from("alpine:3.16.2")
+          .withEnvVariable("FOO", "BAR").withEnvVariable("BAR", "BAZ").envVariables();
 
       assertThat(envs).hasSizeGreaterThanOrEqualTo(3);
 
