@@ -41,8 +41,9 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:  "call [options]",
+	Name:  "call [options] [--] <function>",
 	Short: "Call one or more functions, interconnected into a pipeline",
+	// TODO: Add a long description and talk about `--`
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
 	},
