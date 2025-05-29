@@ -1,6 +1,8 @@
 package io.dagger.sample;
 
-import io.dagger.client.*;
+import io.dagger.client.AutoCloseableClient;
+import io.dagger.client.Dagger;
+import io.dagger.client.Secret;
 import java.util.List;
 
 @Description("Create a secret with a Github token and call a Github API using this secret")

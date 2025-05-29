@@ -24,7 +24,7 @@ public class GenerateTest {
               assertThat(compilation)
                   .generatedSourceFile("io.dagger.gen.entrypoint.Entrypoint")
                   .hasSourceEquivalentTo(
-                      JavaFileObjects.forResource("io/dagger/gen/entrypoint/entrypoint.java"));
+                      JavaFileObjects.forResource("io/dagger/gen/entrypoint/Entrypoint.java"));
             });
   }
 }
