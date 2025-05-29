@@ -1,4 +1,5 @@
-import { dag } from "../../api/client.gen.js"
+import { dag, Error as DaggerError } from "../../api/client.gen.js"
+import type { JSON } from "../../api/client.gen.js"
 import { connection } from "../../connect.js"
 import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
@@ -45,15 +46,8 @@ export async function entrypoint(files: string[]) {
             parentArgs,
             fnArgs: args,
           })
-        } catch (e) {
-          if (e instanceof Error) {
-            if (e.cause) {
-              console.error(`${e.cause}`)
-            }
-            console.error(`Error: ${e.message}`)
-          } else {
-            console.error(e)
-          }
+        } catch (e: unknown) {
+          await fnCall.returnError(formatError(e))
           process.exit(1)
         }
       }
@@ -70,4 +64,47 @@ export async function entrypoint(files: string[]) {
     },
     { LogOutput: process.stdout },
   )
+}
+
+/**
+ * Take the error thrown by the user module and stringify it so it can
+ * be returned to Dagger.
+ *
+ * If the error is an instance of Error, we stringify the message and the cause.
+ * If the error is not an instance of Error (which is the case for unexpected errors happening
+ * inside the code), we try to stringify it, if it fails we convert it to a string.
+ *
+ * Hopefully, this will be enough to make the error readable by the user.
+ * If the stringify fails, it will fails when calling `returnError` and should
+ * still be displayed to the user and Cloud.
+ */
+function formatError(e: unknown): DaggerError {
+  if (e instanceof Error) {
+    let error = dag.error(e.message)
+
+    Object.entries(e).map(([field, value]) => {
+      let serializedValue: string | null = null
+      if (value !== undefined && value !== null) {
+        try {
+          serializedValue = JSON.stringify(value)
+        } catch {
+          serializedValue = String(value)
+        }
+      }
+
+      if (serializedValue === null) {
+        return
+      }
+
+      error = error.withValue(field, serializedValue as JSON)
+    })
+
+    return error
+  }
+
+  try {
+    return dag.error(JSON.stringify(e))
+  } catch {
+    return dag.error(String(e))
+  }
 }
