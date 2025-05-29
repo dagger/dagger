@@ -2,22 +2,15 @@ package io.dagger.modules.mymodule;
 
 import static io.dagger.client.Dagger.dag;
 
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Secret;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-@Object
-public class MyModule {
-  @Function
-  public String githubApi(Secret token)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
-    return dag().container()
-        .from("alpine:3.17")
-        .withSecretVariable("GITHUB_API_TOKEN", token)
-        .withExec(List.of("apk", "add", "curl"))
+@Object public class MyModule {unction String githubApi(Secrettoken)rows ExecutionException,DaggerExecException,DaggerQueryException,InterruptedException {g().container().from("alp         .withExec(List.of("apk", "add", "curl"))
         .withExec(
             List.of(
                 "sh",

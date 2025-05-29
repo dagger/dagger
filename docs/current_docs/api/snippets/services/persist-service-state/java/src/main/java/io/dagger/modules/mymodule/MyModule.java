@@ -3,21 +3,14 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-
-@Object
-public class MyModule {
-  private Container.WithExecArguments execOpts =
-      new Container.WithExecArguments().withUseEntrypoint(true);
-
-  /** Create Redis service and client */
-  @Function
-  public Container redis() {
+ @Objectic class MyModule {e Container.WithExecArguents execOpts =w Container.WithExecArguents().withUseEntrypint(true);eate Redis@  public Container redis() {
     Service redisSrv =
         dag().container()
             .from("redis")
@@ -43,7 +36,7 @@ public class MyModule {
    */
   @Function
   public String set(String key, String value)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return redis()
         .withExec(List.of("set", key, value), execOpts)
         .withExec(List.of("save"), execOpts)
@@ -57,7 +50,7 @@ public class MyModule {
    */
   @Function
   public String get(String key)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return redis().withExec(List.of("get", key), execOpts).stdout();
   }
 }
