@@ -203,6 +203,7 @@ func (sdk *goSDK) Codegen(
 			"internal/dagger",
 			"internal/querybuilder",
 			"internal/telemetry",
+			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
 	}, nil
 }
