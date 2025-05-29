@@ -1,4 +1,4 @@
-#[DaggerFunction]
+  #[DaggerFunction]
   #[Doc('A coding agent for developing new features')]
   public function develop(
     #[Doc('Assignment to complete')] string $assignment,
@@ -23,7 +23,7 @@
 
     // Get the output from the agent
     $completed = $work->env()->output('completed')->asWorkspace();
-    $completedDirectory = $completed->source()->withoutDirectory('node_modules');
+    $completedDirectory = $completed->getSource()->withoutDirectory('node_modules');
 
     // Make sure the tests really pass
     $this->test($completedDirectory);
