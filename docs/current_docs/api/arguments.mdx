@@ -511,7 +511,7 @@ dagger core \
 </TabItem>
 </Tabs>
 
-The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-modules.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
+The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-repositories.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
 <Tabs groupId="shell">
 <TabItem value="System shell">
@@ -623,7 +623,7 @@ dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.
 </TabItem>
 </Tabs>
 
-For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+For more information about remote repository access, refer to the documentation on [reference schemes](./remote-repositories.mdx) and [authentication methods](./remote-repositories.mdx#authentication-methods).
 
 :::note
 Dagger offers two important features for working with `File` arguments:
