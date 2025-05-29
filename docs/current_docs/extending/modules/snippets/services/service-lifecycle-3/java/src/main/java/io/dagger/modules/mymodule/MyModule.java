@@ -3,21 +3,14 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
+import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Stream;
-
-@Object
-public class MyModule {
-  /** creates Redis service and client */
-  @Function
-  public String redisService()
-      throws ExecutionException, DaggerQueryException, InterruptedException {
-    Service redisSrv =
+import  ectlass MyModule {eates Redis service and lient */ String re     Service redisSrv =
         dag().container()
             .from("redis")
             .withExposedPort(6379)

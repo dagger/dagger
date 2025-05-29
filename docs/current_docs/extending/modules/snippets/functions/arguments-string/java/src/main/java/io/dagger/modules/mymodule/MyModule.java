@@ -4,20 +4,15 @@ import static io.dagger.client.Dagger.dag;
 import io.dagger.client.exception.DaggerQueryException;
 
 
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
+
+
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-
-@Object
-public class MyModule {
-  @Function
-  public String getUser(String gender)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
-    return dag().container()
-        .from("alpine:latest")
-        .withExec(List.of("apk", "add", "curl"))
-        .withExec(List.of("apk", "add", "jq"))
+ public class MyModule {unction String getUser(String gnder)rows ExecutionException,DaggerExecException,DaggerQueryException,InterruptedException {g().container().from("alp         .withExec(List.of("apk", "add", "jq"))
         .withExec(
             List.of(
                 "sh",

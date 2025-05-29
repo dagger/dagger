@@ -2,21 +2,14 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
+import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-
-@Object
-public class MyModule {
-  /** Run unit tests against a database service */
-  @Function
-  public String test() throws ExecutionException, DaggerQueryException, InterruptedException {
-    Service mariadb =
-        dag().container()
-            .from("mariadb:10.11.2")
+ @Objectic class MyModule {n unit tests against a dtabase service */ionng test() throws ExcutionException, DagerExecException, DaggrQueryException, InterruptedException {ice mariad             .from("mariadb:10.11.2")
             .withEnvVariable("MARIADB_USER", "user")
             .withEnvVariable("MARIADB_PASSWORD", "password")
             .withEnvVariable("MARIADB_DATABASE", "drupal")

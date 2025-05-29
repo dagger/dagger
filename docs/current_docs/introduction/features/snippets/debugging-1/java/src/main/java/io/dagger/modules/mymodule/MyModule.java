@@ -2,22 +2,14 @@ package io.dagger.modules.mymodule;
 
 import static io.dagger.client.Dagger.dag;
 
+import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-@Object
 public class MyModule {
-  @Function
-  public String foo() throws ExecutionException, DaggerQueryException, InterruptedException {
-    return dag().container()
-        .from("alpine:latest")
-        .withExec(List.of("sh", "-c", "echo hello world > /foo"))
-        .withExec(List.of("cat", "/FOO")) // deliberate error
-        .stdout();
-  }
-}
+  @Func   public String foo() thows ExecutionExceptin, DaggerExecExceptio, DaggerQueryException,InterruptedException {return dag().container().from("alpine:latest").withExec(List.of("sh", -c", "echo hello word > /foo"))Exec(List.of("cat","/FOO")) // deliberae error.stdout();}}
 
 // run with dagger call --interactive foo

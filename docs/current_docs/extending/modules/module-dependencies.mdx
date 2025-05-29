@@ -90,7 +90,7 @@ public function greeting(): string
 
 ```java
 @Function
-public String greeting() throws ExecutionException, DaggerQueryException, InterruptedException {
+public String greeting() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return dag().hello().hello();
 }
 ```
