@@ -11,12 +11,12 @@ async develop(
 ): Promise<Directory> {
     // Environment with agent inputs and outputs
     const environment = dag
-        .env({ privileged: true })
+        .env()
         .withStringInput('assignment', assignment, 'the assignment to complete')
         .withWorkspaceInput(
         'workspace',
         dag.workspace(source),
-        'the workspace with tools to edit code'
+        'the workspace with tools to edit and test code'
         )
         .withWorkspaceOutput('completed', 'the workspace with the completed assignment')
 
@@ -28,7 +28,7 @@ async develop(
 
     // Get the output from the agent
     const completed = work.env().output('completed').asWorkspace()
-    const completedDirectory = completed.getSource().withoutDirectory('node_modules')
+    const completedDirectory = completed.source().withoutDirectory('node_modules')
 
     // Make sure the tests really pass
     await this.test(completedDirectory)

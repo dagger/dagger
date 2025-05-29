@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"dagger/workspace/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type Workspace struct {
@@ -48,7 +50,15 @@ func (w *Workspace) ListFiles(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
-// Get the source code directory from the Workspace
-func (w *Workspace) GetSource() *dagger.Directory {
-	return w.Source
+// Return the result of running unit tests
+func (w *Workspace) Test(ctx context.Context) (string, error) {
+	nodeCache := dag.CacheVolume("node")
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", w.Source).
+		WithMountedCache("/root/.npm", nodeCache).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
+		Stdout(ctx)
 }

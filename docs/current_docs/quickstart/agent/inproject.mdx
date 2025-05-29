@@ -178,7 +178,6 @@ This code creates a Dagger Function called `develop` that takes an assignment an
 There are a few important points to note here:
 - The variable `environment` is the environment to define inputs and outputs for the agent. Each input and output provides a description which acts as a declarative form of prompting.
 - Other Dagger module dependencies are automatically detected and made available for use in this environment. In this example, Dagger finds the `workspace` sub-module installed and automatically generates bindings for it: `with-workspace-input` and `with-workspace-output`. These bindings can be used to provide (or retrieve) the workspace to the agent.
-- The `environment` is privileged, which means that the environment includes all the Dagger Functions in the existing Daggerized CI pipeline, plus the core Dagger API. This allows the agent to use the existing `test` function to run unit tests.
 - The LLM is supplied with a prompt file instead of an inline prompt. By separating the prompt from the Dagger Function code, it becomes easier to maintain and update the instructions given to the LLM.
 
 The final step is to add the prompt file. Create a file at `.dagger/develop_prompt.md` with the following content:
@@ -191,10 +190,6 @@ Your assignment is: $assignment
 ## Constraints
 - Before writing code, analyze the Workspace to understand the project.
 - Do not make unneccessary changes.
-- Run tests with the HelloDagger Test tool.
-- Read and write files with the Workspace_read_file, Workspace_list_files, and Workspace_write_file tools
-- You must pass the Directory from the Workspace_get_source to the HelloDagger Test tool.
-- Do not select Container or Directory tools. Only use Workspace and HelloDagger tools
 - Always run tests to validate your code changes.
 - Do not stop until you have completed the assignment and the tests pass.
 ```

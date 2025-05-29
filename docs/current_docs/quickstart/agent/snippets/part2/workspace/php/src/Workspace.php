@@ -52,9 +52,19 @@ class Workspace
   }
 
   #[DaggerFunction]
-  #[Doc('Get the source code directory from the Workspace')]
-  public function getSource(): Directory
-  {
-    return $this->source;
+  #[Doc('Return the result of running unit tests')]
+  public function test(): string {
+      $nodeCache = dag()
+          ->cacheVolume('node');
+          return dag()
+              ->container()
+              ->from('node:21-slim')
+              ->withDirectory('/src', $this->source)
+              ->withMountedCache('/root/.npm', $nodeCache)
+              ->withWorkdir('/src')
+              ->withExec(['npm', 'install'])
+          ->withExec(['npm', 'run', 'test:unit', 'run'])
+          ->stdout();
   }
+
 }
