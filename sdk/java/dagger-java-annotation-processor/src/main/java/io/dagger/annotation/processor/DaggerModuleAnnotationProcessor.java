@@ -5,23 +5,11 @@ import com.github.javaparser.javadoc.Javadoc;
 import com.github.javaparser.javadoc.JavadocBlockTag;
 import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
-import com.palantir.javapoet.TypeSpec;
-import io.dagger.client.Dagger;
-import io.dagger.client.FunctionCall;
-import io.dagger.client.FunctionCallArgValue;
-import io.dagger.client.JSON;
-import io.dagger.client.JsonConverter;
-import io.dagger.client.ModuleID;
-import io.dagger.client.TypeDef;
+import com.palantir.javapoet.*;
+import io.dagger.client.*;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
-import io.dagger.module.annotation.Default;
-import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Ignore;
@@ -366,6 +354,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addModifiers(Modifier.PRIVATE)
               .returns(ModuleID.class)
               .addException(ExecutionException.class)
+              .addException(DaggerExecException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
               .addCode(

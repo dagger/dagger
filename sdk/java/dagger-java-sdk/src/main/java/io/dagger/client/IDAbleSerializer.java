@@ -1,6 +1,7 @@
 package io.dagger.client;
 
-import io.dagger.client.exceptions.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import jakarta.json.bind.serializer.JsonbSerializer;
 import jakarta.json.bind.serializer.SerializationContext;
 import jakarta.json.stream.JsonGenerator;
@@ -16,7 +17,10 @@ public class IDAbleSerializer<S> implements JsonbSerializer<IDAble<S>> {
       } else {
         ctx.serialize(id, generator);
       }
-    } catch (ExecutionException | InterruptedException | DaggerQueryException e) {
+    } catch (ExecutionException
+        | InterruptedException
+        | DaggerQueryException
+        | DaggerExecException e) {
       throw new RuntimeException(e);
     }
   }

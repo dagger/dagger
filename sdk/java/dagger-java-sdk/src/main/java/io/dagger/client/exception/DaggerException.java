@@ -1,4 +1,4 @@
-package io.dagger.client.exceptions;
+package io.dagger.client.exception;
 
 import io.smallrye.graphql.client.GraphQLError;
 

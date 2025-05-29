@@ -1,14 +1,14 @@
 package io.dagger.client;
 
-import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
+import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 import static io.smallrye.graphql.client.core.Document.document;
 import static io.smallrye.graphql.client.core.Field.field;
 import static io.smallrye.graphql.client.core.Operation.operation;
 
 import com.jayway.jsonpath.JsonPath;
-import io.dagger.client.exceptions.DaggerExecException;
-import io.dagger.client.exceptions.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.smallrye.graphql.client.GraphQLError;
 import io.smallrye.graphql.client.Response;
 import io.smallrye.graphql.client.core.Document;
@@ -113,7 +113,8 @@ class QueryBuilder {
     throw new DaggerQueryException(response.getErrors().toArray(new GraphQLError[0]));
   }
 
-  Document buildDocument() throws ExecutionException, InterruptedException, DaggerQueryException {
+  Document buildDocument()
+      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
     Field leafField = parts.pop().toField();
     leafField.setFields(
         leaves.stream().<FieldOrFragment>map(qp -> field(qp.getOperation())).toList());

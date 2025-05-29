@@ -1,13 +1,13 @@
 package io.dagger.client;
 
-import static io.dagger.client.exceptions.DaggerExceptionConstants.CMD_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.EXIT_CODE_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.STDERR_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.CMD_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.EXIT_CODE_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.STDERR_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
+import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.dagger.client.exceptions.DaggerException;
+import io.dagger.client.exception.DaggerException;
 import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.Json;
 import java.util.List;
