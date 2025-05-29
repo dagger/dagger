@@ -4,11 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import io.dagger.client.exception.DaggerExecException;
-import io.dagger.client.exception.DaggerQueryException;
 
 public class ClientIT {
 
@@ -84,8 +85,13 @@ public class ClientIT {
   @Test
   public void testList() throws Exception {
     try (AutoCloseableClient client = Dagger.connect()) {
-      List<EnvVariable> envs = client.container().from("alpine:3.16.2")
-          .withEnvVariable("FOO", "BAR").withEnvVariable("BAR", "BAZ").envVariables();
+      List<EnvVariable> envs =
+          client
+              .container()
+              .from("alpine:3.16.2")
+              .withEnvVariable("FOO", "BAR")
+              .withEnvVariable("BAR", "BAZ")
+              .envVariables();
 
       assertThat(envs).hasSizeGreaterThanOrEqualTo(3);
 
