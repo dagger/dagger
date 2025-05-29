@@ -298,7 +298,12 @@ dagger call services up --ports 8080:80
 
 ## Use service endpoints
 
-Every service has an endpoint, and this endpoint can be obtained via the Dagger API. The following example demonstrates starting an HTTP service manually, retrieving its endpoint, and then querying that service using a standard HTTP GET request:
+Every service has an endpoint, and this endpoint can be obtained via the Dagger API. This feature is typically useful in two scenarios:
+
+- When a target container (which you bind the service to) is unable to resolve the service with the bound alias. This is because the service binding works at the `/etc/hosts` level and not at the DNS level. As a result, a small number of applications might fail to resolve the service using the alias.
+- When a service needs to be accessible (for example, over standard HTTP) without needing another container to access it.
+
+The following example demonstrates starting an HTTP service manually, retrieving its endpoint, and then querying that service using a standard HTTP GET request:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
