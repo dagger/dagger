@@ -35,7 +35,8 @@ type CustomOp interface {
 
 type CustomOpBackend interface {
 	Digest() (digest.Digest, error)
-	CacheKey(ctx context.Context) (digest.Digest, error)
+	// CacheKey(ctx context.Context) (digest.Digest, error)
+	CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error)
 	Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opts OpOpts) (outputs []solver.Result, err error)
 }
 
@@ -96,17 +97,15 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 
 func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, index int) (*solver.CacheMap, bool, error) {
 	cm, ok, err := op.original.CacheMap(ctx, g, index)
-	if err != nil {
+	if cm == nil || !ok || err != nil {
 		return cm, ok, err
 	}
-	if cm != nil {
-		key, err := op.Backend.CacheKey(ctx)
-		if err != nil {
-			return cm, ok, err
-		}
-		cm.Digest = digest.FromString("customop+" + string(key))
+
+	cm, err = op.Backend.CacheMap(ctx, cm)
+	if err != nil {
+		return nil, false, err
 	}
-	return cm, ok, err
+	return cm, true, nil
 }
 
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {

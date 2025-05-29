@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -27,7 +26,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -423,7 +421,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
+		dagql.NodeFunc("withExec", s.withExec).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -922,70 +920,52 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
-func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	if clientMD.SessionID == "" {
-		return nil, fmt.Errorf("session ID not found in context")
-	}
-
-	execMD := buildkit.ExecutionMetadata{}
-	if mdEncoded := args.NestedExecMetadata; mdEncoded != "" {
-		err := json.Unmarshal([]byte(mdEncoded), &execMD)
-		if err != nil {
-			return nil, err
-		}
-	}
-	// if args.NestedExecMetadata != nil {
-	// 	execMD = *args.NestedExecMetadata
-	// }
-
-	inputs := []string{}
-	if execMD.CacheByCall || true { // XXX: we should have a way of disabling the full id (while preserving the *current* args)
-		// include a digest of the current call so that we scope of the cache
-		// of the op to this call's args and receiver values. Currently only
-		// used for module function calls.
-		inputs = append(inputs, buildkit.DaggerCallDigestEnv+"="+string(cacheCfg.Digest.String()))
-	}
-
-	// XXX: cache keys we need to work out when we've changed ID-ing
-	// if opts.RedirectStdout != "" {
-	// 	// ensure this path is in the cache key
-	// 	runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStdoutEnv, opts.RedirectStdout))
-	// }
-	//
-	// if opts.RedirectStderr != "" {
-	// 	// ensure this path is in the cache key
-	// 	runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStderrEnv, opts.RedirectStderr))
-	// }
-	//
-	// if len(aliasStrs) > 0 {
-	// 	// ensure these are in the cache key, sort them for stability
-	// 	slices.Sort(aliasStrs)
-	// 	runOpts = append(runOpts,
-	// 		llb.AddEnv(buildkit.DaggerHostnameAliasesEnv, strings.Join(aliasStrs, ",")))
-	// }
-	//
-	// if opts.NoInit {
-	// 	execMD.NoInit = true
-	// 	// include an env var (which will be removed before the exec actually runs) so that execs with
-	// 	// inits disabled will be cached differently than those with them enabled by buildkit
-	// 	runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
-	// }
-
-	// include the engine version so that these execs get invalidated if the engine/API change
-	inputs = append(inputs, buildkit.DaggerEngineVersionEnv+"="+engine.Version)
-
-	if execMD.CachePerSession {
-		// include the SessionID here so that we bust cache once-per-session
-		inputs = append(inputs, buildkit.DaggerSessionIDEnv+"="+clientMD.SessionID)
-	}
-
-	cacheCfg.Digest = dagql.HashFrom(inputs...)
-	return &cacheCfg, nil
-}
+// func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+// 	clientMD, err := engine.ClientMetadataFromContext(ctx)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+// 	}
+// 	if clientMD.SessionID == "" {
+// 		return nil, fmt.Errorf("session ID not found in context")
+// 	}
+//
+// 	execMD := buildkit.ExecutionMetadata{}
+// 	if mdEncoded := args.NestedExecMetadata; mdEncoded != "" {
+// 		err := json.Unmarshal([]byte(mdEncoded), &execMD)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 	}
+// 	// if args.NestedExecMetadata != nil {
+// 	// 	execMD = *args.NestedExecMetadata
+// 	// }
+//
+// 	inputs := []string{}
+// 	if execMD.CacheByCall { // XXX: try enabling the other path to fix TestContainer/TestNestedExec/cached
+// 		// include a digest of the current call so that we scope of the cache
+// 		// of the op to this call's args and receiver values. Currently only
+// 		// used for module function calls.
+// 		inputs = append(inputs, buildkit.DaggerCallDigestEnv+"="+string(cacheCfg.Digest.String()))
+// 	} else {
+// 		// otherwise, include just *the current state* in the cache key
+// 		fmt.Println("HERE?")
+// 		inputs = append(inputs, string(parent.Self.Digest()))
+// 		argsJSON, _ := json.Marshal(args.Args)
+// 		inputs = append(inputs, string(argsJSON))
+// 	}
+//
+// 	// include the engine version so that these execs get invalidated if the engine/API change
+// 	inputs = append(inputs, buildkit.DaggerEngineVersionEnv+"="+engine.Version)
+//
+// 	if execMD.CachePerSession {
+// 		// include the SessionID here so that we bust cache once-per-session
+// 		inputs = append(inputs, buildkit.DaggerSessionIDEnv+"="+clientMD.SessionID)
+// 	}
+//
+// 	cacheCfg.Digest = dagql.HashFrom(inputs...)
+// 	fmt.Println("got digest", cacheCfg.Digest)
+// 	return &cacheCfg, nil
+// }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
 	return parent.Stdout(ctx)
