@@ -12,14 +12,16 @@ import java.util.concurrent.ExecutionException;
 @Object
 public class MyModule {
   @Function
-  public String scan(String ref, Severity severity)throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
-      var ctr = dag().container().from(ref);
-      return dag()
-          .container()
-          .from("aquasec/trivy:0.50.4")
-          .withMountedFile("/mnt/ctr.tar", ctr.asTarball())
-          .withMountedCache("/root/.cache", dag().cacheVolume("trivy-cache"))
-          .withExec(
+  public String scan(String ref, Severity severity)
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    var ctr = dag().container().from(ref);
+
+    return dag()
+        .container()
+        .from("aquasec/trivy:0.50.4")
+        .withMountedFile("/mnt/ctr.tar", ctr.asTarball())
+        .withMountedCache("/root/.cache", dag().cacheVolume("trivy-cache"))
+        .withExec(
             List.of(
                 "trivy",
                 "image",
