@@ -4,7 +4,6 @@ package io.dagger.gen.entrypoint;
     import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.Function;
 import io.dagger.client.FunctionCall;
@@ -16,6 +15,8 @@ import io.dagger.client.ModuleID;
 import io.dagger.client.Platform;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.java.module.DaggerJava;
 import java.lang.Class;
 import java.lang.Error;
