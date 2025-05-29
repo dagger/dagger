@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/cloud"
-	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 var (
@@ -74,17 +73,7 @@ func (dc *daggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
 	client, err := cloud.NewClient(ctx)
 	if err != nil {
-		return nil, errors.New("please run `dagger login <org>` first")
-	}
-
-	_, err = client.User(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	org, _ := auth.CurrentOrg()
-	if org == nil {
-		return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
+		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
 	}
 
 	return d.create(ctx, client)
@@ -93,6 +82,9 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 func (d *daggerCloudDriver) create(ctx context.Context, client *cloud.Client) (*daggerCloudConnector, error) {
 	engineSpec, err := client.Engine(ctx)
 	if err != nil {
+		if errors.Is(err, cloud.ErrNoOrg) {
+			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
+		}
 		return nil, err
 	}
 	return &daggerCloudConnector{EngineSpec: *engineSpec}, nil

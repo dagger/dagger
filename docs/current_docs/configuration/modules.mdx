@@ -62,7 +62,7 @@ You can also set a specific version with a suffix (e.g., `node@20.15.0`).
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
 
-Set the field to `bun` to use the Bun runtime.
+Set the field to `bun` to use the Bun runtime (and its package manager).
 
 ```json
   "dagger": {
@@ -168,20 +168,6 @@ The TypeScript SDK will also generate a `pnpm-workspace.yml` file in your module
 ```yaml
 packages:
   - './sdk'
-```
-
-#### Bun
-
-:::warning
-Bun runtime support is still experimental. Unexpected results may occur in some cases.
-:::
-
-Setting the `runtime` property to `bun` will use the Bun runtime and its package manager. You do not need to set the `packageManager` field explicitly. Here is an example:
-
-```json
-  "dagger": {
-    "runtime": "bun"
-  }
 ```
 
 #### Automatic detection
