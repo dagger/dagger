@@ -45,15 +45,15 @@ public class DaggerExceptionUtils {
   }
 
   public static String getType(GraphQLError error) {
-    return (String) getExtensionValueByKey(error, TYPE_KEY);
+    return String.valueOf(getExtensionValueByKey(error, TYPE_KEY));
   }
 
   public static String getExitCode(GraphQLError error) {
-    return (String) getExtensionValueByKey(error, EXIT_CODE_KEY);
+    return String.valueOf(getExtensionValueByKey(error, EXIT_CODE_KEY));
   }
 
   public static String getStdErr(GraphQLError error) {
-    return (String) getExtensionValueByKey(error, STDERR_KEY);
+    return String.valueOf(getExtensionValueByKey(error, STDERR_KEY));
   }
 
   public static String toSimpleMessage(GraphQLError... errors) {
