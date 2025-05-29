@@ -8,10 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/url"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,7 +80,13 @@ type cacheResult struct {
 	resultDigest string
 }
 
-var _ Result = &cacheResult{}
+type CacheResult interface {
+	Result
+	Release(context.Context) error
+	// PostCall(context.Context) error
+}
+
+var _ CacheResult = &cacheResult{}
 
 func (cr *sharedCacheResult) Type() *ast.Type {
 	return cr.typed.Type()
@@ -105,6 +109,27 @@ func (cr *sharedCacheResult) ResultID() int {
 
 func (cr *sharedCacheResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(cr.typed)
+}
+
+func (cr *cacheResult) Release(ctx context.Context) error {
+	cr.cache.mu.Lock()
+	defer cr.cache.mu.Unlock()
+
+	cr.refCount--
+	if cr.refCount > 0 {
+		return nil
+	}
+
+	delete(cr.cache.sharedResults, cr.resultID)
+	delete(cr.cache.resultsByDigest, digest.Digest(cr.resultDigest))
+
+	/* TODO: pruning, something like
+	if err := cr.cache.db.ExecContext(ctx, "DELETE FROM results WHERE result_id = ?", cr.resultID); err != nil {
+		return fmt.Errorf("failed to delete result: %w", err)
+	}
+	*/
+
+	return nil
 }
 
 func (cr *cacheResult) ResultDigest() string {
@@ -136,182 +161,6 @@ func NewDagqlCache(db *sql.DB) *DagqlCache {
 	}
 }
 
-func (c *DagqlCache) LoadID(
-	ctx context.Context,
-	s *Server,
-	parent Object,
-	fieldSpec *FieldSpec,
-	cacheSpec CacheSpec,
-	callID *call.ID,
-) (_ Result, _ *call.ID, rerr error) {
-	view := View(callID.View())
-	idArgs := callID.Args()
-	inputArgs := make(map[string]Input, len(idArgs))
-	for _, argSpec := range fieldSpec.Args.Inputs(view) {
-		// just be n^2 since the overhead of a map is likely more expensive
-		// for the expected low value of n
-		var inputLit call.Literal
-		for _, idArg := range idArgs {
-			if idArg.Name() == argSpec.Name {
-				inputLit = idArg.Value()
-				break
-			}
-		}
-
-		switch {
-		case inputLit != nil:
-			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
-			if err != nil {
-				return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
-			}
-			inputArgs[argSpec.Name] = input
-
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-
-		case argSpec.Type.Type().NonNull:
-			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-
-		default:
-			// explicitly include as null
-			inputArgs[argSpec.Name] = nil
-		}
-	}
-
-	doNotCache := cacheSpec.DoNotCache != ""
-	res, err := s.cache.Call(ctx, s, parent, callID, inputArgs, doNotCache)
-	if err != nil {
-		return nil, nil, err
-	}
-	return res, callID, nil
-}
-
-func (c *DagqlCache) Select(
-	ctx context.Context,
-	s *Server,
-	parent Object,
-	constructor *call.ID, // TODO: method on Object?
-	fieldSpec *FieldSpec, // TODO: method on Object?
-	cacheSpec CacheSpec, // TODO: method on Object?
-	sel Selector,
-) (_ Result, _ *call.ID, rerr error) {
-	view := sel.View
-	if fieldSpec.ViewFilter == nil {
-		// fields in the global view shouldn't attach the current view to the
-		// selector (since they're global from all perspectives)
-		view = ""
-	}
-
-	idArgs := make([]*call.Argument, 0, len(sel.Args))
-	inputArgs := make(map[string]Input, len(sel.Args))
-	for _, argSpec := range fieldSpec.Args.Inputs(view) {
-		// just be n^2 since the overhead of a map is likely more expensive
-		// for the expected low value of n
-		var namedInput NamedInput
-		for _, selArg := range sel.Args {
-			if selArg.Name == argSpec.Name {
-				namedInput = selArg
-				break
-			}
-		}
-
-		switch {
-		case namedInput.Value != nil:
-			idArgs = append(idArgs, call.NewArgument(
-				namedInput.Name,
-				namedInput.Value.ToLiteral(),
-				argSpec.Sensitive,
-			))
-			inputArgs[argSpec.Name] = namedInput.Value
-
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-
-		case argSpec.Type.Type().NonNull:
-			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-
-		default:
-			// explicitly include as null
-			inputArgs[argSpec.Name] = nil
-		}
-	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
-
-	astType := fieldSpec.Type.Type()
-	if sel.Nth != 0 {
-		astType = astType.Elem
-	}
-
-	newID := constructor.Append(
-		astType,
-		sel.Field,
-		string(view),
-		fieldSpec.Module,
-		sel.Nth,
-		"",
-		idArgs...,
-	)
-
-	doNotCache := cacheSpec.DoNotCache != ""
-	if cacheSpec.GetCacheConfig != nil {
-		origDgst := newID.Digest()
-
-		cacheCfgCtx := idToContext(ctx, newID)
-		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfg, err := cacheSpec.GetCacheConfig(cacheCfgCtx, parent, inputArgs, view, CacheConfig{
-			Digest: origDgst,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", parent.ObjectType().TypeName(), sel.Field, err)
-		}
-
-		if len(cacheCfg.UpdatedArgs) > 0 {
-			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
-			for argName, argInput := range cacheCfg.UpdatedArgs {
-				var found bool
-				for i, idArg := range idArgs {
-					if idArg.Name() == argName {
-						idArgs[i] = idArg.WithValue(argInput.ToLiteral())
-						found = true
-						break
-					}
-				}
-				if !found {
-					idArgs = append(idArgs, call.NewArgument(
-						argName,
-						argInput.ToLiteral(),
-						false,
-					))
-				}
-			}
-			newID = constructor.Append(
-				astType,
-				sel.Field,
-				string(view),
-				fieldSpec.Module,
-				sel.Nth,
-				"",
-				idArgs...,
-			)
-		}
-
-		if cacheCfg.Digest != origDgst {
-			newID = newID.WithDigest(cacheCfg.Digest)
-		}
-	}
-
-	res, err := s.cache.Call(ctx, s, parent, newID, inputArgs, doNotCache)
-	if err != nil {
-		return nil, nil, err
-	}
-	return res, newID, nil
-}
-
 func (c *DagqlCache) Call(
 	ctx context.Context,
 	s *Server,
@@ -319,7 +168,7 @@ func (c *DagqlCache) Call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 	doNotCache bool,
-) (_ Result, rerr error) {
+) (_ CacheResult, rerr error) {
 	ctx = idToContext(ctx, newID)
 
 	res, err := c.call(ctx, s, parent, newID.Field(), View(newID.View()), inputArgs, newID.Digest(), doNotCache)
@@ -338,7 +187,7 @@ func (c *DagqlCache) call(
 	inputArgs map[string]Input,
 	resultDigest digest.Digest,
 	doNotCache bool,
-) (_ Result, rerr error) {
+) (_ CacheResult, rerr error) {
 	startedAt := time.Now()
 	lg := slog.With(
 		"field", fmt.Sprintf("%s.%s", parent.ObjectType().TypeName(), fieldName),
@@ -496,20 +345,62 @@ func (c *DagqlCache) call(
 	}
 
 	// did the call return another result from its own call it made internally?
-	existingRes, ok := typedVal.(Result)
-	if ok {
+	if existingCacheRes, ok := typedVal.(CacheResult); ok {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+
 		// TODO: ???
 		// c.resultsByDigest[resultDigest] = existingRes.(*cacheResult)
 
 		// TODO: INCREMENT REF COUNT ?????
-		// TODO: INCREMENT REF COUNT ?????
-		// TODO: INCREMENT REF COUNT ?????
+
 		lg.
 			With("duration", time.Since(startedAt)).
-			Debug("EXECUTE RETURNED ANOTHER RESULT")
-		return existingRes, nil
+			Debug("EXECUTE RETURNED ANOTHER CACHERESULT")
+		return existingCacheRes, nil
+	}
+	if existingRes, ok := typedVal.(Result); ok {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		resID := existingRes.ResultID()
+		if resID == 0 {
+			lg.
+				With("duration", time.Since(startedAt)).
+				Debug("execute returned another result with 0 id")
+			return &cacheResult{
+				sharedCacheResult: &sharedCacheResult{
+					cache:    c,
+					typed:    existingRes.Unwrap(),
+					resultID: 0,
+					refCount: 1, // TODO: ???
+				},
+				resultDigest: existingRes.ResultDigest(),
+			}, nil
+		}
+
+		sharedRes, ok := c.sharedResults[existingRes.ResultID()]
+		if !ok {
+			// TODO: ?
+			return nil, fmt.Errorf(
+				"execute returned another result with id %d, but no shared result found",
+				resID,
+			)
+		}
+		sharedRes.refCount++
+
+		// TODO: ???
+		// c.resultsByDigest[resultDigest] = existingRes.(*cacheResult)
+
+		existingCacheRes := &cacheResult{
+			sharedCacheResult: sharedRes,
+			resultDigest:      existingRes.ResultDigest(),
+		}
+
+		lg.
+			With("duration", time.Since(startedAt)).
+			Debug("execute returned another result")
+		return existingCacheRes, nil
 	}
 
 	resultID, err = c.insertCache(ctx, metaDigest, parent, argResults, typedVal, resultDigest)
@@ -552,7 +443,7 @@ func (c *DagqlCache) SelectNth(
 	s *Server,
 	enumRes Result,
 	nth int,
-) (Result, error) {
+) (CacheResult, error) {
 	startedAt := time.Now()
 
 	// TODO: worth thinking through if this should use enumRes.ResultID() instead, or something else
@@ -586,7 +477,7 @@ func (c *DagqlCache) SelectNth(
 	if err != nil {
 		return nil, fmt.Errorf("nth %d: %w", nth, err)
 	}
-	if nthRes, ok := UnwrapAs[Result](nthVal); ok {
+	if nthRes, ok := UnwrapAs[CacheResult](nthVal); ok {
 		// TODO: INCREMENT REF COUNT ?????
 		// TODO: INCREMENT REF COUNT ?????
 		// TODO: INCREMENT REF COUNT ?????
@@ -892,7 +783,8 @@ func (s *Server) ScalarResult(
 	ctx context.Context,
 	input Input,
 ) (int, digest.Digest, error) {
-	return s.cache.ScalarResult(ctx, input)
+	// TODO: fix s.cache.cache naming
+	return s.cache.cache.ScalarResult(ctx, input)
 }
 
 func (c *DagqlCache) ScalarResult(

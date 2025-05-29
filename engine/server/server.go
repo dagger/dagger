@@ -24,7 +24,6 @@ import (
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
@@ -66,7 +65,6 @@ import (
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
 	"github.com/moby/locker"
-	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -172,11 +170,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[digest.Digest, dagql.Typed]
-	// TODO: ...
-	// TODO: ...
-	// TODO: ...
-	theRealCacheNow *dagql.DagqlCache
+	baseDagqlCache *dagql.DagqlCache
 
 	//
 	// session+client state
@@ -220,7 +214,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
 	}
@@ -593,7 +586,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create db: %w", err)
 	}
-	srv.theRealCacheNow = dagql.NewDagqlCache(dagqlCacheDB)
+	srv.baseDagqlCache = dagql.NewDagqlCache(dagqlCacheDB)
 
 	return srv, nil
 }
@@ -641,7 +634,7 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	l = l.WithField("dagger-session-count", len(srv.daggerSessions))
-	l = l.WithField("dagql-cache-size", srv.baseDagqlCache.Size())
+	// l = l.WithField("dagql-cache-size", srv.baseDagqlCache.Size())
 	return l
 }
 

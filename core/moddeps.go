@@ -124,7 +124,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 		}
 		dag := dagql.NewServer(d.root, dagqlCache)
 	*/
-	dagqlCache, err := d.root.DagqlCache(ctx)
+	dagqlCache, err := d.root.Cache(ctx)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
 	}

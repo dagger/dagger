@@ -53,13 +53,7 @@ type Server struct {
 	// View is the view that is applied to all queries on this server
 	View View
 
-	cache *DagqlCache
-
-	// Cache is the inner cache used by the server. It can be replicated to
-	// another *Server to inherit and share caches.
-	//
-	// TODO: copy-on-write
-	// Cache *SessionCache
+	cache *SessionCache
 }
 
 type InstallHook interface {
@@ -85,7 +79,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c *DagqlCache) *Server {
+func NewServer[T Typed](root T, c *SessionCache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -114,7 +108,7 @@ func NewServer[T Typed](root T, c *DagqlCache) *Server {
 	return srv
 }
 
-func (s *Server) Cache() *DagqlCache {
+func (s *Server) Cache() *SessionCache {
 	return s.cache
 }
 

@@ -575,8 +575,7 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	// client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
-	client.dag = dagql.NewServer(client.dagqlRoot, srv.theRealCacheNow)
+	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
 	client.dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: client.dag}
 	if err := coreMod.Install(ctx, client.dag); err != nil {
@@ -1395,16 +1394,10 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 	return client.defaultDeps.Clone(), nil
 }
 
+// TODO: cleanup duplication of next two methods
+
 // The DagQL query cache for the current client's session
 func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.daggerSession.dagqlCache, nil
-}
-
-func (srv *Server) DagqlCache(ctx context.Context) (*dagql.DagqlCache, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
