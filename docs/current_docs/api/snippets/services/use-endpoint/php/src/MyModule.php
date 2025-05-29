@@ -20,9 +20,9 @@ class MyModule
         $svc->start();
 
         // wait for service to be ready
-        $ep = $svc->endpoint(80, 'http');
+        $endpoint = $svc->endpoint(80, 'http');
 
         // send HTTP request to service endpoint
-        return dag()->http($ep)->contents();
+        return dag()->http($endpoint)->contents();
     }
 }

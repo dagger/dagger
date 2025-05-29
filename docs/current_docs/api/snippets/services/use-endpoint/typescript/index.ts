@@ -9,9 +9,9 @@ export class MyModule {
     svc = await svc.start()
 
     // wait for service to be ready
-    let ep = await svc.endpoint({"port": 80, "scheme": "http"})
+    let endpoint = await svc.endpoint({"port": 80, "scheme": "http"})
 
     // send HTTP request to service endpoint
-    return await dag.http(ep).contents()
+    return await dag.http(endpoint).contents()
   }
 }

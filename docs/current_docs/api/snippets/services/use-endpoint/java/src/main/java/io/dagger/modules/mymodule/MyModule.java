@@ -15,17 +15,17 @@ public class MyModule {
   public String get()
       throws ExecutionException, DaggerQueryException, InterruptedException {
     // Start NGINX service
-    Service httpSrv =
+    Service svc =
         dag().container()
             .from("nginx")
             .withExposedPort(80)
             .asService();
-    httpSrv = httpSrv.start();
+    svc = svc.start();
 
     // Wait for service endpoint
-    String ep = httpSrv.endpoint(new Service.EndpointArguments().withScheme("http").withPort(80));
+    String endpoint = svc.endpoint(new Service.EndpointArguments().withScheme("http").withPort(80));
 
     // Send HTTP request to service endpoint
-    return dag().http(ep).contents();
+    return dag().http(endpoint).contents();
   }
 }

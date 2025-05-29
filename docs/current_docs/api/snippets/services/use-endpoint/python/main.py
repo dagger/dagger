@@ -10,7 +10,7 @@ class MyModule:
         await svc.start()
 
         # wait for service endpoint
-        ep = await svc.endpoint(port=80, scheme="http")
+        endpoint = await svc.endpoint(port=80, scheme="http")
 
         # s end HTTP request to service endpoint
-        return await dag.http(ep).contents()
+        return await dag.http(endpoint).contents()
