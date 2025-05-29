@@ -5246,7 +5246,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withServiceBinding" href="#Container-withServiceBinding"><code>withServiceBinding</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td>
-                          <p>Establish a runtime dependency on a from a container to a network service.</p>
+                          <p>Establish a runtime dependency from a container to a network service.</p>
                           <p>The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.</p>
                           <p>The service will be reachable from the container via the provided hostname alias.</p>
                           <p>The service dependency will also convey to any files or directories produced by the container.</p>
@@ -6285,8 +6285,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCache-reservedSpace" href="#EngineCache-reservedSpace"><code>reservedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td>
-                        </td>
+                        <td> The minimum amount of disk space this policy is guaranteed to retain. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-targetSpace" href="#EngineCache-targetSpace"><code>targetSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The target number of bytes to keep when pruning. </td>
                       </tr>
                     </tbody>
                   </table>

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
 	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
@@ -34,11 +33,7 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 		introspectionSchema = resp.Schema
 		introspectionSchemaVersion = resp.SchemaVersion
 	} else {
-		dag, err := dagger.Connect(ctx)
-		if err != nil {
-			return err
-		}
-		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, dag)
+		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, cfg.Dag)
 		if err != nil {
 			return err
 		}

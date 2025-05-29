@@ -34,7 +34,7 @@ defmodule Mix.Tasks.Dagger.Codegen do
   end
 
   def handle_generate(%{outdir: outdir, introspection: introspection}) do
-    %{"__schema" => schema} = introspection |> File.read!() |> :json.decode()
+    %{"__schema" => schema} = introspection |> File.read!() |> JSON.decode!()
 
     IO.puts("Generate code to #{outdir}")
 

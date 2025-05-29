@@ -1099,7 +1099,7 @@ export class Generator {
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerExec("client", "install", "--generator=./generator"))
+				With(daggerExec("client", "install", "./generator"))
 
 			out, err := moduleSrc.File("hello.txt").Contents(ctx)
 			require.NoError(t, err)
@@ -1337,4 +1337,55 @@ main()`)
 			require.Equal(t, tc.expected, out)
 		})
 	}
+}
+
+func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	moduleSrc := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		With(nonNestedDevEngine(c)).
+		With(daggerNonNestedExec("init")).
+		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+		WithExec([]string{"go", "mod", "init", "test.com/test"}).
+		WithNewFile("main.go", `package main
+		
+		import (
+			"context"
+			"fmt"
+			"os"
+		
+			"test.com/test/dagger"
+		)
+		
+		func main() {
+			ctx := context.Background()
+		
+			dag, err := dagger.Connect(ctx)
+      if err != nil {
+			  fmt.Println(err)
+				os.Exit(0)
+      }
+		
+			res, err := dag.Hello().Hello(ctx)
+			if err != nil {
+				panic(err)
+			}
+		
+			fmt.Println("result:", res)
+		}
+		`,
+		).
+		With(daggerClientInstall("go")).
+		WithExec([]string{"apk", "add", "jq"}).
+		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
+		// on execute
+		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "main"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
+
+	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, out, "error serving dependency hello: module hello")
 }

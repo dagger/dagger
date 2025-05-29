@@ -1009,7 +1009,7 @@ type Container {
   ): Container!
 
   """
-  Establish a runtime dependency on a from a container to a network service.
+  Establish a runtime dependency from a container to a network service.
   
   The service will be started automatically when needed and detached when it is
   no longer needed, executing the default command if none is set.
@@ -1581,7 +1581,11 @@ type EngineCache {
   """Prune the cache of releaseable entries"""
   prune: Void
 
+  """The minimum amount of disk space this policy is guaranteed to retain."""
   reservedSpace: Int!
+
+  """The target number of bytes to keep when pruning."""
+  targetSpace: Int!
 }
 
 """An individual cache entry in a cache entry set"""

@@ -8409,10 +8409,10 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.242.3:
-  version "1.242.3"
-  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.242.3.tgz#563d35f99dd47e7e3540c0c9ab5e1a24ced9bf14"
-  integrity sha512-T6fR5Y5y2nW/Q2pv+5WwTBUkocvBkCO87aZRGjjbiaD5wCeW5ofgk/EAkqUrKlasLXNYPo6WTPixp3dHCIJa2Q==
+posthog-js@^1.246.0:
+  version "1.246.0"
+  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.246.0.tgz#8ce595d0be3487629c988a058f350d6d83ac0531"
+  integrity sha512-5lN/UMqDfxsLeSnT3LsY4P+eD1H+P9qxgN/iUk473LmhCM7IV8TAfdjJj23nnXk/euGNQtvyINYoD2DG+d4eEw==
   dependencies:
     core-js "^3.38.1"
     fflate "^0.4.8"
