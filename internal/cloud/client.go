@@ -21,11 +21,24 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
+var ErrNoOrg = errors.New("no org associated with this Engine")
+
 type Client struct {
-	u *url.URL
-	g *graphql.Client
-	h *http.Client
-	t *oauth2.Token
+	u           *url.URL
+	g           *graphql.Client
+	h           *http.Client
+	engineToken string
+}
+
+type basicAuthTransport struct {
+	token string
+}
+
+func (t *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r2 := req.Clone(req.Context())
+	r2.SetBasicAuth(t.token, "")
+
+	return http.DefaultTransport.RoundTrip(r2)
 }
 
 func NewClient(ctx context.Context) (*Client, error) {
@@ -39,23 +52,27 @@ func NewClient(ctx context.Context) (*Client, error) {
 		return nil, err
 	}
 
+	httpClient := &http.Client{}
+	// Always prefer oauth if available. If not and a DAGGER_CLOUD_TOKEN
+	// is set then use Basic auth
 	tokenSource, err := auth.TokenSource(ctx)
 	if err != nil {
+		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+			httpClient.Transport = &basicAuthTransport{token: cloudToken}
+			return &Client{
+				u:           u,
+				h:           httpClient,
+				engineToken: cloudToken,
+			}, nil
+		}
 		return nil, err
 	}
-
-	token, err := auth.Token(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	httpClient := oauth2.NewClient(ctx, tokenSource)
+	httpClient = oauth2.NewClient(ctx, tokenSource)
 
 	return &Client{
 		u: u,
 		g: graphql.NewClient(u.JoinPath("/query").String(), httpClient),
 		h: httpClient,
-		t: token,
 	}, nil
 }
 
@@ -65,6 +82,9 @@ type UserResponse struct {
 }
 
 func (c *Client) User(ctx context.Context) (*UserResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in. Using Engine token authentication")
+	}
 	var q struct {
 		User UserResponse `graphql:"user"`
 	}
@@ -156,11 +176,15 @@ func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate a remote Engine request: %w", err)
 	}
-	org, err := auth.CurrentOrg()
-	if err != nil {
-		return nil, err
+
+	if c.engineToken == "" {
+		org, err := auth.CurrentOrg()
+		if err != nil {
+			return nil, ErrNoOrg
+		}
+		r.Header.Set("X-Dagger-Org", org.ID)
 	}
-	r.Header.Set("X-Dagger-Org", org.ID)
+
 	resp, err := c.h.Do(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request a remote Engine: %w", err)
@@ -173,7 +197,7 @@ func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
 		errResponse := &ErrResponse{}
 		err = body.Decode(errResponse)
 		if err != nil {
-			return nil, fmt.Errorf("response body is not valid JSON: %s", errResponse)
+			return nil, fmt.Errorf("response body is not valid JSON: %w", err)
 		}
 		return nil, fmt.Errorf("failed to provision a remote Engine: %s", errResponse.Message)
 	}
