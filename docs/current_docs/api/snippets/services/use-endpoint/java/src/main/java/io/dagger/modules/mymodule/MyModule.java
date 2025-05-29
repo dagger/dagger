@@ -15,15 +15,15 @@ public class MyModule {
   public String get()
       throws ExecutionException, DaggerQueryException, InterruptedException {
     // Start NGINX service
-    Service svc =
+    Service service =
         dag().container()
             .from("nginx")
             .withExposedPort(80)
             .asService();
-    svc = svc.start();
+    service = service.start();
 
     // Wait for service endpoint
-    String endpoint = svc.endpoint(new Service.EndpointArguments().withScheme("http").withPort(80));
+    String endpoint = service.endpoint(new Service.EndpointArguments().withScheme("http").withPort(80));
 
     // Send HTTP request to service endpoint
     return dag().http(endpoint).contents();

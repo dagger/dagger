@@ -9,14 +9,14 @@ type MyModule struct{}
 
 func (m *MyModule) Get(ctx context.Context) (string, error) {
 	// Start NGINX service
-	svc := dag.Container().From("nginx").WithExposedPort(80).AsService()
-	svc, err := svc.Start(ctx)
+	service := dag.Container().From("nginx").WithExposedPort(80).AsService()
+	service, err := service.Start(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	// Wait for service endpoint
-	endpoint, err := svc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http", Port: 80})
+	endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http", Port: 80})
 	if err != nil {
 		return "", err
 	}

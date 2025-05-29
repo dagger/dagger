@@ -6,11 +6,11 @@ class MyModule:
     @function
     async def get(self) -> str:
         # start NGINX service
-        svc = dag.container().from_("nginx").with_exposed_port(80).as_service()
-        await svc.start()
+        service = dag.container().from_("nginx").with_exposed_port(80).as_service()
+        await service.start()
 
         # wait for service endpoint
-        endpoint = await svc.endpoint(port=80, scheme="http")
+        endpoint = await service.endpoint(port=80, scheme="http")
 
         # s end HTTP request to service endpoint
         return await dag.http(endpoint).contents()

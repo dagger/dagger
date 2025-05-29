@@ -16,11 +16,11 @@ class MyModule
     public function get(): string
     {
         // start NGINX service
-        $svc = dag()->container()->from('nginx')->withExposedPort(80)->asService();
-        $svc->start();
+        $service = dag()->container()->from('nginx')->withExposedPort(80)->asService();
+        $service->start();
 
         // wait for service to be ready
-        $endpoint = $svc->endpoint(80, 'http');
+        $endpoint = $service->endpoint(80, 'http');
 
         // send HTTP request to service endpoint
         return dag()->http($endpoint)->contents();
