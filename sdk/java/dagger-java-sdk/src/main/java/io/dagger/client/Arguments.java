@@ -3,6 +3,7 @@ package io.dagger.client;
 import static io.smallrye.graphql.client.core.Argument.arg;
 import static io.smallrye.graphql.client.core.InputObject.inputObject;
 import static io.smallrye.graphql.client.core.InputObjectField.prop;
+
 import io.dagger.client.exceptions.DaggerQueryException;
 import io.smallrye.graphql.client.core.Argument;
 import io.smallrye.graphql.client.core.InputObjectField;
