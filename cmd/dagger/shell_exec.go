@@ -218,17 +218,11 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				span.SetAttributes(
 					attribute.Bool(telemetry.CanceledAttr, true),
 				)
-				// Ideally rerr would be nil in this case but the interpreter
-				// isn't preserving the error in the end, just the exit status.
-				// So we have the handler return the error but return nil only
-				// in telemetry so it gets marked as *canceled* instead.
-				return nil
-			}
-			// TODO: it's helpful to show the span on error when it's a usage
-			// issue, but if it's from resolving a query it shows the error
-			// twice. Could still be useful though, to pinpoint exactly which
-			// part of the script triggered it.
-			if rerr != nil {
+			} else if rerr != nil {
+				// TODO: it's helpful to show the span on error when it's a usage
+				// issue, but if it's from resolving a query it shows the error
+				// twice. Could still be useful though, to pinpoint exactly which
+				// part of the script triggered it.
 				attrs := []attribute.KeyValue{
 					attribute.Bool(telemetry.UIPassthroughAttr, false),
 					attribute.Bool(telemetry.UIRevealAttr, true),
@@ -300,6 +294,10 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 					// here, so just log it.
 					slog.Error("failed to save error state", "args", args, "err", e)
 				}
+			}
+
+			if cascadingErr {
+				return nil
 			}
 
 			return err
