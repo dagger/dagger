@@ -10,7 +10,15 @@ import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
-import  import java.util.concurrnt.ExecutionExceptio;dule main object */MyModule {ionp    return dag().container()
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+
+/** MyModule main object */
+@Object
+public class MyModule {
+  @Function
+  public String getUser() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    return dag().container()
         .from("alpine:latest")
         .withExec(List.of("apk", "add", "curl"))
         .withExec(List.of("apk", "add", "jq"))

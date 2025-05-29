@@ -9,7 +9,16 @@ import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
+@Object
 public class MyModule {
-  @Func   public String foo() thows ExecutionExceptin, DaggerExecExceptio, DaggerQueryException,InterruptedException {return dag().container().from("alpine:latest").withExec(List.of("sh", -c", "echo hello word > /foo"))Exec(List.of("cat","/FOO")) // deliberae error.stdout();}}
+  @Function
+  public String foo() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    return dag().container()
+        .from("alpine:latest")
+        .withExec(List.of("sh", "-c", "echo hello world > /foo"))
+        .withExec(List.of("cat", "/FOO")) // deliberate error
+        .stdout();
+  }
+}
 
 // run with dagger call --interactive foo

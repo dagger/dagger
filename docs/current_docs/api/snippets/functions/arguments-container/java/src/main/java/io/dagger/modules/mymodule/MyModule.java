@@ -10,4 +10,12 @@ import io.dagger.module.annotation.Object;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
- public class MyModule {unction String osInfo(Containerctr)rows ExecutionException,DaggerExecException,DaggerQueryException,InterruptedException {r.withExec(List.of(uname", "-a")).stdou();
+
+@Object
+public class MyModule {
+  @Function
+  public String osInfo(Container ctr)
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    return ctr.withExec(List.of("uname", "-a")).stdout();
+  }
+}
