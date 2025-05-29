@@ -10,7 +10,15 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 
 import java.util.List;
-import  import java.util.stream.tream;lass MyModule { Redis service and lient */ionp      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
+
+@Object
+public class MyModule {
+  /** creates Redis service and client */
+  @Function
+  public String redisService()
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     Service redisSrv =
         dag().container()
             .from("redis")

@@ -10,7 +10,15 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
- @Objectic class MyModule {ion Service httpService() {g().container().from("pyt         .withNewFile("index.html", "Hello, world!")
+
+@Object
+public class MyModule {
+  @Function
+  public Service httpService() {
+    return dag().container()
+        .from("python")
+        .withWorkdir("/srv")
+        .withNewFile("index.html", "Hello, world!")
         .withExposedPort(8080)
         .asService(
             new Container.AsServiceArguments()

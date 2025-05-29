@@ -10,7 +10,15 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
- @Objectic class MyModule {e Container.WithExecArguents execOpts =w Container.WithExecArguents().withUseEntrypint(true);eate Redis@  public Container redis() {
+
+@Object
+public class MyModule {
+  private Container.WithExecArguments execOpts =
+      new Container.WithExecArguments().withUseEntrypoint(true);
+
+  /** Create Redis service and client */
+  @Function
+  public Container redis() {
     Service redisSrv =
         dag().container()
             .from("redis")

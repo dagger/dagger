@@ -9,14 +9,21 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
- @Objectic class MyModule {n unit tests against a dtabase service */ionng test() throws ExcutionException, DagerExecException, DaggrQueryException, InterruptedException {ice mariad             .from("mariadb:10.11.2")
+
+@Object
+public class MyModule {
+  /** Run unit tests against a database service */
+  @Function
+  public String test() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    Service mariadb =
+        dag().container()
+            .from("mariadb:10.11.2")
             .withEnvVariable("MARIADB_USER", "user")
             .withEnvVariable("MARIADB_PASSWORD", "password")
             .withEnvVariable("MARIADB_DATABASE", "drupal")
             .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
             .withExposedPort(3306)
             .asService(new Container.AsServiceArguments().withUseEntrypoint(true));
-
     // get Drupal base image
     // install additional dependencies
     Container drupal =
@@ -29,7 +36,6 @@ import java.util.concurrent.ExecutionException;
                     "drupal/core-dev",
                     "--dev",
                     "--update-with-all-dependencies"));
-
     // add service binding for MariaDB
     // run kernel test using PHPUnit
     return drupal

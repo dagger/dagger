@@ -10,7 +10,15 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import  ectlass MyModule {eates Redis service and lient */ String re     Service redisSrv =
+import java.util.stream.Stream;
+
+@Object
+public class MyModule {
+  /** creates Redis service and client */
+  @Function
+  public String redisService()
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    Service redisSrv =
         dag().container()
             .from("redis")
             .withExposedPort(6379)

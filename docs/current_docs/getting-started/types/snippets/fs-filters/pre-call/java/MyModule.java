@@ -4,10 +4,18 @@ import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
 import io.dagger.client.exception.DaggerExecException;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Object;
 import java.util.concurrent.ExecutionException;
- @Objectic class MyModule {ion Container foo(@Ignore({*", "!**/*.java", "!om.xml"}) Directory surce)ExecutionException,DaggerExecException,DaggerQueryException,InterruptedException {rn dag().c}}
+
+@Object
+public class MyModule {
+  @Function
+  public Container foo(@Ignore({"*", "!**/*.java", "!pom.xml"}) Directory source)
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    return dag().container().from("alpine:latest").withDirectory("/src", source).sync();
+  }
+}

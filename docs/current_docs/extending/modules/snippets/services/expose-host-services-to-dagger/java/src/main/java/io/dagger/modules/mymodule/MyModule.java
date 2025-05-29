@@ -9,8 +9,15 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-
-@Object public class MyModule {unction String userList(Servicesvc)rows ExecutionException,DaggerExecException,DaggerQueryException,InterruptedException {g().container().from("mar         .withExec(
+@Object
+public class MyModule {
+  @Function
+  public String userList(Service svc)
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+    return dag().container()
+        .from("mariadb:10.11.2")
+        .withServiceBinding("db", svc)
+        .withExec(
             List.of(
                 "/usr/bin/mysql",
                 "--user=root",
