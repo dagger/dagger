@@ -7,6 +7,8 @@ import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
@@ -340,6 +342,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addModifiers(Modifier.PRIVATE)
               .returns(ModuleID.class)
               .addException(ExecutionException.class)
+              .addException(DaggerExecException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
               .addCode(

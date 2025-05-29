@@ -3,7 +3,7 @@ package io.dagger.sample;
 import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Container;
 import io.dagger.client.Dagger;
-import io.dagger.client.exceptions.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import java.util.List;
 
 @Description("Run a binary in a container")

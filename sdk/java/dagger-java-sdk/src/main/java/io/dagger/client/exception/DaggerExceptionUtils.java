@@ -1,12 +1,12 @@
-package io.dagger.client.exceptions;
+package io.dagger.client.exception;
 
-import static io.dagger.client.exceptions.DaggerExceptionConstants.CMD_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.ENHANCED_MESSAGE;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.EXIT_CODE_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.FULL_MESSAGE;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.SIMPLE_MESSAGE;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.STDERR_KEY;
-import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.CMD_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.ENHANCED_MESSAGE;
+import static io.dagger.client.exception.DaggerExceptionConstants.EXIT_CODE_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.FULL_MESSAGE;
+import static io.dagger.client.exception.DaggerExceptionConstants.SIMPLE_MESSAGE;
+import static io.dagger.client.exception.DaggerExceptionConstants.STDERR_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 
 import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.JsonArray;

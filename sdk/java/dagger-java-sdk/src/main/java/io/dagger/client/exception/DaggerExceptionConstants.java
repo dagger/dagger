@@ -1,4 +1,4 @@
-package io.dagger.client.exceptions;
+package io.dagger.client.exception;
 
 public class DaggerExceptionConstants {
   public static final String CMD_KEY = "cmd";
