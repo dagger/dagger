@@ -16,6 +16,7 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/core/reffs"
@@ -25,6 +26,7 @@ import (
 )
 
 type HasPBDefinitions interface {
+	// PBDefinitions returns all the buildkit definitions that are part of a core type
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
@@ -64,6 +66,11 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
 		return nil, nil
 	}
+}
+
+type HasRawDigest interface {
+	// RawDigest computes a content-digest of an object, *not* including any buildkit definitions
+	RawDigest() digest.Digest
 }
 
 func absPath(workDir string, containerPath string) string {

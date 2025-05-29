@@ -143,6 +143,8 @@ func DagOpDirectory[T dagql.Typed, A any](
 	}
 
 	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
+		// FIXME: using this in the cache key means we effectively disable
+		// buildkit content caching
 		ID:   currentIDForDagOp(ctx),
 		Path: filename,
 		Data: data,

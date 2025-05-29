@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
@@ -141,11 +142,19 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 		string(opData),
 	}, "+")), nil
 }
-func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+
+//	func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
+//		return digest.FromString(strings.Join([]string{
+//			op.ID.Digest().String(),
+//			op.Path,
+//		}, "+")), nil
+//	}
+func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Path,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
@@ -257,11 +266,19 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+//	func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
+//		return digest.FromString(strings.Join([]string{
+//			op.ID.Digest().String(),
+//			op.Filename,
+//		}, "+")), nil
+//	}
+
+func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Filename,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
@@ -352,6 +369,7 @@ func NewContainerDagOp(
 
 	dagop := &ContainerDagOp{
 		ID:          id,
+		RawDigest:   ctr.RawDigest(),
 		Mounts:      mounts,
 		OutputCount: outputCount,
 	}
@@ -398,7 +416,8 @@ func newContainerDagOp(
 }
 
 type ContainerDagOp struct {
-	ID *call.ID
+	ID        *call.ID
+	RawDigest digest.Digest
 
 	// all the container mounts - the order here should be guaranteed:
 	// - rootfs is at 0
@@ -460,9 +479,73 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	// TODO: we need proper cache map control here, to control content digesting
-	return op.Digest()
+// func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
+// 	// TODO: we need proper cache map control here, to control content digesting
+// 	mountsData, err := json.Marshal(op.Mounts)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	// if cacheByCall {
+// 	//
+// 	// }
+// 	var id *call.ID
+// 	id = id.Append(
+// 		op.ID.Type().ToAST(),
+// 		op.ID.Field(),
+// 		op.ID.View(),
+// 		op.ID.Module(),
+// 		int(op.ID.Nth()),
+// 		"",
+// 		op.ID.Args()...,
+// 	)
+// 	return digest.FromString(strings.Join([]string{
+// 		engine.Version,
+// 		op.RawDigest.String(),
+// 		id.Digest().String(),
+// 		// string(op.ID.Digest()),
+// 		fmt.Sprint(op.OutputCount),
+// 		string(mountsData),
+// 	}, "+")), nil
+// }
+
+func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	mountsData, err := json.Marshal(op.Mounts)
+	if err != nil {
+		return nil, err
+	}
+
+	// XXX: make sure that we're including all the things we should be in the WithExec cache key
+
+	// if cacheByCall {
+	//
+	// }
+	var id *call.ID
+	id = id.Append(
+		op.ID.Type().ToAST(),
+		op.ID.Field(),
+		op.ID.View(),
+		op.ID.Module(),
+		int(op.ID.Nth()),
+		"",
+		op.ID.Args()...,
+	)
+	cm.Digest = digest.FromString(strings.Join([]string{
+		engine.Version,
+		op.RawDigest.String(),
+		id.Digest().String(),
+		// string(op.ID.Digest()),
+		fmt.Sprint(op.OutputCount),
+		string(mountsData),
+	}, "+"))
+
+	// disable content hashing for root mount
+	if root := op.Mounts[0].Input; root != pb.Empty {
+		cm.Deps[root].ComputeDigestFunc = nil
+	}
+
+	// XXX: handle sneaky mounts
+
+	return cm, nil
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {

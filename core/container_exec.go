@@ -299,7 +299,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 	if emu != nil {
-		args = append([]string{qemuMountName}, args...)
+		meta.Args = append([]string{qemuMountName}, meta.Args...)
 		p.Mounts = append(p.Mounts, executor.Mount{
 			Readonly: true,
 			Src:      emu,

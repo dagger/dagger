@@ -1,8 +1,10 @@
 package core
 
 import (
+	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -26,6 +28,21 @@ func (Port) Type() *ast.Type {
 
 func (Port) TypeDescription() string {
 	return "A port exposed by a container."
+}
+
+var _ HasRawDigest = (*Port)(nil)
+
+func (port Port) RawDigest() digest.Digest {
+	inputs := []string{
+		"port",
+		strconv.Itoa(port.Port),
+		string(port.Protocol),
+		strconv.FormatBool(port.ExperimentalSkipHealthcheck),
+	}
+	if port.Description != nil {
+		inputs = append(inputs, *port.Description)
+	}
+	return dagql.HashFrom(inputs...)
 }
 
 // NetworkProtocol is a GraphQL enum type.
