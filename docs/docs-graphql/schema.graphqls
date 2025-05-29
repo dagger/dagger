@@ -1579,7 +1579,12 @@ type EngineCache {
   minFreeSpace: Int!
 
   """Prune the cache of releaseable entries"""
-  prune: Void
+  prune(
+    """
+    Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    """
+    useDefaultPolicy: Boolean = false
+  ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
   reservedSpace: Int!

@@ -5025,6 +5025,12 @@ pub struct EngineCacheEntrySetOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EngineCachePruneOpts {
+    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    #[builder(setter(into, strip_option), default)]
+    pub use_default_policy: Option<bool>,
+}
 impl EngineCache {
     /// The current set of entries in the cache
     ///
@@ -5076,8 +5082,24 @@ impl EngineCache {
         query.execute(self.graphql_client.clone()).await
     }
     /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn prune(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("prune");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn prune_opts(&self, opts: EngineCachePruneOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("prune");
+        if let Some(use_default_policy) = opts.use_default_policy {
+            query = query.arg("useDefaultPolicy", use_default_policy);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The minimum amount of disk space this policy is guaranteed to retain.

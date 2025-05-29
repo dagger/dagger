@@ -79,10 +79,12 @@ defmodule Dagger.EngineCache do
   @doc """
   Prune the cache of releaseable entries
   """
-  @spec prune(t()) :: :ok | {:error, term()}
-  def prune(%__MODULE__{} = engine_cache) do
+  @spec prune(t(), [{:use_default_policy, boolean() | nil}]) :: :ok | {:error, term()}
+  def prune(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
-      engine_cache.query_builder |> QB.select("prune")
+      engine_cache.query_builder
+      |> QB.select("prune")
+      |> QB.maybe_put_arg("useDefaultPolicy", optional_args[:use_default_policy])
 
     case Client.execute(engine_cache.client, query_builder) do
       {:ok, _} -> :ok

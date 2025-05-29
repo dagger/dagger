@@ -99,8 +99,9 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune everything that is releasable in the local cache. No support for filtering yet.
-	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+	// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
+	// otherwise prune the whole cache of any releasable entries.
+	PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
