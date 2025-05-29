@@ -18,6 +18,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/google/uuid"
 	"github.com/ngrok/sqlmw"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -66,13 +67,21 @@ func NewDB(dbPath string) (*sql.DB, error) {
 }
 
 type sharedCacheResult struct {
+	// mu sync.Mutex
+
 	cache *DagqlCache
 
 	typed Typed
 
-	resultID int
+	resultID string
 
 	refCount int
+
+	persisted bool
+
+	inputs map[int]CacheResult
+	// dependents map[int]CacheResult
+	digests map[digest.Digest]struct{}
 }
 
 type cacheResult struct {
@@ -103,7 +112,7 @@ func (cr *sharedCacheResult) Unwrap() Typed {
 	return cr.typed
 }
 
-func (cr *sharedCacheResult) ResultID() int {
+func (cr *sharedCacheResult) ResultID() string {
 	return cr.resultID
 }
 
@@ -120,8 +129,13 @@ func (cr *cacheResult) Release(ctx context.Context) error {
 		return nil
 	}
 
-	delete(cr.cache.sharedResults, cr.resultID)
-	delete(cr.cache.resultsByDigest, digest.Digest(cr.resultDigest))
+	if cr.persisted {
+		// free memory for the result, but hold onto the shared result metadata in memory
+		cr.sharedCacheResult.typed = nil
+	} else {
+		delete(cr.cache.sharedResults, cr.resultID)
+		delete(cr.cache.resultsByDigest, digest.Digest(cr.resultDigest))
+	}
 
 	/* TODO: pruning, something like
 	if err := cr.cache.db.ExecContext(ctx, "DELETE FROM results WHERE result_id = ?", cr.resultID); err != nil {
@@ -144,21 +158,89 @@ func (cr *cacheResult) String() string {
 type DagqlCache struct {
 	mu sync.Mutex
 
-	// result id in db -> shared cache result
-	sharedResults map[int]*sharedCacheResult
-
-	// TODO: ...
+	sharedResults   map[string]*sharedCacheResult
 	resultsByDigest map[digest.Digest]*cacheResult
 
 	db *sql.DB
 }
 
-func NewDagqlCache(db *sql.DB) *DagqlCache {
-	return &DagqlCache{
-		sharedResults:   make(map[int]*sharedCacheResult),
+func NewDagqlCache(ctx context.Context, db *sql.DB) (*DagqlCache, error) {
+	cache := &DagqlCache{
+		sharedResults:   make(map[string]*sharedCacheResult),
 		resultsByDigest: make(map[digest.Digest]*cacheResult),
 		db:              db,
 	}
+
+	// Load all persisted results into memory
+	rows, err := db.QueryContext(ctx, "SELECT result_id, json FROM results")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query results: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var resultID string
+		var jsonBlob []byte
+		if err := rows.Scan(&resultID, &jsonBlob); err != nil {
+			return nil, fmt.Errorf("failed to scan result row: %w", err)
+		}
+
+		sharedRes := &sharedCacheResult{
+			cache:     cache,
+			typed:     nil, // lazy load when needed
+			resultID:  resultID,
+			refCount:  0,
+			persisted: true,
+			inputs:    make(map[int]CacheResult),
+			digests:   make(map[digest.Digest]struct{}),
+		}
+		cache.sharedResults[resultID] = sharedRes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating result rows: %w", err)
+	}
+
+	// Load all digest mappings
+	digestRows, err := db.QueryContext(ctx, "SELECT result_id, digest FROM resultDigests")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query result digests: %w", err)
+	}
+	defer digestRows.Close()
+
+	for digestRows.Next() {
+		var resultID string
+		var digestStr string
+		if err := digestRows.Scan(&resultID, &digestStr); err != nil {
+			return nil, fmt.Errorf("failed to scan digest row: %w", err)
+		}
+
+		sharedRes, ok := cache.sharedResults[resultID]
+		if !ok {
+			// Skip orphaned digests
+			// TODO: should we? ^ error instead?
+			continue
+		}
+
+		dgst := digest.Digest(digestStr)
+		sharedRes.digests[dgst] = struct{}{}
+
+		cacheRes := &cacheResult{
+			sharedCacheResult: sharedRes,
+			resultDigest:      digestStr,
+		}
+		cache.resultsByDigest[dgst] = cacheRes
+	}
+	if err := digestRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating digest rows: %w", err)
+	}
+
+	return cache, nil
+}
+
+// TODO: feels partially duped with other CacheConfig struct
+type callCacheParams struct {
+	DoNotCache bool
+	Persist    bool
 }
 
 func (c *DagqlCache) Call(
@@ -167,15 +249,19 @@ func (c *DagqlCache) Call(
 	parent Object,
 	newID *call.ID,
 	inputArgs map[string]Input,
-	doNotCache bool,
+	callCacheParams callCacheParams,
 ) (_ CacheResult, rerr error) {
 	ctx = idToContext(ctx, newID)
 
-	res, err := c.call(ctx, s, parent, newID.Field(), View(newID.View()), inputArgs, newID.Digest(), doNotCache)
+	res, err := c.call(ctx, s, parent, newID.Field(), View(newID.View()), inputArgs, newID.Digest(), callCacheParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call field %q: %w", newID.Field(), err)
 	}
 	return res, nil
+}
+
+func newResultID() string {
+	return uuid.NewString()
 }
 
 func (c *DagqlCache) call(
@@ -186,29 +272,22 @@ func (c *DagqlCache) call(
 	view View,
 	inputArgs map[string]Input,
 	resultDigest digest.Digest,
-	doNotCache bool,
+	callCacheParams callCacheParams,
 ) (_ CacheResult, rerr error) {
+	// TODO: split up into more separate methods once settled, for readability
+
 	startedAt := time.Now()
 	lg := slog.With(
 		"field", fmt.Sprintf("%s.%s", parent.ObjectType().TypeName(), fieldName),
-		"doNotCache", doNotCache,
+		"doNotCache", callCacheParams.DoNotCache,
 		"digest", resultDigest.String(),
 	)
 
-	c.mu.Lock()
-	existingResult, ok := c.resultsByDigest[resultDigest]
-	if ok {
-		existingResult.refCount++
-		c.mu.Unlock()
-		lg.
-			With("duration", time.Since(startedAt)).
-			Debug("INMEM CACHE HIT")
-		return existingResult, nil
-	}
-	c.mu.Unlock()
+	//
+	// No cache case
+	//
 
-	if doNotCache {
-		// TODO: technically still caching atm, just trying to avoid huge overhead of introspection queries atm
+	if callCacheParams.DoNotCache {
 		typedVal, err := parent.ObjectType().Call(ctx, parent, fieldName, view, inputArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to call field %q: %w", fieldName, err)
@@ -220,30 +299,64 @@ func (c *DagqlCache) call(
 			}
 		}
 
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
 		sharedRes := &sharedCacheResult{
 			cache:    c,
 			typed:    typedVal,
-			resultID: 0,
+			resultID: "",
+			refCount: 1,
 		}
 		res := &cacheResult{
 			sharedCacheResult: sharedRes,
 			resultDigest:      resultDigest.String(),
 		}
-		c.resultsByDigest[resultDigest] = res
-
-		lg.
-			With("duration", time.Since(startedAt)).
-			Debug("DONOTCACHE EXECUTE RETURNED RESULT")
 		return res, nil
 	}
 
+	//
+	// Fast-path cache check
+	//
+
 	field, ok := parent.ObjectType().FieldSpec(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", parent.ObjectType().TypeName(), fieldName)
+		return nil, fmt.Errorf("%s has no such field: %q", parent.ObjectType().TypeName(), fieldName)
 	}
+
+	c.mu.Lock()
+	existingResult, ok := c.resultsByDigest[resultDigest]
+	if ok {
+		defer c.mu.Unlock()
+		existingResult.refCount++
+
+		if existingResult.typed == nil {
+			// need to load the result from the DB now
+			var jsonBlob []byte
+			err := sq.Select("json").
+				From("results").
+				Where(sq.Eq{"result_id": existingResult.resultID}).
+				Limit(1).
+				RunWith(c.db).
+				QueryRowContext(ctx).
+				Scan(&jsonBlob)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return nil, fmt.Errorf("result ID %s not found in DB", existingResult.resultID)
+				}
+				return nil, fmt.Errorf("failed to query result JSON: %w", err)
+			}
+			typedVal, err := field.Type.FromJSON(ctx, jsonBlob)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result JSON during fast-path cache hit: %w", err)
+			}
+			existingResult.typed = typedVal
+		}
+
+		return existingResult, nil
+	}
+	c.mu.Unlock()
+
+	//
+	// Slower-path cache check
+	//
 
 	// TODO: needs to handle modules (where type names may overlap)
 	metaDigestInputs := []string{
@@ -252,86 +365,107 @@ func (c *DagqlCache) call(
 	}
 	metaDigest := HashFrom(metaDigestInputs...)
 
-	args := make([]NamedInput, 0, len(inputArgs))
-	for name, arg := range inputArgs {
-		args = append(args, NamedInput{Name: name, Value: arg})
-	}
-	slices.SortFunc(args, func(a, b NamedInput) int {
-		return strings.Compare(a.Name, b.Name)
-	})
+	var resultID string
 
-	argResults := make([]Result, 0, len(args))
-	for _, arg := range args {
-		var argResult Result
-		if arg.Value != nil {
-			var err error
-			argResult, err = arg.Value.ToResult(ctx, s)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert arg %q to result: %w", arg.Name, err)
-			}
+	var argResults []Result
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	callCacheParams.Persist = true
+
+	if callCacheParams.Persist {
+		args := make([]NamedInput, 0, len(inputArgs))
+		for name, arg := range inputArgs {
+			args = append(args, NamedInput{Name: name, Value: arg})
 		}
-		argResults = append(argResults, argResult)
-	}
+		slices.SortFunc(args, func(a, b NamedInput) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 
-	// TODO: don't load resultBlob unless needed (i.e. when not in memory already)
-	resultID, resultBlob, hitCache, err := c.checkCache(ctx, metaDigest, parent, argResults, resultDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check cache: %w", err)
-	}
-	if hitCache {
-		// TODO:
-		/*
-		 */
-		fmt.Printf("cached result for %s.%s (%T(%+v), id:%d): %s (%d)\n",
-			parent.ObjectType().TypeName(), fieldName,
-			parent, "", parent.ResultID(), // r.Self, r.Self, parentResult.ResultID(),
-			"", // string(resultBlob),
-			resultID,
-		)
-
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
-		sharedRes, ok := c.sharedResults[resultID]
-		if !ok {
-			typedVal, err := field.Type.FromJSON(ctx, resultBlob)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode cached result for %s.%s (%T): %w",
-					parent.ObjectType().TypeName(), fieldName,
-					field.Type,
-					err,
-				)
+		argResults = make([]Result, 0, len(args))
+		for _, arg := range args {
+			var argResult Result
+			if arg.Value != nil {
+				var err error
+				argResult, err = arg.Value.ToResult(ctx, s)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert arg %q to result: %w", arg.Name, err)
+				}
 			}
-			if n, ok := typedVal.(Derefable); ok {
-				typedVal, ok = n.Deref()
-				if !ok {
-					return nil, nil
+			argResults = append(argResults, argResult)
+		}
+
+		var hitCache bool
+		var err error
+		resultID, hitCache, err = c.checkCache(ctx, metaDigest, parent, argResults)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check cache: %w", err)
+		}
+		if hitCache {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+
+			sharedRes, ok := c.sharedResults[resultID]
+			if !ok {
+				// everything should be mirrored in memory, invalid state
+				return nil, fmt.Errorf("result ID %s not loaded", resultID)
+			}
+
+			if sharedRes.typed == nil {
+				// need to load the result from the DB now
+				var jsonBlob []byte
+				err := sq.Select("json").
+					From("results").
+					Where(sq.Eq{"result_id": resultID}).
+					Limit(1).
+					RunWith(c.db).
+					QueryRowContext(ctx).
+					Scan(&jsonBlob)
+				if err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						return nil, fmt.Errorf("result ID %s not found in DB", resultID)
+					}
+					return nil, fmt.Errorf("failed to query result JSON: %w", err)
+				}
+				typedVal, err := field.Type.FromJSON(ctx, jsonBlob)
+				if err != nil {
+					return nil, fmt.Errorf("failed to unmarshal result JSON during slow-path cache hit: %w", err)
+				}
+				sharedRes.typed = typedVal
+			}
+
+			sharedRes.refCount++
+			_, alreadyKnownDigest := sharedRes.digests[resultDigest]
+			if !alreadyKnownDigest {
+				sharedRes.digests[resultDigest] = struct{}{}
+
+				insertDigstQ, insertDigestArgs, err := sq.Insert("resultDigests").
+					Values(resultID, resultDigest.String()).
+					Suffix("ON CONFLICT DO NOTHING").
+					ToSql()
+				if err != nil {
+					return nil, fmt.Errorf("failed to build insert digest statement: %w", err)
+				}
+				if _, err := c.db.ExecContext(ctx, insertDigstQ, insertDigestArgs...); err != nil {
+					return nil, fmt.Errorf("failed to insert digest: %w", err)
 				}
 			}
 
-			sharedRes = &sharedCacheResult{
-				cache:    c,
-				typed:    typedVal,
-				resultID: resultID,
+			res := &cacheResult{
+				sharedCacheResult: sharedRes,
+				resultDigest:      resultDigest.String(),
 			}
-			c.sharedResults[resultID] = sharedRes
+			c.resultsByDigest[resultDigest] = res
+			return res, nil
 		}
-		sharedRes.refCount++
-
-		res := &cacheResult{
-			sharedCacheResult: sharedRes,
-			resultDigest:      resultDigest.String(),
-		}
-		// TODO: overwrite always when it already exists?
-		// TODO: overwrite always when it already exists?
-		// TODO: overwrite always when it already exists?
-		c.resultsByDigest[resultDigest] = res
-
-		lg.
-			With("duration", time.Since(startedAt)).
-			Debug("DB CACHE HIT")
-		return res, nil
 	}
+
+	//
+	// Cache miss, run it
+	//
 
 	typedVal, err := parent.ObjectType().Call(ctx, parent, fieldName, view, inputArgs)
 	if err != nil {
@@ -344,13 +478,13 @@ func (c *DagqlCache) call(
 		}
 	}
 
-	// did the call return another result from its own call it made internally?
+	//
+	// Did the call return another result from its own call it made internally?
+	// TODO: we should probably be writing to the DB in this path ideally still, right?
+	//
 	if existingCacheRes, ok := typedVal.(CacheResult); ok {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-
-		// TODO: ???
-		// c.resultsByDigest[resultDigest] = existingRes.(*cacheResult)
 
 		// TODO: INCREMENT REF COUNT ?????
 
@@ -364,7 +498,7 @@ func (c *DagqlCache) call(
 		defer c.mu.Unlock()
 
 		resID := existingRes.ResultID()
-		if resID == 0 {
+		if resID == "" {
 			lg.
 				With("duration", time.Since(startedAt)).
 				Debug("execute returned another result with 0 id")
@@ -372,8 +506,10 @@ func (c *DagqlCache) call(
 				sharedCacheResult: &sharedCacheResult{
 					cache:    c,
 					typed:    existingRes.Unwrap(),
-					resultID: 0,
+					resultID: "",
 					refCount: 1, // TODO: ???
+					inputs:   make(map[int]CacheResult),
+					digests:  make(map[digest.Digest]struct{}),
 				},
 				resultDigest: existingRes.ResultDigest(),
 			}, nil
@@ -383,14 +519,11 @@ func (c *DagqlCache) call(
 		if !ok {
 			// TODO: ?
 			return nil, fmt.Errorf(
-				"execute returned another result with id %d, but no shared result found",
+				"execute returned another result with id %s, but no shared result found",
 				resID,
 			)
 		}
 		sharedRes.refCount++
-
-		// TODO: ???
-		// c.resultsByDigest[resultDigest] = existingRes.(*cacheResult)
 
 		existingCacheRes := &cacheResult{
 			sharedCacheResult: sharedRes,
@@ -403,9 +536,13 @@ func (c *DagqlCache) call(
 		return existingCacheRes, nil
 	}
 
-	resultID, err = c.insertCache(ctx, metaDigest, parent, argResults, typedVal, resultDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert cache result: %w", err)
+	if callCacheParams.Persist {
+		resultID, err = c.insertCache(ctx, metaDigest, parent, argResults, typedVal, resultDigest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert cache result: %w", err)
+		}
+	} else {
+		resultID = newResultID()
 	}
 
 	c.mu.Lock()
@@ -414,9 +551,12 @@ func (c *DagqlCache) call(
 	sharedRes, ok := c.sharedResults[resultID]
 	if !ok {
 		sharedRes = &sharedCacheResult{
-			cache:    c,
-			typed:    typedVal,
-			resultID: resultID,
+			cache:     c,
+			typed:     typedVal,
+			resultID:  resultID,
+			persisted: callCacheParams.Persist,
+			inputs:    make(map[int]CacheResult),
+			digests:   make(map[digest.Digest]struct{}),
 		}
 		c.sharedResults[resultID] = sharedRes
 	}
@@ -426,9 +566,6 @@ func (c *DagqlCache) call(
 		sharedCacheResult: sharedRes,
 		resultDigest:      resultDigest.String(),
 	}
-	// TODO: overwrite always when it already exists?
-	// TODO: overwrite always when it already exists?
-	// TODO: overwrite always when it already exists?
 	c.resultsByDigest[resultDigest] = res
 
 	lg.
@@ -485,7 +622,7 @@ func (c *DagqlCache) SelectNth(
 	}
 
 	// TODO: ...
-	doNotCache := enumRes.ResultID() == 0
+	doNotCache := enumRes.ResultID() == ""
 	if doNotCache {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -493,7 +630,7 @@ func (c *DagqlCache) SelectNth(
 		sharedRes := &sharedCacheResult{
 			cache:    c,
 			typed:    nthVal,
-			resultID: 0,
+			resultID: "",
 		}
 		res := &cacheResult{
 			sharedCacheResult: sharedRes,
@@ -513,7 +650,7 @@ func (c *DagqlCache) SelectNth(
 		return nil, fmt.Errorf("scalar result: %w", err)
 	}
 
-	resultID, _, hitCache, err := c.checkCache(ctx, metaDigest, enumRes, []Result{nthInput}, resultDigest)
+	resultID, hitCache, err := c.checkCache(ctx, metaDigest, enumRes, []Result{nthInput})
 	if err != nil {
 		return nil, fmt.Errorf("failed to check cache: %w", err)
 	}
@@ -527,6 +664,8 @@ func (c *DagqlCache) SelectNth(
 				cache:    c,
 				typed:    nthVal,
 				resultID: resultID,
+				inputs:   make(map[int]CacheResult),
+				digests:  make(map[digest.Digest]struct{}),
 			}
 			c.sharedResults[resultID] = sharedRes
 		}
@@ -560,6 +699,8 @@ func (c *DagqlCache) SelectNth(
 			cache:    c,
 			typed:    nthVal,
 			resultID: resultID,
+			inputs:   make(map[int]CacheResult),
+			digests:  make(map[digest.Digest]struct{}),
 		}
 		c.sharedResults[resultID] = sharedRes
 	}
@@ -585,21 +726,19 @@ func (c *DagqlCache) checkCache(
 	metaDigest digest.Digest,
 	parent Result,
 	args []Result,
-	resultDigest digest.Digest,
-) (int, []byte, bool, error) {
+) (string, bool, error) {
 	// TODO:
-	// - fast-path check for resultDigest incorporated below
 	// - prepared statements for each field (need to adjust branching NULL stuff below)
 	// - check if variations on the query are more performant (i.e. lots of JOINs instead of lots of WHERE clauses)
 
-	stmt := sq.Select("c.result_id", "r.json").
+	stmt := sq.Select("c.result_id").
 		From("calls c").
 		LeftJoin("resultDigests rd ON c.input_result = rd.result_id").
 		Join("results r ON c.result_id = r.result_id").
 		Where(sq.Eq{"c.meta_digest": metaDigest})
 
 	inputConditions := sq.Or{}
-	if parent != nil && parent.ResultID() != 0 {
+	if parent != nil && parent.ResultID() != "" {
 		inputConditions = append(inputConditions, sq.And{
 			sq.Eq{"c.input_index": 0},
 			sq.Expr("rd.digest IN (SELECT digest FROM resultDigests WHERE result_id = ?)", parent.ResultID()),
@@ -612,7 +751,7 @@ func (c *DagqlCache) checkCache(
 	}
 	for i, arg := range args {
 		i := i + 1
-		if arg != nil && arg.ResultID() != 0 {
+		if arg != nil && arg.ResultID() != "" {
 			inputConditions = append(inputConditions, sq.And{
 				sq.Eq{"c.input_index": i},
 				sq.Expr("rd.digest IN (SELECT digest FROM resultDigests WHERE result_id = ?)", arg.ResultID()),
@@ -631,56 +770,43 @@ func (c *DagqlCache) checkCache(
 
 	q, qArgs, err := stmt.ToSql()
 	if err != nil {
-		return 0, nil, false, fmt.Errorf("failed to build SQL statement: %w", err)
+		return "", false, fmt.Errorf("failed to build SQL statement: %w", err)
 	}
 
 	rows, err := c.db.QueryContext(ctx, q, qArgs...)
 	if err != nil {
-		return 0, nil, false, fmt.Errorf("failed to query SQL statement: %w", err)
+		return "", false, fmt.Errorf("failed to query SQL statement: %w", err)
 	}
 	defer rows.Close()
 
 	type resultRow struct {
-		ResultID int
-		Json     []byte
+		ResultID string
 	}
 	var results []resultRow
 	for rows.Next() {
 		var res resultRow
 		if err := rows.Scan(
 			&res.ResultID,
-			&res.Json,
 		); err != nil {
-			return 0, nil, false, fmt.Errorf("failed to scan row: %w", err)
+			return "", false, fmt.Errorf("failed to scan row: %w", err)
 		}
 		results = append(results, res)
 	}
 	if err := rows.Close(); err != nil {
-		return 0, nil, false, fmt.Errorf("failed to close rows: %w", err)
+		return "", false, fmt.Errorf("failed to close rows: %w", err)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, nil, false, fmt.Errorf("error in rows: %w", err)
+		return "", false, fmt.Errorf("error in rows: %w", err)
 	}
 
 	if len(results) == 0 {
-		return 0, nil, false, nil
+		return "", false, nil
 	}
 
-	// TODO: choose "best" result
+	// TODO: choose "best" result?
 	result := results[0]
 
-	insertDigstQ, insertDigestArgs, err := sq.Insert("resultDigests").
-		Values(result.ResultID, resultDigest.String()).
-		Suffix("ON CONFLICT DO NOTHING").
-		ToSql()
-	if err != nil {
-		return 0, nil, false, fmt.Errorf("failed to build insert digest statement: %w", err)
-	}
-	if _, err := c.db.ExecContext(ctx, insertDigstQ, insertDigestArgs...); err != nil {
-		return 0, nil, false, fmt.Errorf("failed to insert digest: %w", err)
-	}
-
-	return result.ResultID, result.Json, true, nil
+	return result.ResultID, true, nil
 }
 
 func (c *DagqlCache) insertCache(
@@ -690,37 +816,35 @@ func (c *DagqlCache) insertCache(
 	args []Result,
 	res Typed,
 	resultDigest digest.Digest,
-) (int, error) {
-	resID := 0 // TODO: uggo
+) (string, error) {
+	resID := "" // TODO: uggo
 	var resDigest string
 	if result, ok := res.(Result); ok {
 		resID = result.ResultID()
 		resDigest = result.ResultDigest()
 	}
 
-	if resID == 0 { // TODO: uggo
+	if resID == "" { // TODO: uggo
+		resID = newResultID()
+
 		// jsonBlob, err := res.Typed().ToJSON(res.Value())
 		jsonBlob, err := json.Marshal(res)
 		if err != nil {
-			return 0, fmt.Errorf("failed to convert result to JSON: %w", err)
+			return "", fmt.Errorf("failed to convert result to JSON: %w", err)
 		}
 
-		insertResultQ, insertResultArgs, err := sq.Insert("results").
-			Columns("json").
-			Values(jsonBlob).
-			Suffix("RETURNING result_id").
-			ToSql()
+		_, err = sq.Insert("results").
+			Columns("result_id", "json").
+			Values(resID, jsonBlob).
+			RunWith(c.db).
+			ExecContext(ctx)
 		if err != nil {
-			return 0, fmt.Errorf("failed to build insert result statement: %w", err)
-		}
-		if err := c.db.QueryRowContext(ctx, insertResultQ, insertResultArgs...).Scan(&resID); err != nil {
-			// TODO: whole query in error strnig probs nono
-			return 0, fmt.Errorf("failed to insert result: %w: %s", err, insertResultQ)
+			return "", fmt.Errorf("failed to build insert result statement: %w", err)
 		}
 	}
 
 	var parentResultID any
-	if parent != nil && parent.ResultID() != 0 {
+	if parent != nil && parent.ResultID() != "" {
 		parentResultID = parent.ResultID()
 	}
 	insertCallQ, insertCallArgs, err := sq.Insert("calls").
@@ -728,16 +852,16 @@ func (c *DagqlCache) insertCache(
 		Values(metaDigest.String(), 0, parentResultID, resID).
 		ToSql()
 	if err != nil {
-		return 0, fmt.Errorf("failed to insert call parent index: %w", err)
+		return "", fmt.Errorf("failed to insert call parent index: %w", err)
 	}
 	if _, err := c.db.ExecContext(ctx, insertCallQ, insertCallArgs...); err != nil {
 		// TODO: don't include full query in error string
-		return 0, fmt.Errorf("failed to insert call parent index: %w, %s, %+v", err, insertCallQ, insertCallArgs)
+		return "", fmt.Errorf("failed to insert call parent index: %w, %s, %+v", err, insertCallQ, insertCallArgs)
 	}
 	for i, arg := range args {
 		i := i + 1
 		var argResultID any
-		if arg != nil && arg.ResultID() != 0 {
+		if arg != nil && arg.ResultID() != "" {
 			argResultID = arg.ResultID()
 		}
 		_, err := sq.Insert("calls").
@@ -746,7 +870,7 @@ func (c *DagqlCache) insertCache(
 			RunWith(c.db).
 			ExecContext(ctx)
 		if err != nil {
-			return 0, fmt.Errorf("failed to insert call arg index %d: %w", i, err)
+			return "", fmt.Errorf("failed to insert call arg index %d: %w", i, err)
 		}
 	}
 
@@ -757,10 +881,10 @@ func (c *DagqlCache) insertCache(
 		Suffix("ON CONFLICT DO NOTHING").
 		ToSql()
 	if err != nil {
-		return 0, fmt.Errorf("failed to build insert digest statement: %w", err)
+		return "", fmt.Errorf("failed to build insert digest statement: %w", err)
 	}
 	if _, err := c.db.ExecContext(ctx, insertDigstQ, insertDigestArgs...); err != nil {
-		return 0, fmt.Errorf("failed to insert digest: %w", err)
+		return "", fmt.Errorf("failed to insert digest: %w", err)
 	}
 
 	if resDigest != resultDigest.String() && resDigest != "" {
@@ -769,10 +893,10 @@ func (c *DagqlCache) insertCache(
 			Suffix("ON CONFLICT DO NOTHING").
 			ToSql()
 		if err != nil {
-			return 0, fmt.Errorf("failed to build insert digest statement: %w", err)
+			return "", fmt.Errorf("failed to build insert digest statement: %w", err)
 		}
 		if _, err := c.db.ExecContext(ctx, insertDigstQ, insertDigestArgs...); err != nil {
-			return 0, fmt.Errorf("failed to insert digest: %w", err)
+			return "", fmt.Errorf("failed to insert digest: %w", err)
 		}
 	}
 
@@ -782,7 +906,7 @@ func (c *DagqlCache) insertCache(
 func (s *Server) ScalarResult(
 	ctx context.Context,
 	input Input,
-) (int, digest.Digest, error) {
+) (string, digest.Digest, error) {
 	// TODO: fix s.cache.cache naming
 	return s.cache.cache.ScalarResult(ctx, input)
 }
@@ -790,17 +914,17 @@ func (s *Server) ScalarResult(
 func (c *DagqlCache) ScalarResult(
 	ctx context.Context,
 	input Input,
-) (int, digest.Digest, error) {
+) (string, digest.Digest, error) {
 	blob, err := json.Marshal(input)
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to convert input to JSON: %w", err)
+		return "", "", fmt.Errorf("failed to convert input to JSON: %w", err)
 	}
 
 	dgst := HashFrom(string(blob))
 
 	// TODO: dedupe by digest
 
-	var resultID int
+	var resultID string
 	err = sq.Select("result_id").
 		From("resultDigests").
 		Where(sq.Eq{"digest": dgst.String()}).
@@ -813,31 +937,29 @@ func (c *DagqlCache) ScalarResult(
 		return resultID, dgst, nil
 
 	case errors.Is(err, sql.ErrNoRows):
-		insertResultQ, insertResultArgs, err := sq.Insert("results").
-			Columns("json").
-			Values(blob).
-			Suffix("RETURNING result_id").
-			ToSql()
+		resultID = newResultID()
+		_, err := sq.Insert("results").
+			Columns("result_id", "json").
+			Values(resultID, blob).
+			RunWith(c.db).
+			ExecContext(ctx)
 		if err != nil {
-			return 0, "", fmt.Errorf("failed to build insert result statement: %w", err)
-		}
-		if err := c.db.QueryRowContext(ctx, insertResultQ, insertResultArgs...).Scan(&resultID); err != nil {
-			return 0, "", fmt.Errorf("failed to insert result: %w", err)
+			return "", "", fmt.Errorf("failed to build insert result statement: %w", err)
 		}
 		insertDigstQ, insertDigestArgs, err := sq.Insert("resultDigests").
 			Values(resultID, dgst.String()).
 			Suffix("ON CONFLICT DO NOTHING").
 			ToSql()
 		if err != nil {
-			return 0, "", fmt.Errorf("failed to build insert digest statement: %w", err)
+			return "", "", fmt.Errorf("failed to build insert digest statement: %w", err)
 		}
 		if _, err := c.db.ExecContext(ctx, insertDigstQ, insertDigestArgs...); err != nil {
-			return 0, "", fmt.Errorf("failed to insert digest: %w", err)
+			return "", "", fmt.Errorf("failed to insert digest: %w", err)
 		}
 		return resultID, dgst, nil
 
 	default:
-		return 0, "", fmt.Errorf("failed to query result digest: %w", err)
+		return "", "", fmt.Errorf("failed to query result digest: %w", err)
 	}
 }
 

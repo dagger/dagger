@@ -334,7 +334,7 @@ type Instance[T Typed] struct {
 	Module      *call.ID
 	// postCall    cache.PostCallFunc
 
-	resultID int
+	resultID string
 }
 
 var _ Typed = Instance[Typed]{}
@@ -413,22 +413,12 @@ func (r Instance[T]) FromJSON(_ context.Context, bs []byte) (Typed, error) {
 	panic("???")
 }
 
-func (r Instance[T]) ResultID() int {
+func (r Instance[T]) ResultID() string {
 	return r.resultID
 }
 
 func (r Instance[T]) ResultDigest() string {
 	return r.Constructor.Digest().String()
-}
-
-func (r Instance[T]) withResultID(resultID int) Result {
-	r.resultID = resultID
-	return r
-}
-
-func (r Instance[T]) WithResultID(resultID int) Object {
-	r.resultID = resultID
-	return r
 }
 
 /*
@@ -946,6 +936,9 @@ type CacheSpec struct {
 	// If set, the result of this field will never be cached and not have concurrent equal
 	// calls deduped. The string value is a reason why the field should not be cached.
 	DoNotCache string
+
+	// TODO: doc
+	Persistent bool
 }
 
 type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, View, CacheConfig) (*CacheConfig, error)

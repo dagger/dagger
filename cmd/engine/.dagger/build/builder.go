@@ -172,6 +172,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 					// for Kata Containers integration
 					"e2fsprogs",
+					// for db
+					"sqlite",
 				},
 				Arch: build.platformSpec.Architecture,
 			}).

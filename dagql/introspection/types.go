@@ -15,6 +15,25 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
+		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+			return WrapSchema(srv.Schema()), nil
+		}, dagql.CachePerCall),
+
+		// custom dagger field
+		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
+			return string(srv.View), nil
+		}).View(dagql.AllView{}),
+
+		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
+			Name string
+		}) (*Type, error) {
+			def, ok := srv.Schema().Types[args.Name]
+			if !ok {
+				return nil, fmt.Errorf("unknown type: %q", args.Name)
+			}
+			return WrapTypeFromDef(srv.Schema(), def), nil
+		}, dagql.CachePerCall),
+
 		/*
 			dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 				return WrapSchema(srv.Schema()), nil
@@ -34,47 +53,28 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				}
 				return WrapTypeFromDef(srv.Schema(), def), nil
 			}),
-
-				dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
-					return WrapSchema(srv.Schema()), nil
-				}, dagql.CachePerCall),
-
-				// custom dagger field
-				dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
-					return string(srv.View), nil
-				}).View(dagql.AllView{}),
-
-				dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
-					Name string
-				}) (*Type, error) {
-					def, ok := srv.Schema().Types[args.Name]
-					if !ok {
-						return nil, fmt.Errorf("unknown type: %q", args.Name)
-					}
-					return WrapTypeFromDef(srv.Schema(), def), nil
-				}, dagql.CachePerCall),
 		*/
 
 		/*
-		 */
-		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
-			return WrapSchema(srv.Schema()), nil
-		}).DoNotCache("TODO"),
+			dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+				return WrapSchema(srv.Schema()), nil
+			}).DoNotCache("TODO"),
 
-		// custom dagger field
-		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
-			return string(srv.View), nil
-		}).View(dagql.AllView{}),
+			// custom dagger field
+			dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
+				return string(srv.View), nil
+			}).View(dagql.AllView{}),
 
-		dagql.Func("__type", func(ctx context.Context, self T, args struct {
-			Name string
-		}) (*Type, error) {
-			def, ok := srv.Schema().Types[args.Name]
-			if !ok {
-				return nil, fmt.Errorf("unknown type: %q", args.Name)
-			}
-			return WrapTypeFromDef(srv.Schema(), def), nil
-		}).DoNotCache("TODO"),
+			dagql.Func("__type", func(ctx context.Context, self T, args struct {
+				Name string
+			}) (*Type, error) {
+				def, ok := srv.Schema().Types[args.Name]
+				if !ok {
+					return nil, fmt.Errorf("unknown type: %q", args.Name)
+				}
+				return WrapTypeFromDef(srv.Schema(), def), nil
+			}).DoNotCache("TODO"),
+		*/
 	}.Install(srv)
 
 	TypeKinds.Install(srv)

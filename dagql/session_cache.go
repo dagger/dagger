@@ -123,7 +123,9 @@ func (c *SessionCache) LoadID(
 		ctx = telemetryCtx
 	}
 
-	callRes, err := c.cache.Call(ctx, s, parent, callID, inputArgs, doNotCache)
+	callRes, err := c.cache.Call(ctx, s, parent, callID, inputArgs, callCacheParams{
+		DoNotCache: doNotCache,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -278,7 +280,9 @@ func (c *SessionCache) Select(
 		ctx = telemetryCtx
 	}
 
-	callRes, err := c.cache.Call(ctx, s, parent, newID, inputArgs, doNotCache)
+	callRes, err := c.cache.Call(ctx, s, parent, newID, inputArgs, callCacheParams{
+		DoNotCache: doNotCache,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

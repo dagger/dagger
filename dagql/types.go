@@ -62,18 +62,18 @@ type ObjectType interface {
 type Result interface {
 	Typed
 	Wrapper
-	ResultID() int
+	ResultID() string
 	ResultDigest() string
 	json.Marshaler
 }
 
 type inputResult[I Input] struct {
-	resultID     int
+	resultID     string
 	resultDigest string
 	input        I
 }
 
-func NewInputResult[I Input](resultID int, resultDigest string, input I) Result {
+func NewInputResult[I Input](resultID string, resultDigest string, input I) Result {
 	return &inputResult[I]{
 		resultID:     resultID,
 		resultDigest: resultDigest,
@@ -83,7 +83,7 @@ func NewInputResult[I Input](resultID int, resultDigest string, input I) Result 
 
 var _ Result = &inputResult[Input]{}
 
-func (i *inputResult[I]) ResultID() int {
+func (i *inputResult[I]) ResultID() string {
 	return i.resultID
 }
 
@@ -110,24 +110,19 @@ func (i *inputResult[I]) FromJSON(_ context.Context, p []byte) (Typed, error) {
 	return i, nil
 }
 
-func (i *inputResult[I]) withResultID(resultID int) Result {
-	i.resultID = resultID
-	return i
-}
-
 func (i *inputResult[I]) Unwrap() Typed {
 	return i.input
 }
 
 type typedResult struct {
-	resultID     int
+	resultID     string
 	resultDigest string
 	typed        Typed
 }
 
 var _ Result = &typedResult{}
 
-func (r *typedResult) ResultID() int {
+func (r *typedResult) ResultID() string {
 	return r.resultID
 }
 
@@ -200,8 +195,6 @@ type Object interface {
 	Select(context.Context, *Server, Selector) (Result, *call.ID, error)
 
 	Result
-	// TODO: dumb but go's type system is annoying
-	WithResultID(int) Object
 }
 
 /*

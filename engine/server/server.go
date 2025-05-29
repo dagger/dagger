@@ -577,16 +577,21 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		}
 	}
 
-	// TODO:
 	dbPath := "/var/lib/dagger/dagger.db"
-	if err := os.RemoveAll(dbPath); err != nil {
-		return nil, fmt.Errorf("failed to remove db file: %w", err)
-	}
+	// TODO:
+	/*
+		if err := os.RemoveAll(dbPath); err != nil {
+			return nil, fmt.Errorf("failed to remove db file: %w", err)
+		}
+	*/
 	dagqlCacheDB, err := dagql.NewDB(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create db: %w", err)
 	}
-	srv.baseDagqlCache = dagql.NewDagqlCache(dagqlCacheDB)
+	srv.baseDagqlCache, err = dagql.NewDagqlCache(ctx, dagqlCacheDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dagql cache: %w", err)
+	}
 
 	return srv, nil
 }

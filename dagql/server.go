@@ -899,7 +899,9 @@ func (s *Server) toSelectable(chainedID *call.ID, val Typed) (Object, error) {
 	*/
 	class, ok := s.ObjectType(val.Type().Name())
 	if !ok {
-		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
+		// return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
+		// TODO:
+		return nil, fmt.Errorf("toSelectable: unknown type %q\n%+v\n%s\n%s", val.Type().Name(), val, chainedID.Display(), string(debug.Stack()))
 	}
 	obj, err := class.New(chainedID, val)
 	if err != nil {
