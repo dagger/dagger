@@ -3,21 +3,26 @@ package io.dagger.client;
 import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
 import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
+
+import io.dagger.client.exceptions.DaggerQueryException;
+import io.smallrye.graphql.client.GraphQLError;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import io.dagger.client.exceptions.DaggerQueryException;
-import io.smallrye.graphql.client.GraphQLError;
 
 public class DaggerQueryExceptionTest {
 
   @Test
   void shouldReturnDefaultMessage() {
     GraphQLError error =
-        buildError("ERROR", new Object[] {"container", "from", "withExec", "stdout"},
+        buildError(
+            "ERROR",
+            new Object[] {"container", "from", "withExec", "stdout"},
             Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
     GraphQLError error2 =
-        buildError("ERROR2", new Object[] {"container", "from", "withExec", "withExec", "stdout"},
+        buildError(
+            "ERROR2",
+            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
             Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
 
     String result = new DaggerQueryException(error, error2).getMessage();

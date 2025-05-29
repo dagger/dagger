@@ -11,5 +11,4 @@ public class DaggerQueryException extends DaggerException {
   public DaggerQueryException(GraphQLError... errors) {
     super(DaggerExceptionUtils.toSimpleMessage(errors), errors);
   }
-
 }

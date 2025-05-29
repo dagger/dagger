@@ -6,19 +6,22 @@ import static io.dagger.client.exceptions.DaggerExceptionConstants.STDERR_KEY;
 import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
 import static io.dagger.client.exceptions.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.Test;
+
 import io.dagger.client.exceptions.DaggerException;
 import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.Json;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 public class DaggerExceptionTest {
 
   @Test
   void shouldReturnDefaultMessage() {
     GraphQLError error =
-        buildError("ERROR", new Object[] {"container", "from", "withExec", "stdout"},
+        buildError(
+            "ERROR",
+            new Object[] {"container", "from", "withExec", "stdout"},
             Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
 
     String result = new DummyException(error).getMessage();
@@ -29,12 +32,26 @@ public class DaggerExceptionTest {
   @Test
   void shouldReturnEnanchedMessage() {
     GraphQLError error =
-        buildError("ERROR", new Object[] {"container", "from", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "1", CMD_KEY,
+        buildError(
+            "ERROR",
+            new Object[] {"container", "from", "withExec", "stdout"},
+            Map.of(
+                TYPE_KEY,
+                TYPE_EXEC_ERROR_VALUE,
+                EXIT_CODE_KEY,
+                "1",
+                CMD_KEY,
                 Json.createArrayBuilder().add("cat").add("WRONG").build()));
     GraphQLError error2 =
-        buildError("ERROR2", new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "2", CMD_KEY,
+        buildError(
+            "ERROR2",
+            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
+            Map.of(
+                TYPE_KEY,
+                TYPE_EXEC_ERROR_VALUE,
+                EXIT_CODE_KEY,
+                "2",
+                CMD_KEY,
                 Json.createArrayBuilder().add("cat").add("WRONG2").build()));
 
     String result = new DummyException(error, error2).toEnhancedMessage();
@@ -46,14 +63,30 @@ public class DaggerExceptionTest {
   @Test
   void shouldReturnFullMessage() {
     GraphQLError error =
-        buildError("ERROR", new Object[] {"container", "from", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "1", CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG").build(), STDERR_KEY,
+        buildError(
+            "ERROR",
+            new Object[] {"container", "from", "withExec", "stdout"},
+            Map.of(
+                TYPE_KEY,
+                TYPE_EXEC_ERROR_VALUE,
+                EXIT_CODE_KEY,
+                "1",
+                CMD_KEY,
+                Json.createArrayBuilder().add("cat").add("WRONG").build(),
+                STDERR_KEY,
                 "DEEP ERROR DETAILS"));
     GraphQLError error2 =
-        buildError("ERROR2", new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE, EXIT_CODE_KEY, "2", CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG2").build(), STDERR_KEY,
+        buildError(
+            "ERROR2",
+            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
+            Map.of(
+                TYPE_KEY,
+                TYPE_EXEC_ERROR_VALUE,
+                EXIT_CODE_KEY,
+                "2",
+                CMD_KEY,
+                Json.createArrayBuilder().add("cat").add("WRONG2").build(),
+                STDERR_KEY,
                 "DEEP ERROR DETAILS2"));
 
     String result = new DummyException(error, error2).toFullMessage();

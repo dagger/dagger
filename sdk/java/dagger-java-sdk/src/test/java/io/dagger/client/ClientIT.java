@@ -3,10 +3,10 @@ package io.dagger.client;
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.dagger.client.exceptions.DaggerQueryException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import io.dagger.client.exceptions.DaggerQueryException;
 
 public class ClientIT {
 
