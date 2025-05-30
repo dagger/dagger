@@ -464,12 +464,13 @@ If no name is provided, all environment variables are printed. If a name is prov
 				name := args[0]
 
 
-				value, ok := os.LookupEnv(name)
-				if !ok {
+				v := hc.Env.Get(name)
+				if !v.IsSet() {
 					return fmt.Errorf("environment variable %q not set", name)
 				}
 
-				return h.Print(ctx, value)
+				return h.Print(ctx, v.String())
+
 			},
 		},
 		&ShellCommand{
