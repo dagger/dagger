@@ -308,7 +308,7 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 
 	// assign all outputs
 	for _, output := range outputs {
-		if err := assign(&output); err != nil {
+		if err := assign(output); err != nil {
 			return err
 		}
 	}
