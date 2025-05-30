@@ -441,7 +441,7 @@ Writes any specified operands, separated by single blank (' ') characters and fo
 `,
 		},
 		&ShellCommand{
-			Use:  ".env [name]",
+			Use:  ".printenv [name]",
 			Args: MaximumArgs(1),
 			Description: `Show available environment variables or a specific variable
 
