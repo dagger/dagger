@@ -7,6 +7,10 @@ defmodule Defaults do
     if(value, do: value, else: "default value if null")
   end
 
+  defn echo_value(value: {String.t() | nil, default: "foo"}) :: String.t() do
+    value
+  end
+
   defn file_name(file: {Dagger.File.t(), default_path: "dagger.json"}) :: String.t() do
     Dagger.File.name(file)
   end

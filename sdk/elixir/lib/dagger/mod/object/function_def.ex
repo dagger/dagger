@@ -48,7 +48,7 @@ defmodule Dagger.Mod.Object.FunctionDef do
 
       opts =
         arg_def
-        |> Keyword.take([:doc, :default_path, :ignore])
+        |> Keyword.take([:doc, :default, :default_path, :ignore])
         |> Enum.reject(fn {_, value} -> is_nil(value) end)
         |> Enum.map(&normalize_arg_option/1)
 
@@ -58,5 +58,9 @@ defmodule Dagger.Mod.Object.FunctionDef do
   end
 
   defp normalize_arg_option({:doc, doc}), do: {:description, doc}
+
+  defp normalize_arg_option({:default, default_value}),
+    do: {:default_value, Jason.encode!(default_value)}
+
   defp normalize_arg_option(opt), do: opt
 end
