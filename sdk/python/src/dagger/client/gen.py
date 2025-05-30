@@ -3372,8 +3372,18 @@ class EngineCache(Type):
         _ctx = self._select("minFreeSpace", _args)
         return await _ctx.execute(int)
 
-    async def prune(self) -> Void | None:
+    async def prune(
+        self,
+        *,
+        use_default_policy: bool | None = False,
+    ) -> Void | None:
         """Prune the cache of releaseable entries
+
+        Parameters
+        ----------
+        use_default_policy:
+            Use the engine-wide default pruning policy if true, otherwise
+            prune the whole cache of any releasable entries.
 
         Returns
         -------
@@ -3388,7 +3398,9 @@ class EngineCache(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("useDefaultPolicy", use_default_policy, False),
+        ]
         _ctx = self._select("prune", _args)
         await _ctx.execute()
 

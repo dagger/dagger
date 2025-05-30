@@ -3169,12 +3169,24 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCachePruneOpts contains options for EngineCache.Prune
+type EngineCachePruneOpts struct {
+	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	UseDefaultPolicy bool
+}
+
 // Prune the cache of releaseable entries
-func (r *EngineCache) Prune(ctx context.Context) error {
+func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) error {
 	if r.prune != nil {
 		return nil
 	}
 	q := r.query.Select("prune")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `useDefaultPolicy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
+			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+	}
 
 	return q.Execute(ctx)
 }
