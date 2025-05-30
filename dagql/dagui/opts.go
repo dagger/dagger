@@ -27,9 +27,6 @@ type FrontendOpts struct {
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
-	// Run a custom function on exit.
-	CustomExit func()
-
 	// DotOutputFilePath is the path to write the DOT output to after execution, if any
 	DotOutputFilePath string
 

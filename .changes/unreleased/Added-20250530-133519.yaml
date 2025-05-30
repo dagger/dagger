@@ -1,0 +1,6 @@
+kind: Added
+body: added E hotkey for -E/--no-exit at runtime
+time: 2025-05-30T13:35:19.638772606-04:00
+custom:
+    Author: vito
+    PR: "10511"
