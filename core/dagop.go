@@ -10,7 +10,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
@@ -367,11 +366,18 @@ func NewContainerDagOp(
 	}
 	inputs = append(inputs, extraInputs...)
 
+	execMD := buildkit.ExecutionMetadataFromContext(ctx)
+	execMDDigest, err := execMD.CacheKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	dagop := &ContainerDagOp{
-		ID:          id,
-		RawDigest:   ctr.RawDigest(),
-		Mounts:      mounts,
-		OutputCount: outputCount,
+		ID:                id,
+		CacheMixin:        ctr.RawDigest() + execMDDigest,
+		ExecutionMetadata: buildkit.ExecutionMetadataFromContext(ctx),
+		Mounts:            mounts,
+		OutputCount:       outputCount,
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -416,8 +422,15 @@ func newContainerDagOp(
 }
 
 type ContainerDagOp struct {
-	ID        *call.ID
-	RawDigest digest.Digest
+	ID *call.ID
+
+	// CacheMixin is arbitrary data to mixin to the buildkit cache key
+	CacheMixin digest.Digest
+
+	// HACK: ideally we would not need this here at all - but it's needed so
+	// that we can properly handle module call caching. but there should be a
+	// better way of doing that generally.
+	ExecutionMetadata *buildkit.ExecutionMetadata
 
 	// all the container mounts - the order here should be guaranteed:
 	// - rootfs is at 0
@@ -472,53 +485,28 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
+		op.CacheMixin.String(),
 		fmt.Sprint(op.OutputCount),
 		string(mountsData),
 	}, "+")), nil
 }
 
-// func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-// 	// TODO: we need proper cache map control here, to control content digesting
-// 	mountsData, err := json.Marshal(op.Mounts)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	// if cacheByCall {
-// 	//
-// 	// }
-// 	var id *call.ID
-// 	id = id.Append(
-// 		op.ID.Type().ToAST(),
-// 		op.ID.Field(),
-// 		op.ID.View(),
-// 		op.ID.Module(),
-// 		int(op.ID.Nth()),
-// 		"",
-// 		op.ID.Args()...,
-// 	)
-// 	return digest.FromString(strings.Join([]string{
-// 		engine.Version,
-// 		op.RawDigest.String(),
-// 		id.Digest().String(),
-// 		// string(op.ID.Digest()),
-// 		fmt.Sprint(op.OutputCount),
-// 		string(mountsData),
-// 	}, "+")), nil
-// }
-
 func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	inputs := []string{op.CacheMixin.String()}
+
+	// mount data
 	mountsData, err := json.Marshal(op.Mounts)
 	if err != nil {
 		return nil, err
 	}
+	inputs = append(inputs, string(mountsData))
+	inputs = append(inputs, fmt.Sprint(op.OutputCount))
 
-	// XXX: make sure that we're including all the things we should be in the WithExec cache key
-
-	// if cacheByCall {
-	//
-	// }
+	// add the args to the digest (the container receiver is already hashed
+	// as part of RawDigest + with the mounts as inputs)
 	var id *call.ID
 	id = id.Append(
 		op.ID.Type().ToAST(),
@@ -529,14 +517,9 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 		"",
 		op.ID.Args()...,
 	)
-	cm.Digest = digest.FromString(strings.Join([]string{
-		engine.Version,
-		op.RawDigest.String(),
-		id.Digest().String(),
-		// string(op.ID.Digest()),
-		fmt.Sprint(op.OutputCount),
-		string(mountsData),
-	}, "+"))
+	inputs = append(inputs, id.Digest().String())
+
+	cm.Digest = digest.FromString(strings.Join(inputs, "+"))
 
 	// disable content hashing for root mount
 	if root := op.Mounts[0].Input; root != pb.Empty {
@@ -553,6 +536,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
+	ctx = buildkit.ContextWithExecutionMetadata(ctx, op.ExecutionMetadata)
 	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
 	if err != nil {
 		return nil, err

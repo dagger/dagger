@@ -26,6 +26,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -421,7 +422,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withExec", s.withExec).
+		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -461,7 +462,7 @@ func (s *containerSchema) Install() {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
-				dagql.Arg("nestedExecMetadata"),
+				// dagql.Arg("nestedExecMetadata"),
 			),
 
 		dagql.Func("stdout", s.stdout).
@@ -878,6 +879,10 @@ func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
+	md := buildkit.ExecutionMetadataFromContext(ctx)
+	if md == nil {
+		md = &buildkit.ExecutionMetadata{}
+	}
 	if _, ok := core.DagOpFromContext[core.ContainerDagOp](ctx); !ok {
 		parent.Self = parent.Self.Clone()
 
@@ -887,6 +892,15 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 			return inst, err
 		}
 		parent.Self.Meta = def.ToPB()
+
+		execMD := buildkit.ExecutionMetadata{}
+		if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
+			execMD = *md
+		}
+		if args.ExperimentalPrivilegedNesting {
+			execMD.CacheByEngineVersion = engine.Version
+		}
+		ctx = buildkit.ContextWithExecutionMetadata(ctx, &execMD)
 
 		inst, err := DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
 		if err != nil {
@@ -920,52 +934,22 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
-// func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-// 	clientMD, err := engine.ClientMetadataFromContext(ctx)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-// 	}
-// 	if clientMD.SessionID == "" {
-// 		return nil, fmt.Errorf("session ID not found in context")
-// 	}
-//
-// 	execMD := buildkit.ExecutionMetadata{}
-// 	if mdEncoded := args.NestedExecMetadata; mdEncoded != "" {
-// 		err := json.Unmarshal([]byte(mdEncoded), &execMD)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 	}
-// 	// if args.NestedExecMetadata != nil {
-// 	// 	execMD = *args.NestedExecMetadata
-// 	// }
-//
-// 	inputs := []string{}
-// 	if execMD.CacheByCall { // XXX: try enabling the other path to fix TestContainer/TestNestedExec/cached
-// 		// include a digest of the current call so that we scope of the cache
-// 		// of the op to this call's args and receiver values. Currently only
-// 		// used for module function calls.
-// 		inputs = append(inputs, buildkit.DaggerCallDigestEnv+"="+string(cacheCfg.Digest.String()))
-// 	} else {
-// 		// otherwise, include just *the current state* in the cache key
-// 		fmt.Println("HERE?")
-// 		inputs = append(inputs, string(parent.Self.Digest()))
-// 		argsJSON, _ := json.Marshal(args.Args)
-// 		inputs = append(inputs, string(argsJSON))
-// 	}
-//
-// 	// include the engine version so that these execs get invalidated if the engine/API change
-// 	inputs = append(inputs, buildkit.DaggerEngineVersionEnv+"="+engine.Version)
-//
-// 	if execMD.CachePerSession {
-// 		// include the SessionID here so that we bust cache once-per-session
-// 		inputs = append(inputs, buildkit.DaggerSessionIDEnv+"="+clientMD.SessionID)
-// 	}
-//
-// 	cacheCfg.Digest = dagql.HashFrom(inputs...)
-// 	fmt.Println("got digest", cacheCfg.Digest)
-// 	return &cacheCfg, nil
-// }
+func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	execMD := buildkit.ExecutionMetadata{}
+	if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
+		execMD = *md
+	}
+	if args.ExperimentalPrivilegedNesting {
+		execMD.CacheByEngineVersion = engine.Version
+	}
+
+	execMDDigest, err := execMD.CacheKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMDDigest.String())
+	return &cacheCfg, nil
+}
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
 	return parent.Stdout(ctx)

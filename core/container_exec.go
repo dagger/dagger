@@ -3,7 +3,6 @@ package core
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -67,7 +66,7 @@ type ContainerExecOpts struct {
 
 	// (Internal-only) If this is a nested exec, exec metadata to use for it
 	// NestedExecMetadata        *buildkit.ExecutionMetadata `name:"-"`
-	NestedExecMetadata string `default:""`
+	// NestedExecMetadata string `default:""`
 
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
@@ -84,12 +83,15 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	execMD := buildkit.ExecutionMetadata{}
-	if mdEncoded := opts.NestedExecMetadata; mdEncoded != "" {
-		err := json.Unmarshal([]byte(mdEncoded), &execMD)
-		if err != nil {
-			return nil, err
-		}
+	if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
+		execMD = *md
 	}
+	// if mdEncoded := opts.NestedExecMetadata; mdEncoded != "" {
+	// 	err := json.Unmarshal([]byte(mdEncoded), &execMD)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 	// if opts.NestedExecMetadata != nil {
 	// 	execMD = *opts.NestedExecMetadata
 	// }
@@ -152,6 +154,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
+	fmt.Println("client", execMD.ClientID, execMD.SecretToken)
 	return &execMD, nil
 }
 
