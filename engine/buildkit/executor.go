@@ -21,7 +21,9 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
@@ -82,6 +84,11 @@ type ExecutionMetadata struct {
 	// receiver object.
 	CacheByCall bool
 
+	// If set, scope the exec cache key to the engine version specified. This
+	// is needed for ensuring that ExperimentalPrivilegedNesting gets the right
+	// cache key.
+	CacheByEngineVersion string
+
 	// hostname -> list of aliases
 	HostAliases map[string][]string
 	// search domains to install prior to the session's domain
@@ -112,6 +119,30 @@ type ExecutionMetadata struct {
 	ClientVersionOverride string
 }
 
+func (md *ExecutionMetadata) CacheKey(ctx context.Context) (digest.Digest, error) {
+	if md == nil {
+		return "", nil
+	}
+
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var inputs []string
+	if md.CachePerSession {
+		inputs = append(inputs, clientMD.SessionID)
+	}
+	if md.CacheByEngineVersion != "" {
+		inputs = append(inputs, md.CacheByEngineVersion)
+	}
+	if md.CacheByCall {
+		inputs = append(inputs, dagql.CurrentID(ctx).Digest().String())
+	}
+
+	return dagql.HashFrom(inputs...), nil
+}
+
 const executionMetadataKey = "dagger.executionMetadata"
 
 func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
@@ -119,6 +150,18 @@ func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, erro
 		return nil, false, nil
 	}
 	return ExecutionMetadataFromDescription(vtx.Options().Description)
+}
+
+func ContextWithExecutionMetadata(ctx context.Context, md *ExecutionMetadata) context.Context {
+	return context.WithValue(ctx, executionMetadataKey, md)
+}
+
+func ExecutionMetadataFromContext(ctx context.Context) *ExecutionMetadata {
+	v := ctx.Value(executionMetadataKey)
+	if v == nil {
+		return nil
+	}
+	return v.(*ExecutionMetadata)
 }
 
 func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadata, bool, error) {

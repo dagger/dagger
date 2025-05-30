@@ -35,7 +35,6 @@ type CustomOp interface {
 
 type CustomOpBackend interface {
 	Digest() (digest.Digest, error)
-	// CacheKey(ctx context.Context) (digest.Digest, error)
 	CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error)
 	Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opts OpOpts) (outputs []solver.Result, err error)
 }
@@ -101,6 +100,7 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 		return cm, ok, err
 	}
 
+	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
 	cm, err = op.Backend.CacheMap(ctx, cm)
 	if err != nil {
 		return nil, false, err

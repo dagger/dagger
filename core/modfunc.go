@@ -356,11 +356,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
 	}
 
-	// XXX: work out if we can somehow just talk to the worker directly
-	execMDEncoded, err := json.Marshal(execMD)
-	if err != nil {
-		return nil, err
-	}
 	var ctr dagql.Instance[*Container]
 	err = srv.Select(ctx, fn.runtime, &ctr,
 		dagql.Selector{
@@ -370,23 +365,23 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
 			},
 		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec function: %w", err)
+	}
+
+	// XXX: work out if we can somehow just talk to the worker directly
+	err = srv.Select(buildkit.ContextWithExecutionMetadata(ctx, &execMD), ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
 				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "nestedExecMetadata", Value: dagql.NewString(string(execMDEncoded))},
+				// {Name: "nestedExecMetadata", Value: dagql.NewString(string(execMDEncoded))},
 			},
 		},
 	)
-
-	// Setup the Exec for the Function call and evaluate it
-	// ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-	// 	ExperimentalPrivilegedNesting: true,
-	// 	NestedExecMetadata:            &execMD,
-	// 	UseEntrypoint:                 true,
-	// })
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
