@@ -21,9 +21,7 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
@@ -77,17 +75,19 @@ type ExecutionMetadata struct {
 
 	// If true, scope the exec cache key to the current session ID. It will be cached in the context
 	// of the session but invalidated across different sessions.
-	CachePerSession bool
+	// CachePerSession bool
 
 	// If true, scope the exec cache key to the current dagql call digest. This is needed currently
 	// for module function calls specifically so that their cache key is based on their arguments and
 	// receiver object.
-	CacheByCall bool
+	// CacheByCall bool
+
+	CacheMixin digest.Digest
 
 	// If set, scope the exec cache key to the engine version specified. This
 	// is needed for ensuring that ExperimentalPrivilegedNesting gets the right
 	// cache key.
-	CacheByEngineVersion string
+	// CacheByEngineVersion string
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
@@ -119,29 +119,29 @@ type ExecutionMetadata struct {
 	ClientVersionOverride string
 }
 
-func (md *ExecutionMetadata) CacheKey(ctx context.Context) (digest.Digest, error) {
-	if md == nil {
-		return "", nil
-	}
-
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	var inputs []string
-	if md.CachePerSession {
-		inputs = append(inputs, clientMD.SessionID)
-	}
-	if md.CacheByEngineVersion != "" {
-		inputs = append(inputs, md.CacheByEngineVersion)
-	}
-	if md.CacheByCall {
-		inputs = append(inputs, dagql.CurrentID(ctx).Digest().String())
-	}
-
-	return dagql.HashFrom(inputs...), nil
-}
+// func (md *ExecutionMetadata) CacheKey(ctx context.Context) (digest.Digest, error) {
+// 	if md == nil {
+// 		return "", nil
+// 	}
+//
+// 	clientMD, err := engine.ClientMetadataFromContext(ctx)
+// 	if err != nil {
+// 		return "", err
+// 	}
+//
+// 	var inputs []string
+// 	if md.CachePerSession {
+// 		inputs = append(inputs, clientMD.SessionID)
+// 	}
+// 	if md.CacheByEngineVersion != "" {
+// 		inputs = append(inputs, md.CacheByEngineVersion)
+// 	}
+// 	if md.CacheByCall {
+// 		inputs = append(inputs, dagql.CurrentID(ctx).Digest().String())
+// 	}
+//
+// 	return dagql.HashFrom(inputs...), nil
+// }
 
 const executionMetadataKey = "dagger.executionMetadata"
 

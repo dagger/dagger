@@ -277,15 +277,30 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	execMD := buildkit.ExecutionMetadata{
-		ClientID:          identity.NewID(),
-		CallID:            dagql.CurrentID(ctx),
-		ExecID:            identity.NewID(),
-		CachePerSession:   !opts.Cache,
-		Internal:          true,
-		CacheByCall:       !opts.SkipCallDigestCacheKey,
+		ClientID: identity.NewID(),
+		CallID:   dagql.CurrentID(ctx),
+		ExecID:   identity.NewID(),
+		// CachePerSession:   !opts.Cache,
+		Internal: true,
+		// CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
+
+	var cacheMixins []string
+	if !opts.Cache {
+		// Scope the exec cache key to the current session ID. It will be
+		// cached in the context of the session but invalidated across
+		// different sessions.
+		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+	}
+	if !opts.SkipCallDigestCacheKey {
+		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
+		// for module function calls specifically so that their cache key is based on their arguments and
+		// receiver object.
+		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
+	}
+	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
