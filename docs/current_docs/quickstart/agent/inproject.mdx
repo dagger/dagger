@@ -8,7 +8,7 @@ import VideoPlayer from '../../../src/components/VideoPlayer';
 
 # Add an AI agent to an Existing Project
 
-Now that you've learned the basics of creating an AI agent with Dagger in [Built an AI agent](./index.mdx), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI agent that builds features for an existing project.
+Now that you've learned the basics of creating an AI agent with Dagger in [Build an AI agent](./index.mdx), its time to apply those lessons to a more realistic use case. In this guide, you will build an AI agent that builds features for an existing project.
 
 For this guide you will start with a Daggerized project. The agent will use the Dagger functions in this project that are already used locally and in CI for testing the project.
 
@@ -112,12 +112,23 @@ In this Dagger module, each Dagger Function performs a different operation:
 - The `read-file` Dagger Function reads a file in the workspace.
 - The `write-file` Dagger Function writes a file to the workspace.
 - The `list-files` Dagger Function lists all the files in the workspace.
-- The `get-source` Dagger Function gets the source code directory from the workspace.
+- The `test` Dagger Function runs the tests on the files in the workspace.
 
 See the functions of the new workspace module:
 
 ```shell
 dagger -m .dagger/workspace functions
+```
+
+This should list the following functions:
+
+```
+Name         Description
+list-files   List all of the files in the Workspace
+read-file    Read a file in the Workspace
+source       the workspace source code
+test         Return the result of running unit tests
+write-file   Write a file to the Workspace
 ```
 
 Now install the new submodule as a dependency to the main module:
@@ -195,8 +206,14 @@ Your assignment is: $assignment
 ```
 
 :::note
-This prompt is longer and more structured than the prompt from the first quickstart. The tasks the agent will be asked to complete will be more complex because its making modifications to an existing codebase and will need to understand more context. To create a reliable agent that can operate with more complexity, the prompt structure and tools are extremely important.
+This prompt is more structured than the prompt from the first quickstart. The tasks the agent will be asked to complete will be more complex because its making modifications to an existing codebase and will need to understand more context. To create a reliable agent that can operate with more complexity, the prompt structure and tools are extremely important.
 :::
+
+To see the new function, run:
+
+```shell
+dagger functions
+```
 
 ## Run the agent
 
@@ -209,7 +226,7 @@ Check the help text for the new Dagger Function:
 
 This should show how to use the `develop` function.
 
-Make sure your LLM provider has been properly configured:
+Make sure your LLM has been properly [configured](../../configuration/llm.mdx):
 
 ```shell
 llm | model
@@ -237,12 +254,24 @@ Since the agent returns a `Directory`, use Dagger Shell to do more with that `Di
 ```shell
 # Save the directory containing the completed assignment to a variable
 completed=$(develop "make the main page blue")
+```
+
+```shell
 # Get a terminal in the build container with the directory
 build-env --source $completed | terminal
+```
+
+```shell
 # Run the app with the updated source code
 build --source $completed | as-service | up --ports 8080:80
+```
+
+```shell
 # Save the changes to your filesystem
 $completed | export .
+```
+
+```shell
 # Exit
 exit
 ```
@@ -318,6 +347,12 @@ The `develop-issue` function connects the dots in the automation flow. It will b
 - Read the title and body from the GitHub issue
 - Use the body as the assignment for the agent
 - Open a pull request with the `Directory` returned by the agent
+
+To see the new function, run:
+
+```shell
+dagger functions
+```
 
 ### Create a GitHub Actions workflow
 

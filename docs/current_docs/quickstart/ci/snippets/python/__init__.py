@@ -2,7 +2,7 @@ import random
 from typing import Annotated
 
 import dagger
-from dagger import DefaultPath, dag, function, object_type
+from dagger import DefaultPath, dag, Doc, function, object_type
 
 
 @object_type
@@ -10,7 +10,7 @@ class HelloDagger:
     @function
     async def publish(
         self,
-        source: Annotated[dagger.Directory, DefaultPath("/")],
+        source: Annotated[dagger.Directory, DefaultPath("/"), Doc("hello-dagger source directory")],
     ) -> str:
         """Publish the application container after building and testing it on-the-fly"""
         await self.test(source)
@@ -21,7 +21,7 @@ class HelloDagger:
     @function
     def build(
         self,
-        source: Annotated[dagger.Directory, DefaultPath("/")],
+        source: Annotated[dagger.Directory, DefaultPath("/"), Doc("hello-dagger source directory")],
     ) -> dagger.Container:
         """Build the application container"""
         build = (
@@ -39,7 +39,7 @@ class HelloDagger:
     @function
     async def test(
         self,
-        source: Annotated[dagger.Directory, DefaultPath("/")],
+        source: Annotated[dagger.Directory, DefaultPath("/"), Doc("hello-dagger source directory")],
     ) -> str:
         """Return the result of running unit tests"""
         return await (
@@ -51,7 +51,7 @@ class HelloDagger:
     @function
     def build_env(
         self,
-        source: Annotated[dagger.Directory, DefaultPath("/")],
+        source: Annotated[dagger.Directory, DefaultPath("/"), Doc("hello-dagger source directory")],
     ) -> dagger.Container:
         """Build a ready-to-use development environment"""
         node_cache = dag.cache_volume("node")
