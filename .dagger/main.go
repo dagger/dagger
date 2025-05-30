@@ -334,13 +334,12 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.56.1@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293").
+		From("aquasec/trivy:0.63.0@sha256:6fb0646988fcd2fdf7bf123f7174945ebc2c9c72d1fa1567c8d7daeeb70f8037").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
 		With(dev.withDockerCfg)
 
 	commonArgs := []string{
-		"--db-repository=public.ecr.aws/aquasecurity/trivy-db",
 		"--format=json",
 		"--exit-code=1",
 		"--severity=CRITICAL,HIGH",
@@ -358,7 +357,7 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 			"trivy",
 			"fs",
 			"--scanners=vuln",
-			"--vuln-type=library",
+			"--pkg-types=library",
 		}
 		args = append(args, commonArgs...)
 		args = append(args, "/mnt/src")
@@ -384,7 +383,7 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 		args := []string{
 			"trivy",
 			"image",
-			"--vuln-type=os,library",
+			"--pkg-types=os,library",
 		}
 		args = append(args, commonArgs...)
 		engineTarball := "/mnt/engine.tar"
