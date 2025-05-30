@@ -587,6 +587,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
+	var focused *dagui.Span
+	if fe.FocusedSpan.IsValid() {
+		focused, _ = fe.db.Spans.Map[fe.FocusedSpan]
+	}
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
@@ -611,6 +615,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("esc"),
 			key.WithHelp("esc", "unzoom"),
 			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+		key.NewBinding(key.WithKeys("r"),
+			key.WithHelp("r", "go to error"),
+			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
 	}
 }
 
@@ -1891,12 +1898,31 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
 		r.renderMetrics(out, span)
-		r.renderStatus(out, span)
+		fe.renderStatus(out, span)
 	}
 
 	fmt.Fprintln(out)
 
 	return nil
+}
+
+func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
+	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		fmt.Fprint(out, out.String(" "))
+		if span.ErrorOrigin != nil {
+			fmt.Fprintf(out, "%s%s%s %s",
+				out.String("E").Foreground(termenv.ANSIRed),
+				out.String("R").Foreground(termenv.ANSIRed).Underline(),
+				out.String("ROR").Foreground(termenv.ANSIRed),
+				out.String("↗").Foreground(termenv.ANSIBrightBlack),
+			)
+		} else {
+			fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
+		}
+	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
+	}
 }
 
 func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string) bool {
