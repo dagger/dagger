@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/spf13/cobra"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -450,19 +450,19 @@ If no name is provided, all environment variables are printed. If a name is prov
 			State: NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				hc := interp.HandlerCtx(ctx)
+
 				if len(args) == 0 {
 					// Print all environment variables
 					hc.Env.Each(func(name string, v expand.Variable) bool {
 						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, v.String())
 						return true
 					})
+
 					return nil
 				}
 
-
 				// Print a specific environment variable
 				name := args[0]
-
 
 				v := hc.Env.Get(name)
 				if !v.IsSet() {
@@ -470,7 +470,6 @@ If no name is provided, all environment variables are printed. If a name is prov
 				}
 
 				return h.Print(ctx, v.String())
-
 			},
 		},
 		&ShellCommand{
