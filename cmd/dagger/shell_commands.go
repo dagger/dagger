@@ -462,10 +462,6 @@ If no name is provided, all environment variables are printed. If a name is prov
 				// Print a specific environment variable
 				name := args[0]
 
-				// if the user prefixed the name with a $ sign, remove it
-				if strings.HasPrefix(name, "$") {
-					name = strings.TrimPrefix(name, "$")
-				}
 
 				value, ok := os.LookupEnv(name)
 				if !ok {
