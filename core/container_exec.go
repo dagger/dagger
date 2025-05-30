@@ -281,6 +281,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Meta:      &meta,
 				// Secretenv: secretEnvs, // XXX: here
 			}
+			fmt.Println("error goes here", rerr)
 		} else {
 			// Only release actives if err is nil.
 			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order

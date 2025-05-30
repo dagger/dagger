@@ -20,12 +20,11 @@ type CustomOpWrapper struct {
 	Name    string
 	Backend CustomOpBackend
 
-	ClientMetadata engine.ClientMetadata
-
-	causeCtx trace.SpanContext
-	server   dagqlServer
-	original solver.Op
-	worker   worker.Worker
+	causeCtx       trace.SpanContext
+	server         dagqlServer
+	original       solver.Op
+	worker         worker.Worker
+	sessionManager *bksession.Manager
 }
 
 type CustomOp interface {
@@ -52,15 +51,9 @@ func RegisterCustomOp(op CustomOp) {
 }
 
 func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return llb.State{}, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
 	opWrapped := CustomOpWrapper{
-		Name:           op.Name(),
-		Backend:        op.Backend(),
-		ClientMetadata: *clientMetadata,
+		Name:    op.Name(),
+		Backend: op.Backend(),
 	}
 
 	// generate a uniqued digest of the op to use in the buildkit id (this
@@ -100,7 +93,12 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 		return cm, ok, err
 	}
 
-	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
+	clientMetadata, err := op.clientMetadata(ctx, g)
+	if err != nil {
+		return nil, false, err
+	}
+
+	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 	cm, err = op.Backend.CacheMap(ctx, cm)
 	if err != nil {
 		return nil, false, err
@@ -109,13 +107,16 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 }
 
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
-	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
+	clientMetadata, err := op.clientMetadata(ctx, g)
+	if err != nil {
+		return nil, err
+	}
 
+	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 	server, err := op.server.DagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
-
 	res, err := op.Backend.Exec(ctx, g, inputs, OpOpts{
 		CauseCtx: op.causeCtx,
 		Server:   server,
@@ -126,6 +127,24 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 
 func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseFunc, err error) {
 	return op.original.Acquire(ctx)
+}
+
+func (op *CustomOpWrapper) clientMetadata(ctx context.Context, g bksession.Group) (md *engine.ClientMetadata, _ error) {
+	err := op.sessionManager.Any(ctx, g, func(ctx context.Context, id string, c bksession.Caller) error {
+		var err error
+		md, err = engine.ClientMetadataFromContext(c.Context())
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if md == nil {
+		return nil, fmt.Errorf("no client metadata found in available sessions")
+	}
+	return md, nil
 }
 
 const customOpKey = "dagger.customOp"
@@ -147,6 +166,7 @@ func (w *Worker) customOpFromVtx(vtx solver.Vertex, s frontend.FrontendLLBBridge
 		customOp.original = op
 		customOp.server = w.dagqlServer
 		customOp.worker = w
+		customOp.sessionManager = w.bkSessionManager
 	}
 	return customOp, ok, nil
 }
