@@ -449,15 +449,16 @@ If no name is provided, all environment variables are printed. If a name is prov
 			`,
 			State: NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
 				if len(args) == 0 {
 					// Print all environment variables
-					env := os.Environ()
-					if len(env) == 0 {
-						return h.Print(ctx, "No environment variables set")
-					}
-
-					return h.Print(ctx, strings.Join(env, "\n"))
+					hc.Env.Each(func(name string, v expand.Variable) bool {
+						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, v.String())
+						return true
+					})
+					return nil
 				}
+
 
 				// Print a specific environment variable
 				name := args[0]
