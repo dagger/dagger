@@ -898,7 +898,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 			execMD = *md
 		}
 		if args.ExperimentalPrivilegedNesting {
-			execMD.CacheByEngineVersion = engine.Version
+			execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
 		}
 		ctx = buildkit.ContextWithExecutionMetadata(ctx, &execMD)
 
@@ -940,14 +940,14 @@ func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Ins
 		execMD = *md
 	}
 	if args.ExperimentalPrivilegedNesting {
-		execMD.CacheByEngineVersion = engine.Version
+		execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
 	}
 
-	execMDDigest, err := execMD.CacheKey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMDDigest.String())
+	// execMDDigest, err := execMD.CacheKey(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMD.CacheMixin.String())
 	return &cacheCfg, nil
 }
 
