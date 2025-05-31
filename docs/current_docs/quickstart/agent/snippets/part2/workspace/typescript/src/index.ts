@@ -2,6 +2,10 @@ import { dag, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
 export class Workspace {
+  /**
+   * the workspace source code
+   */
+  @func()
   source: Directory
 
   constructor(source: Directory) {
@@ -45,10 +49,19 @@ export class Workspace {
   }
 
   /**
-   * Get the source code directory from the Workspace
+   * Return the result of running unit tests
    */
   @func()
-  getSource(): Directory {
-    return this.source
+  async test(): Promise<string> {
+    const nodeCache = dag.cacheVolume("node")
+    return dag
+      .container()
+      .from("node:21-slim")
+      .withDirectory("/src", this.source)
+      .withMountedCache("/root/.npm", nodeCache)
+      .withWorkdir("/src")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "test:unit", "run"])
+      .stdout()
   }
 }
