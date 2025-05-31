@@ -1,120 +1,176 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ │ ✔ moby.buildkit.v1.Control/Info X.Xs
-│ │ ✔ moby.buildkit.v1.Control/Info X.Xs
-│ ✔ starting session X.Xs
-│ ✔ subscribing to telemetry X.Xs
-│ │ ✔ consuming /v1/traces X.Xs
-│ │ ✔ consuming /v1/logs X.Xs
-│ │ ✔ consuming /v1/metrics X.Xs
-
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ │ ✔ moduleSource(refString: "./viztest"): ModuleSource! X.Xs
-│ │ │ ✔ parseRefString: ./viztest X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─▼ connecting to engine X.Xs
+│ ├─● moby.buildkit.v1.Control/Info X.Xs
+│ ╰─● moby.buildkit.v1.Control/Info X.Xs
+│  
+├─● starting session X.Xs
+╰─▼ subscribing to telemetry X.Xs
+  ├─● consuming /v1/traces X.Xs
+  ├─● consuming /v1/logs X.Xs
+  ╰─● consuming /v1/metrics X.Xs
+   
+▼ load module X.Xs
+├─▼ finding module configuration X.Xs
+│ ├─▼ moduleSource(refString: "./viztest"): ModuleSource! X.Xs
+│ │ ├─● parseRefString: ./viztest X.Xs
+│ │ ├─● parseRefString: dep X.Xs
 │ │ │
-│ │ │ ✔ host: Host! X.Xs
-│ │ │ ✔ .directory(include: XXXXXXXXXXX): Directory! X.Xs
-│ │ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
-│ │ │ │ │ ✔ filesync X.Xs
-│ │ │ │ │ │ ✔ copy X.Xs
+│ │ ├─● host: Host! X.Xs
 │ │ │
-│ │ │ ✔ sdkForModule: go X.Xs
-│ │ ✔ .configExists: Boolean! X.Xs
-│ │ ┃ true
-│ ✔ initializing module X.Xs
-│ │ ✔ ModuleSource.asModule: Module! X.Xs
-│ │ │ ✔ load dep modules X.Xs
-│ │ │ ✔ go SDK: load runtime X.Xs
-│ │ │ │ ✔ Container.directory(path: "/go/pkg/mod"): Directory! X.Xs
+│ │ ├─▼ moduleSource(refString: "/app/dagql/idtui/viztest/dep", disableFindUp: true): ModuleSource! X.Xs
+│ │ │ ├─● parseRefString: /app/dagql/idtui/viztest/dep X.Xs
 │ │ │ │
-│ │ │ │ ✔ Container.directory(path: "/root/.cache/go-build"): Directory! X.Xs
-│ │ │ │
-│ │ │ │ ✔ Container.withMountedCache(
-│ │ │ │ │ │ cache: ✔ cacheVolume(key: "gomod", namespace: "internal"): CacheVolume! X.Xs
-│ │ │ │ │ │ path: "/go/pkg/mod"
-│ │ │ │ │ │ sharing: SHARED
-│ │ │ │ │ │ source: ✔ Container.directory(path: "/go/pkg/mod"): Directory! X.Xs
-│ │ │ │ │ ): Container! X.Xs
-│ │ │ │ ✔ .withMountedCache(
-│ │ │ │ │ │ cache: ✔ cacheVolume(key: "gobuild", namespace: "internal"): CacheVolume! X.Xs
-│ │ │ │ │ │ path: "/root/.cache/go-build"
-│ │ │ │ │ │ sharing: SHARED
-│ │ │ │ │ │ source: ✔ Container.directory(path: "/root/.cache/go-build"): Directory! X.Xs
-│ │ │ │ │ ): Container! X.Xs
-│ │ │ │ ✔ .__withSystemEnvVariable(name: "GOPROXY"): Container! X.Xs
-│ │ │ │ ✔ .__withSystemEnvVariable(name: "GODEBUG"): Container! X.Xs
-│ │ │ │
-│ │ │ │ ✔ Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
-│ │ │ │
-│ │ │ │ $ Container.withMountedFile(
-│ │ │ │ │ │ path: "/schema.json"
-│ │ │ │ │ │ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
-│ │ │ │ │ ): Container! X.Xs CACHED
-│ │ │ │ ✔ .withMountedDirectory(
-│ │ │ │ │ │ path: "/src"
-│ │ │ │ │ │ source: ✔ Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
-│ │ │ │ │ ): Container! X.Xs
-│ │ │ │ ✔ .withWorkdir(path: "/src"): Container! X.Xs
-│ │ │ │ ✔ .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
-│ │ │ │ ✔ .withoutDefaultArgs: Container! X.Xs
-│ │ │ │ $ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
-│ │ │ │ ✔ .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
-│ │ │ │ $ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
-│ │ │ │ ✔ .withEntrypoint(args: ["/runtime"]): Container! X.Xs
-│ │ │ │ ✔ .withWorkdir(path: "/scratch"): Container! X.Xs
-│ │ │ │ ✔ .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
-│ │ │ │ ✔ .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
-│ │ │ ✔ asModule getModDef X.Xs
-│ │ │ │ ✔ module: Module! X.Xs
-│ │ ✔ .serve(includeDependencies: true): Void X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
+│ │ │ ├─▼ Host.directory(path: "/app/dagql/idtui/viztest/dep", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
+│ │ │ │ ╰─▼ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
+│ │ │ │   ╰─▼ filesync X.Xs
+│ │ │ │     ╰─● copy X.Xs
+│ │ │ │      
+│ │ │ ╰─● sdkForModule: go X.Xs
+│ │ │  
+│ │ ├─▼ Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
+│ │ │ ╰─▼ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
+│ │ │   ╰─▼ filesync X.Xs
+│ │ │     ╰─● copy X.Xs
+│ │ │      
+│ │ ├─● sdkForModule: go X.Xs
+│ │ │
+│ │ ╰─● ModuleSource.withName(name: "dep"): ModuleSource! X.Xs
+│ ╰─● .configExists: Boolean! X.Xs
+│   ┃ true
+│  
+├─▼ initializing module X.Xs
+│ ├─▼ ModuleSource.asModule: Module! X.Xs
+│ │ ├─▼ load dep modules X.Xs
+│ │ │ ╰─▼ ModuleSource.asModule: Module! X.Xs
+│ │ │   ├─● load dep modules X.Xs
+│ │ │   │
+│ │ │   ├─● Container.directory(path: "/go/pkg/mod"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─● Container.directory(path: "/root/.cache/go-build"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─● Container.withMountedCache(
+│ │ │   │   ┆ path: "/go/pkg/mod"
+│ │ │   │   ┆ cache: cacheVolume(key: "gomod", namespace: "internal"): CacheVolume!
+│ │ │   │   ┆ source: Container.directory(path: "/go/pkg/mod"): Directory!
+│ │ │   │   ┆ sharing: SHARED
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .withMountedCache(
+│ │ │   │   ┆ path: "/root/.cache/go-build"
+│ │ │   │   ┆ cache: cacheVolume(key: "gobuild", namespace: "internal"): CacheVolume!
+│ │ │   │   ┆ source: Container.directory(path: "/root/.cache/go-build"): Directory!
+│ │ │   │   ┆ sharing: SHARED
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .__withSystemEnvVariable(name: "GOPROXY"): Container! X.Xs
+│ │ │   ├─● .__withSystemEnvVariable(name: "GODEBUG"): Container! X.Xs
+│ │ │   │
+│ │ │   ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
+│ │ │   │
+│ │ │   ├─$ Container.withMountedFile(
+│ │ │   │   ┆ path: "/schema.json"
+│ │ │   │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
+│ │ │   │   ): Container! X.Xs CACHED
+│ │ │   ├─● .withMountedDirectory(
+│ │ │   │   ┆ path: "/src"
+│ │ │   │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
+│ │ │   │   ): Container! X.Xs
+│ │ │   ├─● .withWorkdir(path: "/src"): Container! X.Xs
+│ │ │   ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
+│ │ │   ├─● .withoutDefaultArgs: Container! X.Xs
+│ │ │   ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "dep", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
+│ │ │   ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
+│ │ │   ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
+│ │ │   ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
+│ │ │   ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
+│ │ │   ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
+│ │ │   ├─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
+│ │ │   │
+│ │ │   ╰─▼ asModule getModDef X.Xs
+│ │ │     ╰─● module: Module! X.Xs
+│ │ │      
+│ │ ├─● Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
+│ │ │
+│ │ ├─$ Container.withMountedFile(
+│ │ │   ┆ path: "/schema.json"
+│ │ │   ┆ source: no(digest: "sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Missing
+│ │ │   ): Container! X.Xs CACHED
+│ │ ├─● .withMountedDirectory(
+│ │ │   ┆ path: "/src"
+│ │ │   ┆ source: Directory.withoutFile(path: "dagger.gen.go"): Directory!
+│ │ │   ): Container! X.Xs
+│ │ ├─● .withWorkdir(path: "/src"): Container! X.Xs
+│ │ ├─● .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
+│ │ ├─● .withoutDefaultArgs: Container! X.Xs
+│ │ ├─$ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
+│ │ ├─● .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
+│ │ ├─$ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
+│ │ ├─● .withEntrypoint(args: ["/runtime"]): Container! X.Xs
+│ │ ├─● .withWorkdir(path: "/scratch"): Container! X.Xs
+│ │ ├─● .withoutMount(path: "/go/pkg/mod"): Container! X.Xs
+│ │ ├─● .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs
+│ │ │
+│ │ ╰─● asModule getModDef X.Xs
+│ ╰─● .serve(includeDependencies: true): Void X.Xs
+│  
+├─▼ inspecting module metadata X.Xs
+│ ├─● ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
 │ │
-│ │ ✔ ModuleSource.digest: String! X.Xs
+│ ├─● ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
-│ │ ✔ ModuleSource.asString: String! X.Xs
+│ ├─● ModuleSource.commit: String! X.Xs
+│ │
+│ ├─● ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
-│ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
+│ ├─● ModuleSource.version: String! X.Xs
+│ │
+│ ├─● ModuleSource.sourceRootSubpath: String! X.Xs
 │ │ ┃ .
 │ │
-│ │ ✔ ModuleSource.htmlRepoURL: String! X.Xs
+│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
 │ │
-│ │ ✔ ModuleSource.version: String! X.Xs
-│ │
-│ │ ✔ ModuleSource.commit: String! X.Xs
-│ │
-│ │ ✔ Module.name: String! X.Xs
+│ ├─● Module.name: String! X.Xs
 │ │ ┃ viztest
 │ │
-│ │ ✔ Module.description: String! X.Xs
+│ ├─● Module.dependencies: [Module!]! X.Xs
 │ │
-│ │ ✔ Module.dependencies: [Module!]! X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✔ .diskMetrics: String! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
-│ ✔ container: Container! X.Xs
-│ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
-│ │ │ ✔ remotes.docker.resolver.HTTPRequest X.Xs
-│ │ │ │ ✔ HTTP HEAD X.Xs
+│ ├─● Module.description: String! X.Xs
 │ │
-│ │ $ Container.from(address: "docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
-│ │ │ ✔ resolving docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs
-│ ✔ .withEnvVariable(name: "cache_bust", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-│ ✔ .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+│ ├─● Missing.name: String! X.Xs
+│ │ ┃ dep
+│ │
+│ ├─● Missing.description: String! X.Xs
+│ │
+│ ├─● Missing.source: ModuleSource! X.Xs
+│ ├─● .digest: String! X.Xs
+│ │ ┃ xxh3:XXXXXXXXXXXXXXXX
+│ │
+│ ╰─● ModuleSource.asString: String! X.Xs
+│   ┃ /app/dagql/idtui/viztest/dep
+│  
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● viztest: Viztest! X.Xs
+▼ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+├─● container: Container! X.Xs
+├─▼ .from(address: "alpine"): Container! X.Xs CACHED
+│ ├─▼ resolving docker.io/library/alpine:latest X.Xs
+│ │ ╰─▼ remotes.docker.resolver.HTTPRequest X.Xs
+│ │   ╰─● HTTP HEAD X.Xs
+│ │    
+│ ╰─▼ Container.from(address: "docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
+│   ╰─● resolving docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs
+├─● .withEnvVariable(name: "cache_bust", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
+├─● .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
 │ ┃ 1000+0 records in
 │ ┃ 1000+0 records out
 │ ┃ XX bytes (X.X B) copied, X.X seconds, X.X B/s
-│ ✔ .stdout: String! X.Xs
+╰─● .stdout: String! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

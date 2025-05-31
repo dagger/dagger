@@ -1,26 +1,26 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✔ .encapsulate: Void X.Xs
-│ ✔ container: Container! X.Xs
-│ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-│ ✘ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
-│ ┃ im doing a lot of work
-│ ┃ and then failing
-│ ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+● viztest: Viztest! X.Xs
+▼ .encapsulate: Void X.Xs
+├─● container: Container! X.Xs
+├─$ .from(address: "alpine"): Container! X.Xs CACHED
+├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
+╰─✘ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
+  ┃ im doing a lot of work
+  ┃ and then failing
+  ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -1,28 +1,28 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✔ .cachedExecs: Void X.Xs
-│ ✔ container: Container! X.Xs
-│ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ $ .withExec(args: ["echo", "cached-execs cached for good"]): Container! X.Xs CACHED
-│ $ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
-│ ✔ .withExec(args: ["echo", "im a buster", "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+● viztest: Viztest! X.Xs
+▼ .cachedExecs: Void X.Xs
+├─● container: Container! X.Xs
+├─$ .from(address: "alpine"): Container! X.Xs CACHED
+├─$ .withExec(args: ["echo", "cached-execs cached for good"]): Container! X.Xs CACHED
+├─$ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
+├─● .withExec(args: ["echo", "im a buster", "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
-│ ✔ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
-│ ┃ im busted by that buster
+├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
+╰─● .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
+  ┃ im busted by that buster
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

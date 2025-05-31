@@ -1,0 +1,66 @@
+Expected stdout:
+
+level-1
+level-2
+
+
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● viztest: Viztest! X.Xs
+▼ .nestedCalls: [String!]! X.Xs
+├─$ file(name: "file", contents: "hey"): File! X.Xs CACHED
+│
+├─● directory: Directory! X.Xs
+├─$ .withFile(
+│   ┆ path: "file"
+│   ┆ source: file(name: "file", contents: "hey"): File!
+│   ┆ permissions: 420
+│   ): Directory! X.Xs CACHED
+│
+├─$ Directory.withDirectory(
+│   ┆ path: "sub"
+│   ┆ directory: Directory.withFile(
+│   ┆ ┆ path: "file"
+│   ┆ ┆ source: file(name: "file", contents: "hey"): File!
+│   ┆ ┆ permissions: 420
+│   ┆ ): Directory!
+│   ): Directory! X.Xs CACHED
+│
+├─● container: Container! X.Xs
+├─$ .withDirectory(
+│   ┆ path: "/level-1"
+│   ┆ directory: Directory.withFile(
+│   ┆ ┆ path: "file"
+│   ┆ ┆ source: file(name: "file", contents: "hey"): File!
+│   ┆ ┆ permissions: 420
+│   ┆ ): Directory!
+│   ): Container! X.Xs CACHED
+├─$ .withDirectory(
+│   ┆ path: "/level-2"
+│   ┆ directory: Directory.withDirectory(
+│   ┆ ┆ path: "sub"
+│   ┆ ┆ directory: Directory.withFile(
+│   ┆ ┆ ┆ path: "file"
+│   ┆ ┆ ┆ source: file(name: "file", contents: "hey"): File!
+│   ┆ ┆ ┆ permissions: 420
+│   ┆ ┆ ): Directory!
+│   ┆ ): Directory!
+│   ): Container! X.Xs CACHED
+├─● .rootfs: Directory! X.Xs
+╰─● .entries: [String!]! X.Xs
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -212,8 +212,6 @@ func (sdk *goSDK) Runtime(
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (_ *core.Container, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err

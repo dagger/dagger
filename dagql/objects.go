@@ -384,6 +384,20 @@ type preselectResult struct {
 	doNotCache bool
 }
 
+// sortArgsToSchema sorts the arguments to match the schema definition order.
+func (r Instance[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []*call.Argument) {
+	inputs := fieldSpec.Args.Inputs(view)
+	sort.Slice(idArgs, func(i, j int) bool {
+		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[i].Name()
+		})
+		jIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[j].Name()
+		})
+		return iIdx < jIdx
+	})
+}
+
 func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
@@ -426,10 +440,8 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
+
+	r.sortArgsToSchema(field.Spec, view, idArgs)
 
 	astType := field.Spec.Type.Type()
 	if sel.Nth != 0 {
@@ -478,6 +490,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 					))
 				}
 			}
+			r.sortArgsToSchema(field.Spec, view, idArgs)
 			newID = r.Constructor.Append(
 				astType,
 				sel.Field,
