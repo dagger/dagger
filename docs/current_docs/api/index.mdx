@@ -222,4 +222,4 @@ The Dagger API is extensible and shareable by design. You can extend the API wit
 
 Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 
-When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
+When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
