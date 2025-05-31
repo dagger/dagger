@@ -9,10 +9,14 @@ import (
 	"strconv"
 	"strings"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	bksession "github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/core/reffs"
@@ -22,6 +26,7 @@ import (
 )
 
 type HasPBDefinitions interface {
+	// PBDefinitions returns all the buildkit definitions that are part of a core type
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
@@ -63,6 +68,11 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 	}
 }
 
+type HasRawDigest interface {
+	// RawDigest computes a content-digest of an object, *not* including any buildkit definitions
+	RawDigest() digest.Digest
+}
+
 func absPath(workDir string, containerPath string) string {
 	if path.IsAbs(containerPath) {
 		return containerPath
@@ -76,7 +86,7 @@ func absPath(workDir string, containerPath string) string {
 }
 
 func defToState(def *pb.Definition) (llb.State, error) {
-	if def.Def == nil {
+	if def == nil || def.Def == nil {
 		// NB(vito): llb.Scratch().Marshal().ToPB() produces an empty
 		// *pb.Definition. If we don't convert it properly back to a llb.Scratch()
 		// we'll hit 'cannot marshal empty definition op' when trying to marshal it
@@ -273,4 +283,20 @@ func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// MountRef is a utility for easily mounting a ref
+func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	mount, err := ref.Mount(ctx, false, g)
+	if err != nil {
+		return err
+	}
+	lm := snapshot.LocalMounter(mount)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+	return f(dir)
 }

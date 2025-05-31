@@ -26,6 +26,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -421,7 +422,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withExec", s.withExec).
+		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -461,21 +462,22 @@ func (s *containerSchema) Install() {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
+				// dagql.Arg("nestedExecMetadata"),
 			),
 
-		dagql.Func("stdout", s.stdout(false)).
+		dagql.Func("stdout", s.stdout).
 			View(AllVersion).
 			Doc(`The buffered standard output stream of the last executed command`,
 				`Returns an error if no command was executed`),
-		dagql.Func("stdout", s.stdout(true)).
+		dagql.NodeFunc("stdout", s.stdoutLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.Func("stderr", s.stderr(false)).
+		dagql.Func("stderr", s.stderr).
 			View(AllVersion).
 			Doc(`The buffered standard error stream of the last executed command`,
 				`Returns an error if no command was executed`),
-		dagql.Func("stderr", s.stderr(true)).
+		dagql.NodeFunc("stderr", s.stderrLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
@@ -862,7 +864,53 @@ type containerExecArgs struct {
 	SkipEntrypoint *bool `default:"false"`
 }
 
-func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+func metaMount(ctx context.Context, stdin string) (llb.State, string) {
+	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
+	if stdin != "" {
+		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
+	}
+
+	return llb.Scratch().File(
+			meta,
+			buildkit.WithTracePropagation(ctx),
+			buildkit.WithPassthrough(),
+		),
+		buildkit.MetaMountDestPath
+}
+
+func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
+	md := buildkit.ExecutionMetadataFromContext(ctx)
+	if md == nil {
+		md = &buildkit.ExecutionMetadata{}
+	}
+	if _, ok := core.DagOpFromContext[core.ContainerDagOp](ctx); !ok {
+		parent.Self = parent.Self.Clone()
+
+		st, _ := metaMount(ctx, args.Stdin)
+		def, err := st.Marshal(ctx, llb.Platform(parent.Self.Platform.Spec()))
+		if err != nil {
+			return inst, err
+		}
+		parent.Self.Meta = def.ToPB()
+
+		execMD := buildkit.ExecutionMetadata{}
+		if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
+			execMD = *md
+		}
+		if args.ExperimentalPrivilegedNesting {
+			execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
+		}
+		ctx = buildkit.ContextWithExecutionMetadata(ctx, &execMD)
+
+		inst, err := DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
+		if err != nil {
+			return inst, err
+		}
+
+		inst.Self.ImageRef = ""
+		return inst, nil
+	}
+
 	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
@@ -870,58 +918,93 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
-		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
+		expandedArg, err := expandEnvVar(ctx, parent.Self, arg, args.Expand)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 
 		expandedArgs[i] = expandedArg
 	}
 	args.Args = expandedArgs
 
-	return parent.WithExec(ctx, args.ContainerExecOpts)
+	ctr, err := parent.Self.WithExec(ctx, args.ContainerExecOpts)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
-func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
-	if useEntrypoint {
-		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-			out, err := parent.Stdout(ctx)
-			if errors.Is(err, core.ErrNoCommand) {
-				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-					UseEntrypoint: true,
-				})
-				if err != nil {
-					return "", err
-				}
-				return ctr.Stdout(ctx)
-			}
-			return out, err
-		}
+func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	execMD := buildkit.ExecutionMetadata{}
+	if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
+		execMD = *md
 	}
-	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-		return parent.Stdout(ctx)
+	if args.ExperimentalPrivilegedNesting {
+		execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
 	}
+
+	// execMDDigest, err := execMD.CacheKey(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMD.CacheMixin.String())
+	return &cacheCfg, nil
 }
 
-func (s *containerSchema) stderr(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
-	if useEntrypoint {
-		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-			out, err := parent.Stderr(ctx)
-			if errors.Is(err, core.ErrNoCommand) {
-				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-					UseEntrypoint: true,
-				})
-				if err != nil {
-					return "", err
-				}
-				return ctr.Stderr(ctx)
-			}
-			return out, err
+func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.Stdout(ctx)
+}
+
+func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (string, error) {
+	out, err := parent.Self.Stdout(ctx)
+	if errors.Is(err, core.ErrNoCommand) {
+		var ctr dagql.Instance[*core.Container]
+		if err := s.srv.Select(ctx, parent, &ctr, dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{},
+				},
+				{
+					Name:  "useEntrypoint",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		}); err != nil {
+			return "", err
 		}
+		return ctr.Self.Stdout(ctx)
 	}
-	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-		return parent.Stderr(ctx)
+	return out, err
+}
+
+func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.Stderr(ctx)
+}
+
+func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (string, error) {
+	out, err := parent.Self.Stderr(ctx)
+	if errors.Is(err, core.ErrNoCommand) {
+		var ctr dagql.Instance[*core.Container]
+		if err := s.srv.Select(ctx, parent, &ctr, dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{},
+				},
+				{
+					Name:  "useEntrypoint",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		}); err != nil {
+			return "", err
+		}
+		return ctr.Self.Stderr(ctx)
 	}
+	return out, err
 }
 
 func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
@@ -1878,7 +1961,7 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = op.Mount(ctx, bkref, func(out string) error {
+	err = core.MountRef(ctx, bkref, op.Group(), func(out string) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

@@ -321,92 +321,63 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		return solvererror.WithSolveError(baseErr, fileErr.ToSubject(), nil, nil)
 	}
 
-	if execErr == nil {
-		return baseErr
-	}
-
-	var opErr *solvererror.OpError
-	if !errors.As(baseErr, &opErr) {
-		return baseErr
-	}
-	op := opErr.Op
-	if op == nil || op.Op == nil {
-		return baseErr
-	}
-	execOp, ok := op.Op.(*bksolverpb.Op_Exec)
-	if !ok {
-		return baseErr
-	}
-
-	// This was an exec error, we will retrieve the exec's output and include
-	// it in the error message
-
-	// get the mnt corresponding to the metadata where stdout/stderr are stored
-	var metaMountResult bksolver.Result
-	for i, mnt := range execOp.Exec.Mounts {
-		if mnt.Dest == MetaMountDestPath {
-			metaMountResult = execErr.Mounts[i]
-			break
+	var ierr InteractiveError
+	if errors.As(baseErr, &ierr) {
+		// XXX: secret env handling?
+		if ierr.Meta == nil {
+			return baseErr
 		}
-	}
-	if metaMountResult == nil {
-		return baseErr
-	}
+		exec := &bksolverpb.ExecOp{
+			Meta: &bksolverpb.Meta{
+				Args:     ierr.Meta.Args,
+				Env:      ierr.Meta.Env,
+				Cwd:      ierr.Meta.Cwd,
+				User:     ierr.Meta.User,
+				Hostname: ierr.Meta.Hostname,
+				// ReadonlyRootFS:            p.ReadonlyRootFS,
+				// ExtraHosts:                extraHosts,
+				Ulimit:       ierr.Meta.Ulimit,
+				CgroupParent: ierr.Meta.CgroupParent,
+			},
+			Security: ierr.Meta.SecurityMode,
+			Network:  ierr.Meta.NetMode,
+			Mounts:   ierr.Mounts,
+		}
+		if err := debugContainer(ctx, ierr.ExecMD, exec, ierr.ExecError, client); err != nil {
+			return err
+		}
 
-	workerRef, ok := metaMountResult.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return errors.Join(baseErr, fmt.Errorf("invalid ref type: %T", metaMountResult.Sys()))
-	}
-	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-
-	stdoutBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-	stderrBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-	exitCode := -1
-	if len(exitCodeBytes) > 0 {
-		exitCode, err = strconv.Atoi(string(exitCodeBytes))
+		// This was an exec error, we will retrieve the exec's output and include
+		// it in the error message
+		// get the mnt corresponding to the metadata where stdout/stderr are stored
+		var metaMountResult bksolver.Result
+		for i, mnt := range ierr.Mounts {
+			if mnt.Dest == MetaMountDestPath {
+				metaMountResult = ierr.ExecError.Mounts[i]
+				break
+			}
+		}
+		if metaMountResult == nil {
+			return baseErr
+		}
+		stdout, stderr, exitCode, err := getExecMeta(ctx, client, metaMountResult)
 		if err != nil {
 			return errors.Join(err, baseErr)
 		}
+		return &ExecError{
+			original: baseErr,
+			Cmd:      ierr.Meta.Args,
+			ExitCode: exitCode,
+			Stdout:   strings.TrimSpace(string(stdout)),
+			Stderr:   strings.TrimSpace(string(stderr)),
+		}
 	}
 
-	// Start a debug container if the exec failed
-	if err := debugContainer(ctx, execOp.Exec, execErr, opErr, client); err != nil {
-		return err
-	}
-
-	return &ExecError{
-		original: baseErr,
-		Cmd:      execOp.Exec.Meta.Args,
-		ExitCode: exitCode,
-		Stdout:   strings.TrimSpace(string(stdoutBytes)),
-		Stderr:   strings.TrimSpace(string(stderrBytes)),
-	}
+	return baseErr
 }
 
-func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, opErr *solvererror.OpError, client *Client) error {
+func debugContainer(ctx context.Context, execMd *ExecutionMetadata, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, client *Client) error {
 	if !client.Opts.Interactive {
-		return nil
-	}
-
-	execMd, ok, err := ExecutionMetadataFromDescription(opErr.Description)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve execution metadata: %w", err)
-	}
-	if !ok {
-		// containers created by buildkit internals like the dockerfile frontend
 		return nil
 	}
 
@@ -553,6 +524,40 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	})
 
 	return eg.Wait()
+}
+
+func getExecMeta(ctx context.Context, client *Client, metaMount bksolver.Result) (stdout []byte, stderr []byte, exitCode int, _ error) {
+	workerRef, ok := metaMount.Sys().(*bkworker.WorkerRef)
+	if !ok {
+		return nil, nil, 0, fmt.Errorf("invalid ref type: %T", metaMount.Sys())
+	}
+	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	stdout, err = getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	stderr, err = getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	exitCode = -1
+	if len(exitCodeBytes) > 0 {
+		exitCode, err = strconv.Atoi(string(exitCodeBytes))
+		if err != nil {
+			return nil, nil, 0, err
+		}
+	}
+
+	return stdout, stderr, exitCode, nil
 }
 
 func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
