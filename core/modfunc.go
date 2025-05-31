@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/telemetry"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
@@ -19,6 +20,8 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -382,7 +385,26 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			return nil, errInst.Self
+			dagErr := errInst.Self
+			originCtx := trace.SpanContextFromContext(
+				telemetry.Propagator.Extract(ctx, telemetry.AnyMapCarrier(dagErr.Extensions())),
+			)
+			if !originCtx.IsValid() {
+				tm := propagation.MapCarrier{}
+				telemetry.Propagator.Inject(ctx, tm)
+				for _, key := range tm.Keys() {
+					val := tm.Get(key)
+					valJSON, err := json.Marshal(val)
+					if err != nil {
+						return nil, fmt.Errorf("failed to marshal value: %w", err)
+					}
+					dagErr.Values = append(dagErr.Values, &ErrorValue{
+						Name:  key,
+						Value: JSON(valJSON),
+					})
+				}
+			}
+			return nil, dagErr
 		}
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)

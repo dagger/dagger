@@ -25,6 +25,8 @@ type Span struct {
 	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
 
+	ErrorOrigin *Span `json:"-"`
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
@@ -63,6 +65,15 @@ func (span *Span) Call() *callpbv1.Call {
 	}
 	span.callCache = span.db.Call(span.CallDigest)
 	return span.callCache
+}
+
+func (span *Span) IsEffect() bool {
+	for _, link := range span.Links {
+		if link.Purpose == telemetry.LinkPurposeCause {
+			return true
+		}
+	}
+	return false
 }
 
 func (span *Span) Base() *callpbv1.Call {
@@ -114,12 +125,12 @@ type SpanSnapshot struct {
 	StartTime time.Time
 	EndTime   time.Time
 
-	Activity Activity `json:",omitempty"`
+	Activity Activity `json:",omitzero"`
 
-	ParentID SpanID        `json:",omitempty"`
-	Links    []SpanContext `json:",omitempty"`
+	ParentID SpanID     `json:",omitzero"`
+	Links    []SpanLink `json:",omitempty"`
 
-	Status sdktrace.Status `json:",omitempty"`
+	Status sdktrace.Status `json:",omitzero"`
 
 	// statuses derived from span and its effects
 	Failed_         bool     `json:",omitempty"`
@@ -160,6 +171,11 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+}
+
+type SpanLink struct {
+	SpanContext SpanContext
+	Purpose     string
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
@@ -404,21 +420,6 @@ func (span *Span) Parents(f func(*Span) bool) {
 			}
 		}
 	}
-}
-
-func (span *Span) VisibleParent(opts FrontendOpts) *Span {
-	if span.ParentSpan == nil {
-		return nil
-	}
-	// TODO: check links first?
-	if span.ParentSpan.Passthrough {
-		return span.ParentSpan.VisibleParent(opts)
-	}
-	for link := range span.CausalSpans {
-		// prioritize causal spans over the unlazier
-		return link
-	}
-	return span.ParentSpan
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {

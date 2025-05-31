@@ -46,6 +46,9 @@ type FrontendOpts struct {
 	// SpanVerbosity tracks per-span verbosity.
 	SpanVerbosity map[SpanID]int
 
+	// Whether the span has been expanded by the user.
+	SpanExpanded map[SpanID]bool
+
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
 

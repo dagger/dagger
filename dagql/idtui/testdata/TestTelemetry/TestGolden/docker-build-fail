@@ -1,40 +1,40 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✘ .dockerBuildFail: Container! X.Xs
+● viztest: Viztest! X.Xs
+▼ .dockerBuildFail: Container! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-│ ✔ directory: Directory! X.Xs
-│ ✔ .withNewFile(contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n", path: "Dockerfile"): Directory! X.Xs
-│ ✘ .dockerBuild: Container! X.Xs
-│ ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-│ │ $ [1/4] FROM docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
-│ │ ✔ [2/4] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
-│ │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ ✔ [3/4] RUN echo hello, world! X.Xs
-│ │ ┃ hello, world!
-│ │ ✘ [4/4] RUN echo im failing && false X.Xs
-│ │ ┃ im failing
-│ │ ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-✔ .withExec(args: ["echo", "hey"]): Container! X.Xs
-✘ .stdout: String! X.Xs
+├─● directory: Directory! X.Xs
+├─● .withNewFile(path: "Dockerfile", contents: "FROM busybox:1.34\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n"): Directory! X.Xs
+╰─▼ .dockerBuild: Container! X.Xs ERROR
+  ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+  ├─$ [1/4] FROM docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
+  ├─● [2/4] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+  │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  ├─● [3/4] RUN echo hello, world! X.Xs
+  │ ┃ hello, world!
+  ╰─✘ [4/4] RUN echo im failing && false X.Xs ERROR
+    ┃ im failing
+    ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+● .withExec(args: ["echo", "hey"]): Container! X.Xs
+✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 
 Error logs:
 
-✘ [4/4] RUN echo im failing && false X.Xs
+✘ [4/4] RUN echo im failing && false X.Xs ERROR
 im failing
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 

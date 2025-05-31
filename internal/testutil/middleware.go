@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/testctx"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -26,7 +27,7 @@ func SpanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
 		attribute.String(testctxTypeAttr, fmt.Sprintf("%T", t)),
 	}
 	if strings.Count(w.Name(), "/") == 0 {
-		attrs = append(attrs, attribute.Bool("dagger.io/ui.reveal", true)) // TODO use telemetry const
+		attrs = append(attrs, attribute.Bool(telemetry.UIRevealAttr, true))
 	}
 	if isPrewarm() {
 		attrs = append(attrs, attribute.Bool(testctxPrewarmAttr, true))

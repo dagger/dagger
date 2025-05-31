@@ -684,7 +684,12 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "), trace.WithLinks(
-		trace.Link{SpanContext: svc.Creator},
+		trace.Link{
+			SpanContext: svc.Creator,
+			Attributes: []attribute.KeyValue{
+				attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+			},
+		},
 	))
 	defer func() {
 		if rerr != nil {

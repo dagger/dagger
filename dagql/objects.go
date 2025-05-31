@@ -355,7 +355,7 @@ func (r Instance[T]) GetPostCall() (cache.PostCallFunc, Typed) {
 	return r.postCall, r
 }
 
-func NoopDone(res Typed, cached bool, rerr error) {}
+func NoopDone(res Typed, cached bool, rerr error) error { return rerr }
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
@@ -382,6 +382,20 @@ type preselectResult struct {
 	inputArgs  map[string]Input
 	newID      *call.ID
 	doNotCache bool
+}
+
+// sortArgsToSchema sorts the arguments to match the schema definition order.
+func (r Instance[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []*call.Argument) {
+	inputs := fieldSpec.Args.Inputs(view)
+	sort.Slice(idArgs, func(i, j int) bool {
+		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[i].Name()
+		})
+		jIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[j].Name()
+		})
+		return iIdx < jIdx
+	})
 }
 
 func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
@@ -426,10 +440,8 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
+
+	r.sortArgsToSchema(field.Spec, view, idArgs)
 
 	astType := field.Spec.Type.Type()
 	if sel.Nth != 0 {
@@ -478,6 +490,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 					))
 				}
 			}
+			r.sortArgsToSchema(field.Spec, view, idArgs)
 			newID = r.Constructor.Append(
 				astType,
 				sel.Field,
@@ -560,7 +573,7 @@ func (r Instance[T]) call(
 
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error)) {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error) error) {
 			return s.telemetry(ctx, r, newID)
 		}))
 	}

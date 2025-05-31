@@ -5,28 +5,28 @@ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ typescript: Typescript! X.Xs
-✔ .customSpan: String! X.Xs
+● typescript: Typescript! X.Xs
+▼ .customSpan: String! X.Xs
 ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
-│ ✔ custom span X.Xs
-│ │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-│ │ ✔ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
-│ │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
-│ │ ✔ .stdout: String! X.Xs
-│ │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
+╰─▼ custom span X.Xs
+  ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├─● .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+  │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
+  ╰─● .stdout: String! X.Xs
+    ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
