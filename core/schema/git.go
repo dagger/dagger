@@ -176,8 +176,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, err
 		}
 		gitServices = append(gitServices, core.ServiceBinding{
-			ID:       svc.ID(),
-			Service:  svc.Self,
+			Service:  svc,
 			Hostname: host,
 		})
 	}

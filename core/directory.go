@@ -60,7 +60,7 @@ func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, erro
 		defs = append(defs, dir.LLB)
 	}
 	for _, bnd := range dir.Services {
-		ctr := bnd.Service.Container
+		ctr := bnd.Service.Self.Container
 		if ctr == nil {
 			continue
 		}

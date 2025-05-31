@@ -225,7 +225,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service, false)
+			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self, false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
