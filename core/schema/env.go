@@ -25,6 +25,20 @@ func (s environmentSchema) Install() {
 			),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
+		dagql.Func("withBinding", s.withBinding).
+			Doc("bind an object to the env").
+			Args(
+				dagql.Arg("name").Doc("Binding name"),
+				dagql.Arg("value").Doc("Object to bind"),
+				dagql.Arg("description").Doc("Binding description"),
+			),
+		dagql.Func("bindings", s.bindings).
+			Doc("return all object bindings"),
+		dagql.Func("binding", s.binding).
+			Doc("retrieve an object binding").
+			Args(
+				dagql.Arg("name").Doc("The binding name"),
+			),
 		dagql.Func("inputs", s.inputs).
 			Doc("return all input values for the environment"),
 		dagql.Func("input", s.input).
@@ -108,6 +122,32 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 
 func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
 	return env.Outputs(), nil
+}
+
+func (s environmentSchema) withBinding(ctx context.Context, env *core.Env, args struct {
+	Name        dagql.String
+	Value       dagql.String
+	Description dagql.Optional[dagql.String]
+}) (*core.Env, error) {
+	obj, err := core.ID(args.Value).Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithBinding(args.Name.String(), obj, args.Description.GetOr("").String()), nil
+}
+
+func (s environmentSchema) binding(ctx context.Context, env *core.Env, args struct {
+	Name string
+}) (*core.Binding, error) {
+	b, found := env.Binding(args.Name)
+	if found {
+		return b, nil
+	}
+	return nil, fmt.Errorf("binding not found: %s", args.Name)
+}
+
+func (s environmentSchema) bindings(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+	return env.Bindings(), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
