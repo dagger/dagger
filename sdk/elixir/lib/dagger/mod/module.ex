@@ -28,6 +28,20 @@ defmodule Dagger.Mod.Module do
     |> Dagger.TypeDef.with_object(Helper.camelize(mod_name))
     |> then(&define_fields(&1, dag, module))
     |> then(&define_functions(&1, dag, module))
+    |> then(&define_constructor(&1, dag, module))
+  end
+
+  defp define_constructor(type_def, dag, module) do
+    case Enum.find(module.__object__(:functions), &init?/1) do
+      nil ->
+        type_def
+
+      {name, fun_def} ->
+        type_def
+        |> Dagger.TypeDef.with_constructor(
+          FunctionDef.to_dag_function(fun_def, name, module, dag)
+        )
+    end
   end
 
   defp define_fields(type_def, dag, module) do
@@ -39,8 +53,12 @@ defmodule Dagger.Mod.Module do
 
   defp define_functions(type_def, dag, module) do
     module.__object__(:functions)
+    |> Enum.reject(&init?/1)
     |> Enum.reduce(type_def, fn {name, fun_def}, type_def ->
       FunctionDef.define(fun_def, name, module, type_def, dag)
     end)
   end
+
+  defp init?({:init, _}), do: true
+  defp init?({_, _}), do: false
 end
