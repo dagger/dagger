@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/spf13/cobra"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -438,6 +439,38 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 Writes any specified operands, separated by single blank (' ') characters and followed by a newline ('\n') character, to the standard output. If the -n option is specified, the trailing newline is suppressed.
 `,
+		},
+		&ShellCommand{
+			Use:  ".printenv [name]",
+			Args: MaximumArgs(1),
+			Description: `Show available environment variables or a specific variable
+
+If no name is provided, all environment variables are printed. If a name is provided, the value of that environment variable is printed.
+			`,
+			State: NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
+
+				if len(args) == 0 {
+					// Print all environment variables
+					hc.Env.Each(func(name string, v expand.Variable) bool {
+						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, v.String())
+						return true
+					})
+
+					return nil
+				}
+
+				// Print a specific environment variable
+				name := args[0]
+
+				v := hc.Env.Get(name)
+				if !v.IsSet() {
+					return fmt.Errorf("environment variable %q not set", name)
+				}
+
+				return h.Print(ctx, v.String())
+			},
 		},
 		&ShellCommand{
 			Use: ".wait",
