@@ -1453,3 +1453,69 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		})
 	})
 }
+
+func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		Description   string
+		Path          string
+		Type          string
+		Expected      bool
+		ErrorContains string
+	}{
+		{
+			Description: "test no existance",
+			Path:        "quotes",
+			Type:        "",
+			Expected:    true,
+		},
+		{
+			Description: "test existance works on a directory",
+			Path:        "quotes",
+			Type:        "",
+			Expected:    true,
+		},
+		{
+			Description: "test is a directory",
+			Path:        "quotes",
+			Type:        "dir",
+			Expected:    true,
+		},
+		{
+			Description: "test is a directory fails",
+			Path:        "quotes/descartes",
+			Type:        "dir",
+			Expected:    false,
+		},
+		{
+			Description: "test is a file",
+			Path:        "quotes/descartes",
+			Type:        "file",
+			Expected:    true,
+		},
+		{
+			Description: "test is a file fails",
+			Path:        "quotes",
+			Type:        "file",
+			Expected:    false,
+		},
+		{
+			Description:   "test type must be valid",
+			Path:          "quotes",
+			Type:          "is-there-a-way-to-use-an-enum-instead",
+			Expected:      false,
+			ErrorContains: "invalid path type",
+		},
+	} {
+		t.Run(tc.Description, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			quotesDir := c.Directory().WithNewFile("quotes/descartes", "Cogito, ergo sum")
+			exists, err := quotesDir.Exists(ctx, tc.Path, tc.Type)
+			if tc.ErrorContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.ErrorContains)
+			}
+			require.Equal(t, tc.Expected, exists)
+		})
+	}
+}

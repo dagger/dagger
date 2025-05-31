@@ -2450,6 +2450,7 @@ type Directory struct {
 	query *querybuilder.Selection
 
 	digest *string
+	exists *bool
 	export *string
 	id     *DirectoryID
 	name   *string
@@ -2637,6 +2638,32 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	}
 
 	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// DirectoryExistsOpts contains options for Directory.Exists
+type DirectoryExistsOpts struct {
+	// If specified, check that the path is a "file", "dir", or "symlink".
+	ExpectedType string
+}
+
+// check if a file or directory exists
+func (r *Directory) Exists(ctx context.Context, path string, opts ...DirectoryExistsOpts) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expectedType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedType) {
+			q = q.Arg("expectedType", opts[i].ExpectedType)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

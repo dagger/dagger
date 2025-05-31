@@ -4316,6 +4316,12 @@ pub struct DirectoryEntriesOpts<'a> {
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryExistsOpts<'a> {
+    /// If specified, check that the path is a "file", "dir", or "symlink".
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExportOpts {
     /// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
     #[builder(setter(into, strip_option), default)]
@@ -4550,6 +4556,35 @@ impl Directory {
         let mut query = self.selection.select("entries");
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryExistsOpts<'a>,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
         }
         query.execute(self.graphql_client.clone()).await
     }

@@ -769,6 +769,62 @@ func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory,
 	return dir, nil
 }
 
+func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath, targetType string) (bool, error) {
+	res, err := dir.Evaluate(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return false, err
+	}
+	if ref == nil {
+		return false, nil
+	}
+
+	immutableRef, err := ref.CacheRef(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	osStatFunc := os.Stat
+	if targetType == "symlink" {
+		// symlink testing requires the Lstat call, which does NOT follow symlinks
+		osStatFunc = os.Lstat
+	}
+
+	var fileInfo os.FileInfo
+	err = MountRef(ctx, immutableRef, nil, func(root string) error {
+		fileInfo, err = osStatFunc(path.Join(root, targetPath))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	if fileInfo == nil {
+		return false, nil // ErrNotExist occured
+	}
+
+	m := fileInfo.Mode()
+
+	switch targetType {
+	case "dir":
+		return m.IsDir(), nil
+	case "file":
+		return m.IsRegular(), nil
+	case "symlink":
+		return m&fs.ModeSymlink != 0, nil
+	case "":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid path type %s", targetType)
+	}
+}
+
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
 	svcs, err := dir.Query.Services(ctx)
 	if err != nil {
