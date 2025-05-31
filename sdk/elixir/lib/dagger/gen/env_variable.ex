@@ -4,6 +4,8 @@ defmodule Dagger.EnvVariable do
   An environment variable name and value.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EnvVariable"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

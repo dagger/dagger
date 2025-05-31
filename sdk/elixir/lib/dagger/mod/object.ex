@@ -128,6 +128,8 @@ defmodule Dagger.Mod.Object do
     name = opts[:name]
 
     quote do
+      use Dagger.Core.Base, kind: :object, name: unquote(name)
+
       import Dagger.Mod.Object, only: [defn: 2, field: 2, field: 3, object: 1]
       import Dagger.Global, only: [dag: 0]
 

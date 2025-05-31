@@ -4,5 +4,7 @@ defmodule Dagger.LabelID do
   The `LabelID` scalar type represents an identifier for an object of type Label.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "LabelID"
+
   @type t() :: String.t()
 end

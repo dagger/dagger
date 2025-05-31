@@ -115,3 +115,23 @@ defmodule ConstructorFunction do
     %__MODULE__{name: name}
   end
 end
+
+defmodule AcceptAndReturnScalar do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "AcceptAndReturnScalar"
+
+  defn accept(value: Dagger.Platform.t()) :: Dagger.Platform.t() do
+    value
+  end
+end
+
+defmodule AcceptAndReturnEnum do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "AcceptAndReturnEnum"
+
+  defn accept(value: Dagger.NetworkProtocol.t()) :: Dagger.NetworkProtocol.t() do
+    value
+  end
+end

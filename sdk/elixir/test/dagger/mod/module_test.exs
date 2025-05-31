@@ -196,6 +196,52 @@ defmodule Dagger.Mod.ModuleTest do
       assert {:ok, "ConstructorFunction"} =
                return_type_def |> Dagger.TypeDef.as_object() |> Dagger.ObjectTypeDef.name()
     end
+
+    test "accept and return scalar", %{dag: dag} do
+      assert {:ok, [accept]} =
+               root_object(dag, AcceptAndReturnScalar) |> Dagger.ObjectTypeDef.functions()
+
+      assert {:ok, [arg]} = Dagger.Function.args(accept)
+      assert {:ok, "value"} = Dagger.FunctionArg.name(arg)
+      arg_type_def = Dagger.FunctionArg.type_def(arg)
+      assert {:ok, :SCALAR_KIND} = Dagger.TypeDef.kind(arg_type_def)
+
+      assert {:ok, "Platform"} =
+               arg_type_def
+               |> Dagger.TypeDef.as_scalar()
+               |> Dagger.ScalarTypeDef.name()
+
+      return_type_def = Dagger.Function.return_type(accept)
+      assert {:ok, :SCALAR_KIND} = Dagger.TypeDef.kind(return_type_def)
+
+      assert {:ok, "Platform"} =
+               return_type_def
+               |> Dagger.TypeDef.as_scalar()
+               |> Dagger.ScalarTypeDef.name()
+    end
+
+    test "accept and return enum", %{dag: dag} do
+      assert {:ok, [accept]} =
+               root_object(dag, AcceptAndReturnEnum) |> Dagger.ObjectTypeDef.functions()
+
+      assert {:ok, [arg]} = Dagger.Function.args(accept)
+      assert {:ok, "value"} = Dagger.FunctionArg.name(arg)
+      arg_type_def = Dagger.FunctionArg.type_def(arg)
+      assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(arg_type_def)
+
+      assert {:ok, "NetworkProtocol"} =
+               arg_type_def
+               |> Dagger.TypeDef.as_enum()
+               |> Dagger.EnumTypeDef.name()
+
+      return_type_def = Dagger.Function.return_type(accept)
+      assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(return_type_def)
+
+      assert {:ok, "NetworkProtocol"} =
+               return_type_def
+               |> Dagger.TypeDef.as_enum()
+               |> Dagger.EnumTypeDef.name()
+    end
   end
 
   defp root_object(dag, module) do

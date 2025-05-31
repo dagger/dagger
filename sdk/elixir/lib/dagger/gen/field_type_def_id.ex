@@ -4,5 +4,7 @@ defmodule Dagger.FieldTypeDefID do
   The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "FieldTypeDefID"
+
   @type t() :: String.t()
 end

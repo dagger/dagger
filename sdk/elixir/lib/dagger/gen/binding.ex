@@ -4,6 +4,8 @@ defmodule Dagger.Binding do
   Dagger.Binding
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Binding"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

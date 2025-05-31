@@ -15,6 +15,11 @@ defmodule Dagger.Codegen.ElixirGenerator.InputRenderer do
 
   def render_module_body(type) do
     [
+      """
+      use Dagger.Core.Base, kind: :input, name: "#{type.name}"
+      """,
+      ?\n,
+      ?\n,
       "@type t() :: %__MODULE__{",
       Enum.map_intersperse(type.input_fields, ",", &render_struct_field/1),
       ?\n,

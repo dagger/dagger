@@ -12,6 +12,8 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRendererTest do
         Sharing mode of the cache volume.
         \"""
 
+        use Dagger.Core.Base, kind: :enum, name: "CacheSharingMode"
+
         @type t() :: :SHARED | :PRIVATE | :LOCKED
 
         @doc \"""

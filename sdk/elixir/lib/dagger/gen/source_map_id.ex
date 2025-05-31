@@ -4,5 +4,7 @@ defmodule Dagger.SourceMapID do
   The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "SourceMapID"
+
   @type t() :: String.t()
 end

@@ -4,6 +4,8 @@ defmodule Dagger.NetworkProtocol do
   Transport layer network protocol associated to a port.
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "NetworkProtocol"
+
   @type t() :: :TCP | :UDP
 
   @spec tcp() :: :TCP

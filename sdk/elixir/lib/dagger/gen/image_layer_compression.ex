@@ -4,6 +4,8 @@ defmodule Dagger.ImageLayerCompression do
   Compression algorithm to use for image layers.
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "ImageLayerCompression"
+
   @type t() :: :Gzip | :Zstd | :EStarGZ | :Uncompressed
 
   @spec gzip() :: :Gzip

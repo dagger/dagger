@@ -4,5 +4,7 @@ defmodule Dagger.FunctionCallID do
   The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "FunctionCallID"
+
   @type t() :: String.t()
 end

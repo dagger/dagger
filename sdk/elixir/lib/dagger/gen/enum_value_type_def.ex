@@ -4,6 +4,8 @@ defmodule Dagger.EnumValueTypeDef do
   A definition of a value in a custom enum defined in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EnumValueTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

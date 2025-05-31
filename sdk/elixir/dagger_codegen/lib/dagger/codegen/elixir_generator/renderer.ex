@@ -22,7 +22,6 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
       ?\n,
       ?\n,
       body,
-      ?\n,
       "end"
     ]
   end

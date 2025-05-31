@@ -4,6 +4,8 @@ defmodule Dagger.Engine do
   The Dagger engine configuration and state
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Engine"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
