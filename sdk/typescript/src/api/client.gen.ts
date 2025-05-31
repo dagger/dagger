@@ -810,6 +810,13 @@ export type EngineCacheEntrySetOpts = {
   key?: string
 }
 
+export type EngineCachePruneOpts = {
+  /**
+   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   */
+  useDefaultPolicy?: boolean
+}
+
 /**
  * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
  */
@@ -3535,13 +3542,14 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
+   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
-  prune = async (): Promise<void> => {
+  prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
       return
     }
 
-    const ctx = this._ctx.select("prune")
+    const ctx = this._ctx.select("prune", { ...opts })
 
     await ctx.execute()
   }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -247,12 +248,6 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest 
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
-}
-
-func (fe *frontendPretty) SetCustomExit(fn func()) {
-	fe.mu.Lock()
-	fe.Opts().CustomExit = fn
-	fe.mu.Unlock()
 }
 
 func (fe *frontendPretty) SetVerbosity(n int) {
@@ -533,21 +528,20 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	var showedKey bool
 	// Blank line prior to keymap
 	for _, key := range fe.keys(out) {
-		if !key.Enabled() {
+		mainKey := key.Keys()[0]
+		var pressed bool
+		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+			pressed = slices.Contains(key.Keys(), fe.pressedKey)
+		}
+		if !key.Enabled() && !pressed {
 			continue
 		}
-		mainKey := key.Keys()[0]
+		keyStyle := style
+		if pressed {
+			keyStyle = keyStyle.Foreground(nil)
+		}
 		if showedKey {
 			fmt.Fprint(w, style.Render(" · "))
-		}
-		keyStyle := style
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
-			for _, k := range key.Keys() {
-				if k == fe.pressedKey {
-					keyStyle = keyStyle.Foreground(nil)
-					// Reverse(true)
-				}
-			}
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
@@ -572,10 +566,20 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	var quitMsg string
 	if fe.interrupted {
 		quitMsg = "quit!"
+	} else if fe.shell != nil {
+		quitMsg = "interrupt"
 	} else {
 		quitMsg = "quit"
 	}
 
+	noExitHelp := "no exit"
+	if fe.NoExit {
+		color := termenv.ANSIYellow
+		if fe.done || fe.interrupted {
+			color = termenv.ANSIRed
+		}
+		noExitHelp = out.String(noExitHelp).Foreground(color).String()
+	}
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
@@ -590,12 +594,16 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("end", " "),
 			key.WithHelp("end", "last")),
 		key.NewBinding(key.WithKeys("enter"),
-			key.WithHelp("enter", "zoom"),
-			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+			key.WithHelp("enter", "zoom")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
+		key.NewBinding(key.WithKeys("E"),
+			key.WithHelp("E", noExitHelp)),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
+		key.NewBinding(key.WithKeys("esc"),
+			key.WithHelp("esc", "unzoom"),
+			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
 	}
 }
 
@@ -1262,6 +1270,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.program.ReleaseTerminal()
 		sigquit()
 		return nil
+	case "E":
+		fe.NoExit = !fe.NoExit
+		return nil
 	case "down", "j":
 		fe.goDown()
 		return nil
@@ -1485,11 +1496,6 @@ func (fe *frontendPretty) updatePrompt() tea.Cmd {
 }
 
 func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
-	if fe.CustomExit != nil {
-		fe.CustomExit()
-		return nil
-	}
-
 	if fe.done && fe.eof {
 		fe.quitting = true
 		// must have configured NoExit, and now they want

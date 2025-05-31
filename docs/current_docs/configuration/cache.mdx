@@ -45,3 +45,11 @@ To manually free up disk space used by the cache, use the following command:
 ```shell
 dagger core engine local-cache prune
 ```
+
+That will remove *all* cache entries not currently being used by connected clients from the disk.
+
+To instead trigger a prune that follows the same rules as specified in the engine's [configured cache garbage collection policy](./engine.mdx), use the following command:
+
+```shell
+dagger core engine local-cache prune --use-default-policy
+```

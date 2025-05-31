@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  Add support for using engine-wide default GC policy when triggering manual local cache prunes.
+
+  The manual prune API now supports an optional arg to enable honoring the engine-wide default automatic GC configuration. e.g.
+  ```
+  dagger core engine local-cache prune --use-default-policy
+  ```
+time: 2025-05-29T13:04:29.848988305-07:00
+custom:
+  Author: sipsma
+  PR: "10505"

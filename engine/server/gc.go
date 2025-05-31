@@ -46,8 +46,12 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 	return set, nil
 }
 
-// Prune everything that is releasable in the local cache. No support for filtering yet.
-func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
+// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
+// otherwise prune the whole cache of any releasable entries.
+func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, useDefaultPolicy bool) (*core.EngineCacheEntrySet, error) {
+	srv.gcmu.Lock()
+	defer srv.gcmu.Unlock()
+
 	srv.daggerSessionsMu.RLock()
 	cancelLeases := len(srv.daggerSessions) == 0
 	srv.daggerSessionsMu.RUnlock()
@@ -66,7 +70,11 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context) (*core.Engi
 		}
 	}()
 
-	err := srv.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{All: true})
+	pruneOpts := []bkclient.PruneInfo{{All: true}}
+	if policy := srv.baseWorker.GCPolicy(); useDefaultPolicy && len(policy) > 0 {
+		pruneOpts = policy
+	}
+	err := srv.baseWorker.Prune(ctx, ch, pruneOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
 	}
