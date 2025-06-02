@@ -879,10 +879,6 @@ func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
-	md := buildkit.ExecutionMetadataFromContext(ctx)
-	if md == nil {
-		md = &buildkit.ExecutionMetadata{}
-	}
 	if _, ok := core.DagOpFromContext[core.ContainerDagOp](ctx); !ok {
 		parent.Self = parent.Self.Clone()
 

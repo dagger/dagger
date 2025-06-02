@@ -364,6 +364,7 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		if err != nil {
 			return errors.Join(err, baseErr)
 		}
+		fmt.Println("returning wrapped", string(stdout), string(stderr))
 		return &ExecError{
 			original: baseErr,
 			Cmd:      ierr.Meta.Args,

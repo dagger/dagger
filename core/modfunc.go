@@ -13,9 +13,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
-	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
@@ -505,26 +503,15 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}()
 	}
 
-	var opErr *solvererror.OpError
-	if !errors.As(baseErr, &opErr) {
+	var ierr buildkit.InteractiveError
+	if !errors.As(baseErr, &ierr) {
 		return id, false, nil
 	}
-	op := opErr.Op
-	if op == nil || op.Op == nil {
-		return id, false, nil
-	}
-	execOp, ok := op.Op.(*bksolverpb.Op_Exec)
-	if !ok {
-		return id, false, nil
-	}
-
-	// This was an exec error, we will retrieve the exec's output and include
-	// it in the error message
 
 	// get the mnt containing module response data (in this case, the error ID)
 	var metaMountResult bksolver.Result
 	var foundMounts []string
-	for i, mnt := range execOp.Exec.Mounts {
+	for i, mnt := range ierr.Mounts {
 		foundMounts = append(foundMounts, mnt.Dest)
 		if mnt.Dest == modMetaDirPath {
 			metaMountResult = execErr.Mounts[i]

@@ -152,18 +152,6 @@ func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, erro
 	return ExecutionMetadataFromDescription(vtx.Options().Description)
 }
 
-func ContextWithExecutionMetadata(ctx context.Context, md *ExecutionMetadata) context.Context {
-	return context.WithValue(ctx, executionMetadataKey, md)
-}
-
-func ExecutionMetadataFromContext(ctx context.Context) *ExecutionMetadata {
-	v := ctx.Value(executionMetadataKey)
-	if v == nil {
-		return nil
-	}
-	return v.(*ExecutionMetadata)
-}
-
 func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadata, bool, error) {
 	if desc == nil {
 		return nil, false, nil
@@ -198,6 +186,20 @@ func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 	return llb.WithDescription(map[string]string{
 		executionMetadataKey: string(bs),
 	}), nil
+}
+
+type executionCtxKey struct{}
+
+func ContextWithExecutionMetadata(ctx context.Context, md *ExecutionMetadata) context.Context {
+	return context.WithValue(ctx, executionCtxKey{}, md)
+}
+
+func ExecutionMetadataFromContext(ctx context.Context) *ExecutionMetadata {
+	v := ctx.Value(executionCtxKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(*ExecutionMetadata)
 }
 
 func (w *Worker) Run(

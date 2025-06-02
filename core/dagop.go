@@ -579,7 +579,6 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 		if !contentBasedCache {
 			cm.Deps[mount.Input].ComputeDigestFunc = nil
 		}
-
 	}
 
 	return cm, nil
