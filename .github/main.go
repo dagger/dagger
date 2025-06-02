@@ -23,9 +23,10 @@ type CI struct {
 	// +private
 	Workflows *dagger.Gha
 
-	GithubRunner *dagger.Gha // +private
-	DaggerRunner *dagger.Gha // +private
-	Alt2Runner   *dagger.Gha // +private
+	GithubRunner       *dagger.Gha // +private
+	DaggerRunner       *dagger.Gha // +private
+	AltRunner          *dagger.Gha // +private
+	AltRunnerWithCache *dagger.Gha // +private
 }
 
 func New() *CI {
@@ -61,9 +62,16 @@ func New() *CI {
 			}),
 			WorkflowDefaults: workflow,
 		}),
-		Alt2Runner: dag.Gha(dagger.GhaOpts{
+		AltRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         AltBronzeRunnerWithCache(),
+				Runner:         AltGoldRunner(),
+				TimeoutMinutes: timeoutMinutes,
+			}),
+			WorkflowDefaults: workflow,
+		}),
+		AltRunnerWithCache: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         AltSilverRunnerWithCache(),
 				TimeoutMinutes: timeoutMinutes,
 			}),
 			WorkflowDefaults: workflow,
@@ -72,29 +80,29 @@ func New() *CI {
 
 	return ci.
 		withModuleWorkflow(
-			ci.Alt2Runner,
+			ci.AltRunnerWithCache,
 			".github",
 			"Github",
 			"check",
 		).
 		withWorkflow(
-			ci.Alt2Runner,
+			ci.AltRunnerWithCache,
 			false,
 			"docs",
 			"check --targets=docs",
 		).
 		withWorkflow(
-			ci.Alt2Runner,
+			ci.AltRunnerWithCache,
 			false,
 			"Helm",
 			"check --targets=helm",
 		).
 		withTestWorkflows(
-			ci.DaggerRunner,
+			ci.AltRunner,
 			"Engine & CLI",
 		).
 		withSDKWorkflows(
-			ci.DaggerRunner,
+			ci.AltRunnerWithCache,
 			"SDKs",
 			"python",
 			"typescript",
@@ -161,7 +169,6 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 		w = w.
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
-				Runner:        AltSilverRunner(),
 			}))
 	}
 
@@ -173,48 +180,36 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 	w := runner.
 		Workflow(name).
 		WithJob(runner.Job("lint", "lint", dagger.GhaJobOpts{
-			Runner: GoldRunner(false),
+			Runner: AltPlatinumRunnerWithCache(),
 		})).
-		WithJob(runner.Job("scripts", "check --targets=scripts")).
+		WithJob(runner.Job("scripts", "check --targets=scripts", dagger.GhaJobOpts{
+			Runner: AltBronzeRunnerWithCache(),
+		})).
 		WithJob(runner.Job("cli-test-publish", "test-publish", dagger.GhaJobOpts{
 			Module: "cmd/dagger",
-			Runner: GoldRunner(false),
+			Runner: AltGoldRunnerWithCache(),
 		})).
 		WithJob(runner.Job("engine-test-publish", "publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
 			Module: "cmd/engine",
-			Runner: GoldRunner(false),
+			Runner: AltBronzeRunnerWithCache(),
 		})).
-		WithJob(runner.Job("scan-engine", "scan")).
+		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
+			Runner: AltBronzeRunnerWithCache(),
+		})).
 		With(splitTests(runner, "testdev-", true, []testSplit{
-			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
-				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
-				// @gerhard @matipan @jedevc have more details
-				Runner: AltGoldRunner(),
-			}},
+			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
+				Runner: AltPlatinumRunner(),
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
 			}},
-			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
-			}},
-			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
-				Runner: GoldRunner(true),
-			}},
-			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
-			}},
-			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
-			}},
-			{"interface", []string{"TestInterface"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
-			}},
-			{"call-and-shell", []string{"TestCall", "TestShell", "TestDaggerCMD"}, &dagger.GhaJobOpts{
-				Runner: AltGoldRunner(),
-			}},
+			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{}},
+			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{}},
+			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{}},
+			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{}},
+			{"interface", []string{"TestInterface"}, &dagger.GhaJobOpts{}},
+			{"call-and-shell", []string{"TestCall", "TestShell", "TestDaggerCMD"}, &dagger.GhaJobOpts{}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
 			}},
@@ -259,7 +254,7 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 func (ci *CI) withPrepareReleaseWorkflow() *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-			Runner:         BronzeRunner(false),
+			Runner:         AltBronzeRunnerWithCache(),
 			DaggerVersion:  daggerVersion,
 			TimeoutMinutes: timeoutMinutes,
 		}),
@@ -291,7 +286,7 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 func (ci *CI) withEvalsWorkflow() *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-			Runner:         BronzeRunner(false),
+			Runner:         AltBronzeRunnerWithCache(),
 			DaggerVersion:  daggerVersion,
 			TimeoutMinutes: timeoutMinutes,
 		}),
@@ -446,12 +441,27 @@ func AltSilverRunner() []string {
 	return Alt2Runner(8, false)
 }
 
+// Alternative Silver runner with caching: Single-tenant, 8 cpu
+func AltSilverRunnerWithCache() []string {
+	return Alt2Runner(8, true)
+}
+
 // Alternative Gold runner: Single-tenant with Docker, 16 cpu
 func AltGoldRunner() []string {
 	return Alt2Runner(16, false)
 }
 
+// Alternative Gold runner with caching: Single-tenant, 16 cpu
+func AltGoldRunnerWithCache() []string {
+	return Alt2Runner(16, true)
+}
+
 // Alternative Platinum runner: Single-tenant with Docker, 32 cpu
 func AltPlatinumRunner() []string {
 	return Alt2Runner(32, false)
+}
+
+// Alternative Platinum runner with caching: Single-tenant, 23 cpu
+func AltPlatinumRunnerWithCache() []string {
+	return Alt2Runner(32, true)
 }
