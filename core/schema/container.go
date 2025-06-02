@@ -1878,7 +1878,7 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = op.Mount(ctx, bkref, func(out string) error {
+	err = core.MountRef(ctx, bkref, op.Group(), func(out string) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

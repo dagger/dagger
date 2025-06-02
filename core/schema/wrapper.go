@@ -153,6 +153,38 @@ func DagOpDirectory[T dagql.Typed, A any](
 	return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
 }
 
+func DagOpContainerWrapper[A any](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
+	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
+		if core.DagOpInContext[core.ContainerDagOp](ctx) {
+			return fn(ctx, self, args)
+		}
+		return DagOpContainer(ctx, srv, self, args, nil, fn)
+	}
+}
+
+func DagOpContainer[A any](
+	ctx context.Context,
+	srv *dagql.Server,
+	self dagql.Instance[*core.Container],
+	args A,
+	data any,
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+) (inst dagql.Instance[*core.Container], _ error) {
+	deps, err := extractLLBDependencies(ctx, self.Self)
+	if err != nil {
+		return inst, err
+	}
+
+	ctr, err := core.NewContainerDagOp(ctx, currentIDForDagOp(ctx), self.Self, deps)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, srv, self, ctr)
+}
+
 const runDagOpDigestMixin = "runDagOpDigestMixin"
 
 // Return an ID that can be used to force execution of the current ID as a DagOp.

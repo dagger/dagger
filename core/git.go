@@ -559,7 +559,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return err
 		}
 
-		err = op.Mount(ctx, checkoutRef, func(checkoutDir string) error {
+		err = MountRef(ctx, checkoutRef, op.Group(), func(checkoutDir string) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
@@ -920,7 +920,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git dir: %w", err)
 		}
 
-		return op.Mount(ctx, bkref, func(checkoutDir string) error {
+		return MountRef(ctx, bkref, op.Group(), func(checkoutDir string) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
