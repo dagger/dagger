@@ -459,6 +459,23 @@ Example:
   .echo "job id: $job1"
   .wait $job1
 `,
+			State: NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
+
+				if len(args) == 0 {
+					return hc.Builtin(ctx, []string{"wait"})
+				}
+
+				for _, job := range args {
+					err := hc.Builtin(ctx, []string{"wait", job})
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			},
 		},
 		&ShellCommand{
 			Use: ".cd [path | url]",
