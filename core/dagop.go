@@ -594,8 +594,10 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	ctx = buildkit.ContextWithExecutionMetadata(ctx, op.ExecutionMetadata)
-	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
+	loadCtx := ctx
+	loadCtx = withDagOpContext(loadCtx, op)
+	loadCtx = buildkit.ContextWithExecutionMetadata(loadCtx, op.ExecutionMetadata)
+	obj, err := opt.Server.Load(loadCtx, op.ID)
 	if err != nil {
 		var loadError dagql.LoadError
 		if errors.As(err, &loadError) {
