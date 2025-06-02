@@ -32,7 +32,7 @@ func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"wtf://foobar",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `unsupported secret provider: "wtf"`)
 
@@ -40,7 +40,7 @@ func (SecretProvider) TestUnknown(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"wtf",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `malformed id`)
 }
@@ -56,7 +56,7 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr.WithEnvVariable("TOPSECRET", secretValue),
 		"env://TOPSECRET",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -65,7 +65,7 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"env://TOPSECRET",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret env var not found: "TOP..."`)
 }
@@ -81,7 +81,7 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr.WithNewFile("/tmp/topsecret", secretValue),
 		"file:///tmp/topsecret",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -90,7 +90,7 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"file:///tmp/topsecret",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "no such file or directory")
 }
@@ -107,7 +107,7 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		`cmd://echo `+secretValueEncoded+` | base64 -d`,
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -116,7 +116,7 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"cmd://exit 1",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, "failed to run secret command")
 }
@@ -166,7 +166,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://testsecret.foo",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
@@ -175,7 +175,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://testsecret.bar",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret "bar" not found in path "testsecret"`)
 
@@ -183,7 +183,7 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		"vault://nosecret.baz",
-		true,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	requireErrOut(t, err, `secret not found`)
 }
@@ -315,6 +315,11 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 "$@"
 `
 
+	opts := dagger.ContainerWithExecOpts{
+		UseEntrypoint:            true,
+		InsecureRootCapabilities: true,
+	}
+
 	ctr := c.Container().
 		From("alpine").
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -323,35 +328,31 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 		// set by `dbus-run-session` (required so that libsecret can connect to
 		// the unlocked gnome-keyring-daemon)
 		With(nonNestedDevEngine(c)).
-		WithExec([]string{"apk", "add", "libsecret", "gnome-keyring", "dbus-x11"}).
+		WithExec([]string{"apk", "add", "libsecret", "gnome-keyring", "dbus-x11", "libcap-setcap"}).
+		// HACK: for some reason, looks like this cap needs to be set manually now?
+		WithExec([]string{"setcap", "cap_ipc_lock=+ep", "/usr/bin/gnome-keyring-daemon"}).
 		WithNewFile("/rest_keyring.sh", keyringScript, dagger.ContainerWithNewFileOpts{
 			Permissions: 0755,
 		}).
 		WithEntrypoint([]string{"dbus-run-session", "--", "/rest_keyring.sh"}).
-		WithExec([]string{"sh", "-c", `echo ` + secretValueEncoded + ` | base64 -d | secret-tool store --label=mysecret abc xyz`}, dagger.ContainerWithExecOpts{
-			UseEntrypoint: true,
-		}).
+		WithExec([]string{"sh", "-c", `echo ` + secretValueEncoded + ` | base64 -d | secret-tool store --label=mysecret abc xyz`}, opts).
 		// sanity check the secret exists
-		WithExec([]string{"secret-tool", "lookup", "abc", "xyz"}, dagger.ContainerWithExecOpts{
-			UseEntrypoint: true,
-		})
+		WithExec([]string{"secret-tool", "lookup", "abc", "xyz"}, opts)
 
-	result, err := fetchSecret(ctx, ctr, "libsecret://login/mysecret", false)
+	result, err := fetchSecret(ctx, ctr, "libsecret://login/mysecret", opts)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, result)
 
-	result, err = fetchSecret(ctx, ctr, "libsecret://login?abc=xyz", false)
+	result, err = fetchSecret(ctx, ctr, "libsecret://login?abc=xyz", opts)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, result)
 }
 
-func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, nested bool) (string, error) {
+func fetchSecret(ctx context.Context, ctr *dagger.Container, url string, opts dagger.ContainerWithExecOpts) (string, error) {
 	query := fmt.Sprintf(`{secret(uri: %q) {plaintext}}`, url)
-	out, err := ctr.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
-		Stdin:                         query,
-		ExperimentalPrivilegedNesting: nested,
-		UseEntrypoint:                 true,
-	}).Stdout(ctx)
+	opts.Stdin = query
+
+	out, err := ctr.WithExec([]string{"dagger", "query"}, opts).Stdout(ctx)
 	if err != nil {
 		return "", err
 	}
