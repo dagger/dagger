@@ -5,36 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"runtime/debug"
-	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/dagql/idtui"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/contenthash"
 	cacheutil "github.com/moby/buildkit/cache/util"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	bksolver "github.com/moby/buildkit/solver"
 	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
 	"github.com/moby/buildkit/solver/llbsolver/provenance"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -321,248 +314,25 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		return solvererror.WithSolveError(baseErr, fileErr.ToSubject(), nil, nil)
 	}
 
-	var ierr InteractiveError
+	var ierr RichError
 	if errors.As(baseErr, &ierr) {
-		// XXX: secret env handling?
 		if ierr.Meta == nil {
 			return baseErr
 		}
-		exec := &bksolverpb.ExecOp{
-			Meta: &bksolverpb.Meta{
-				Args:     ierr.Meta.Args,
-				Env:      ierr.Meta.Env,
-				Cwd:      ierr.Meta.Cwd,
-				User:     ierr.Meta.User,
-				Hostname: ierr.Meta.Hostname,
-				// ReadonlyRootFS:            p.ReadonlyRootFS,
-				// ExtraHosts:                extraHosts,
-				Ulimit:       ierr.Meta.Ulimit,
-				CgroupParent: ierr.Meta.CgroupParent,
-			},
-			Security: ierr.Meta.SecurityMode,
-			Network:  ierr.Meta.NetMode,
-			Mounts:   ierr.Mounts,
-		}
-		if err := debugContainer(ctx, ierr.ExecMD, exec, ierr.ExecError, client); err != nil {
+		if err := ierr.DebugTerminal(ctx, client); err != nil {
 			return err
 		}
 
-		// This was an exec error, we will retrieve the exec's output and include
-		// it in the error message
-		// get the mnt corresponding to the metadata where stdout/stderr are stored
-		var metaMountResult bksolver.Result
-		for i, mnt := range ierr.Mounts {
-			if mnt.Dest == MetaMountDestPath {
-				metaMountResult = ierr.ExecError.Mounts[i]
-				break
-			}
-		}
-		if metaMountResult == nil {
-			return baseErr
-		}
-		stdout, stderr, exitCode, err := getExecMeta(ctx, client, metaMountResult)
+		execErr, ok, err := ierr.AsExecErr(ctx, client)
 		if err != nil {
 			return errors.Join(err, baseErr)
 		}
-		fmt.Println("returning wrapped", string(stdout), string(stderr))
-		return &ExecError{
-			original: baseErr,
-			Cmd:      ierr.Meta.Args,
-			ExitCode: exitCode,
-			Stdout:   strings.TrimSpace(string(stdout)),
-			Stderr:   strings.TrimSpace(string(stderr)),
+		if ok {
+			return execErr
 		}
 	}
 
 	return baseErr
-}
-
-func debugContainer(ctx context.Context, execMd *ExecutionMetadata, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, client *Client) error {
-	if !client.Opts.Interactive {
-		return nil
-	}
-
-	// Ensure we only spawn one terminal per exec.
-	if execMd.ExecID != "" {
-		if _, exists := client.execMap.LoadOrStore(execMd.ExecID, struct{}{}); exists {
-			return nil
-		}
-	}
-
-	// If this is the (internal) exec of the module itself, we don't want to spawn a terminal.
-	if execMd.Internal {
-		return nil
-	}
-
-	// relevant buildkit code we need to contend with here:
-	// https://github.com/moby/buildkit/blob/44504feda1ce39bb8578537a6e6a93f90bdf4220/solver/llbsolver/ops/exec.go#L386-L409
-	mounts := []ContainerMount{}
-	for i, m := range execOp.Mounts {
-		if m.Input == -1 {
-			mounts = append(mounts, ContainerMount{
-				Mount: &bkgw.Mount{
-					Dest:      m.Dest,
-					Selector:  m.Selector,
-					Readonly:  m.Readonly,
-					MountType: m.MountType,
-					CacheOpt:  m.CacheOpt,
-					SecretOpt: m.SecretOpt,
-					SSHOpt:    m.SSHOpt,
-				},
-			})
-			continue
-		}
-
-		// sanity check we don't panic
-		if i >= len(execErr.Mounts) {
-			return fmt.Errorf("exec error mount index out of bounds: %d", i)
-		}
-		errMnt := execErr.Mounts[i]
-		if errMnt == nil {
-			continue
-		}
-		workerRef, ok := errMnt.Sys().(*bkworker.WorkerRef)
-		if !ok {
-			continue
-		}
-
-		mounts = append(mounts, ContainerMount{
-			WorkerRef: workerRef,
-			Mount: &bkgw.Mount{
-				Dest:      m.Dest,
-				Selector:  m.Selector,
-				Readonly:  m.Readonly,
-				MountType: m.MountType,
-				CacheOpt:  m.CacheOpt,
-				SecretOpt: m.SecretOpt,
-				SSHOpt:    m.SSHOpt,
-				ResultID:  errMnt.ID(),
-			},
-		})
-	}
-
-	dbgCtr, err := client.NewContainer(ctx, NewContainerRequest{
-		Hostname: execOp.Meta.Hostname,
-		Mounts:   mounts,
-	})
-	if err != nil {
-		return err
-	}
-	term, err := client.OpenTerminal(ctx)
-	if err != nil {
-		return err
-	}
-	// always close term; it's wrapped in a once so it won't be called multiple times
-	defer term.Close(bkgwpb.UnknownExitStatus)
-
-	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprint(term.Stderr,
-		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
-	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
-	fmt.Fprint(term.Stderr, dump.Newline)
-	if err := dump.DumpID(output, execMd.CallID); err != nil {
-		return fmt.Errorf("failed to serialize service ID: %w", err)
-	}
-	fmt.Fprint(term.Stderr, dump.Newline)
-	fmt.Fprintf(term.Stderr,
-		output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
-	fmt.Fprint(term.Stderr, dump.Newline)
-
-	// We default to "/bin/sh" if the client doesn't provide a command.
-	debugCommand := []string{"/bin/sh"}
-	if len(client.Opts.InteractiveCommand) > 0 {
-		debugCommand = client.Opts.InteractiveCommand
-	}
-
-	eg, ctx := errgroup.WithContext(ctx)
-
-	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
-		Args: debugCommand,
-
-		Env:          execOp.Meta.Env,
-		Cwd:          execOp.Meta.Cwd,
-		User:         execOp.Meta.User,
-		SecurityMode: execOp.Security,
-		SecretEnv:    execOp.Secretenv,
-
-		Tty:    true,
-		Stdin:  term.Stdin,
-		Stdout: term.Stdout,
-		Stderr: term.Stderr,
-	})
-	if err != nil {
-		return err
-	}
-
-	eg.Go(func() error {
-		err := <-term.ErrCh
-		if err != nil {
-			return fmt.Errorf("terminal error: %w", err)
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		for resize := range term.ResizeCh {
-			err := dbgShell.Resize(ctx, resize)
-			if err != nil {
-				return fmt.Errorf("failed to resize terminal: %w", err)
-			}
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		waitErr := dbgShell.Wait()
-		termExitCode := 0
-		if waitErr != nil {
-			termExitCode = 1
-			var exitErr *bkgwpb.ExitError
-			if errors.As(waitErr, &exitErr) {
-				termExitCode = int(exitErr.ExitCode)
-			}
-		}
-
-		return term.Close(termExitCode)
-	})
-
-	return eg.Wait()
-}
-
-func getExecMeta(ctx context.Context, client *Client, metaMount bksolver.Result) (stdout []byte, stderr []byte, exitCode int, _ error) {
-	workerRef, ok := metaMount.Sys().(*bkworker.WorkerRef)
-	if !ok {
-		return nil, nil, 0, fmt.Errorf("invalid ref type: %T", metaMount.Sys())
-	}
-	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	stdout, err = getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	stderr, err = getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	exitCode = -1
-	if len(exitCodeBytes) > 0 {
-		exitCode, err = strconv.Atoi(string(exitCodeBytes))
-		if err != nil {
-			return nil, nil, 0, err
-		}
-	}
-
-	return stdout, stderr, exitCode, nil
-}
-
-func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
-	return ReadSnapshotPath(ctx, c, mntable, path.Join(MetaMountDestPath, fileName))
 }
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string) ([]byte, error) {

@@ -160,19 +160,67 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	return &execMD, nil
 }
 
-func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (_ *Container, rerr error) { //nolint:gocyclo
-	container = container.Clone()
-
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts) (*executor.Meta, error) {
 	cfg := container.Config
+	args, err := container.command(opts)
+	if err != nil {
+		return nil, err
+	}
+	platform := container.Platform
+	if platform.OS == "" {
+		platform = container.Query.Platform()
+	}
+
+	op, ok := DagOpFromContext[ContainerDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+
+	metaSpec := executor.Meta{
+		Args: args,
+		Env:  slices.Clone(cfg.Env),
+		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
+		User: cfg.User,
+		// Hostname:       e.op.Meta.Hostname, // empty seems right?
+		ReadonlyRootFS: op.Mounts[0].Readonly,
+		// ExtraHosts:     extraHosts,
+		// Ulimit:                    e.op.Meta.Ulimit,
+		// CgroupParent:              e.op.Meta.CgroupParent,
+		// NetMode:                   e.op.Network,
+		RemoveMountStubsRecursive: true,
+	}
+	if opts.InsecureRootCapabilities {
+		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
+	}
+
+	// if e.op.Meta.ProxyEnv != nil {
+	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
+	// }
+	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+
+	if opts.Expect != ReturnSuccess {
+		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
+	}
+
+	return &metaSpec, nil
+}
+
+func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (_ *Container, rerr error) {
+	container = container.Clone()
 
 	platform := container.Platform
 	if platform.OS == "" {
 		platform = container.Query.Platform()
 	}
 
-	args, err := container.command(opts)
-	if err != nil {
-		return nil, err
+	secretEnvs := []*pb.SecretEnv{}
+	for _, secret := range container.Secrets {
+		if secret.EnvName != "" {
+			secretEnvs = append(secretEnvs, &pb.SecretEnv{
+				ID:   secret.Secret.ID().Digest().String(),
+				Name: secret.EnvName,
+			})
+		}
 	}
 
 	execMD, err := container.execMeta(ctx, opts)
@@ -195,53 +243,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	cache := container.Query.BuildkitCache()
 	session := container.Query.BuildkitSession()
 
-	meta := executor.Meta{
-		Args: args,
-		Env:  slices.Clone(cfg.Env),
-		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
-		User: cfg.User,
-		// Hostname:       e.op.Meta.Hostname, // empty seems right?
-		ReadonlyRootFS: op.Mounts[0].Readonly,
-		// ExtraHosts:     extraHosts,
-		// Ulimit:                    e.op.Meta.Ulimit,
-		// CgroupParent:              e.op.Meta.CgroupParent,
-		// NetMode:                   e.op.Network,
-		RemoveMountStubsRecursive: true,
-	}
-	if opts.InsecureRootCapabilities {
-		meta.SecurityMode = pb.SecurityMode_INSECURE
-	}
-
-	// if e.op.Meta.ProxyEnv != nil {
-	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
-	// }
-	meta.Env = addDefaultEnvvar(meta.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
-
-	secretEnvs := []*pb.SecretEnv{}
-	for _, secret := range container.Secrets {
-		if secret.EnvName != "" {
-			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   secret.Secret.ID().Digest().String(),
-				Name: secret.EnvName,
-			})
-		}
-	}
-	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
+	metaSpec, err := container.metaSpec(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	meta.Env = append(meta.Env, secretEnv...)
 
-	if opts.Expect != ReturnSuccess {
-		meta.ValidExitCodes = opts.Expect.ReturnCodes()
-	}
-
-	mmname := fmt.Sprintf("exec %s", strings.Join(args, " "))
-	fmt.Println("name", mmname)
-	fmt.Println("mounts", op.Mounts)
-	mm := bkmounts.NewMountManager(mmname, cache, session)
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, op.Group(), cfg.WorkingDir, op.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(args, " "))
+	mm := bkmounts.NewMountManager(fmt.Sprintf("exec %s", strings.Join(metaSpec.Args, " ")), cache, session)
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, op.Group(), container.Config.WorkingDir, op.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(metaSpec.Args, " "))
 		return cache.New(ctx, ref, op.Group(), bkcache.WithDescription(desc))
 	}, runtime.GOOS)
 	defer func() {
@@ -276,14 +285,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			}
 
 			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
-			rerr = buildkit.InteractiveError{
+			rerr = buildkit.RichError{
 				ExecError: rerr.(*errdefs.ExecError),
 				Mounts:    op.Mounts,
 				ExecMD:    execMD,
-				Meta:      &meta,
-				// Secretenv: secretEnvs, // XXX: here
+				Meta:      metaSpec,
+				Secretenv: secretEnvs,
 			}
-			fmt.Println("error goes here", rerr)
 		} else {
 			// Only release actives if err is nil.
 			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
@@ -299,6 +307,16 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	if err != nil {
 		return nil, err
 	}
+
+	meta := *metaSpec
+	meta.Args = slices.Clone(meta.Args)
+	meta.Env = slices.Clone(meta.Env)
+
+	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
+	if err != nil {
+		return nil, err
+	}
+	meta.Env = append(meta.Env, secretEnv...)
 
 	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 	if err != nil {
@@ -349,7 +367,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	if execErr != nil {
-		return nil, fmt.Errorf("process %q did not complete successfully: %w", strings.Join(args, " "), execErr)
+		return nil, fmt.Errorf("process %q did not complete successfully: %w", strings.Join(metaSpec.Args, " "), execErr)
 	}
 
 	return container, nil

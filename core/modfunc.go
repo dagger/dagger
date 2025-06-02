@@ -506,7 +506,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}()
 	}
 
-	var ierr buildkit.InteractiveError
+	var ierr buildkit.RichError
 	if !errors.As(baseErr, &ierr) {
 		return id, false, nil
 	}
