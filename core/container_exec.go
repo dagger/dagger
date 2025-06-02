@@ -96,7 +96,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	// 	execMD = *opts.NestedExecMetadata
 	// }
 	if execMD.CallID == nil {
-		execMD.CallID = dagql.CurrentID(ctx)
+		execMD.CallID = dagql.CurrentID(ctx) // XXX: this is actually wrong
 	}
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()

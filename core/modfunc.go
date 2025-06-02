@@ -384,7 +384,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	// XXX: work out if we can somehow just talk to the worker directly
-	err = srv.Select(buildkit.ContextWithExecutionMetadata(ctx, &execMD), ctr, &ctr,
+	execCtx := ctx
+	execCtx = dagql.WithSkip(execCtx)
+	execCtx = buildkit.ContextWithExecutionMetadata(execCtx, &execMD)
+	err = srv.Select(execCtx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{

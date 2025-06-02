@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -162,6 +163,10 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	op.opt = opt
 	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
 	if err != nil {
+		var loadError dagql.LoadError
+		if errors.As(err, &loadError) {
+			return nil, loadError.Err
+		}
 		return nil, err
 	}
 
@@ -592,6 +597,10 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	ctx = buildkit.ContextWithExecutionMetadata(ctx, op.ExecutionMetadata)
 	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
 	if err != nil {
+		var loadError dagql.LoadError
+		if errors.As(err, &loadError) {
+			return nil, loadError.Err
+		}
 		return nil, err
 	}
 

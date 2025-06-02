@@ -498,11 +498,25 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 	return resultsMap, nil
 }
 
+type LoadError struct {
+	Err error
+}
+
+var _ error = LoadError{}
+
+func (e LoadError) Error() string {
+	return fmt.Sprintf("load: %s", e.Err)
+}
+
+func (e LoadError) Unwrap() error {
+	return e.Err
+}
+
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 	res, id, err := s.loadType(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load: %w", err)
+		return nil, LoadError{err}
 	}
 	return s.toSelectable(id, res)
 }
