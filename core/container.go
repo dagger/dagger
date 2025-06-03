@@ -40,6 +40,8 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
+var ErrMountNotExist = errors.New("mount does not exist")
+
 type DefaultTerminalCmdOpts struct {
 	Args []string
 
@@ -314,16 +316,21 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
-func (mnts ContainerMounts) Replace(newMnt ContainerMount) ContainerMounts {
+func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, error) {
 	mntsCp := make(ContainerMounts, 0, len(mnts))
+	found := false
 	for _, mnt := range mnts {
 		if mnt.Target == newMnt.Target {
 			mntsCp = append(mntsCp, newMnt)
+			found = true
 		} else {
 			mntsCp = append(mntsCp, mnt)
 		}
 	}
-	return mntsCp
+	if !found {
+		return nil, fmt.Errorf("failed to replace %s: %w", newMnt.Target, ErrMountNotExist)
+	}
+	return mntsCp, nil
 }
 
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
@@ -1090,13 +1097,16 @@ func (container *Container) replaceMount(
 		}
 	}
 
-	container.Mounts = container.Mounts.Replace(ContainerMount{
+	container.Mounts, err = container.Mounts.Replace(ContainerMount{
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
 		Readonly:   readonly,
 		Result:     result,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	container.Services.Merge(svcs)
 
