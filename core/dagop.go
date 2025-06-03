@@ -151,7 +151,8 @@ func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
 	op.g = g
 	op.opt = opt
-	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
+
+	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +266,7 @@ func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) 
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	result, err := opt.Server.LoadType(withDagOpContext(ctx, op), op.ID)
+	result, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +465,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
+	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -716,4 +717,29 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
 	)
+}
+
+// loadDagOpID loads the target ID from the server.
+//
+// It takes two contexts, the first to load the receiver with, the second to
+// load the current call with. This *ensures* that we aren't accidentally
+// applying the dagop to multiple calls - only the most recent.
+func loadDagOpID(ctx context.Context, loadCtx context.Context, srv *dagql.Server, id *call.ID) (dagql.Typed, error) {
+	// no receiver, so we're the only call in the chain
+	if id.Receiver() == nil {
+		return srv.Load(loadCtx, id)
+	}
+
+	// load just the receiver
+	res, err := srv.Load(ctx, id.Receiver())
+	if err != nil {
+		return nil, err
+	}
+
+	// run the dagop on the receiver
+	tp, _, err := res.Call(loadCtx, srv, id)
+	if err != nil {
+		return nil, err
+	}
+	return tp, err
 }
