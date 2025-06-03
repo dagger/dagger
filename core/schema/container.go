@@ -625,7 +625,7 @@ func (s *containerSchema) Install() {
 				`This includes ports already exposed by the image, even if not explicitly added with dagger.`),
 
 		dagql.Func("withServiceBinding", s.withServiceBinding).
-			Doc(`Establish a runtime dependency on a from a container to a network service.`,
+			Doc(`Establish a runtime dependency from a container to a network service.`,
 				`The service will be started automatically when needed and detached
 				when it is no longer needed, executing the default command if none is
 				set.`,
@@ -1878,7 +1878,7 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = op.Mount(ctx, bkref, func(out string) error {
+	err = core.MountRef(ctx, bkref, op.Group(), func(out string) error {
 		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)

@@ -1998,7 +1998,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
-// Establish a runtime dependency on a from a container to a network service.
+// Establish a runtime dependency from a container to a network service.
 //
 // The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
 //
@@ -3059,6 +3059,7 @@ type EngineCache struct {
 	minFreeSpace  *int
 	prune         *Void
 	reservedSpace *int
+	targetSpace   *int
 }
 
 func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
@@ -3168,21 +3169,47 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCachePruneOpts contains options for EngineCache.Prune
+type EngineCachePruneOpts struct {
+	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	UseDefaultPolicy bool
+}
+
 // Prune the cache of releaseable entries
-func (r *EngineCache) Prune(ctx context.Context) error {
+func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) error {
 	if r.prune != nil {
 		return nil
 	}
 	q := r.query.Select("prune")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `useDefaultPolicy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
+			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+	}
 
 	return q.Execute(ctx)
 }
 
+// The minimum amount of disk space this policy is guaranteed to retain.
 func (r *EngineCache) ReservedSpace(ctx context.Context) (int, error) {
 	if r.reservedSpace != nil {
 		return *r.reservedSpace, nil
 	}
 	q := r.query.Select("reservedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target number of bytes to keep when pruning.
+func (r *EngineCache) TargetSpace(ctx context.Context) (int, error) {
+	if r.targetSpace != nil {
+		return *r.targetSpace, nil
+	}
+	q := r.query.Select("targetSpace")
 
 	var response int
 

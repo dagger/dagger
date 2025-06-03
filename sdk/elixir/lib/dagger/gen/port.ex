@@ -4,6 +4,8 @@ defmodule Dagger.Port do
   A port exposed by a container.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Port"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

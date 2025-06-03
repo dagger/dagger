@@ -130,7 +130,7 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
 			}
 			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
+				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace, "")))
 			}
 			f(ctx, t, devEngineContainer(c, opts...))
 		})
@@ -148,17 +148,19 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 	}
 }
 
-func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) {
+func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	for _, tc := range []struct {
-		name string
+		name   string
+		blocks int
 
 		// configs
 		keepStorage   string
 		maxUsedSpace  string
 		reservedSpace string
 		minFreeSpace  string
+		sweep         string
 
 		// try and bring storage usage below the target
 		target string
@@ -166,6 +168,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 		{
 			// test creates 2gb, this is over keepStorage, so gc kicks in
 			name:        "keep",
+			blocks:      1,
 			keepStorage: fmt.Sprint(1024 * 1024 * 1024), // 1GB
 			target:      fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
@@ -175,13 +178,36 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			// does weird rounding things, so might not actually be *all the
 			// space*
 			name:          "free",
+			blocks:        1,
 			maxUsedSpace:  "200%",
 			reservedSpace: fmt.Sprint(1024 * 1024 * 1024), // 1GB
 			minFreeSpace:  "200%",
 			target:        fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
+		{
+			// test creates 2x2gb, this means we have no free storage, so gc kicks in and clears 1x2gb
+			name:         "nosweep",
+			blocks:       2,
+			maxUsedSpace: "3GB",
+			target:       fmt.Sprint(3 * 1024 * 1024 * 1024), // 3GB
+		},
+		{
+			// test creates 2x2gb, this means we have no free storage, so gc kicks in and clears 2x2gb
+			name:         "sweep",
+			blocks:       2,
+			maxUsedSpace: "3GB",
+			sweep:        "3GB",
+			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
+		},
+		{
+			name:         "sweep percent",
+			blocks:       2,
+			maxUsedSpace: "3GB",
+			sweep:        "80%",
+			target:       fmt.Sprint(1024 * 1024 * 1024), // 1GB
+		},
 	} {
-		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container) {
+		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container, automaticGCEnabled bool) {
 			engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
 			require.NoError(t, err)
 			t.Cleanup(func() { engineSvc.Stop(ctx) })
@@ -192,6 +218,19 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
+
+			reservedSpace, err := c2.Engine().LocalCache().ReservedSpace(ctx)
+			require.NoError(t, err)
+			fmt.Printf("reserved space: %d\n", reservedSpace)
+			targetSpace, err := c2.Engine().LocalCache().TargetSpace(ctx)
+			require.NoError(t, err)
+			fmt.Printf("target space: %d\n", targetSpace)
+			maxUsedSpace, err := c2.Engine().LocalCache().MaxUsedSpace(ctx)
+			require.NoError(t, err)
+			fmt.Printf("max used space: %d\n", maxUsedSpace)
+			minFreeSpace, err := c2.Engine().LocalCache().MinFreeSpace(ctx)
+			require.NoError(t, err)
+			fmt.Printf("min free space: %d\n", minFreeSpace)
 
 			target := getEngineBytesFromSpec(ctx, t, c2, tc.target)
 
@@ -212,11 +251,13 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			require.Greater(t, newUsedBytes, previousUsedBytes)
 			previousUsedBytes = newUsedBytes
 
-			// consume 2GB of space, greater than configured keepstorage of 1GB
+			// consume 2GB blocks of space, greater than configured keepstorage of 1GB
 			c4, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
 			require.NoError(t, err)
-			_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile", "bs=1M", "count=2048"}).Sync(ctx)
-			require.NoError(t, err)
+			for i := range tc.blocks {
+				_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile" + fmt.Sprint(i), "bs=1M", "count=2048"}).Sync(ctx)
+				require.NoError(t, err)
+			}
 
 			cacheEnts = c2.Engine().LocalCache().EntrySet()
 			newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
@@ -224,53 +265,79 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			require.Greater(t, newUsedBytes, previousUsedBytes)
 			require.Greater(t, newUsedBytes, target)
 
-			// verify automatic gc kicks in now that we exceeded the configured keepstorage
-			// automatic gc is time based (currently kicks in 1sec after a session ends but throttled to run at most once a min) so no choice but to sleep and retry
 			require.NoError(t, c4.Close())
-			tryCount := 300
-			for i := range tryCount {
+			if automaticGCEnabled {
+				// verify automatic gc kicks in now that we exceeded the configured keepstorage
+				// automatic gc is time based (currently kicks in 1sec after a session ends but throttled to run at most once a min) so no choice but to sleep and retry
+				tryCount := 300
+				for i := range tryCount {
+					cacheEnts = c2.Engine().LocalCache().EntrySet()
+					newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
+					require.NoError(t, err)
+
+					if newUsedBytes < target {
+						break
+					}
+
+					t.Logf("current used bytes %d >= keep storage bytes %d, waiting for gc to free up space", newUsedBytes, target)
+					if i < tryCount-1 {
+						time.Sleep(1 * time.Second)
+						continue
+					}
+
+					// failed, print current usage for debugging
+					ents, err := cacheEnts.Entries(ctx)
+					if err != nil {
+						t.Logf("Failed to get cache entries for debugging: %v", err)
+					} else {
+						t.Log("Remaining entries:")
+						for _, ent := range ents {
+							entVal := getCacheEntryVals(ctx, t, ent)
+							t.Logf("  %q: (%d bytes) active=%t", entVal.Description, entVal.DiskSpaceBytes, entVal.ActivelyUsed)
+						}
+					}
+
+					t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
+				}
+			} else {
+				// run an explicit prune using the default prune policy, verify it prunes as expected
+				err := c2.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+					UseDefaultPolicy: true,
+				})
+				require.NoError(t, err)
+
 				cacheEnts = c2.Engine().LocalCache().EntrySet()
 				newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 				require.NoError(t, err)
 
-				if newUsedBytes < target {
-					break
+				if newUsedBytes >= target {
+					t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
 				}
-
-				t.Logf("current used bytes %d >= keep storage bytes %d, waiting for gc to free up space", newUsedBytes, target)
-				if i < tryCount-1 {
-					time.Sleep(1 * time.Second)
-					continue
-				}
-
-				// failed, print current usage for debugging
-				ents, err := cacheEnts.Entries(ctx)
-				if err != nil {
-					t.Logf("Failed to get cache entries for debugging: %v", err)
-				} else {
-					t.Log("Remaining entries:")
-					for _, ent := range ents {
-						entVal := getCacheEntryVals(ctx, t, ent)
-						t.Logf("  %q: (%d bytes) active=%t", entVal.Description, entVal.DiskSpaceBytes, entVal.ActivelyUsed)
-					}
-				}
-
-				t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
 			}
 		}
 
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			var opts []func(*dagger.Container) *dagger.Container
-			if tc.keepStorage != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
-			}
-			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
-			}
-			f(ctx, t, devEngineContainer(c, opts...))
-		})
+		for _, automaticGCEnabled := range []bool{true, false} {
+			t.Run(tc.name+fmt.Sprintf(" automaticGC=%t", automaticGCEnabled), func(ctx context.Context, t *testctx.T) {
+				var opts []func(*dagger.Container) *dagger.Container
+				if !automaticGCEnabled {
+					opts = append(opts, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+				}
+				if tc.keepStorage != "" {
+					opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
+				}
+				if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" || tc.sweep != "" {
+					opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace, tc.sweep)))
+				}
+				f(ctx, t, devEngineContainer(c, opts...), automaticGCEnabled)
+			})
+		}
 
 		t.Run(tc.name+" (bk opts)", func(ctx context.Context, t *testctx.T) {
+			if tc.sweep != "" {
+				t.Skip("sweep option not permitted with buildkit options")
+				return
+			}
+
 			var opts []func(*dagger.Container) *dagger.Container
 			if tc.keepStorage != "" {
 				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithKeepBytes(tc.keepStorage)))
@@ -278,8 +345,16 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
 				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
 			}
-			f(ctx, t, devEngineContainer(c, opts...))
+			f(ctx, t, devEngineContainer(c, opts...), true)
 		})
+	}
+}
+
+func engineConfigWithEnabled(enabled bool) func(context.Context, *testctx.T, config.Config) config.Config {
+	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+		t.Helper()
+		cfg.GC.Enabled = &enabled
+		return cfg
 	}
 }
 
@@ -291,12 +366,13 @@ func engineConfigWithKeepBytes(keepStorage string) func(context.Context, *testct
 	}
 }
 
-func engineConfigWithGC(reserved, minFree, maxUsed string) func(context.Context, *testctx.T, config.Config) config.Config {
+func engineConfigWithGC(reserved, minFree, maxUsed, sweep string) func(context.Context, *testctx.T, config.Config) config.Config {
 	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 		t.Helper()
 		require.NoError(t, cfg.GC.ReservedSpace.UnmarshalJSON([]byte(reserved)))
 		require.NoError(t, cfg.GC.MinFreeSpace.UnmarshalJSON([]byte(minFree)))
 		require.NoError(t, cfg.GC.MaxUsedSpace.UnmarshalJSON([]byte(maxUsed)))
+		require.NoError(t, cfg.GC.SweepSize.UnmarshalJSON([]byte(sweep)))
 		return cfg
 	}
 }

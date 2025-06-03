@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -58,7 +60,8 @@ type Container struct {
 	Query *Query
 
 	// The container's root filesystem.
-	FS *pb.Definition
+	FS       *pb.Definition
+	FSResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig
@@ -70,7 +73,8 @@ type Container struct {
 	Mounts ContainerMounts
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *pb.Definition
+	Meta       *pb.Definition
+	MetaResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -155,19 +159,45 @@ func NewContainer(root *Query, platform Platform) (*Container, error) {
 // WithXXX method.
 func (container *Container) Clone() *Container {
 	cp := *container
-	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
-	cp.Config.Env = cloneSlice(cp.Config.Env)
-	cp.Config.Entrypoint = cloneSlice(cp.Config.Entrypoint)
-	cp.Config.Cmd = cloneSlice(cp.Config.Cmd)
-	cp.Config.Volumes = cloneMap(cp.Config.Volumes)
-	cp.Config.Labels = cloneMap(cp.Config.Labels)
-	cp.Mounts = cloneSlice(cp.Mounts)
-	cp.Secrets = cloneSlice(cp.Secrets)
-	cp.Sockets = cloneSlice(cp.Sockets)
-	cp.Ports = cloneSlice(cp.Ports)
-	cp.Services = cloneSlice(cp.Services)
-	cp.SystemEnvNames = cloneSlice(cp.SystemEnvNames)
+	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
+	cp.Config.Env = slices.Clone(cp.Config.Env)
+	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
+	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
+	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
+	cp.Config.Labels = maps.Clone(cp.Config.Labels)
+	cp.Mounts = slices.Clone(cp.Mounts)
+	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.Sockets = slices.Clone(cp.Sockets)
+	cp.Ports = slices.Clone(cp.Ports)
+	cp.Services = slices.Clone(cp.Services)
+	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
+}
+
+var _ dagql.OnReleaser = (*Container)(nil)
+
+func (container *Container) OnRelease(ctx context.Context) error {
+	if container.FSResult != nil {
+		err := container.FSResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if container.MetaResult != nil {
+		err := container.MetaResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, mount := range container.Mounts {
+		if mount.Result != nil {
+			err := mount.Result.Release(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -229,6 +259,7 @@ func (container *Container) MetaState() (*llb.State, error) {
 type ContainerMount struct {
 	// The source of the mount.
 	Source *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string

@@ -4,5 +4,7 @@ defmodule Dagger.ObjectTypeDefID do
   The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ObjectTypeDefID"
+
   @type t() :: String.t()
 end

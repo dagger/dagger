@@ -4,5 +4,7 @@ defmodule Dagger.ModuleID do
   The `ModuleID` scalar type represents an identifier for an object of type Module.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ModuleID"
+
   @type t() :: String.t()
 end

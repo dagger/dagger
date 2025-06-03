@@ -9,12 +9,12 @@ public Directory develop(String assignment, @DefaultPath("/") Directory source)
 throws ExecutionException, DaggerQueryException, InterruptedException {
 // Environment with agent inputs and outputs
 Env environment = dag()
-    .env(new Client.EnvArguments().withPrivileged(true))
+    .env()
     .withStringInput("assignment", assignment, "the assignment to complete")
     .withWorkspaceInput(
     "workspace",
     dag().workspace(source),
-    "the workspace with tools to edit code"
+    "the workspace with tools to edit and test code"
     )
     .withWorkspaceOutput("completed", "the workspace with the completed assignment");
 
@@ -26,7 +26,7 @@ LLM work = dag().llm().withEnv(environment).withPromptFile(promptFile);
 
 // Get the output from the agent
 Workspace completed = work.env().output("completed").asWorkspace();
-Directory completedDirectory = completed.getSource().withoutDirectory("node_modules");
+Directory completedDirectory = completed.source().withoutDirectory("node_modules");
 
 // Make sure the tests really pass
 test(completedDirectory);

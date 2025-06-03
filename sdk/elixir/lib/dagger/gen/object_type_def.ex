@@ -4,6 +4,8 @@ defmodule Dagger.ObjectTypeDef do
   A definition of a custom object defined in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ObjectTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

@@ -195,3 +195,15 @@ type SDK interface {
 	// Transform the SDK into a ClientGenerator if it implements it.
 	AsClientGenerator() (ClientGenerator, bool)
 }
+
+type Init interface {
+	Init(
+		context.Context,
+
+		// Current module dependencies.
+		*ModDeps,
+
+		// Current instance of the module source.
+		dagql.Instance[*ModuleSource],
+	) (*GeneratedCode, error)
+}

@@ -4,5 +4,7 @@ defmodule Dagger.JSON do
   An arbitrary JSON-encoded value.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "JSON"
+
   @type t() :: String.t()
 end

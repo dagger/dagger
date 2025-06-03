@@ -4,5 +4,7 @@ defmodule Dagger.EngineCacheEntrySetID do
   The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "EngineCacheEntrySetID"
+
   @type t() :: String.t()
 end

@@ -229,21 +229,19 @@ func (r *Releaser) Publish(
 		return &report, nil
 	}
 
-	// FIXME: skip for v0.17.0 release, we'll do this manually
-	// if semver.IsValid(version) {
-	// 	artifact = &ReleaseReportArtifact{
-	// 		Name: "📖 Docs",
-	// 		Link: "https://docs.dagger.io",
-	// 	}
-	// 	if !dryRun {
-	// 		err = dag.Docs().Publish(ctx, netlifyToken)
-	// 		if err != nil {
-	// 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-	// 		}
-	// 	}
-	// 	report.Artifacts = append(report.Artifacts, artifact)
-	// }
-	_ = netlifyToken
+	if semver.IsValid(version) {
+		artifact = &ReleaseReportArtifact{
+			Name: "📖 Docs",
+			Link: "https://docs.dagger.io",
+		}
+		if !dryRun {
+			err = dag.Docs().Publish(ctx, netlifyToken)
+			if err != nil {
+				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+			}
+		}
+		report.Artifacts = append(report.Artifacts, artifact)
+	}
 
 	components := []struct {
 		name    string
@@ -360,6 +358,7 @@ func (r *Releaser) Publish(
 				artifacts[i] = artifact
 
 				if err := component.publish(); err != nil {
+					artifact.Notify = false
 					artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 					return nil
 				}
@@ -399,6 +398,10 @@ func (r *Releaser) Publish(
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "🍺 Homebrew Core",
 			Link: "https://github.com/Homebrew/homebrew-core/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
+		})
+		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
+			Name: "🪟 Winget pkgs",
+			Link: "https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
 		})
 
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{

@@ -1,7 +1,7 @@
 {
   "name": "elixir-sdk-dev",
-  "engineVersion": "v0.18.8",
+  "engineVersion": "v0.18.9",
   "sdk": {
-    "source": "elixir"
+    "source": ".."
   }
 }

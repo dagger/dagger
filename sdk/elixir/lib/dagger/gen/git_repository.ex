@@ -4,6 +4,8 @@ defmodule Dagger.GitRepository do
   A git repository.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "GitRepository"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

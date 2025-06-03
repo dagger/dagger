@@ -4,6 +4,8 @@ defmodule Dagger.ModuleConfigClient do
   The client generated for the module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ModuleConfigClient"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

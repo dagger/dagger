@@ -196,7 +196,7 @@
                     void
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_prune">prune</a>()
+                    <a href="#method_prune">prune</a>(bool|null $useDefaultPolicy = false)
         
                                             <p><p>Prune the cache of releaseable entries</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -208,8 +208,17 @@
                 <div class="col-md-8">
                     <a href="#method_reservedSpace">reservedSpace</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>The minimum amount of disk space this policy is guaranteed to retain.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    int
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_targetSpace">targetSpace</a>()
+        
+                                            <p><p>The target number of bytes to keep when pruning.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -481,7 +490,7 @@
                     <h3 id="method_prune">
         <div class="location">at line 67</div>
         <code>                    void
-    <strong>prune</strong>()
+    <strong>prune</strong>(bool|null $useDefaultPolicy = false)
         </code>
     </h3>
     <div class="details">    
@@ -492,6 +501,16 @@
                             <p><p>Prune the cache of releaseable entries</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$useDefaultPolicy</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -511,7 +530,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reservedSpace">
-        <div class="location">at line 73</div>
+        <div class="location">at line 79</div>
         <code>                    int
     <strong>reservedSpace</strong>()
         </code>
@@ -521,8 +540,39 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>The minimum amount of disk space this policy is guaranteed to retain.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>int</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_targetSpace">
+        <div class="location">at line 88</div>
+        <code>                    int
+    <strong>targetSpace</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The target number of bytes to keep when pruning.</p></p>                        
         </div>
         <div class="tags">
             

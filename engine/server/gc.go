@@ -46,8 +46,12 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 	return set, nil
 }
 
-// Prune everything that is releasable in the local cache. No support for filtering yet.
-func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
+// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
+// otherwise prune the whole cache of any releasable entries.
+func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, useDefaultPolicy bool) (*core.EngineCacheEntrySet, error) {
+	srv.gcmu.Lock()
+	defer srv.gcmu.Unlock()
+
 	srv.daggerSessionsMu.RLock()
 	cancelLeases := len(srv.daggerSessions) == 0
 	srv.daggerSessionsMu.RUnlock()
@@ -66,7 +70,11 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context) (*core.Engi
 		}
 	}()
 
-	err := srv.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{All: true})
+	pruneOpts := []bkclient.PruneInfo{{All: true}}
+	if policy := srv.baseWorker.GCPolicy(); useDefaultPolicy && len(policy) > 0 {
+		pruneOpts = policy
+	}
+	err := srv.baseWorker.Prune(ctx, ch, pruneOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
 	}
@@ -158,14 +166,21 @@ func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkcl
 
 	out := make([]bkclient.PruneInfo, 0, len(bkcfg.GCPolicy))
 	for _, policy := range policies {
-		out = append(out, bkclient.PruneInfo{
+		info := bkclient.PruneInfo{
 			Filter:        policy.Filters,
 			All:           policy.All,
 			KeepDuration:  policy.KeepDuration.Duration,
 			ReservedSpace: policy.ReservedSpace.AsBytes(dstat),
 			MaxUsedSpace:  policy.MaxUsedSpace.AsBytes(dstat),
 			MinFreeSpace:  policy.MinFreeSpace.AsBytes(dstat),
-		})
+		}
+		if policy.SweepSize != (config.DiskSpace{}) {
+			info.TargetSpace = info.MaxUsedSpace - policy.SweepSize.AsBytes(disk.DiskStat{Total: info.MaxUsedSpace - info.ReservedSpace})
+			if info.TargetSpace <= 0 { // 0 is a special value indicating to ignore this value
+				info.TargetSpace = 1
+			}
+		}
+		out = append(out, info)
 	}
 	return out
 }
@@ -188,11 +203,16 @@ func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.Disk
 		space = DetectDefaultGCCap(dstat)
 	}
 
-	return convertBkPolicies(bkconfig.DefaultGCPolicy(bkconfig.GCConfig{
+	policies := convertBkPolicies(bkconfig.DefaultGCPolicy(bkconfig.GCConfig{
 		GCMinFreeSpace:  bkconfig.DiskSpace(space.MinFreeSpace),
 		GCReservedSpace: bkconfig.DiskSpace(space.ReservedSpace),
 		GCMaxUsedSpace:  bkconfig.DiskSpace(space.MaxUsedSpace),
 	}, dstat))
+	for i, policy := range policies {
+		policy.SweepSize = space.SweepSize
+		policies[i] = policy
+	}
+	return policies
 }
 
 func DetectDefaultGCCap(dstat disk.DiskStat) config.GCSpace {
@@ -204,6 +224,8 @@ func DetectDefaultGCCap(dstat disk.DiskStat) config.GCSpace {
 		ReservedSpace: reserve,
 		MinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
 		MaxUsedSpace:  config.DiskSpace{Percentage: diskSpaceMaxPercentage},
+		// SweepSize is unset by default, to preserve backwards compat
+		// SweepSize: config.DiskSpace{},
 	}
 }
 

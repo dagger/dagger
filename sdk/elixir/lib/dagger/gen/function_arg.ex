@@ -6,6 +6,8 @@ defmodule Dagger.FunctionArg do
   This is a specification for an argument at function definition time, not an argument passed at function call time.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "FunctionArg"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

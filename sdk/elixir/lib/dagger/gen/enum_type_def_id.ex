@@ -4,5 +4,7 @@ defmodule Dagger.EnumTypeDefID do
   The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "EnumTypeDefID"
+
   @type t() :: String.t()
 end

@@ -1344,7 +1344,8 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -2143,8 +2144,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_service_binding(self, alias: str, service: "Service") -> Self:
-        """Establish a runtime dependency on a from a container to a network
-        service.
+        """Establish a runtime dependency from a container to a network service.
 
         The service will be started automatically when needed and detached
         when it is no longer needed, executing the default command if none is
@@ -2983,7 +2983,8 @@ class Directory(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -3371,8 +3372,18 @@ class EngineCache(Type):
         _ctx = self._select("minFreeSpace", _args)
         return await _ctx.execute(int)
 
-    async def prune(self) -> Void | None:
+    async def prune(
+        self,
+        *,
+        use_default_policy: bool | None = False,
+    ) -> Void | None:
         """Prune the cache of releaseable entries
+
+        Parameters
+        ----------
+        use_default_policy:
+            Use the engine-wide default pruning policy if true, otherwise
+            prune the whole cache of any releasable entries.
 
         Returns
         -------
@@ -3387,12 +3398,16 @@ class EngineCache(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("useDefaultPolicy", use_default_policy, False),
+        ]
         _ctx = self._select("prune", _args)
         await _ctx.execute()
 
     async def reserved_space(self) -> int:
-        """Returns
+        """The minimum amount of disk space this policy is guaranteed to retain.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -3408,6 +3423,27 @@ class EngineCache(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("reservedSpace", _args)
+        return await _ctx.execute(int)
+
+    async def target_space(self) -> int:
+        """The target number of bytes to keep when pruning.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("targetSpace", _args)
         return await _ctx.execute(int)
 
 
@@ -4973,7 +5009,8 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -6484,7 +6521,8 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -6989,7 +7027,8 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -7592,7 +7631,8 @@ class ModuleSource(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()
@@ -9178,10 +9218,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("start", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "start", _args)
 
     async def stop(self, *, kill: bool | None = False) -> Self:
         """Stop the service.
@@ -9201,10 +9238,7 @@ class Service(Type):
         _args = [
             Arg("kill", kill, False),
         ]
-        _ctx = self._select("stop", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "stop", _args)
 
     async def up(
         self,
@@ -9449,7 +9483,8 @@ class Terminal(Type):
         QueryError
             If the API returns an error.
         """
-        return await self._ctx.execute_sync(self)
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):
         return self.sync().__await__()

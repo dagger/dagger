@@ -4,5 +4,7 @@ defmodule Dagger.CurrentModuleID do
   The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "CurrentModuleID"
+
   @type t() :: String.t()
 end

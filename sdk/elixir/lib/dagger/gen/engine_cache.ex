@@ -4,6 +4,8 @@ defmodule Dagger.EngineCache do
   A cache storage for the Dagger engine
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EngineCache"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -79,10 +81,12 @@ defmodule Dagger.EngineCache do
   @doc """
   Prune the cache of releaseable entries
   """
-  @spec prune(t()) :: :ok | {:error, term()}
-  def prune(%__MODULE__{} = engine_cache) do
+  @spec prune(t(), [{:use_default_policy, boolean() | nil}]) :: :ok | {:error, term()}
+  def prune(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
-      engine_cache.query_builder |> QB.select("prune")
+      engine_cache.query_builder
+      |> QB.select("prune")
+      |> QB.maybe_put_arg("useDefaultPolicy", optional_args[:use_default_policy])
 
     case Client.execute(engine_cache.client, query_builder) do
       {:ok, _} -> :ok
@@ -90,10 +94,24 @@ defmodule Dagger.EngineCache do
     end
   end
 
+  @doc """
+  The minimum amount of disk space this policy is guaranteed to retain.
+  """
   @spec reserved_space(t()) :: {:ok, integer()} | {:error, term()}
   def reserved_space(%__MODULE__{} = engine_cache) do
     query_builder =
       engine_cache.query_builder |> QB.select("reservedSpace")
+
+    Client.execute(engine_cache.client, query_builder)
+  end
+
+  @doc """
+  The target number of bytes to keep when pruning.
+  """
+  @spec target_space(t()) :: {:ok, integer()} | {:error, term()}
+  def target_space(%__MODULE__{} = engine_cache) do
+    query_builder =
+      engine_cache.query_builder |> QB.select("targetSpace")
 
     Client.execute(engine_cache.client, query_builder)
   end

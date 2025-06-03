@@ -4,6 +4,8 @@ defmodule Dagger.ModuleSource do
   The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ModuleSource"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

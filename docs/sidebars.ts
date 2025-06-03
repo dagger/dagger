@@ -6,25 +6,6 @@ module.exports = {
       id: "index",
     },
     {
-      type: "category",
-      label: "Features",
-      link: {
-        type: "doc",
-        id: "features/index",
-      },
-      items: [
-        "features/programmability",
-        "features/modules",
-        "features/shell",
-        "features/llm",
-        "features/caching",
-        "features/debugging",
-        "features/services",
-        "features/security",
-        "features/visualization",
-      ],
-    },
-    {
       type: "doc",
       label: "Installation",
       id: "install",
@@ -44,6 +25,25 @@ module.exports = {
       type: "doc",
       label: "Examples",
       id: "examples",
+    },
+    {
+      type: "category",
+      label: "Features",
+      link: {
+        type: "doc",
+        id: "features/index",
+      },
+      items: [
+        "features/programmability",
+        "features/modules",
+        "features/shell",
+        "features/llm",
+        "features/caching",
+        "features/debugging",
+        "features/services",
+        "features/security",
+        "features/visualization",
+      ],
     },
     {
       type: "category",

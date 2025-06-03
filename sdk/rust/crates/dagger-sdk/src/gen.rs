@@ -3671,7 +3671,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Establish a runtime dependency on a from a container to a network service.
+    /// Establish a runtime dependency from a container to a network service.
     /// The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
     /// The service will be reachable from the container via the provided hostname alias.
     /// The service dependency will also convey to any files or directories produced by the container.
@@ -5025,6 +5025,12 @@ pub struct EngineCacheEntrySetOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EngineCachePruneOpts {
+    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    #[builder(setter(into, strip_option), default)]
+    pub use_default_policy: Option<bool>,
+}
 impl EngineCache {
     /// The current set of entries in the cache
     ///
@@ -5076,12 +5082,34 @@ impl EngineCache {
         query.execute(self.graphql_client.clone()).await
     }
     /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn prune(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("prune");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn prune_opts(&self, opts: EngineCachePruneOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("prune");
+        if let Some(use_default_policy) = opts.use_default_policy {
+            query = query.arg("useDefaultPolicy", use_default_policy);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The minimum amount of disk space this policy is guaranteed to retain.
     pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("reservedSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The target number of bytes to keep when pruning.
+    pub async fn target_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("targetSpace");
         query.execute(self.graphql_client.clone()).await
     }
 }

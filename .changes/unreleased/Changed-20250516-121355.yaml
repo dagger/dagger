@@ -1,6 +1,0 @@
-kind: Changed
-body: add host.directory(noCache:bool) to auto reload +defaultPath directories in persistent shell/prompt sessions
-time: 2025-05-16T12:13:55.434111-07:00
-custom:
-    Author: cwlbraa
-    PR: "10342"

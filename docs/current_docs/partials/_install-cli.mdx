@@ -97,11 +97,6 @@ To see the installed version of dagger:
 
 <TabItem value="Windows">
 
-The Dagger CLI can be installed on Windows using either Windows Package Manager (winget) or PowerShell.
-
-<Tabs>
-<TabItem value="winget">
-
 The simplest way to install Dagger on Windows is using the Windows Package Manager:
 
 ```powershell
@@ -113,54 +108,6 @@ To verify the installation:
 ```powershell
 dagger version
 ```
-
-</TabItem>
-<TabItem value="pwsh">
-
-The Dagger CLI can be installed on Windows via a PowerShell 7.0 script.
-
-The quickest way of installing the latest stable release of `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
-
-```powershell
-iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger
-```
-
-To install Dagger to a custom location, specify the location using the `-InstallPath` parameter.
-
-```powershell
-iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -InstallPath C:\tools\dagger
-```
-
-To install a specific version of Dagger, specify the version with the `-DaggerVersion` parameter.
-
-<CodeBlock language="powershell">
-{`iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex;\n`}
-{`Install-Dagger -DaggerVersion ${daggerVersion}`}
-</CodeBlock>
-
-For an interactive installation process, include the `-Interactive` switch.
-
-```powershell
-iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -Interactive
-```
-
-For further customization, such as adding Dagger to your system's PATH, additional parameters are available. To view all available options:
-
-```powershell
-iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; gcm -Name Install-Dagger -Syntax
-```
-
-By default, without specifying the `-InstallPath`, Dagger will be installed in the `<your home folder>\dagger` directory.
-
-To verify that Dagger has been installed correctly, use where.exe
-
-```powershell
-where.exe dagger
-# Expected output: C:\<your home folder>\dagger\dagger.exe
-```
-
-</TabItem>
-</Tabs>
 
 </TabItem>
 </Tabs>
@@ -192,9 +139,7 @@ This will install the development release of the Dagger CLI in `./bin/dagger`.
 </TabItem>
 <TabItem value="Windows">
 
-<Tabs>
-<TabItem value="pwsh">
-To install the latest development release, use the following command:
+To install the latest development release, use the following command in PowerShell 7.0:
 
 ```powershell
 iwr -useb https://dl.dagger.io/dagger/install.ps1 | iex; Install-Dagger -DaggerCommit head
@@ -204,12 +149,7 @@ This will install the development release of the Dagger CLI in the `<your home f
 </TabItem>
 </Tabs>
 
-</TabItem>
-</Tabs>
-
 :::warning
 Running this CLI against the stable Dagger Engine will, by default, stop and remove the stable version and install a development version of the Dagger Engine instead. You may prefer to install it in an isolated environment so as to avoid conflicts.
 :::
 
-
-CLI version, so you may prefer to install it in an isolated environment so as to avoid conflicts.

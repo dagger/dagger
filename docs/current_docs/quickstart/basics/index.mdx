@@ -14,6 +14,15 @@ Welcome to Dagger, a general-purpose composition engine for containerized workfl
 
 Dagger is a modular, composable platform designed to replace complex systems glued together with artisanal scripts - for example, complex integration testing environments, data processing pipelines, and AI agent workflows. It is open source and works with any compute platform or technology stack, automatically optimizing for speed and cost.
 
+## Requirements
+
+This quickstart will take you approximately 10 minutes to complete. You should be familiar with programming in Go, Python, TypeScript, PHP, or Java.
+
+Before beginning, ensure that:
+- you have [installed the Dagger CLI](../../install.mdx).
+- you have a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
+- you have a GitHub account (optional, only if configuring Dagger Cloud)
+
 ## Create containers
 
 Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../api/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../api/index.mdx#calling-the-dagger-api) from the shell ([Dagger Shell](../../features/shell.mdx)) or from code ([custom Dagger Functions](../../api/custom-functions.mdx) written in a programming language).
@@ -185,7 +194,7 @@ public String publish()
 </TabItem>
 </Tabs>
 
-When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#dynamic-api-extension) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
 
 <VideoPlayer src="/img/current_docs/quickstart/basics/publish-code.webm" alt="Publishing demonstration" />
 
@@ -548,8 +557,8 @@ Dagger Functions can call other Dagger Functions, across languages. For example,
 
 One of Dagger's most powerful features is its ability to [cache data across workflow runs](../../features/caching.mdx). Dagger caches two types of data:
 
-- [Layers](../../api/cache-volumes.mdx#layer-caching): Build instructions and the results of some API calls.
-- [Volumes](../../api/cache-volumes.mdx#volume-caching): Contents of Dagger filesystem volumes.
+- [Layers](../../features/caching.mdx#layer-caching): Build instructions and the results of some API calls.
+- [Volumes](../../features/caching.mdx#volume-caching): Contents of Dagger filesystem volumes.
 
 Taken together, these two types of caching significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
 
@@ -630,7 +639,7 @@ Notice that when you call this Dagger Function multiple times, the second and su
 
 ## Trace everything
 
-Building and running workflows is only part of the problem - you also need a way to inspect and monitor them. Dagger provides [two powerful real-time visualization tools](../../features/visualization.mdx): the [Dagger terminal UI (TUI)](../../features/visualization.mdx#terminal-ui-tui), which you've already seen above, and [Dagger Cloud](https://dagger.cloud), a browser-based interface focused on tracing and debugging Dagger workflows.
+Building and running workflows is only part of the problem - you also need a way to inspect and monitor them. Dagger provides [two powerful real-time visualization tools](../../features/visualization.mdx): the [Dagger terminal UI (TUI)](../../features/visualization.mdx#terminal-ui), which you've already seen above, and [Dagger Cloud](https://dagger.cloud), a browser-based interface focused on tracing and debugging Dagger workflows.
 
 Once configured, every time you execute a Dagger workflow, its operational telemetry is automatically sent to Dagger Cloud as a Trace and the workflow output includes a link to visualize the workflow run on Dagger Cloud. Here's an example:
 

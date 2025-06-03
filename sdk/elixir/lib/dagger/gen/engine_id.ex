@@ -4,5 +4,7 @@ defmodule Dagger.EngineID do
   The `EngineID` scalar type represents an identifier for an object of type Engine.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "EngineID"
+
   @type t() :: String.t()
 end

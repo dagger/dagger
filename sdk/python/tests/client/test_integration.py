@@ -218,3 +218,28 @@ async def test_directory_sync():
 async def test_return_list_of_objects(alpine_image: str):
     envs = await dag.container().from_(alpine_image).env_variables()
     assert await envs[0].name() == "PATH"
+
+
+async def test_service_start_stop(alpine_image: str):
+    svc = (
+        dag.host()
+        .directory("runtime", include=["Dockerfile"])
+        .docker_build(target="base")
+        .with_workdir("/work")
+        .with_new_file("index.html", "foobar")
+        .with_exposed_port(8080)
+        .as_service(args=["python", "-m", "http.server", "8080"])
+    )
+    try:
+        svc = await svc.start()
+        out = await (
+            dag.container()
+            .from_(alpine_image)
+            .with_service_binding("www", svc)
+            .with_exec(["wget", "-O-", "http://www:8080"])
+            .stdout()
+        )
+    finally:
+        await svc.stop()
+
+    assert out == "foobar"

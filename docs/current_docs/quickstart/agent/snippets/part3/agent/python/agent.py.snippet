@@ -2,7 +2,7 @@
 async def develop_issue(
     self,
     github_token: Annotated[
-        Secret, Doc("Github Token with permissions to write issues and contents")
+        dagger.Secret, Doc("Github Token with permissions to write issues and contents")
     ],
     issue_id: Annotated[int, Doc("Github issue number")],
     repository: Annotated[str, Doc("Github repository url")],

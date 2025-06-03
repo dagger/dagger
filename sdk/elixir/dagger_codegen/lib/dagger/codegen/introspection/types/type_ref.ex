@@ -12,7 +12,6 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
       of_type:
         case type_ref["ofType"] do
           nil -> nil
-          :null -> nil
           of_type -> Dagger.Codegen.Introspection.Types.TypeRef.from_map(of_type)
         end
     }

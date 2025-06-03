@@ -4,5 +4,7 @@ defmodule Dagger.CacheVolumeID do
   The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "CacheVolumeID"
+
   @type t() :: String.t()
 end

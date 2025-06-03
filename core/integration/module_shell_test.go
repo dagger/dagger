@@ -156,7 +156,7 @@ func (Test) Version() string {
 // Encouragement
 func (Test) Go() string {
 	return "Let's go!"
-} 
+}
 `,
 	).
 		With(withModInitAt("modules/dep", "go", `// Dependency module
@@ -165,7 +165,7 @@ package main
 
 func New() *Dep {
 	return &Dep{
-		Version: "dep function",  
+		Version: "dep function",
 	}
 }
 
@@ -846,13 +846,32 @@ func (ShellSuite) TestDirectoryFlag(ctx context.Context, t *testctx.T) {
 }
 
 func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
 	script := fmt.Sprintf("directory | with-directory / $(container | from %s | directory /etc) --include=passwd,shadow | entries", alpineImage)
+
+	c := connect(ctx, t)
 	out, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		Stdout(ctx)
+
 	require.NoError(t, err)
 	require.Equal(t, "passwd\nshadow\n", out)
+}
+
+func (ShellSuite) TestObjectSliceArgument(ctx context.Context, t *testctx.T) {
+	script := fmt.Sprintf(`
+arm64=$(container --platform linux/arm64 | from %[1]s)
+amd64=$(container --platform linux/amd64 | from %[1]s)
+container | export container.tar --platform-variants $arm64,$amd64
+`, alpineImage)
+
+	c := connect(ctx, t)
+	size, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		File("container.tar").
+		Size(ctx)
+
+	require.NoError(t, err)
+	require.Greater(t, size, 0)
 }
 
 func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
@@ -996,5 +1015,56 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 			With(daggerShell(`__dag`)).
 			Sync(ctx)
 		requireErrOut(t, err, "reserved for internal use")
+	})
+
+	t.Run("unknown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`_container`)).
+			Sync(ctx)
+		requireErrOut(t, err, "does not exist")
+	})
+}
+
+func (ShellSuite) TestPrintenvCommand(ctx context.Context, t *testctx.T) {
+	t.Run("printenv all", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "GOPATH=/go")
+		require.Contains(t, out, "HOME=/root")
+		require.Contains(t, out, "PWD=/work")
+	})
+
+	t.Run("printenv specific", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv PATH`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "/usr/local/bin")
+	})
+
+	t.Run("printenv non-existing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv NON_EXISTING_VAR`)).
+			Sync(ctx)
+		requireErrOut(t, err, `environment variable "NON_EXISTING_VAR" not set`)
+	})
+
+	t.Run("printenv shows set envs", func(ctx context.Context, t *testctx.T) {
+		script := `
+ctr=$(container)
+.printenv ctr
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Container@xxh3:")
 	})
 }

@@ -4,6 +4,8 @@ defmodule Dagger.Container do
   An OCI-compatible container, also known as a Docker container.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Container"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -1018,7 +1020,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Establish a runtime dependency on a from a container to a network service.
+  Establish a runtime dependency from a container to a network service.
 
   The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
 

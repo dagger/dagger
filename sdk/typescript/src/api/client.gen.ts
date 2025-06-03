@@ -810,6 +810,13 @@ export type EngineCacheEntrySetOpts = {
   key?: string
 }
 
+export type EngineCachePruneOpts = {
+  /**
+   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   */
+  useDefaultPolicy?: boolean
+}
+
 /**
  * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
  */
@@ -2718,7 +2725,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Establish a runtime dependency on a from a container to a network service.
+   * Establish a runtime dependency from a container to a network service.
    *
    * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
    *
@@ -3438,6 +3445,7 @@ export class EngineCache extends BaseClient {
   private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
   private readonly _reservedSpace?: number = undefined
+  private readonly _targetSpace?: number = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3450,6 +3458,7 @@ export class EngineCache extends BaseClient {
     _minFreeSpace?: number,
     _prune?: Void,
     _reservedSpace?: number,
+    _targetSpace?: number,
   ) {
     super(ctx)
 
@@ -3459,6 +3468,7 @@ export class EngineCache extends BaseClient {
     this._minFreeSpace = _minFreeSpace
     this._prune = _prune
     this._reservedSpace = _reservedSpace
+    this._targetSpace = _targetSpace
   }
 
   /**
@@ -3532,22 +3542,42 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
+   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
-  prune = async (): Promise<void> => {
+  prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
       return
     }
 
-    const ctx = this._ctx.select("prune")
+    const ctx = this._ctx.select("prune", { ...opts })
 
     await ctx.execute()
   }
+
+  /**
+   * The minimum amount of disk space this policy is guaranteed to retain.
+   */
   reservedSpace = async (): Promise<number> => {
     if (this._reservedSpace) {
       return this._reservedSpace
     }
 
     const ctx = this._ctx.select("reservedSpace")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The target number of bytes to keep when pruning.
+   */
+  targetSpace = async (): Promise<number> => {
+    if (this._targetSpace) {
+      return this._targetSpace
+    }
+
+    const ctx = this._ctx.select("targetSpace")
 
     const response: Awaited<number> = await ctx.execute()
 

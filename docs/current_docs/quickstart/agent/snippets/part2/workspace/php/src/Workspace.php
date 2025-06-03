@@ -57,4 +57,20 @@ class Workspace
   {
     return $this->source;
   }
+
+  #[DaggerFunction]
+  #[Doc('Return the result of running unit tests')]
+  public function test(): string
+  {
+    $nodeCache = dag()->cacheVolume('node');
+    return dag()
+      ->container()
+      ->from('node:21-slim')
+      ->withDirectory('/src', $this->source)
+      ->withMountedCache('/root/.npm', $nodeCache)
+      ->withWorkdir('/src')
+      ->withExec(['npm', 'install'])
+      ->withExec(['npm', 'run', 'test:unit', 'run'])
+      ->stdout();
+  }
 }

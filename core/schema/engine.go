@@ -31,7 +31,10 @@ func (s *engineSchema) Install() {
 			Doc("The current set of entries in the cache"),
 		dagql.Func("prune", s.cachePrune).
 			DoNotCache("Mutates mutable state").
-			Doc("Prune the cache of releaseable entries"),
+			Doc("Prune the cache of releaseable entries").
+			Args(
+				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."),
+			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.EngineCacheEntrySet]{
@@ -57,6 +60,7 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	return &core.EngineCache{
 		Query:         parent.Query,
 		ReservedSpace: int(policy.ReservedSpace),
+		TargetSpace:   int(policy.TargetSpace),
 		MaxUsedSpace:  int(policy.MaxUsedSpace),
 		MinFreeSpace:  int(policy.MinFreeSpace),
 		KeepBytes:     int(policy.ReservedSpace),
@@ -93,13 +97,15 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, entrySet)
 }
 
-func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct{}) (dagql.Nullable[core.Void], error) {
+func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {
+	UseDefaultPolicy bool `default:"false"`
+}) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 	if err := parent.Query.RequireMainClient(ctx); err != nil {
 		return void, err
 	}
 
-	_, err := parent.Query.PruneEngineLocalCacheEntries(ctx)
+	_, err := parent.Query.PruneEngineLocalCacheEntries(ctx, args.UseDefaultPolicy)
 	if err != nil {
 		return void, fmt.Errorf("failed to prune cache entries: %w", err)
 	}
