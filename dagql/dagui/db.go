@@ -251,6 +251,8 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
+		// flag that the span has received logs
+		db.initSpan(spanID).HasLogs = true
 	}
 	return nil
 }

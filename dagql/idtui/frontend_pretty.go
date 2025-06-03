@@ -1798,7 +1798,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	r.fancyIndent(out, row, false, true)
 
 	var toggler termenv.Style
-	if row.HasChildren {
+	if row.HasChildren || row.Span.HasLogs {
 		if row.Expanded {
 			toggler = out.String(CaretDownFilled)
 		} else {
