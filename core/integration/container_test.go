@@ -5106,6 +5106,43 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "data", content)
 	})
+
+	t.Run("symlink cant escape root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("some-file", "data").
+			WithSymlink("some-file", "../../../../../../../../../../../../../../../this-should-be-in-the-root-fs")
+
+		entries, err := ctr.Rootfs().Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "this-should-be-in-the-root-fs")
+
+		s, err := ctr.File("this-should-be-in-the-root-fs").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink cant target above root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithSymlink("../../../../../../../../../../../../../../..", "escape").
+			WithNewFile("escape/some-file", "data")
+
+		s, err := ctr.File("some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink cant follow other symlink above root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithSymlink("/root", "escape").
+			WithSymlink("_", "escape/foo/bar")
+
+		entries, err := ctr.Directory("root/foo").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "bar")
+	})
 }
 
 func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {

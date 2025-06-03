@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
@@ -819,27 +819,6 @@ func (dir *Directory) Root() (*Directory, error) {
 	return dir, nil
 }
 
-func symlink(ctx context.Context, cache bkcache.Manager, parent bkcache.ImmutableRef, s session.Group, target, linkName string) (bkcache.ImmutableRef, error) {
-	newRef, err := cache.New(ctx, parent, s, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, nil, func(root string) error {
-		fullLinkName := path.Join(root, linkName)
-		linkNameDirPath, _ := filepath.Split(fullLinkName)
-		err := os.MkdirAll(filepath.Dir(linkNameDirPath), 0755)
-		if err != nil {
-			return err
-		}
-		return os.Symlink(target, fullLinkName)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return newRef.Commit(ctx)
-}
-
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -853,16 +832,37 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 		return nil, err
 	}
 
-	var immutableRef bkcache.ImmutableRef
+	var parentRef bkcache.ImmutableRef
 	if ref != nil {
-		immutableRef, err = ref.CacheRef(ctx)
+		parentRef, err = ref.CacheRef(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cache := dir.Query.BuildkitCache()
-	snap, err := symlink(ctx, cache, immutableRef, nil, target, path.Join(dir.Dir, linkName))
+	linkName = path.Join(dir.Dir, linkName)
+	newRef, err := dir.Query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(root string) error {
+		fullLinkName, err := containerdfs.RootPath(root, linkName)
+		if err != nil {
+			return err
+		}
+
+		linkNameDirPath, _ := filepath.Split(fullLinkName)
+		err = os.MkdirAll(filepath.Dir(linkNameDirPath), 0755)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, fullLinkName)
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
