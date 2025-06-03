@@ -4,6 +4,8 @@ defmodule Dagger.GeneratedCode do
   The result of running an SDK's codegen.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "GeneratedCode"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

@@ -4,6 +4,8 @@ defmodule Dagger.Container do
   An OCI-compatible container, also known as a Docker container.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Container"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

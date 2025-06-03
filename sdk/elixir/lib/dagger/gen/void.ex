@@ -6,5 +6,7 @@ defmodule Dagger.Void do
   A Null Void is used as a placeholder for resolvers that do not return anything.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "Void"
+
   @type t() :: String.t()
 end

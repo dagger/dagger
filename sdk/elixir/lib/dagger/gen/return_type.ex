@@ -4,6 +4,8 @@ defmodule Dagger.ReturnType do
   Expected return type of an execution
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "ReturnType"
+
   @type t() :: :SUCCESS | :FAILURE | :ANY
 
   @doc """

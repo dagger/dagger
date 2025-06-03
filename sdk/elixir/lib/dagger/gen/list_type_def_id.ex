@@ -4,5 +4,7 @@ defmodule Dagger.ListTypeDefID do
   The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ListTypeDefID"
+
   @type t() :: String.t()
 end

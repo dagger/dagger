@@ -4,6 +4,8 @@ defmodule Dagger.Module do
   A Dagger module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Module"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

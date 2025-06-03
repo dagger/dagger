@@ -4,6 +4,8 @@ defmodule Dagger.FunctionCall do
   An active function call.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "FunctionCall"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

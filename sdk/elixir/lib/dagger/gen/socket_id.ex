@@ -4,5 +4,7 @@ defmodule Dagger.SocketID do
   The `SocketID` scalar type represents an identifier for an object of type Socket.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "SocketID"
+
   @type t() :: String.t()
 end

@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    sdk/elixir: add support for default value argument
+time: 2025-05-31T23:21:17.260569588+02:00
+custom:
+    Author: Nero-F
+    PR: "10513"

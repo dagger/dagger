@@ -4,5 +4,7 @@ defmodule Dagger.LLMTokenUsageID do
   The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "LLMTokenUsageID"
+
   @type t() :: String.t()
 end

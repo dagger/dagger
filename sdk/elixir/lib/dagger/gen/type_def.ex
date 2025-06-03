@@ -4,6 +4,8 @@ defmodule Dagger.TypeDef do
   A definition of a parameter or return type in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "TypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

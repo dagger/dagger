@@ -4,6 +4,8 @@ defmodule Dagger.ModuleSourceKind do
   The kind of module source.
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "ModuleSourceKind"
+
   @type t() :: :LOCAL_SOURCE | :GIT_SOURCE | :DIR_SOURCE
 
   @spec local_source() :: :LOCAL_SOURCE

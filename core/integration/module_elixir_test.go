@@ -105,7 +105,27 @@ func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "foo", out)
 	})
 
-	// TODO: ensure that optional works with default value after the https://github.com/dagger/dagger/issues/9744 is resolved.
+	t.Run("can use default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("echo-value")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
+
+	t.Run("can use value with default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("echo-value", "--value=bar")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
+	})
 }
 
 func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {
@@ -191,6 +211,17 @@ func (ElixirSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
+}
+
+func (ElixirSuite) TestConstructorArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := elixirModule(t, c, "constructor-function").
+		With(daggerCall("--name", "Elixir", "greeting")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello, Elixir!", out)
 }
 
 // Ensure the module is working properly with the `Req` adapter.

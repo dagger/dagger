@@ -4,6 +4,8 @@ defmodule Dagger.GitRef do
   A git ref (tag, branch, or commit).
   """
 
+  use Dagger.Core.Base, kind: :object, name: "GitRef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

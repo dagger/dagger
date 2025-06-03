@@ -4,5 +4,7 @@ defmodule Dagger.ServiceID do
   The `ServiceID` scalar type represents an identifier for an object of type Service.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ServiceID"
+
   @type t() :: String.t()
 end

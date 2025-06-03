@@ -4,6 +4,8 @@ defmodule Dagger.ListTypeDef do
   A definition of a list type in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ListTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

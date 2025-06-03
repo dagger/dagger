@@ -4,5 +4,7 @@ defmodule Dagger.EnvID do
   The `EnvID` scalar type represents an identifier for an object of type Env.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "EnvID"
+
   @type t() :: String.t()
 end

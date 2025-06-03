@@ -4,5 +4,7 @@ defmodule Dagger.HostID do
   The `HostID` scalar type represents an identifier for an object of type Host.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "HostID"
+
   @type t() :: String.t()
 end

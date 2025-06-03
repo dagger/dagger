@@ -4,6 +4,8 @@ defmodule Dagger.InterfaceTypeDef do
   A definition of a custom interface defined in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "InterfaceTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
