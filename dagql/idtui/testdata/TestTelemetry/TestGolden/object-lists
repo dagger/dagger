@@ -9,7 +9,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
+▼ load module: ./viztest X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -30,13 +30,13 @@ Expected stderr:
 │  
 ╰─▼ Dep.fileContents(files: [xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX]): String! X.Xs
   ┃ AAABBBCCC
-  ├─● File.contents: String! X.Xs
+  ├─▼ File.contents: String! X.Xs
   │ ┃ AAA
   │
-  ├─● File.contents: String! X.Xs
+  ├─▼ File.contents: String! X.Xs
   │ ┃ BBB
   │
-  ╰─● File.contents: String! X.Xs
+  ╰─▼ File.contents: String! X.Xs
     ┃ CCC
 
 

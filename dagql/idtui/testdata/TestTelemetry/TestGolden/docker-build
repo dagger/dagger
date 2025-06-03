@@ -10,7 +10,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
+▼ load module: ./viztest X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -24,17 +24,17 @@ Expected stderr:
 ├─● .withNewFile(path: "Dockerfile", contents: "FROM busybox:1.35\nRUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo what is up?\nRUN echo im another layer\n"): Directory! X.Xs
 ╰─▼ .dockerBuild: Container! X.Xs
   ├─$ [1/5] FROM docker.io/library/busybox:1.35@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
-  ├─● [2/5] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+  ├─▼ [2/5] RUN echo the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
   │ ┃ the time is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  ├─● [3/5] RUN echo hello, world! X.Xs
+  ├─▼ [3/5] RUN echo hello, world! X.Xs
   │ ┃ hello, world!
-  ├─● [4/5] RUN echo what is up? X.Xs
+  ├─▼ [4/5] RUN echo what is up? X.Xs
   │ ┃ what is up?
-  ╰─● [5/5] RUN echo im another layer X.Xs
+  ╰─▼ [5/5] RUN echo im another layer X.Xs
     ┃ im another layer
-● .withExec(args: ["echo", "hey"]): Container! X.Xs
+▼ .withExec(args: ["echo", "hey"]): Container! X.Xs
 ┃ hey
-● .stdout: String! X.Xs
+▼ .stdout: String! X.Xs
 ┃ hey
 
 

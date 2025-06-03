@@ -9,7 +9,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
+▼ load module: ./viztest X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -18,7 +18,7 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● viztest: Viztest! X.Xs
-● .helloWorld: String! X.Xs
+▼ .helloWorld: String! X.Xs
 ┃ Hello, world!
 
 

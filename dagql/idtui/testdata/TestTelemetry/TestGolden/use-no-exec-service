@@ -10,7 +10,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
+▼ load module: ./viztest X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -24,7 +24,7 @@ Expected stderr:
 ├─● container: Container! X.Xs
 ├─$ .from(address: "redis:7.4.3"): Container! X.Xs CACHED
 ├─● .withExposedPort(port: 6379): Container! X.Xs
-├─● .asService: Service! X.Xs
+├─▼ .asService: Service! X.Xs
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=X.X.X, bits=64, commit=00000000, modified=0, pid=X, just started
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
@@ -38,9 +38,9 @@ Expected stderr:
 │   ┆ service: Container.asService: Service!
 │   ): Container! X.Xs
 ├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-├─● .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
+├─▼ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
 │ ┃ PONG
-╰─● .stdout: String! X.Xs
+╰─▼ .stdout: String! X.Xs
   ┃ PONG
 
 

@@ -5,7 +5,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module X.Xs
+▼ load module: ./viztest/typescript X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -26,7 +26,7 @@ Expected stderr:
 
 Error logs:
 
-✘ .pending: Void X.Xs
+▼ .pending: Void X.Xs
 Error: process "false" did not complete successfully: exit code: 1
 ! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 
