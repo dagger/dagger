@@ -1691,6 +1691,11 @@ func (s *moduleSourceSchema) runCodegen(
 	srcInst dagql.Instance[*core.ModuleSource],
 	genDirInst dagql.Instance[*core.Directory],
 ) (dagql.Instance[*core.Directory], error) {
+	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
+	if !ok {
+		return genDirInst, fmt.Errorf("sdk implementation does not implement CodeGenerator interface")
+	}
+
 	// load the deps as actual Modules
 	deps, err := s.loadDependencyModules(ctx, srcInst.Self)
 	if err != nil {
@@ -1706,9 +1711,24 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 	srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
 
-	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
-	if !ok {
-		return genDirInst, fmt.Errorf("sdk implementation does not implement CodeGenerator interface")
+	// If possible, add the types defined by the module itself to the "deps" so that they can be
+	// part of the code generation.
+	// This is not really a dependency as it's the module itself, but that will allow to generate
+	// the types.
+	if srcInst.Self.SDK != nil {
+		// Only if the SDK implements a specific `moduleTypeDefs` function.
+		// If not, we will have circular dependency issues.
+		if sdkImpl, ok := srcInst.Self.SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() {
+			var mod dagql.Instance[*core.Module]
+			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
+
+			deps = mod.Self.Deps.Append(mod.Self)
+		}
 	}
 
 	// run codegen to get the generated context directory
@@ -1981,8 +2001,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
-	var err error
-	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	typeDefs, err := runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
@@ -2019,7 +2038,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			src.Self.Query,
 			mod,
 			nil,
-			mod.Runtime,
+			typeDefs,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2135,10 +2154,27 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	modName := src.Self.ModuleName
 
 	if src.Self.SDKImpl != nil {
+		runtimeImpl, ok := src.Self.SDKImpl.AsRuntime()
+		if !ok {
+			return inst, fmt.Errorf("sdk implementation does not implement Runtime interface")
+		}
+
 		mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
 		if err != nil {
 			return inst, err
 		}
+		if runtimeImpl.HasModuleTypeDefs() {
+			mod.Deps = mod.Deps.Append(mod)
+		}
+
+		// pre-load the module Runtime
+		if mod.Runtime == nil {
+			mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+			if err != nil {
+				return inst, err
+			}
+		}
+
 		mod.InstanceID = dagql.CurrentID(ctx)
 	} else {
 		// For no SDK, provide an empty stub module definition

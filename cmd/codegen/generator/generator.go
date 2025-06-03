@@ -58,6 +58,10 @@ type Config struct {
 	// name is the expected value.
 	IsInit bool
 
+	// TypeDefsOnly indicates whether only type definitions should be generated, excluding other related code artifacts.
+	// This is used to generate module own's types even if the module doesn't compile.
+	TypeDefsOnly bool
+
 	// ClientOnly indicates that the codegen should only generate the client code.
 	ClientOnly bool
 
