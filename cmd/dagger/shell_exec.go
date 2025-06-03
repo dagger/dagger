@@ -841,7 +841,7 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
 	def, err := h.getOrInitDef(dep.SourceDigest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.Source)
+		return initializeModule(ctx, h.dag, dep.SourceRoot, dep.Source)
 	})
 	if err != nil {
 		return nil, nil, err
