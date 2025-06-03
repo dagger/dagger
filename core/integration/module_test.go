@@ -2286,6 +2286,193 @@ type Test struct {}
 	})
 }
 
+// TestUnbundleSDK verifies that you can implement a SDK without
+// having to implements the full interface but only the ones you want.
+// cc: https://github.com/dagger/dagger/issues/7707
+func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
+	t.Run("only codegen", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/sdk").
+			With(daggerExec("init", "--name=only-codegen", "--sdk=go", "--source=.")).
+			WithNewFile("/work/sdk/main.go", `package main
+
+import (
+  "context"
+  "dagger/only-codegen/internal/dagger"
+)
+
+type OnlyCodegen struct{}
+
+func (o *OnlyCodegen) Codegen(
+  ctx context.Context,
+  modSource *dagger.ModuleSource,
+  introspectionJSON *dagger.File,
+) (*dagger.GeneratedCode, error) {
+  return dag.GeneratedCode(dag.Directory().WithNewFile("hello.txt", "Hello, world!")), nil
+}
+`).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+
+		t.Run("can run dagger develop", func(ctx context.Context, t *testctx.T) {
+			generatedFile, err := ctr.With(daggerExec("develop")).File("/work/hello.txt").Contents(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "Hello, world!", generatedFile)
+		})
+
+		t.Run("explicit error on dagger call", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerExec("call", "foo")).Sync(ctx)
+
+			requireErrOut(t, err, "the SDK does not implement the `Runtime` interface")
+		})
+
+		t.Run("explicit error on dagger functions", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerFunctions()).Sync(ctx)
+
+			requireErrOut(t, err, "the SDK does not implement the `Runtime` interface")
+		})
+	})
+
+	t.Run("only runtime", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/sdk").
+			With(daggerExec("init", "--name=only-runtime", "--sdk=go", "--source=.")).
+			WithNewFile("/work/sdk/main.go", fmt.Sprintf(`package main
+
+import (
+  "context"
+  "dagger/only-runtime/internal/dagger"
+)
+
+type OnlyRuntime struct {
+  Src *dagger.Directory
+}
+
+func New(
+  //+defaultPath="./src"
+  sdkSrc *dagger.Directory,
+) *OnlyRuntime {
+  return &OnlyRuntime{
+    Src: sdkSrc,
+  }
+}
+
+func (m *OnlyRuntime) ModuleRuntime(
+  ctx context.Context,
+  modSource *dagger.ModuleSource,
+  introspectionJSON *dagger.File,
+) (*dagger.Container, error) {
+  return dag.Container().
+    From("%s").
+    WithDirectory("/src", m.Src).
+    WithWorkdir("/src").
+    WithExec([]string{"go", "build", "-o", "/bin/sdk", "."}).
+    WithEntrypoint([]string{"/bin/sdk"}), nil
+}
+`, golangImage)).
+			WithWorkdir("/work/sdk/src").
+			WithExec([]string{"go", "mod", "init", "dagger.test/sdk"}).
+			WithExec([]string{"go", "get", "dagger.io/dagger@v0.18.9"}).
+			WithNewFile("/work/sdk/src/main.go", `package main
+
+import (
+  "context"
+  "encoding/json"
+  "fmt"
+  "os"
+  "strings"
+
+  "dagger.io/dagger"
+  "dagger.io/dagger/dag"
+)
+
+func main() {
+  ctx := context.Background()
+  defer dag.Close()
+
+  name, err := dag.CurrentModule().Name(ctx)
+  if err != nil {
+    fmt.Println(fmt.Errorf("failed to module name: %w", err))
+
+	  os.Exit(2)
+  }
+
+  formattedName := strings.ToUpper(string(name[0])) + name[1:]
+
+  if err := dispatch(ctx, formattedName); err != nil {
+    fmt.Println(err)
+
+    os.Exit(2)
+  }
+}
+
+func dispatch(ctx context.Context, modName string) error {
+  fnCall := dag.CurrentFunctionCall()
+
+  parentName, err := fnCall.ParentName(ctx)
+  if err != nil {
+    return fmt.Errorf("failed to get parent name: %w", err)
+  }
+
+  var result any
+
+  if parentName == "" {
+    mod := dag.Module()
+
+    mainObj := dag.TypeDef().WithObject(modName).
+    WithFunction(dag.Function("HelloWorld", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)))
+
+    mod = mod.WithObject(mainObj)
+
+    result = mod
+  } else {
+    result = "Hello world"
+  }
+
+  resultBytes, err := json.Marshal(result)
+  if err != nil {
+    return fmt.Errorf("failed to marshal result: %w", err)
+  }
+
+  if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+    return fmt.Errorf("failed to set return value: %w", err)
+  }
+
+	return nil
+}`).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+
+		t.Run("can run dagger develop without failing", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerExec("develop")).Sync(ctx)
+
+			require.NoError(t, err)
+		})
+
+		t.Run("can run dagger functions", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerFunctions()).Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "hello-world")
+		})
+
+		t.Run("can run dagger call", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("hello-world")).Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "Hello world")
+		})
+
+	})
+}
+
 // TestHostError verifies the host api is not exposed to modules
 func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
