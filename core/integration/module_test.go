@@ -2469,7 +2469,6 @@ func dispatch(ctx context.Context, modName string) error {
 			require.NoError(t, err)
 			require.Contains(t, out, "Hello world")
 		})
-
 	})
 }
 
