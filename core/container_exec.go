@@ -3,7 +3,6 @@ package core
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +31,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
@@ -97,6 +97,22 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
 	}
+	if execMD.EncodedModuleID == "" {
+		mod, err := container.Query.CurrentModule(ctx)
+		if err != nil {
+			if !errors.Is(err, ErrNoCurrentModule) {
+				return nil, err
+			}
+		} else {
+			if mod.InstanceID == nil {
+				return nil, fmt.Errorf("current module has no instance ID")
+			}
+			execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
@@ -109,16 +125,14 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		execMD.NoInit = true
 	}
 
-	// XXX: how to handle this
-	mod, err := container.Query.CurrentModule(ctx)
-	if err == nil {
-		if mod.InstanceID == nil {
-			return nil, fmt.Errorf("current module has no instance ID")
+	if execMD.EncodedModuleID != "" {
+		modID := new(call.ID)
+		if err := modID.Decode(execMD.EncodedModuleID); err != nil {
+			return nil, fmt.Errorf("failed to decode module ID: %w", err)
 		}
-		// allow the exec to reach services scoped to the module that
-		// installed it
-		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains,
-			network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID))
+
+		// allow the exec to reach services scoped to the module that installed it
+		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains, network.ModuleDomain(modID, clientMetadata.SessionID))
 	}
 
 	// if GPU parameters are set for this container pass them over:
@@ -355,39 +369,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		case 1:
 			container.MetaResult = iref
 		default:
-			// XXX: this panics?
-			// what is op.Mounts at *this point*?
-			if ref.MountIndex-2 >= len(container.Mounts) {
-				mnts, _ := json.Marshal(op.Mounts)
-				out := strings.Join(meta.Args, " ") + "\n"
-				out += fmt.Sprintf("out of range %d/%d\n%s\n", ref.MountIndex-2, len(container.Mounts), string(mnts))
-				for i, mount := range container.Mounts {
-					out += fmt.Sprintf("ctr mount %d %s", i, mount.Target)
-					out += "\n"
-				}
-				for i, ref := range p.OutputRefs {
-					out += fmt.Sprintf("output %d %d", i, ref.MountIndex)
-					out += "\n"
-				}
-				panic(out)
+			mountIdx := ref.MountIndex - 2
+			if mountIdx >= len(container.Mounts) {
+				// something is disastourously wrong, panic!
+				panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
 			}
-			// panic: runtime error: index out of range [2] with length 2
-			// goroutine 19423727 [running]:
-			// github.com/dagger/dagger/core.(*Container).WithExec(0x1?, {0x3980f50, 0xc1481f4b90}, {{0xc148589d60, 0xa, 0xa}, 0x0, {0x0, 0x0}, {0x0, ...}, ...})
-			// 	/app/core/container_exec.go:362 +0x18ad
-			// github.com/dagger/dagger/core/schema.(*containerSchema).withExec(0xc1170629d8, {0x3980f50, 0xc1481f4b90}, {0xc148680e40, 0xc08f1f58c8, {0x0, 0x1, 0xc1176631d0, 0xc11763c650}, 0x0, ...}, ...)
-			// 	/app/core/schema/container.go:926 +0x9ee
-			// github.com/dagger/dagger/dagql.NodeFuncWithCacheKey[...].func1({0xc148680e40, 0xc08f1f58c8, {0x0, 0x1, 0xc1176631d0, 0xc11763c650}, 0x0, 0x0}, 0xc144723500, {0xc12a0bd530, ...})
-			// 	/app/dagql/objects.go:809 +0x165
-			// github.com/dagger/dagger/dagql.Class[...].Call(0x39d3e00?, {0x3980f50?, 0xc1481f4b90?}, {0xc148680e40, 0xc08f1f58c8, {0x0, 0x1, 0xc1176631d0, 0xc11763c650}, 0x0, ...}, ...)
-			// 	/app/dagql/objects.go:269 +0x152
-			// github.com/dagger/dagger/dagql.Instance[...].call.func2()
-			// 	/app/dagql/objects.go:568 +0xbf
-			// github.com/dagger/dagger/engine/cache.(*cache[...]).GetOrInitializeWithCallbacks.func1()
-			// 	/app/engine/cache/cache.go:210 +0x5f
-			// created by github.com/dagger/dagger/engine/cache.(*cache[...]).GetOrInitializeWithCallbacks in goroutine 19423724
-			// 	/app/engine/cache/cache.go:208 +0x68c
-			container.Mounts[ref.MountIndex-2].Result = iref
+			container.Mounts[mountIdx].Result = iref
 		}
 
 		// prevent the result from being released by the defer
