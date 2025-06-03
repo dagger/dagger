@@ -2119,7 +2119,7 @@
 			"t": "M",
 			"n": "Dagger\\Container::withServiceBinding",
 			"p": "Dagger/Container.html#method_withServiceBinding",
-			"d": "<p>Establish a runtime dependency on a from a container to a network service.</p>"
+			"d": "<p>Establish a runtime dependency from a container to a network service.</p>"
 		},
 		{
 			"t": "M",
@@ -2479,7 +2479,13 @@
 			"t": "M",
 			"n": "Dagger\\EngineCache::reservedSpace",
 			"p": "Dagger/EngineCache.html#method_reservedSpace",
-			"d": null
+			"d": "<p>The minimum amount of disk space this policy is guaranteed to retain.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EngineCache::targetSpace",
+			"p": "Dagger/EngineCache.html#method_targetSpace",
+			"d": "<p>The target number of bytes to keep when pruning.</p>"
 		},
 		{
 			"t": "M",
