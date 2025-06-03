@@ -205,7 +205,7 @@ func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
 						"The Go container to use to build Booklit.").
 					WithFileOutput("bin", "The /out/booklit binary."),
 			).
-			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit."),
+			WithPrompt("Mount $repo into $ctr at /src and build ./cmd/booklit as a static binary, writing it to /out/booklit."),
 		buildMultiAssert)
 }
 
