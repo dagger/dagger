@@ -430,12 +430,6 @@ func (op ContainerDagOp) Inputs() []bkcache.ImmutableRef {
 	return refs
 }
 
-var _ interface{ GetMounts() []*pb.Mount } = ContainerDagOp{}
-
-func (op ContainerDagOp) GetMounts() []*pb.Mount {
-	return op.Mounts
-}
-
 func (op ContainerDagOp) Name() string {
 	return "dagop.ctr"
 }
