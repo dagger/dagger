@@ -525,10 +525,6 @@ type branchesArgs struct {
 }
 
 func (s *gitSchema) branches(ctx context.Context, parent dagql.Instance[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
-		return DagOp(ctx, s.srv, parent, args, s.branches)
-	}
-
 	var patterns []string
 	if args.Patterns.Valid {
 		for _, pattern := range args.Patterns.Value {
