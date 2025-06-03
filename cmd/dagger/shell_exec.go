@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/pflag"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -610,7 +611,15 @@ func (h *shellCallHandler) parseArgumentValues(
 	}
 
 	// Finally, get the values from the flags that haven't been resolved yet.
-	for _, a := range fn.Args {
+	type flagResult struct {
+		idx   int
+		flag  string
+		value any
+	}
+
+	p := pool.NewWithResults[flagResult]().WithErrors()
+
+	for i, a := range fn.Args {
 		if _, exists := values[a.Name]; exists {
 			continue
 		}
@@ -621,11 +630,22 @@ func (h *shellCallHandler) parseArgumentValues(
 		if !flag.Changed {
 			continue
 		}
-		v, err := a.GetFlagValue(ctx, flag, h.dag, md)
-		if err != nil {
-			return nil, err
-		}
-		values[a.Name] = v
+		p.Go(func() (flagResult, error) {
+			val, err := a.GetFlagValue(ctx, flag, h.dag, md)
+			if err != nil {
+				return flagResult{}, err
+			}
+			return flagResult{i, a.Name, val}, nil
+		})
+	}
+
+	vals, err := p.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, val := range vals {
+		values[val.flag] = val.value
 	}
 
 	return values, nil
@@ -841,7 +861,7 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
 	def, err := h.getOrInitDef(dep.SourceDigest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.Source)
+		return initializeModule(ctx, h.dag, dep.SourceRoot, dep.Source)
 	})
 	if err != nil {
 		return nil, nil, err

@@ -565,7 +565,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if def.Source == nil {
 					newDef, err = initializeCore(ctx, h.dag)
 				} else {
-					newDef, err = initializeModule(ctx, h.dag, def.Source)
+					newDef, err = initializeModule(ctx, h.dag, def.SourceRoot, def.Source)
 				}
 				if err != nil {
 					return fmt.Errorf("failed to reinitialize module: %w", err)

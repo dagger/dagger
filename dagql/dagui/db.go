@@ -251,6 +251,8 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
+		// flag that the span has received logs
+		db.initSpan(spanID).HasLogs = true
 	}
 	return nil
 }
@@ -438,7 +440,9 @@ func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 			lastIval = &ival
 			if !activity.EarliestRunning.IsZero() &&
 				activity.EarliestRunning.Before(ival.Start) {
-				yield(Interval{Start: activity.EarliestRunning, End: now})
+				if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
+					return
+				}
 				break
 			}
 			if !yield(ival) {
@@ -447,7 +451,9 @@ func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 		}
 		if !activity.EarliestRunning.IsZero() &&
 			(lastIval == nil || activity.EarliestRunning.After(lastIval.End)) {
-			yield(Interval{Start: activity.EarliestRunning, End: now})
+			if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
+				return
+			}
 		}
 	}
 }

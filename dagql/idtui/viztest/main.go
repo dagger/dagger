@@ -467,3 +467,33 @@ func (*Viztest) ObjectLists(ctx context.Context) (string, error) {
 	}
 	return dag.Dep().FileContents(ctx, files)
 }
+
+func (*Viztest) NestedCalls(ctx context.Context) ([]string, error) {
+	return dag.Container().
+		WithDirectory("/level-1",
+			dag.Directory().
+				WithFile("file", dag.File("file", "hey"), dagger.DirectoryWithFileOpts{
+					Permissions: 0644,
+				})).
+		WithDirectory("/level-2",
+			dag.Directory().
+				WithDirectory("sub",
+					dag.Directory().
+						WithFile("file", dag.File("file", "hey"), dagger.DirectoryWithFileOpts{
+							Permissions: 0644,
+						}))).
+		Rootfs().
+		Entries(ctx)
+}
+
+func (*Viztest) PathArgs(
+	ctx context.Context,
+	file *dagger.File,
+	dir *dagger.Directory,
+	// +defaultPath=main.go
+	contextFile *dagger.File,
+	// +defaultPath=.
+	contextDir *dagger.Directory,
+) error {
+	return nil
+}

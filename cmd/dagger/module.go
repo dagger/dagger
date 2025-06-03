@@ -525,7 +525,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 
 			modSrcs := make(map[string]*dagger.ModuleSource)
 			if developRecursive {
-				ctx, span := Tracer().Start(ctx, "load module", telemetry.Encapsulate())
+				ctx, span := Tracer().Start(ctx, "load module: "+modRef, telemetry.Encapsulate())
 				err := collectLocalModulesRecursive(ctx, modSrc, modSrcs)
 				telemetry.End(span, func() error { return err })
 				if err != nil {
