@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"dagger/docs/internal/dagger"
 	"encoding/json"
@@ -42,6 +43,12 @@ const (
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
 	generatedPhpReferencePath     = "docs/static/reference/php/"
+)
+
+const (
+	doctumVersion       = "5.5.4"
+	changieVersion      = "1.21.0"
+	markdownlintVersion = "0.31.1"
 )
 
 const cliZenFrontmatter = `---
@@ -91,7 +98,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		_, err := dag.Container().
-			From("tmknom/markdownlint:0.31.1").
+			From("tmknom/markdownlint:"+markdownlintVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
 			WithWorkdir("/src").
@@ -116,7 +123,10 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		before := d.Source
-		after := d.Generate()
+		after, err := d.Generate(ctx)
+		if err != nil {
+			return err
+		}
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
 			generatedSchemaPath,
 			generatedCliZenPath,
@@ -139,7 +149,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		// FIXME: spin out a changie module
 		after := dag.
 			Container().
-			From("ghcr.io/miniscruff/changie").
+			From("ghcr.io/miniscruff/changie:v"+changieVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithWorkdir("/src").
 			WithExec([]string{"/changie", "merge"}).
@@ -166,13 +176,20 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 }
 
 // Regenerate the API schema and CLI reference docs
-func (d Docs) Generate() *dagger.Directory {
-	return dag.Directory().
+func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
+	dir := dag.Directory().
 		WithDirectory("", d.GenerateSchema("")).
 		WithDirectory("", d.GenerateSchemaReference("")).
 		WithDirectory("", d.GenerateCli()).
-		WithDirectory("", d.GenerateConfigSchemas()).
-		WithDirectory("", d.GeneratePhp())
+		WithDirectory("", d.GenerateConfigSchemas())
+
+	dirPHP, err := d.GeneratePhp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir = dir.WithDirectory("", dirPHP)
+
+	return dir, nil
 }
 
 // Regenerate the CLI reference docs
@@ -185,17 +202,48 @@ func (d Docs) GenerateCli() *dagger.Directory {
 }
 
 // Generate the PHP SDK API reference documentation
-func (d Docs) GeneratePhp() *dagger.Directory {
+func (d Docs) GeneratePhp(ctx context.Context) (*dagger.Directory, error) {
 	dir := dag.PhpSDKDev().Base().
 		WithFile(
 			"/usr/bin/doctum",
-			dag.HTTP("https://doctum.long-term.support/releases/5.5.4/doctum.phar"),
+			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", doctumVersion)),
 			dagger.ContainerWithFileOpts{Permissions: 0711},
 		).
 		WithFile("/etc/doctum-config.php", d.DoctumConfig).
 		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
 		Directory("/src/sdk/php/build")
-	return dag.Directory().WithDirectory(generatedPhpReferencePath, dir)
+
+	// format this file, since otherwise it's on one line and makes lots of conflicts
+	search, err := formatJSONFile(ctx, dir.File("doctum-search.json"))
+	if err != nil {
+		return nil, err
+	}
+	dir = dir.WithFile("doctum-search.json", search)
+
+	// remove the renderer.index file, which seems to not be required to render the docs
+	dir = dir.WithoutFile("renderer.index")
+
+	return dag.Directory().WithDirectory(generatedPhpReferencePath, dir), nil
+}
+
+func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
+	name, err := f.Name(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	contents, err := f.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var out bytes.Buffer
+	err = json.Indent(&out, []byte(contents), "", "\t")
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.File(name, out.String()), nil
 }
 
 // Regenerate the API schema
