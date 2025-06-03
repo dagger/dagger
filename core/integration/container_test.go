@@ -5107,3 +5107,37 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "data", content)
 	})
 }
+
+func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
+	c1 := connect(ctx, t)
+	out1, err := c1.Container().
+		From(alpineImage).
+		WithSymlink("bar", "foo").
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	_ = c1.Close()
+
+	require.NoError(t, err)
+	require.Len(t, out1, 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
+
+	c2 := connect(ctx, t)
+	out2, err := c2.Container().
+		From(alpineImage).
+		WithSymlink("bar", "foo").
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	_ = c2.Close()
+	require.NoError(t, err)
+	require.Equal(t, out1, out2)
+
+	c3 := connect(ctx, t)
+	out3, err := c3.Container().
+		From(alpineImage).
+		WithSymlink("barf", "oo"). // Note the args here are different, and should bust the cache
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	_ = c3.Close()
+	require.NoError(t, err)
+	require.NotEqual(t, out1, out3) // make sure the call to read from /dev/random was re-run
+	require.Len(t, out3, 132)
+}
