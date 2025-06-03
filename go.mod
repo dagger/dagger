@@ -141,7 +141,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
 	modernc.org/sqlite v1.37.1
-	mvdan.cc/sh/v3 v3.11.0
+	mvdan.cc/sh/v3 v3.11.1-0.20250601202749-6b98b83b6734
 	resenje.org/singleflight v0.4.3
 )
 
