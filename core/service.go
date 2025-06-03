@@ -50,7 +50,6 @@ type Service struct {
 	ContainerArgs                          []string
 	ContainerExperimentalPrivilegedNesting bool
 	ContainerInsecureRootCapabilities      bool
-	ContainerExpand                        bool
 	ContainerNoInit                        bool
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -266,42 +265,8 @@ func (svc *Service) startContainer(
 
 	ctr := svc.Container
 
-	// dag, err := buildkit.DefToDAG(ctr.FS)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// if dag.GetOp() == nil && len(dag.Inputs) == 1 {
-	// 	dag = dag.Inputs[0]
-	// } else {
-	// 	// i mean, theoretically this should never happen, but it's better to
-	// 	// notice it
-	// 	return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.Inputs), dag.GetInputs())
-	// }
-
-	// execOp, ok := dag.AsExec()
-	// if !ok {
-	// 	return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
-	// }
-
-	// execMD, ok, err := buildkit.ExecutionMetadataFromDescription(execOp.Metadata.Description)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("parse execution metadata: %w", err)
-	// }
-	// execMD, ok := &buildkit.ExecutionMetadata{}, false
-	// if !ok {
-	// 	execMD = &buildkit.ExecutionMetadata{
-	// 		ExecID:            identity.NewID(),
-	// 		SessionID:         clientMetadata.SessionID,
-	// 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
-	// 	}
-	// }
 	execMD, err := ctr.execMeta(ctx, ContainerExecOpts{
-		// XXX: these don't all need to go here
-		Args:                          svc.ContainerArgs,
 		ExperimentalPrivilegedNesting: svc.ContainerExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      svc.ContainerInsecureRootCapabilities,
-		Expand:                        svc.ContainerExpand,
 		NoInit:                        svc.ContainerNoInit,
 	})
 	if err != nil {

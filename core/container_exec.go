@@ -78,31 +78,26 @@ type ContainerExecOpts struct {
 }
 
 func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts) (*buildkit.ExecutionMetadata, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	execMD := buildkit.ExecutionMetadata{}
 	if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
 		execMD = *md
 	}
-	// if mdEncoded := opts.NestedExecMetadata; mdEncoded != "" {
-	// 	err := json.Unmarshal([]byte(mdEncoded), &execMD)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-	// if opts.NestedExecMetadata != nil {
-	// 	execMD = *opts.NestedExecMetadata
-	// }
-	if execMD.CallID == nil {
-		execMD.CallID = dagql.CurrentID(ctx) // XXX: this is actually wrong
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 	execMD.CallerClientID = clientMetadata.ClientID
-	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
+
+	if execMD.CallID == nil {
+		execMD.CallID = dagql.CurrentID(ctx)
+	}
+	if execMD.ExecID == "" {
+		execMD.ExecID = identity.NewID()
+	}
+
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
@@ -114,6 +109,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		execMD.NoInit = true
 	}
 
+	// XXX: how to handle this
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
 		if mod.InstanceID == nil {
@@ -157,7 +153,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
-	fmt.Println("client", execMD.ClientID, execMD.SecretToken)
 	return &execMD, nil
 }
 

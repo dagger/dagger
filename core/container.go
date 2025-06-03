@@ -1786,19 +1786,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
-	// XXX: nope
-	// container, err := container.WithExec(ctx, ContainerExecOpts{
-	// 	Args:                          cmdargs,
-	// 	UseEntrypoint:                 useEntrypoint,
-	// 	ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-	// 	InsecureRootCapabilities:      args.InsecureRootCapabilities,
-	// 	Expand:                        args.Expand,
-	// 	NoInit:                        args.NoInit,
-	// })
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	return &Service{
 		Creator:                                trace.SpanContextFromContext(ctx),
 		Query:                                  container.Query,
@@ -1806,7 +1793,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		ContainerArgs:                          cmdargs,
 		ContainerExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		ContainerInsecureRootCapabilities:      args.InsecureRootCapabilities,
-		ContainerExpand:                        args.Expand,
 		ContainerNoInit:                        args.NoInit,
 	}, nil
 }

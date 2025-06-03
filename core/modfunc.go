@@ -275,12 +275,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	execMD := buildkit.ExecutionMetadata{
-		ClientID: identity.NewID(),
-		CallID:   dagql.CurrentID(ctx),
-		ExecID:   identity.NewID(),
-		// CachePerSession:   !opts.Cache,
-		Internal: true,
-		// CacheByCall:       !opts.SkipCallDigestCacheKey,
+		ClientID:          identity.NewID(),
+		CallID:            dagql.CurrentID(ctx),
+		ExecID:            identity.NewID(),
+		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
@@ -383,9 +381,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
-	// XXX: work out if we can somehow just talk to the worker directly
 	execCtx := ctx
-	execCtx = dagql.WithSkip(execCtx)
+	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
 	execCtx = buildkit.ContextWithExecutionMetadata(execCtx, &execMD)
 	err = srv.Select(execCtx, ctr, &ctr,
 		dagql.Selector{
@@ -394,7 +391,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
 				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				// {Name: "nestedExecMetadata", Value: dagql.NewString(string(execMDEncoded))},
 			},
 		},
 	)
