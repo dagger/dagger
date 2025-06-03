@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'sdk/elixir: fix ex_doc source URIs  now pointing to correct link'
+time: 2025-06-03T02:40:39.359634045+02:00
+custom:
+    Author: Nero-F
+    PR: "10524"

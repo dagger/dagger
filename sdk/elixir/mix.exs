@@ -58,8 +58,7 @@ defmodule Dagger.MixProject do
 
   defp docs do
     [
-      source_ref: "v#{@version}",
-      source_url: @source_url,
+      source_url_pattern: "#{@source_url}/blob/v#{@version}/sdk/elixir/%{path}#L%{line}",
       main: "Dagger"
     ]
   end
