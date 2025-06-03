@@ -220,6 +220,9 @@ func (d Docs) GeneratePhp(ctx context.Context) (*dagger.Directory, error) {
 	}
 	dir = dir.WithFile("doctum-search.json", search)
 
+	// remove the renderer.index file, which seems to not be required to render the docs
+	dir = dir.WithoutFile("renderer.index")
+
 	return dag.Directory().WithDirectory(generatedPhpReferencePath, dir), nil
 }
 
