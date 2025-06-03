@@ -29,6 +29,30 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type ErrSDKRuntimeNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKRuntimeNotImplemented) Error() string {
+	return fmt.Sprintf("'%s' SDK does not support a runtime", err.SDK)
+}
+
+type ErrSDKCodegenNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKCodegenNotImplemented) Error() string {
+	return fmt.Sprintf("'%s' SDK does not support code generation", err.SDK)
+}
+
+type ErrSDKClientGeneratorNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKClientGeneratorNotImplemented) Error() string {
+	return fmt.Sprintf("'%s' SDK does not support client generation", err.SDK)
+}
+
 type moduleSourceSchema struct {
 	dag *dagql.Server
 }
@@ -1690,8 +1714,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	return modCfg, nil
 }
 
-var ErrSDKCodegenNotImplemented = errors.New("the SDK does not implement the `CodeGenerator` interface")
-
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],
@@ -1714,7 +1736,7 @@ func (s *moduleSourceSchema) runCodegen(
 
 	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
 	if !ok {
-		return genDirInst, ErrSDKCodegenNotImplemented
+		return genDirInst, ErrSDKCodegenNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	// run codegen to get the generated context directory
@@ -1814,8 +1836,6 @@ func (s *moduleSourceSchema) runCodegen(
 	return genDirInst, nil
 }
 
-var ErrSDKClientGeneratorNotImplemented = errors.New("the SDK does not implement the `ClientGenerator` interface")
-
 func (s *moduleSourceSchema) runClientGenerator(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],
@@ -1842,7 +1862,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
-		return genDirInst, ErrSDKClientGeneratorNotImplemented
+		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	requiredClientGenerationFiles, err := clientGeneratorImpl.RequiredClientGenerationFiles(ctx)
@@ -1937,7 +1957,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	genDirInst = srcInst.Self.ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
 		genDirInst, err = s.runCodegen(ctx, srcInst, genDirInst)
-		if err != nil && !errors.Is(err, ErrSDKCodegenNotImplemented) {
+
+		var missingImplErr ErrSDKCodegenNotImplemented
+		if err != nil && !errors.As(err, &missingImplErr) {
 			return genDirInst, fmt.Errorf("failed to run codegen: %w", err)
 		}
 	}
@@ -1990,7 +2012,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.Instance[*core.ModuleSource], mod *core.Module) (*core.Module, error) {
 	runtimeImpl, ok := src.Self.SDKImpl.AsRuntime()
 	if !ok {
-		return nil, fmt.Errorf("the SDK does not implement the `Runtime` interface")
+		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self.SDK.Source}
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module

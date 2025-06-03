@@ -8,34 +8,6 @@ body: |-
   - `dagger call` and `dagger functions` give a clear error message if it's not supported by the SDK.
 
   See https://github.com/dagger/dagger/issues/7707 for more information.
-
-  Example of valid SDK with this change:
-
-  ```go
-  type OnlyCodegen struct{}
-
-  func (o *OnlyCodegen) Codegen(
-    ctx context.Context,
-    modSource *dagger.ModuleSource,
-    introspectionJSON *dagger.File,
-  ) (*dagger.GeneratedCode, error) { ... }
-  ```
-
-  ```go
-  type OnlyRuntime struct {}
-
-  func (m *OnlyRuntime) ModuleRuntime(
-    ctx context.Context,
-    modSource *dagger.ModuleSource,
-    introspectionJSON *dagger.File,
-  ) (*dagger.Container, error) { ... }
-  ```
-
-  Example of error message when a capability is not supported by the SDK:
-
-  ```shell
-  the SDK does not implement the `Runtime` interface
-  ```
 time: 2025-06-03T16:26:38.053932+02:00
 custom:
   Author: TomChv
