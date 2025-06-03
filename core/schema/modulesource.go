@@ -1892,17 +1892,20 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
 	// we can transform it into a moduleto generate self bindings.
-	_, implementsRuntime := srcInst.Self.SDKImpl.AsRuntime()
-	if srcInst.Self.SDK != nil && implementsRuntime {
-		var mod dagql.Instance[*core.Module]
-		err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
-			Field: "asModule",
-		})
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
-		}
+	if srcInst.Self.SDK != nil {
+		// We must make that if inside the condition to avoid checking a nil pointer on `SDKImpl`
+		// and make the engine crash.
+		if _, ok := srcInst.Self.SDKImpl.AsRuntime(); ok {
+			var mod dagql.Instance[*core.Module]
+			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
 
-		deps = mod.Self.Deps.Append(mod.Self)
+			deps = mod.Self.Deps.Append(mod.Self)
+		}
 	}
 
 	dev := dagql.Boolean(false)
