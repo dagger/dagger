@@ -11,7 +11,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/spf13/cobra"
-	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -453,10 +452,9 @@ If no name is provided, all environment variables are printed. If a name is prov
 
 				if len(args) == 0 {
 					// Print all environment variables
-					hc.Env.Each(func(name string, v expand.Variable) bool {
-						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, v.String())
-						return true
-					})
+					for name, vr := range hc.Env.Each {
+						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, vr)
+					}
 
 					return nil
 				}

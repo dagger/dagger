@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -156,7 +157,7 @@ func (Test) Version() string {
 // Encouragement
 func (Test) Go() string {
 	return "Let's go!"
-} 
+}
 `,
 	).
 		With(withModInitAt("modules/dep", "go", `// Dependency module
@@ -165,7 +166,7 @@ package main
 
 func New() *Dep {
 	return &Dep{
-		Version: "dep function",  
+		Version: "dep function",
 	}
 }
 
@@ -1023,5 +1024,57 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 			With(daggerShell(`_container`)).
 			Sync(ctx)
 		requireErrOut(t, err, "does not exist")
+	})
+}
+
+func (ShellSuite) TestPrintenvCommand(ctx context.Context, t *testctx.T) {
+	t.Run("printenv all", func(ctx context.Context, t *testctx.T) {
+		actual := os.Environ()
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		for _, v := range actual {
+			require.Contains(t, out, v)
+		}
+	})
+
+	t.Run("printenv specific", func(ctx context.Context, t *testctx.T) {
+		if err := os.Setenv("FOOBAR", "baz"); err != nil {
+			t.Fatalf("failed to set environment variable: %v", err)
+		}
+		defer os.Unsetenv("FOOBAR")
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv FOOBAR`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, out)
+		require.Equal(t, "baz\n", out)
+	})
+
+	t.Run("printenv non-existing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv NON_EXISTING_VAR`)).
+			Sync(ctx)
+		requireErrOut(t, err, "environment variable 'NON_EXISTING_VAR' not found")
+	})
+
+	t.Run("printenv shows set envs", func(ctx context.Context, t *testctx.T) {
+		script := `
+		ctr=$(container))
+		.printenv ctr`
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "ctr=")
+		require.Contains(t, out, "Container@xxh3:")
 	})
 }
