@@ -87,14 +87,15 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	fps        float64 // frames per second
-	profile    termenv.Profile
-	window     tea.WindowSizeMsg // set by BubbleTea
-	view       *strings.Builder  // rendered async
-	viewOut    *termenv.Output
-	browserBuf *strings.Builder // logs if browser fails
-	stdin      io.Reader        // used by backgroundMsg for running terminal
-	writer     io.Writer
+	fps         float64 // frames per second
+	profile     termenv.Profile
+	window      tea.WindowSizeMsg // set by BubbleTea
+	view        *strings.Builder  // rendered async
+	viewOut     *termenv.Output
+	browserBuf  *strings.Builder // logs if browser fails
+	finalRender bool             // whether we're doing the final render
+	stdin       io.Reader        // used by backgroundMsg for running terminal
+	writer      io.Writer
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -373,6 +374,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
+	// Hint for future rendering that this is the final, non-interactive render
+	// (so don't show key hints etc.)
+	fe.finalRender = true
+
 	// Print the scrollback.
 	fmt.Fprint(w, fe.scrollback.String())
 
@@ -391,7 +396,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, r, true, fe.window.Height, "")
+		fe.renderProgress(out, r, fe.window.Height, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
@@ -675,7 +680,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
 
-	if fe.renderProgress(out, r, false, progHeight, progPrefix) {
+	if fe.renderProgress(out, r, progHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
@@ -787,14 +792,14 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
+func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
 
 	rows := fe.rows
 
-	if full {
+	if fe.finalRender {
 		for _, row := range rows.Order {
 			if fe.renderRow(out, r, row, "") {
 				rendered = true
@@ -1918,7 +1923,7 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
-		if span.ErrorOrigin != nil && !fe.reportOnly {
+		if span.ErrorOrigin != nil && !fe.reportOnly && !fe.finalRender {
 			color := termenv.ANSIBrightBlack
 			if time.Since(fe.pressedKeyAt) < keypressDuration && fe.FocusedSpan == span.ErrorOrigin.ID {
 				color = termenv.ANSIWhite
