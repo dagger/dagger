@@ -12,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/koron-go/prefixw"
@@ -488,9 +489,13 @@ type otlpReceiver struct {
 	t      *testctx.T
 	traces sdktrace.SpanExporter
 	logs   sdklog.Exporter
+	mu     sync.Mutex
 }
 
 func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -523,6 +528,9 @@ func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
