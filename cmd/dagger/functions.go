@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -500,7 +502,16 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
 
 	missingFlags := []string{}
-	for _, a := range fn.SupportedArgs() {
+
+	type flagResult struct {
+		idx   int
+		flag  string
+		value any
+	}
+
+	p := pool.NewWithResults[flagResult]().WithErrors()
+
+	for i, a := range fn.SupportedArgs() {
 		flag, err := a.GetFlag(cmd.Flags())
 		if err != nil {
 			return err
@@ -514,12 +525,26 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 			continue
 		}
 
-		v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
-		if err != nil {
-			return err
-		}
+		p.Go(func() (flagResult, error) {
+			v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
+			if err != nil {
+				return flagResult{}, err
+			}
+			return flagResult{i, a.Name, v}, nil
+		})
+	}
 
-		fc.q = fc.q.Arg(a.Name, v)
+	vals, err := p.Wait()
+	if err != nil {
+		return err
+	}
+
+	sort.Slice(vals, func(i, j int) bool {
+		return vals[i].idx < vals[j].idx
+	})
+
+	for _, flag := range vals {
+		fc.q = fc.q.Arg(flag.flag, flag.value)
 	}
 
 	if len(missingFlags) > 0 {
