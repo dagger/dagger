@@ -17,7 +17,7 @@ Expected stderr:
 ✘ .failLog: Void X.Xs
 ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
-│ ✔ .withEnvVariable(name: "NOW", value: "Tue Jun 03 2025 XX:XX:XX GMT+0000 (Coordinated Universal Time)"): Container! X.Xs
+│ ✔ .withEnvVariable(name: "NOW", value: "Wed Jun 04 2025 XX:XX:XX GMT+0000 (Coordinated Universal Time)"): Container! X.Xs
 │ ✘ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
 │ ┃ im doing a lot of work
 │ ┃ and then failing

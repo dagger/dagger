@@ -1,3 +1,4 @@
+import type { GraphQLErrorExtensions } from "graphql"
 import { ClientError } from "graphql-request"
 
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
@@ -25,11 +26,17 @@ export class GraphQLRequestError extends DaggerSDKError {
   response: ClientError["response"]
 
   /**
+   *  The GraphQL error extentions.
+   */
+  extensions?: GraphQLErrorExtensions
+
+  /**
    *  @hidden
    */
   constructor(message: string, options: GraphQLRequestErrorOptions) {
     super(message, options)
     this.requestContext = options.error.request
     this.response = options.error.response
+    this.extensions = options.error.response.errors?.[0]?.extensions
   }
 }

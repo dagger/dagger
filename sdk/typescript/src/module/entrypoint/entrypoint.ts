@@ -1,6 +1,7 @@
 import { dag, Error as DaggerError } from "../../api/client.gen.js"
 import type { JSON } from "../../api/client.gen.js"
 import { ExecError } from "../../common/errors/ExecError.js"
+import { GraphQLRequestError } from "../../common/errors/GraphQLRequestError.js"
 import { connection } from "../../connect.js"
 import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
@@ -79,18 +80,14 @@ function formatError(e: unknown): DaggerError {
   if (e instanceof Error) {
     let error = dag.error(e.message)
 
-    // If the error is an instance of ExecError, we can add the extensions fields
-    // in the error object.
-    if (e instanceof ExecError) {
-      Object.entries(e)
-        .filter(([key]) =>
-          ["cmd", "exitCode", "stdout", "stderr"].includes(key),
-        )
-        .forEach(([key, value]) => {
-          if (value !== "" && value !== undefined && value !== null) {
-            error = error.withValue(key, JSON.stringify(value) as JSON)
-          }
-        })
+    // If the error is an instance of GraphQLError or a inherit type of it,
+    // we can add the extensions fields in the error object.
+    if (e instanceof ExecError || e instanceof GraphQLRequestError) {
+      Object.entries(e.extensions ?? []).forEach(([key, value]) => {
+        if (value !== "" && value !== undefined && value !== null) {
+          error = error.withValue(key, JSON.stringify(value) as JSON)
+        }
+      })
     }
 
     return error
