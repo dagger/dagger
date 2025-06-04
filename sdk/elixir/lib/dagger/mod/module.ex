@@ -3,6 +3,7 @@ defmodule Dagger.Mod.Module do
 
   alias Dagger.Mod.Helper
   alias Dagger.Mod.Object
+  alias Dagger.Mod.Registry
   alias Dagger.Mod.Object.FieldDef
   alias Dagger.Mod.Object.FunctionDef
 
@@ -11,9 +12,13 @@ defmodule Dagger.Mod.Module do
   """
   @spec define(Dagger.Client.t(), module()) :: Dagger.Module.t()
   def define(dag, module) when is_struct(dag, Dagger.Client) and is_atom(module) do
-    dag
-    |> Dagger.Client.module()
-    |> Dagger.Module.with_object(define_object(dag, module))
+    module
+    |> Registry.register()
+    |> Registry.all_modules()
+    |> Enum.reduce(Dagger.Client.module(dag), fn module, dag_module ->
+      dag_module
+      |> Dagger.Module.with_object(define_object(dag, module))
+    end)
     |> maybe_with_description(Object.get_module_doc(module))
   end
 
