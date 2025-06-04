@@ -18,8 +18,6 @@ Expected stderr:
 │ │ ├─● parseRefString: ./viztest X.Xs
 │ │ ├─● parseRefString: dep X.Xs
 │ │ │
-│ │ ├─● host: Host! X.Xs
-│ │ │
 │ │ ├─▼ moduleSource(refString: "/app/dagql/idtui/viztest/dep", disableFindUp: true): ModuleSource! X.Xs
 │ │ │ ├─● parseRefString: /app/dagql/idtui/viztest/dep X.Xs
 │ │ │ │
@@ -30,7 +28,8 @@ Expected stderr:
 │ │ │ │      
 │ │ │ ╰─● sdkForModule: go X.Xs
 │ │ │  
-│ │ ├─▼ Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
+│ │ ├─● host: Host! X.Xs
+│ │ ├─▼ .directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
 │ │ │ ╰─▼ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
 │ │ │   ╰─▼ filesync X.Xs
 │ │ │     ╰─● copy X.Xs
@@ -121,22 +120,20 @@ Expected stderr:
 │ ├─▼ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
-│ │ ✔ ModuleSource.version: String! X.Xs
+│ ├─▼ ModuleSource.sourceRootSubpath: String! X.Xs
+│ │ ┃ .
 │ │
 │ ├─▼ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
-│ ├─▼ ModuleSource.sourceRootSubpath: String! X.Xs
-│ │ ┃ .
+│ ├─● ModuleSource.commit: String! X.Xs
 │ │
 │ ├─● ModuleSource.version: String! X.Xs
 │ │
-│ ├─● ModuleSource.commit: String! X.Xs
-│ │
-│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
-│ │
 │ ├─▼ Module.name: String! X.Xs
 │ │ ┃ viztest
+│ │
+│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ ├─● Module.description: String! X.Xs
 │ │
@@ -160,7 +157,7 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● viztest: Viztest! X.Xs
-▼ .diskMetrics: String! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+▼ .diskMetrics: String! X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
 ├─● container: Container! X.Xs
 ├─▼ .from(address: "alpine"): Container! X.Xs CACHED
 │ ├─▼ resolving docker.io/library/alpine:latest X.Xs
@@ -170,7 +167,7 @@ Expected stderr:
 │ ╰─▼ Container.from(address: "docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
 │   ╰─● resolving docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs
 ├─● .withEnvVariable(name: "cache_bust", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-├─▼ .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+├─▼ .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
 │ ┃ 1000+0 records in
 │ ┃ 1000+0 records out
 │ ┃ XX bytes (X.X B) copied, X.X seconds, X.X B/s
