@@ -1739,3 +1739,101 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.Regexp(t, "symlink newtarget /var/lib/dagger/worker/cachemounts/.*/symlink: file exists", err.Error())
 	})
 }
+
+func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		Description         string
+		Path                string
+		Type                dagger.ExistsType
+		Expected            bool
+		DoNotFollowSymlinks bool
+		ErrorContains       string
+	}{
+		{
+			Description: "test exists is false when referencing a non-existent file",
+			Path:        "We believe in nothing Lebowski",
+			Type:        "",
+			Expected:    false,
+		},
+		{
+			Description: "test existence works on a directory without specifying an expected type",
+			Path:        "quotes",
+			Type:        "",
+			Expected:    true,
+		},
+		{
+			Description: "test is a directory",
+			Path:        "quotes",
+			Type:        dagger.ExistsTypeDirectoryType,
+			Expected:    true,
+		},
+		{
+			Description: "test is a directory fails when referencing a file that exists",
+			Path:        "quotes/descartes",
+			Type:        dagger.ExistsTypeDirectoryType,
+			Expected:    false,
+		},
+		{
+			Description: "test is a file works",
+			Path:        "quotes/descartes",
+			Type:        dagger.ExistsTypeRegularType,
+			Expected:    true,
+		},
+		{
+			Description: "test is a file fails when referencing a directory that exists",
+			Path:        "quotes",
+			Type:        dagger.ExistsTypeRegularType,
+			Expected:    false,
+		},
+		{
+			Description: "test is a symlink works",
+			Path:        "i-am",
+			Type:        dagger.ExistsTypeSymlinkType,
+			Expected:    true,
+		},
+		{
+			Description: "test symlink fails",
+			Path:        "quotes/descartes",
+			Type:        dagger.ExistsTypeSymlinkType,
+			Expected:    false,
+		},
+
+		// this is to follow the same functionality as the `test` shell command,
+		// from `man test`, it states that "all FILE-related tests dereference symbolic links (except -h and -L, which don't apply here)",
+		// so we should do the same.
+		{
+			Description: "test is a file works on a symlink",
+			Path:        "i-am",
+			Type:        dagger.ExistsTypeRegularType,
+			Expected:    true,
+		},
+		{
+			Description:         "test DoNotFollowSymlinks is true when target does not exist",
+			Path:                "nothing",
+			DoNotFollowSymlinks: true,
+			Expected:            true,
+		},
+		{
+			Description:         "test DoNotFollowSymlinks prevents regular file type from being true when referencing a symlink",
+			Path:                "i-am",
+			Type:                dagger.ExistsTypeRegularType,
+			DoNotFollowSymlinks: true,
+			Expected:            false,
+		},
+	} {
+		t.Run(tc.Description, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			quotesDir := c.Directory().WithNewFile("quotes/descartes", "Cogito, ergo sum").WithSymlink("quotes/descartes", "i-am").WithSymlink("quotes/does-not-exist", "nothing")
+			exists, err := quotesDir.Exists(ctx, tc.Path, dagger.DirectoryExistsOpts{
+				ExpectedType:        tc.Type,
+				DoNotFollowSymlinks: tc.DoNotFollowSymlinks,
+			})
+			if tc.ErrorContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.ErrorContains)
+			}
+			require.Equal(t, tc.Expected, exists)
+		})
+	}
+}

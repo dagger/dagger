@@ -1891,6 +1891,15 @@ pub struct ContainerDirectoryOpts {
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -2458,6 +2467,38 @@ impl Container {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// The exit code of the last executed command
     /// Returns an error if no command was executed
@@ -4478,6 +4519,15 @@ pub struct DirectoryEntriesOpts<'a> {
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExportOpts {
     /// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
     #[builder(setter(into, strip_option), default)]
@@ -4712,6 +4762,38 @@ impl Directory {
         let mut query = self.selection.select("entries");
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -10583,6 +10665,15 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ExistsType {
+    #[serde(rename = "DIRECTORY_TYPE")]
+    DirectoryType,
+    #[serde(rename = "REGULAR_TYPE")]
+    RegularType,
+    #[serde(rename = "SYMLINK_TYPE")]
+    SymlinkType,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {

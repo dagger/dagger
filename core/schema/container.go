@@ -426,6 +426,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
+		dagql.Func("exists", s.exists).
+			Doc(`check if a file or directory exists`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
+
 		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -1458,6 +1466,15 @@ type containerWithoutAnnotationArgs struct {
 
 func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
 	return parent.WithoutAnnotation(ctx, args.Name)
+}
+
+func (s *containerSchema) exists(ctx context.Context, parent *core.Container, args existsArgs) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get server: %w", err)
+	}
+	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+	return dagql.NewBoolean(exists), err
 }
 
 type containerPublishArgs struct {

@@ -275,6 +275,20 @@ type Container {
   """Retrieves the list of environment variables passed to commands."""
   envVariables: [EnvVariable!]!
 
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
   """
   The exit code of the last executed command
 
@@ -1428,6 +1442,20 @@ type Directory {
     path: String
   ): [String!]!
 
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
   """Writes the contents of the directory to a path on the host."""
   export(
     """Location of the copied directory (e.g., "logs/")."""
@@ -2215,6 +2243,18 @@ type ErrorValue {
 The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
 """
 scalar ErrorValueID
+
+"""File type."""
+enum ExistsType {
+  """Tests path is a regular file"""
+  REGULAR_TYPE
+
+  """Tests path is a directory"""
+  DIRECTORY_TYPE
+
+  """Tests path is a symlink"""
+  SYMLINK_TYPE
+}
 
 """
 A definition of a field on a custom object defined in a Module.

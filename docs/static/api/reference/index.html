@@ -138,6 +138,7 @@
               <li><a href="#definition-ErrorID">ErrorID</a></li>
               <li><a href="#definition-ErrorValue">ErrorValue</a></li>
               <li><a href="#definition-ErrorValueID">ErrorValueID</a></li>
+              <li><a href="#definition-ExistsType">ExistsType</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
@@ -4458,6 +4459,31 @@
                         <td data-property-name=""><a class="property-name" id="Container-envVariables" href="#Container-envVariables"><code>envVariables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Retrieves the list of environment variables passed to commands. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exists" href="#Container-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exitCode" href="#Container-exitCode"><code>exitCode</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td>
@@ -6046,6 +6072,31 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Location of the directory to look at (e.g., &quot;/src&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-exists" href="#Directory-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
                               </div>
                             </div>
                           </div>
@@ -7807,6 +7858,58 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ErrorValueID</code> scalar type represents an identifier for an object of type ErrorValue.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ExistsType" class="definition definition-enum" data-traverse-target="definition-ExistsType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ExistsType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>File type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>REGULAR_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a regular file </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIRECTORY_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a directory </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SYMLINK_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a symlink </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"REGULAR_TYPE"</span>
+</code></pre>
                 </div>
               </div>
             </div>

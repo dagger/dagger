@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -30,6 +31,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -979,6 +981,62 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
 }
 
+func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	res, err := dir.Evaluate(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return false, err
+	}
+	if ref == nil {
+		return false, nil
+	}
+
+	immutableRef, err := ref.CacheRef(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	osStatFunc := os.Stat
+	if targetType == ExistsTypeSymlink || doNotFollowSymlinks {
+		// symlink testing requires the Lstat call, which does NOT follow symlinks
+		osStatFunc = os.Lstat
+	}
+
+	var fileInfo os.FileInfo
+	err = MountRef(ctx, immutableRef, nil, func(root string) error {
+		fileInfo, err = osStatFunc(path.Join(root, dir.Dir, targetPath))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	if fileInfo == nil {
+		return false, nil // ErrNotExist occurred
+	}
+
+	m := fileInfo.Mode()
+
+	switch targetType {
+	case ExistsTypeDirectory:
+		return m.IsDir(), nil
+	case ExistsTypeRegular:
+		return m.IsRegular(), nil
+	case ExistsTypeSymlink:
+		return m&fs.ModeSymlink != 0, nil
+	case "":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid path type %s", targetType)
+	}
+}
+
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1083,4 +1141,58 @@ func validateFileName(file string) error {
 
 func SupportsDirSlash(ctx context.Context) (bool, error) {
 	return Supports(ctx, "v0.17.0")
+}
+
+type ExistsType string
+
+var ExistsTypes = dagql.NewEnum[ExistsType]()
+
+var (
+
+	// NOTE calling ExistsTypes.Register("DIRECTORY", ...) will generate:
+	// const (
+	//     ExistsTypeDirectory ExistsType = "DIRECTORY"
+	//     Directory ExistsType = ExistsTypeDirectory
+	// )
+	// which will conflict with "type Directory struct { ... }",
+	// therefore everything will have a _TYPE suffix to avoid naming conflicts
+
+	ExistsTypeRegular = ExistsTypes.Register("REGULAR_TYPE",
+		"Tests path is a regular file")
+	ExistsTypeDirectory = ExistsTypes.Register("DIRECTORY_TYPE",
+		"Tests path is a directory")
+	ExistsTypeSymlink = ExistsTypes.Register("SYMLINK_TYPE",
+		"Tests path is a symlink")
+)
+
+func (et ExistsType) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ExistsType",
+		NonNull:   false,
+	}
+}
+
+func (et ExistsType) TypeDescription() string {
+	return "File type."
+}
+
+func (et ExistsType) Decoder() dagql.InputDecoder {
+	return ExistsTypes
+}
+
+func (et ExistsType) ToLiteral() call.Literal {
+	return ExistsTypes.Literal(et)
+}
+
+func (et ExistsType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(et))
+}
+
+func (et *ExistsType) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+	*et = ExistsType(str)
+	return nil
 }

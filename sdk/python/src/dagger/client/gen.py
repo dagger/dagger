@@ -264,6 +264,19 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ExistsType(Enum):
+    """File type."""
+
+    DIRECTORY_TYPE = "DIRECTORY_TYPE"
+    """Tests path is a directory"""
+
+    REGULAR_TYPE = "REGULAR_TYPE"
+    """Tests path is a regular file"""
+
+    SYMLINK_TYPE = "SYMLINK_TYPE"
+    """Tests path is a symlink"""
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -999,6 +1012,45 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return await _ctx.execute_object_list(EnvVariable)
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "REGULAR_TYPE",
+            "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def exit_code(self) -> int:
         """The exit code of the last executed command
@@ -3013,6 +3065,45 @@ class Directory(Type):
         ]
         _ctx = self._select("entries", _args)
         return await _ctx.execute(list[str])
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "REGULAR_TYPE",
+            "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def export(
         self,
@@ -10209,6 +10300,7 @@ __all__ = [
     "ErrorID",
     "ErrorValue",
     "ErrorValueID",
+    "ExistsType",
     "FieldTypeDef",
     "FieldTypeDefID",
     "File",

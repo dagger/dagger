@@ -196,6 +196,18 @@ export type ContainerDirectoryOpts = {
   expand?: boolean
 }
 
+export type ContainerExistsOpts = {
+  /**
+   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   */
+  expectedType?: ExistsType
+
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -789,6 +801,18 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryExistsOpts = {
+  /**
+   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   */
+  expectedType?: ExistsType
+
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type DirectoryExportOpts = {
   /**
    * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
@@ -936,6 +960,59 @@ export type ErrorID = string & { __ErrorID: never }
  */
 export type ErrorValueID = string & { __ErrorValueID: never }
 
+/**
+ * File type.
+ */
+export enum ExistsType {
+  /**
+   * Tests path is a directory
+   */
+  DirectoryType = "DIRECTORY_TYPE",
+
+  /**
+   * Tests path is a regular file
+   */
+  RegularType = "REGULAR_TYPE",
+
+  /**
+   * Tests path is a symlink
+   */
+  SymlinkType = "SYMLINK_TYPE",
+}
+
+/**
+ * Utility function to convert a ExistsType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ExistsTypeValueToName(value: ExistsType): string {
+  switch (value) {
+    case ExistsType.DirectoryType:
+      return "DIRECTORY_TYPE"
+    case ExistsType.RegularType:
+      return "REGULAR_TYPE"
+    case ExistsType.SymlinkType:
+      return "SYMLINK_TYPE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ExistsType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ExistsTypeNameToValue(name: string): ExistsType {
+  switch (name) {
+    case "DIRECTORY_TYPE":
+      return ExistsType.DirectoryType
+    case "REGULAR_TYPE":
+      return ExistsType.RegularType
+    case "SYMLINK_TYPE":
+      return ExistsType.SymlinkType
+    default:
+      return name as ExistsType
+  }
+}
 /**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
@@ -2244,6 +2321,7 @@ export class Cloud extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
+  private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
   private readonly _exportImage?: Void = undefined
@@ -2265,6 +2343,7 @@ export class Container extends BaseClient {
     ctx?: Context,
     _id?: ContainerID,
     _envVariable?: string,
+    _exists?: boolean,
     _exitCode?: number,
     _export?: string,
     _exportImage?: Void,
@@ -2283,6 +2362,7 @@ export class Container extends BaseClient {
 
     this._id = _id
     this._envVariable = _envVariable
+    this._exists = _exists
     this._exitCode = _exitCode
     this._export = _export
     this._exportImage = _exportImage
@@ -2443,6 +2523,35 @@ export class Container extends BaseClient {
     return response.map((r) =>
       new Client(ctx.copy()).loadEnvVariableFromID(r.id),
     )
+  }
+
+  /**
+   * check if a file or directory exists
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  exists = async (
+    path: string,
+    opts?: ContainerExistsOpts,
+  ): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const metadata = {
+      expectedType: { is_enum: true, value_to_name: ExistsTypeValueToName },
+    }
+
+    const ctx = this._ctx.select("exists", {
+      path,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -3559,6 +3668,7 @@ export class CurrentModule extends BaseClient {
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
+  private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
@@ -3570,6 +3680,7 @@ export class Directory extends BaseClient {
     ctx?: Context,
     _id?: DirectoryID,
     _digest?: string,
+    _exists?: boolean,
     _export?: string,
     _name?: string,
     _sync?: DirectoryID,
@@ -3578,6 +3689,7 @@ export class Directory extends BaseClient {
 
     this._id = _id
     this._digest = _digest
+    this._exists = _exists
     this._export = _export
     this._name = _name
     this._sync = _sync
@@ -3687,6 +3799,35 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("entries", { ...opts })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * check if a file or directory exists
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  exists = async (
+    path: string,
+    opts?: DirectoryExistsOpts,
+  ): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const metadata = {
+      expectedType: { is_enum: true, value_to_name: ExistsTypeValueToName },
+    }
+
+    const ctx = this._ctx.select("exists", {
+      path,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
