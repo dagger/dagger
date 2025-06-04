@@ -173,7 +173,7 @@ type Runtime interface {
 
 		// Current instance of the module source.
 		dagql.Instance[*ModuleSource],
-	) (*Container, error)
+	) (dagql.Instance[*Container], error)
 }
 
 /*

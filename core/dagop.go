@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -141,11 +142,13 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 		string(opData),
 	}, "+")), nil
 }
-func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+
+func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Path,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
@@ -258,11 +261,12 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Filename,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
@@ -351,10 +355,17 @@ func NewContainerDagOp(
 	}
 	inputs = append(inputs, extraInputs...)
 
+	var execMDMixin digest.Digest
+	if execMD := buildkit.ExecutionMetadataFromContext(ctx); execMD != nil {
+		execMDMixin = execMD.CacheMixin
+	}
+
 	dagop := &ContainerDagOp{
-		ID:          id,
-		Mounts:      mounts,
-		OutputCount: outputCount,
+		ID:                id,
+		CacheMixin:        ctr.RawDigest() + execMDMixin,
+		ExecutionMetadata: buildkit.ExecutionMetadataFromContext(ctx),
+		Mounts:            mounts,
+		OutputCount:       outputCount,
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -400,6 +411,14 @@ func newContainerDagOp(
 
 type ContainerDagOp struct {
 	ID *call.ID
+
+	// CacheMixin is arbitrary data to mixin to the buildkit cache key
+	CacheMixin digest.Digest
+
+	// HACK: ideally we would not need this here at all - but it's needed so
+	// that we can properly handle module call caching. but there should be a
+	// better way of doing that generally.
+	ExecutionMetadata *buildkit.ExecutionMetadata
 
 	// all the container mounts - the order here should be guaranteed:
 	// - rootfs is at 0
@@ -448,16 +467,103 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
+		op.CacheMixin.String(),
 		fmt.Sprint(op.OutputCount),
 		string(mountsData),
 	}, "+")), nil
 }
 
-func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	// TODO: we need proper cache map control here, to control content digesting
-	return op.Digest()
+func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	inputs := []string{op.CacheMixin.String()}
+
+	// mount data
+	mountsData, err := json.Marshal(op.Mounts)
+	if err != nil {
+		return nil, err
+	}
+	inputs = append(inputs, string(mountsData))
+	inputs = append(inputs, fmt.Sprint(op.OutputCount))
+
+	// add the args to the digest (the container receiver is already hashed
+	// as part of RawDigest + with the mounts as inputs)
+	var id *call.ID
+	id = id.Append(
+		op.ID.Type().ToAST(),
+		op.ID.Field(),
+		op.ID.View(),
+		op.ID.Module(),
+		int(op.ID.Nth()),
+		"",
+		op.ID.Args()...,
+	)
+	inputs = append(inputs, id.Digest().String())
+
+	cm.Digest = digest.FromString(strings.Join(inputs, "+"))
+
+	// Logic imported from buildkit for handling content caching of mounts
+	// NOTE: this probably can be significantly improved in the future.
+	for mountIdx, mount := range op.Mounts {
+		if mount.Input == pb.Empty {
+			// No inputs, so no content-caching to apply.
+			continue
+		}
+
+		// Assume we *cannot* perform
+		// content-based caching, and then enable it selectively only for cases
+		// where we want to
+		contentBasedCache := false
+
+		// Allow content-based cached where safe - these are enforced to avoid
+		// the following case:
+		// - A "snapshot" contains "foo/a.txt" and "bar/b.txt"
+		// - "RUN --mount from=snapshot,src=bar touch bar/c.txt" creates a new
+		//   file in bar
+		// - If we run again, but this time "snapshot" contains a new
+		//   "foo/sneaky.txt", the content-based cache matches the previous
+		//   run, since we only select "bar"
+		// - But this cached result is incorrect - "foo/sneaky.txt" isn't in
+		//   our cached result, but it is in our input.
+		if mount.Output == pb.SkipOutput {
+			// if the mount has no outputs, it's safe to enable content-based
+			// caching, since it's guaranteed to not be used as an input for
+			// any future steps
+			contentBasedCache = true
+		} else if mount.Readonly {
+			// if the mount is read-only, then it's also safe, since it can't
+			// be modified by the operation
+			contentBasedCache = true
+		} else if path.Join("/", mount.Selector) == pb.RootMount {
+			// if the mount mounts the entire source, then it's also safe,
+			// since there are no unselected "sneaky" files
+			contentBasedCache = true
+		}
+
+		// Now apply the user-specified option.
+		switch mount.ContentCache {
+		case pb.MountContentCache_OFF:
+			contentBasedCache = false
+		case pb.MountContentCache_ON:
+			if !contentBasedCache {
+				// If we can't enable cache for safety, then force-enabling it is invalid
+				return nil, fmt.Errorf("invalid mount cache content %v", mount)
+			}
+		case pb.MountContentCache_DEFAULT:
+			if mountIdx == 0 {
+				// we explicitly choose to not implement it on the root mount,
+				// since this is likely very expensive (and not incredibly useful)
+				contentBasedCache = false
+			}
+		}
+
+		if !contentBasedCache {
+			cm.Deps[mount.Input].ComputeDigestFunc = nil
+		}
+	}
+
+	return cm, nil
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
@@ -465,7 +571,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
+	obj, err := loadDagOpID(ctx, buildkit.ContextWithExecutionMetadata(withDagOpContext(ctx, op), op.ExecutionMetadata), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -495,10 +601,10 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 		}
 
 		mount := &pb.Mount{
-			Dest:     mnt.Target,
-			Selector: mnt.SourcePath,
-			Output:   pb.OutputIndex(outputIdx),
-			// ContentCache: nil,
+			Dest:         mnt.Target,
+			Selector:     mnt.SourcePath,
+			Output:       pb.OutputIndex(outputIdx),
+			ContentCache: pb.MountContentCache_DEFAULT,
 		}
 		if st.Output() == nil {
 			mount.Input = pb.Empty

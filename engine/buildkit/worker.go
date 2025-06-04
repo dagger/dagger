@@ -168,6 +168,10 @@ func (w *Worker) execWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata
 	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
 }
 
+func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
+	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
+}
+
 /*
 Buildkit's worker.Controller is a bit odd; it exists to manage multiple workers because that was
 a planned feature years ago, but it never got implemented. So it exists to manage a single worker,

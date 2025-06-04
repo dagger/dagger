@@ -547,7 +547,8 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	engine := dag.DaggerEngine().
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		WithLogLevel("info")
 	devEngine := engine.Container()
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
