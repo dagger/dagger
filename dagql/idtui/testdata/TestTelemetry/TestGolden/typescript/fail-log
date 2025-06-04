@@ -14,18 +14,17 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● typescript: Typescript! X.Xs
-▼ .failLog: Void X.Xs
-! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+▼ .failLog: Void X.Xs ERROR
 ├─$ Container.from(address: "alpine"): Container! X.Xs CACHED
 ├─● .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
-╰─▼ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
+╰─▼ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
   ┃ im doing a lot of work
   ┃ and then failing
   ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
 Error logs:
 
-▼ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
+▼ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
 im doing a lot of work
 and then failing
 ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
