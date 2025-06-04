@@ -462,7 +462,6 @@ func (s *containerSchema) Install() {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
-				// dagql.Arg("nestedExecMetadata"),
 			),
 
 		dagql.Func("stdout", s.stdout).
@@ -864,25 +863,11 @@ type containerExecArgs struct {
 	SkipEntrypoint *bool `default:"false"`
 }
 
-func metaMount(ctx context.Context, stdin string) (llb.State, string) {
-	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
-	if stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
-	}
-
-	return llb.Scratch().File(
-			meta,
-			buildkit.WithTracePropagation(ctx),
-			buildkit.WithPassthrough(),
-		),
-		buildkit.MetaMountDestPath
-}
-
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
 	if _, ok := core.DagOpFromContext[core.ContainerDagOp](ctx); !ok {
 		parent.Self = parent.Self.Clone()
 
-		st, _ := metaMount(ctx, args.Stdin)
+		st := core.MetaMountState(ctx, args.Stdin)
 		def, err := st.Marshal(ctx, llb.Platform(parent.Self.Platform.Spec()))
 		if err != nil {
 			return inst, err
@@ -938,11 +923,6 @@ func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Ins
 	if args.ExperimentalPrivilegedNesting {
 		execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
 	}
-
-	// execMDDigest, err := execMD.CacheKey(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
 	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMD.CacheMixin.String())
 	return &cacheCfg, nil
 }

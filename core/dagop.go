@@ -143,12 +143,6 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-//	func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-//		return digest.FromString(strings.Join([]string{
-//			op.ID.Digest().String(),
-//			op.Path,
-//		}, "+")), nil
-//	}
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
@@ -266,13 +260,6 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 		op.Filename,
 	}, "+")), nil
 }
-
-//	func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-//		return digest.FromString(strings.Join([]string{
-//			op.ID.Digest().String(),
-//			op.Filename,
-//		}, "+")), nil
-//	}
 
 func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{

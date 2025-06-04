@@ -1,5 +1,8 @@
 package core
 
+// originally imported from buildkit's exec_binfmt.go so we can call
+// getEmulator, a private function
+
 import (
 	"context"
 	"os"

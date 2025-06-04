@@ -65,10 +65,6 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
-	// (Internal-only) If this is a nested exec, exec metadata to use for it
-	// NestedExecMetadata        *buildkit.ExecutionMetadata `name:"-"`
-	// NestedExecMetadata string `default:""`
-
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
 
@@ -187,25 +183,17 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec := executor.Meta{
-		Args: args,
-		Env:  slices.Clone(cfg.Env),
-		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
-		User: cfg.User,
-		// Hostname:       e.op.Meta.Hostname, // empty seems right?
-		ReadonlyRootFS: op.Mounts[0].Readonly,
-		// ExtraHosts:     extraHosts,
-		// Ulimit:                    e.op.Meta.Ulimit,
-		// CgroupParent:              e.op.Meta.CgroupParent,
-		// NetMode:                   e.op.Network,
+		Args:                      args,
+		Env:                       slices.Clone(cfg.Env),
+		Cwd:                       cmp.Or(cfg.WorkingDir, "/"),
+		User:                      cfg.User,
+		ReadonlyRootFS:            op.Mounts[0].Readonly,
 		RemoveMountStubsRecursive: true,
 	}
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
 	}
 
-	// if e.op.Meta.ProxyEnv != nil {
-	// 	meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
-	// }
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
 
 	if opts.Expect != ReturnSuccess {
@@ -318,22 +306,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	meta := *metaSpec
-	meta.Args = slices.Clone(meta.Args)
-	meta.Env = slices.Clone(meta.Env)
-
-	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
-	if err != nil {
-		return nil, err
-	}
-	meta.Env = append(meta.Env, secretEnv...)
-
 	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 	if err != nil {
 		return nil, err
 	}
 	if emu != nil {
-		meta.Args = append([]string{qemuMountName}, meta.Args...)
+		metaSpec.Args = append([]string{qemuMountName}, metaSpec.Args...)
 		p.Mounts = append(p.Mounts, executor.Mount{
 			Readonly: true,
 			Src:      emu,
@@ -341,7 +319,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		})
 	}
 
-	// FIXME: this abstraction is now irrelevant - we don't need to do buildkit smuggling anymore
+	meta := *metaSpec
+	meta.Env = slices.Clone(meta.Env)
+	secretEnv, err := loadSecretEnv(ctx, op.Group(), session, secretEnvs)
+	if err != nil {
+		return nil, err
+	}
+	meta.Env = append(meta.Env, secretEnv...)
+
 	worker := op.opt.Worker.(*buildkit.Worker)
 	worker = worker.ExecWorker(op.opt.CauseCtx, *execMD)
 	exec := worker.Executor()
@@ -397,47 +382,6 @@ func addDefaultEnvvar(env []string, k, v string) []string {
 	return append(env, k+"="+v)
 }
 
-// XXX:
-func loadSecretEnv(ctx context.Context, g bksession.Group, sm *bksession.Manager, secretenv []*pb.SecretEnv) ([]string, error) {
-	if len(secretenv) == 0 {
-		return nil, nil
-	}
-	out := make([]string, 0, len(secretenv))
-	eg, gctx := errgroup.WithContext(ctx)
-	var mu sync.Mutex
-	for _, sopt := range secretenv {
-		id := sopt.ID
-		eg.Go(func() error {
-			if id == "" {
-				return fmt.Errorf("secret ID missing for %q environment variable", sopt.Name)
-			}
-			var dt []byte
-			var err error
-			err = sm.Any(gctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
-				dt, err = secrets.GetSecret(ctx, caller, id)
-				if err != nil {
-					if errors.Is(err, secrets.ErrNotFound) && sopt.Optional {
-						return nil
-					}
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			out = append(out, fmt.Sprintf("%s=%s", sopt.Name, string(dt)))
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (container *Container) Stdout(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountStdoutPath)
 }
@@ -486,17 +430,54 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	return string(content), nil
 }
 
-// XXX: clean this up! meta mount shouldn't be everywhere like this
-func metaMount(ctx context.Context, stdin string) (llb.State, string) {
+func MetaMountState(ctx context.Context, stdin string) llb.State {
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {
 		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
 	}
 
-	return llb.Scratch().File(
-			meta,
-			buildkit.WithTracePropagation(ctx),
-			buildkit.WithPassthrough(),
-		),
-		buildkit.MetaMountDestPath
+	return llb.Scratch().File(meta,
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(),
+	)
+}
+
+func loadSecretEnv(ctx context.Context, g bksession.Group, sm *bksession.Manager, secretenv []*pb.SecretEnv) ([]string, error) {
+	if len(secretenv) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(secretenv))
+	eg, gctx := errgroup.WithContext(ctx)
+	var mu sync.Mutex
+	for _, sopt := range secretenv {
+		id := sopt.ID
+		eg.Go(func() error {
+			if id == "" {
+				return fmt.Errorf("secret ID missing for %q environment variable", sopt.Name)
+			}
+			var dt []byte
+			var err error
+			err = sm.Any(gctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
+				dt, err = secrets.GetSecret(ctx, caller, id)
+				if err != nil {
+					if errors.Is(err, secrets.ErrNotFound) && sopt.Optional {
+						return nil
+					}
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			out = append(out, fmt.Sprintf("%s=%s", sopt.Name, string(dt)))
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

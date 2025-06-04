@@ -354,7 +354,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
-	// hm
 	srv := dagql.CurrentDagqlServer(ctx)
 
 	var metaDir dagql.Instance[*Directory]

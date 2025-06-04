@@ -336,7 +336,7 @@ func (svc *Service) startContainer(
 		if pbmount.Input > -1 {
 			st = &states[pbmount.Input]
 		} else if pbmount.Dest == buildkit.MetaMountDestPath {
-			v, _ := metaMount(ctx, "")
+			v := MetaMountState(ctx, "")
 			st = &v
 		}
 
@@ -379,11 +379,6 @@ func (svc *Service) startContainer(
 		telemetry.Resume(execCtx),
 		// Hide this span so the user can just focus on the withExec.
 		telemetry.Internal(),
-		// The withExec span expects to see this effect, otherwise it'll still be
-		// pending.
-		// XXX: hm
-		// trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
-		// trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
 	)
 	defer func() {
 		if rerr != nil {
