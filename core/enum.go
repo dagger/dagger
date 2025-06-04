@@ -160,7 +160,7 @@ func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 	if err != nil {
 		return nil, err
 	}
-	return e.Lookup(v.(*dagql.EnumValueName).Value)
+	return e.Lookup(v.(*dagql.EnumValueName).Name)
 }
 
 func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {

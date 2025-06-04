@@ -1,3 +1,6 @@
+"""Indicates the underlying value of an enum member."""
+directive @enumValue(value: String!) on ENUM_VALUE
+
 """
 Explains why this element is marked experimental. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).
 """
