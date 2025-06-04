@@ -40,6 +40,8 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
+var ErrMountNotExist = errors.New("mount does not exist")
+
 type DefaultTerminalCmdOpts struct {
 	Args []string
 
@@ -312,6 +314,23 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	mntsCp = append(mntsCp, newMnt)
 
 	return mntsCp
+}
+
+func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, error) {
+	mntsCp := make(ContainerMounts, 0, len(mnts))
+	found := false
+	for _, mnt := range mnts {
+		if mnt.Target == newMnt.Target {
+			mntsCp = append(mntsCp, newMnt)
+			found = true
+		} else {
+			mntsCp = append(mntsCp, mnt)
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("failed to replace %s: %w", newMnt.Target, ErrMountNotExist)
+	}
+	return mntsCp, nil
 }
 
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
@@ -598,17 +617,21 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Container, error) {
 	container = container.Clone()
 
-	dirSt, err := dir.StateWithSourcePath()
-	if err != nil {
-		return nil, err
-	}
+	if dir.Result != nil {
+		container.FSResult = dir.Result
+	} else {
+		dirSt, err := dir.StateWithSourcePath()
+		if err != nil {
+			return nil, err
+		}
 
-	def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
+		def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
 
-	container.FS = def.ToPB()
+		container.FS = def.ToPB()
+	}
 
 	container.Services.Merge(dir.Services)
 
@@ -688,16 +711,23 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 	})
 }
 
+func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
+	dir, linkName := filepath.Split(filepath.Clean(linkName))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
+		return dir.WithSymlink(ctx, srv, target, linkName)
+	})
+}
+
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, dir.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, file.Services, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -1015,6 +1045,7 @@ func (container *Container) withMounted(
 	ctx context.Context,
 	target string,
 	srcDef *pb.Definition,
+	result bkcache.ImmutableRef,
 	srcPath string,
 	svcs ServiceBindings,
 	owner string,
@@ -1035,7 +1066,47 @@ func (container *Container) withMounted(
 		SourcePath: srcPath,
 		Target:     target,
 		Readonly:   readonly,
+		Result:     result,
 	})
+
+	container.Services.Merge(svcs)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+func (container *Container) replaceMount(
+	ctx context.Context,
+	target string,
+	srcDef *pb.Definition,
+	result bkcache.ImmutableRef,
+	srcPath string,
+	svcs ServiceBindings,
+	owner string,
+	readonly bool,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+
+	var err error
+	if owner != "" {
+		srcDef, srcPath, err = container.chown(ctx, srcDef, srcPath, owner, llb.Platform(container.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	container.Mounts, err = container.Mounts.Replace(ContainerMount{
+		Source:     srcDef,
+		SourcePath: srcPath,
+		Target:     target,
+		Readonly:   readonly,
+		Result:     result,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	container.Services.Merge(svcs)
 
@@ -1148,7 +1219,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
+	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {

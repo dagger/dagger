@@ -463,6 +463,16 @@ func (s *containerSchema) Install() {
 				),
 			),
 
+		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
+			Doc(`Return a snapshot with a symlink`).
+			Args(
+				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
+				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
+				dagql.Arg("expand").Doc(
+					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
+			),
+
 		dagql.Func("stdout", s.stdout(false)).
 			View(AllVersion).
 			Doc(`The buffered standard output stream of the last executed command`,
@@ -880,6 +890,30 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 	args.Args = expandedArgs
 
 	return parent.WithExec(ctx, args.ContainerExecOpts)
+}
+
+type containerWithSymlinkArgs struct {
+	Target   string
+	LinkName string
+	Expand   bool `default:"false"`
+}
+
+func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
+	target, err := expandEnvVar(ctx, parent.Self, args.Target, args.Expand)
+	if err != nil {
+		return inst, err
+	}
+
+	linkName, err := expandEnvVar(ctx, parent.Self, args.LinkName, args.Expand)
+	if err != nil {
+		return inst, err
+	}
+
+	ctr, err := parent.Self.WithSymlink(ctx, s.srv, target, linkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
