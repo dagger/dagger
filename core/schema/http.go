@@ -105,8 +105,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 			return inst, err
 		}
 		binding := core.ServiceBinding{
-			ID:       svc.ID(),
-			Service:  svc.Self,
+			Service:  svc,
 			Hostname: host,
 		}
 

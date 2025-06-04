@@ -132,7 +132,7 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		}
 	}
 	for _, bnd := range container.Services {
-		ctr := bnd.Service.Container
+		ctr := bnd.Service.Self.Container
 		if ctr == nil {
 			continue
 		}
@@ -1601,10 +1601,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, id *call.ID, svc *Service, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Hostname(ctx, id)
+	host, err := svc.Self.Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
 	}
@@ -1616,7 +1616,6 @@ func (container *Container) WithServiceBinding(ctx context.Context, id *call.ID,
 
 	container.Services.Merge(ServiceBindings{
 		{
-			ID:       id,
 			Service:  svc,
 			Hostname: host,
 			Aliases:  aliases,
