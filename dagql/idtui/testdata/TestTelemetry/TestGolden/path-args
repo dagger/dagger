@@ -1,8 +1,3 @@
-Expected stdout:
-
-hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-
-
 Expected stderr:
 
 ▼ connect X.Xs
@@ -19,12 +14,11 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● viztest: Viztest! X.Xs
-▼ .revealedSpans: String! X.Xs
-┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-├─● revealed span X.Xs
-│
-╰─😊 sometimes you gotta be [1mbold
-  ┃ X.Xs
-
+● .pathArgs(
+  ┆ file: Host.file(path: "/app/dagql/idtui/golden_test.go"): File!
+  ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
+  ┆ contextFile: Directory.file(path: "main.go"): File!
+  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory!
+  ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

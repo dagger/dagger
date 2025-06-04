@@ -161,12 +161,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	op.g = g
 	op.opt = opt
 
-	obj, err := loadDagOpID(
-		ctx,
-		withDagOpContext(ctx, op),
-		opt.Server,
-		op.ID,
-	)
+	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -589,12 +584,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	obj, err := loadDagOpID(
-		ctx,
-		buildkit.ContextWithExecutionMetadata(withDagOpContext(ctx, op), op.ExecutionMetadata),
-		opt.Server,
-		op.ID,
-	)
+	obj, err := loadDagOpID(ctx, buildkit.ContextWithExecutionMetadata(withDagOpContext(ctx, op), op.ExecutionMetadata), opt.Server, op.ID)
 	if err != nil {
 		return nil, err
 	}

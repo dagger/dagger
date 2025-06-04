@@ -264,7 +264,7 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 		return nil, nil, nil
 	}
 	def, err := h.getOrInitDef(cfg.Digest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, cfg.Source)
+		return initializeModule(ctx, h.dag, cfg.Ref, cfg.Source)
 	})
 
 	return def, cfg, err
@@ -329,7 +329,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 			shellDebug(ctx, "getModuleConfig", ref, rcfg)
 		}()
 	}
-	ctx, span := Tracer().Start(ctx, "looking for module", telemetry.Internal())
+	ctx, span := Tracer().Start(ctx, "detect module: "+ref)
 	defer telemetry.End(span, func() error { return rerr })
 
 	src := h.dag.ModuleSource(ref)

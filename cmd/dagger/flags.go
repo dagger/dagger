@@ -281,11 +281,11 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *containerValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.address == "" {
 		return nil, fmt.Errorf("container address cannot be empty")
 	}
-	return c.Container().From(v.String()), nil
+	return c.Container().From(v.String()).Sync(ctx)
 }
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
@@ -323,7 +323,8 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 				makeGitDirectory(gitURL, dag),
 				dagger.DirectoryWithDirectoryOpts{
 					Exclude: modArg.Ignore,
-				}), nil
+				}).
+			Sync(ctx)
 	}
 
 	// Otherwise it's a local dir path
@@ -335,7 +336,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 
 	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
 		Exclude: modArg.Ignore,
-	}), nil
+	}).Sync(ctx)
 }
 
 // makeGitDirectory creates a dagger.Directory object from a parsed gitutil.GitURL
@@ -391,7 +392,7 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+func (v *fileValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
 	}
@@ -414,7 +415,7 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		if path == "" {
 			return nil, fmt.Errorf("expected path selection for git repo")
 		}
-		return gitDir.File(path), nil
+		return gitDir.File(path).Sync(ctx)
 	}
 
 	// Otherwise it's a local file path
@@ -424,7 +425,7 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		return nil, err
 	}
 
-	return dag.Host().File(path), nil
+	return dag.Host().File(path).Sync(ctx)
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
