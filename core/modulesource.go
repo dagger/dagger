@@ -144,7 +144,6 @@ func (src *ModuleSource) TypeDescription() string {
 }
 
 func (src ModuleSource) Clone() *ModuleSource {
-
 	if src.CodegenConfig != nil {
 		src.CodegenConfig = src.CodegenConfig.Clone()
 	}
