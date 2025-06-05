@@ -7,11 +7,11 @@ let now = new Date().toISOString()
 export class Typescript {
   @func()
   echo(msg: string): Promise<string> {
-    return dag.
-      container().
-      from("alpine:latest").
-      withExec(["echo", msg]).
-      stdout()
+    return dag
+      .container()
+      .from("alpine:latest")
+      .withExec(["echo", msg])
+      .stdout()
   }
 
   @func()
@@ -23,13 +23,14 @@ export class Typescript {
 
   @func()
   async pending(): Promise<void> {
-    await dag.container().
-      from("alpine:latest").
-      withEnvVariable("NOW", now).
-      withExec(["sleep", "1"]).
-      withExec(["false"]).
-      withExec(["sleep", "1"]).
-      sync()
+    await dag
+      .container()
+      .from("alpine:latest")
+      .withEnvVariable("NOW", now)
+      .withExec(["sleep", "1"])
+      .withExec(["false"])
+      .withExec(["sleep", "1"])
+      .sync()
   }
 
   @func()
@@ -37,16 +38,20 @@ export class Typescript {
     await dag
       .container()
       .from("alpine")
-      .withEnvVariable("NOW", new Date().toString())
-      .withExec(["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"])
-      .sync();
+      .withEnvVariable("NOW", now)
+      .withExec([
+        "sh",
+        "-c",
+        "echo im doing a lot of work; echo and then failing; exit 1",
+      ])
+      .sync()
   }
 
   @func()
   async failLogNative(): Promise<void> {
-    console.log("im doing a lot of work");
-    console.log("and then failing");
-    throw new Error("i failed");
+    console.log("im doing a lot of work")
+    console.log("and then failing")
+    throw new Error("i failed")
   }
 
   @func()
@@ -54,6 +59,6 @@ export class Typescript {
     return dag
       .container()
       .from("alpine")
-      .withExec(["sh", "-c", "echo this is a failing effect; exit 1"]);
+      .withExec(["sh", "-c", "echo this is a failing effect; exit 1"])
   }
 }
