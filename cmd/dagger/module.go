@@ -43,7 +43,8 @@ var (
 	moduleSourcePath string
 	moduleIncludes   []string
 
-	installName string
+	installName   string
+	installInline bool
 
 	developSDK        string
 	developSourcePath string
@@ -132,6 +133,8 @@ func init() {
 	modulePublishCmd.Flags().AddFlag(&modFlag)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleInstallCmd.Flags().BoolVarP(&installInline, "inline", "", false, "Install inline (execute in the context of the caller instead of its own)")
+
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
@@ -321,7 +324,9 @@ var moduleInstallCmd = &cobra.Command{
 				depSrc = depSrc.WithName(installName)
 			}
 
-			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
+			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc}, dagger.ModuleSourceWithDependenciesOpts{
+				Inline: installInline,
+			})
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
 			}
