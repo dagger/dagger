@@ -398,7 +398,7 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	// fetch gitconfig selectors
-	bk, err := src.Self.Query.Buildkit(ctx)
+	bk, err := sdk.root.Buildkit(ctx)
 	if err != nil {
 		return ctr, err
 	}

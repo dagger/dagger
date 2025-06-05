@@ -123,7 +123,7 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
-	f, err := core.NewFileWithContents(ctx, parent.Self, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self.Platform())
+	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self.Platform())
 	if err != nil {
 		return inst, err
 	}
@@ -138,7 +138,7 @@ func (s *querySchema) schemaJSONFile(
 
 	// LLB marshalling takes up too much memory when file ops have a ton of contents, so we still go through
 	// the blob source for now simply to avoid that.
-	f, err = core.NewFileSt(ctx, parent.Self, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	f, err = core.NewFileSt(ctx, blob.LLB(dgst), f.File, f.Platform, f.Services)
 	if err != nil {
 		return inst, err
 	}

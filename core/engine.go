@@ -8,7 +8,6 @@ import (
 )
 
 type Engine struct {
-	Query *Query
 }
 
 func (*Engine) Type() *ast.Type {
@@ -23,8 +22,6 @@ func (*Engine) TypeDescription() string {
 }
 
 type EngineCache struct {
-	Query *Query
-
 	KeepBytes int `field:"true" doc:"The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in." deprecated:"Use minFreeSpace instead."`
 
 	MaxUsedSpace  int `field:"true" doc:"The maximum bytes to keep in the cache without pruning."`

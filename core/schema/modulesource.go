@@ -381,7 +381,6 @@ func (s *moduleSourceSchema) localModuleSource(
 	}
 
 	localSrc := &core.ModuleSource{
-		Query:             query.Self,
 		ConfigExists:      daggerCfgFound,
 		SourceRootSubpath: sourceRootRelPath,
 		OriginalSubpath:   originalRelPath,
@@ -472,13 +471,12 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
-	gitCommit, _, err := gitRef.Self.Resolve(ctx)
+	gitCommit, _, err := gitRef.Self.Resolve(ctx, query.Self)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src to commit: %w", err)
 	}
 
 	gitSrc := &core.ModuleSource{
-		Query:        query.Self,
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
 		Kind:         core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
@@ -671,7 +669,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	dirSrc := &core.ModuleSource{
-		Query:             contextDir.Self.Query,
 		ConfigExists:      true, // we can't load uninitialized dir modules, we'll error out later if it's not there
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
@@ -700,7 +697,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	// load this module source's deps in parallel
-	bk, err := contextDir.Self.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -714,7 +715,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			}
 
 			var err error
-			dirSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+			dirSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, dirSrc.SDK, dirSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
 			}
@@ -1029,8 +1030,11 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	src.SDK.Source = args.Source
 
 	// reload the sdk implementation too
-	var err error
-	src.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, src.Query, src.SDK, src)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	src.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
@@ -1816,9 +1820,13 @@ func (s *moduleSourceSchema) runClientGenerator(
 ) (dagql.Instance[*core.Directory], error) {
 	src := srcInst.Self
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return genDirInst, err
+	}
 	sdk, err := sdk.NewLoader(s.dag).SDKForModule(
 		ctx,
-		src.Query,
+		query,
 		&core.SDKConfig{
 			Source: clientGeneratorConfig.Generator,
 		},
@@ -2016,7 +2024,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		defer telemetry.End(span, func() error { return rerr })
 		getModDefFn, err := core.NewModFunction(
 			ctx,
-			src.Self.Query,
 			mod,
 			nil,
 			mod.Runtime,
@@ -2107,8 +2114,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	mod := &core.Module{
-		Query: src.Self.Query,
-
 		Source: src,
 
 		NameField:    src.Self.ModuleName,
@@ -2194,11 +2199,15 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	defaultDeps, err := src.Query.DefaultDeps(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defaultDeps, err := query.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
 	}
-	deps := core.NewModDeps(src.Query, defaultDeps.Mods)
+	deps := core.NewModDeps(query, defaultDeps.Mods)
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self)
 	}

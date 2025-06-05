@@ -36,7 +36,6 @@ import (
 )
 
 type GitRepository struct {
-	Query   *Query
 	Backend GitRepositoryBackend
 
 	DiscardGitDir bool
@@ -45,9 +44,9 @@ type GitRepository struct {
 type GitRepositoryBackend interface {
 	HasPBDefinitions
 
-	Ref(ctx context.Context, ref string) (GitRefBackend, error)
-	Tags(ctx context.Context, patterns []string) (tags []string, err error)
-	Branches(ctx context.Context, patterns []string) (branches []string, err error)
+	Ref(ctx context.Context, query *Query, ref string) (GitRefBackend, error)
+	Tags(ctx context.Context, query *Query, patterns []string) (tags []string, err error)
+	Branches(ctx context.Context, query *Query, patterns []string) (branches []string, err error)
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -65,20 +64,20 @@ func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition,
 	return repo.Backend.PBDefinitions(ctx)
 }
 
-func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error) {
-	ref, err := repo.Backend.Ref(ctx, name)
+func (repo *GitRepository) Ref(ctx context.Context, query *Query, name string) (*GitRef, error) {
+	ref, err := repo.Backend.Ref(ctx, query, name)
 	if err != nil {
 		return nil, err
 	}
 	return &GitRef{repo, ref}, nil
 }
 
-func (repo *GitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	return repo.Backend.Tags(ctx, patterns)
+func (repo *GitRepository) Tags(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	return repo.Backend.Tags(ctx, query, patterns)
 }
 
-func (repo *GitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	return repo.Backend.Branches(ctx, patterns)
+func (repo *GitRepository) Branches(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	return repo.Backend.Branches(ctx, query, patterns)
 }
 
 type GitRef struct {
@@ -89,7 +88,7 @@ type GitRef struct {
 type GitRefBackend interface {
 	HasPBDefinitions
 
-	Resolve(ctx context.Context) (commit string, ref string, err error)
+	Resolve(ctx context.Context, query *Query) (commit string, ref string, err error)
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
 }
 
@@ -108,8 +107,8 @@ func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 	return ref.Backend.PBDefinitions(ctx)
 }
 
-func (ref *GitRef) Resolve(ctx context.Context) (string, string, error) {
-	return ref.Backend.Resolve(ctx)
+func (ref *GitRef) Resolve(ctx context.Context, query *Query) (string, string, error) {
+	return ref.Backend.Resolve(ctx, query)
 }
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
@@ -117,8 +116,6 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 type RemoteGitRepository struct {
-	Query *Query
-
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
@@ -137,15 +134,14 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 	return nil, nil
 }
 
-func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
+func (repo *RemoteGitRepository) Ref(ctx context.Context, query *Query, refstr string) (GitRefBackend, error) {
 	ref := &RemoteGitRef{
-		Query: repo.Query,
-		Repo:  repo,
+		Repo: repo,
 	}
 
 	// force resolution now, since the remote might change, and we don't want inconsistencies
 	var err error
-	ref.Commit, ref.FullRef, err = ref.resolve(ctx, refstr)
+	ref.Commit, ref.FullRef, err = ref.resolve(ctx, query, refstr)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +149,8 @@ func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRef
 	return ref, nil
 }
 
-func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+func (repo *RemoteGitRepository) Tags(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	tags, err := repo.lsRemote(ctx, query, []string{"--tags"}, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +160,8 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 	return tags, nil
 }
 
-func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+func (repo *RemoteGitRepository) Branches(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, query, []string{"--heads"}, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +171,8 @@ func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string
 	return branches, nil
 }
 
-func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
-	svcs, err := repo.Query.Services(ctx)
+func (repo *RemoteGitRepository) lsRemote(ctx context.Context, query *Query, args []string, patterns []string) ([]string, error) {
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -196,7 +192,7 @@ func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, pa
 		queryArgs = append(queryArgs, "--")
 		queryArgs = append(queryArgs, patterns...)
 	}
-	git, cleanup, err := repo.setup(ctx)
+	git, cleanup, err := repo.setup(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +220,7 @@ func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, pa
 	return results, nil
 }
 
-func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+func (repo *RemoteGitRepository) setup(ctx context.Context, query *Query) (_ *gitutil.GitCLI, _ func() error, rerr error) {
 	var opts []gitutil.Option
 
 	cleanups := buildkit.Cleanups{}
@@ -241,7 +237,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			username = "x-token-auth"
 		}
 
-		secretStore, err := repo.Query.Secrets(ctx)
+		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
@@ -256,7 +252,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
 		))
 	} else if repo.AuthHeader.Self != nil {
-		secretStore, err := repo.Query.Secrets(ctx)
+		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
@@ -270,7 +266,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}
 
 	if repo.SSHAuthSocket != nil {
-		socketStore, err := repo.Query.Sockets(ctx)
+		socketStore, err := query.Sockets(ctx)
 		if err == nil {
 			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.IDDigest)
 			if err != nil {
@@ -294,7 +290,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		})
 	}
 
-	netConf, err := DNSConfig(ctx, repo.Query)
+	netConf, err := DNSConfig(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -389,11 +385,16 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 }
 
 func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp, fn func(string) error) (retErr error) {
-	locker := repo.Query.Locker()
+	queryInst, ok := dagop.opt.Server.Root().(dagql.Instance[*Query])
+	if !ok {
+		return fmt.Errorf("server root was %T", dagop.opt.Server.Root())
+	}
+	query := queryInst.Self
+	locker := query.Locker()
 	locker.Lock(indexGitRemote + repo.URL.Remote())
 	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
 
-	cache := repo.Query.BuildkitCache()
+	cache := query.BuildkitCache()
 
 	sis, err := searchGitRemote(ctx, cache, repo.URL.Remote())
 	if err != nil {
@@ -474,8 +475,6 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 }
 
 type RemoteGitRef struct {
-	Query *Query
-
 	Repo *RemoteGitRepository
 
 	FullRef string
@@ -494,9 +493,14 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, fmt.Errorf("no dagop")
 	}
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
-	cache := ref.Query.BuildkitCache()
 
-	locker := ref.Query.Locker()
+	query, ok := srv.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", srv.Root())
+	}
+	cache := query.Self.BuildkitCache()
+
+	locker := query.Self.Locker()
 	locker.Lock(indexGitSnapshot + cacheKey)
 	defer locker.Unlock(indexGitSnapshot + cacheKey)
 	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
@@ -508,7 +512,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		if err != nil {
 			return nil, err
 		}
-		checkout := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+		checkout := NewDirectory(nil, "/", query.Self.Platform(), nil)
 		checkout.Result = res
 		return checkout, nil
 	}
@@ -521,7 +525,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	}()
 
 	err = ref.Repo.mountRemote(ctx, op, func(remote string) error {
-		git, cleanup, err := ref.Repo.setup(ctx)
+		git, cleanup, err := ref.Repo.setup(ctx, query.Self)
 		if err != nil {
 			return err
 		}
@@ -541,7 +545,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 
 		if doFetch {
-			err := ref.fetchRemote(ctx, git, depth)
+			err := ref.fetchRemote(ctx, query.Self, git, depth)
 			if err != nil {
 				return err
 			}
@@ -603,12 +607,12 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, err
 	}
 
-	checkout := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+	checkout := NewDirectory(nil, "/", query.Self.Platform(), nil)
 	checkout.Result = snap
 	return checkout, nil
 }
 
-func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, depth int) error {
+func (ref *RemoteGitRef) fetchRemote(ctx context.Context, query *Query, git *gitutil.GitCLI, depth int) error {
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
 		return err
@@ -637,7 +641,7 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 	}
 	args = append(args, "origin", refSpec)
 
-	svcs, err := ref.Repo.Query.Services(ctx)
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
@@ -728,8 +732,8 @@ func doGitCheckout(
 	return nil
 }
 
-func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit string, fullref string, err error) {
-	svcs, err := ref.Repo.Query.Services(ctx)
+func (ref *RemoteGitRef) resolve(ctx context.Context, query *Query, refstr string) (commit string, fullref string, err error) {
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get services: %w", err)
 	}
@@ -739,7 +743,7 @@ func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit str
 	}
 	defer detach()
 
-	git, cleanup, err := ref.Repo.setup(ctx)
+	git, cleanup, err := ref.Repo.setup(ctx, query)
 	if err != nil {
 		return "", "", err
 	}
@@ -770,13 +774,11 @@ func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit str
 	return parseGitRefOutput(refstr, string(out), "\t")
 }
 
-func (ref *RemoteGitRef) Resolve(ctx context.Context) (commit string, fullref string, _ error) {
+func (ref *RemoteGitRef) Resolve(ctx context.Context, _ *Query) (commit string, fullref string, _ error) {
 	return ref.Commit, ref.FullRef, nil
 }
 
 type LocalGitRepository struct {
-	Query *Query
-
 	Directory *Directory
 }
 
@@ -786,16 +788,15 @@ func (repo *LocalGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defini
 	return repo.Directory.PBDefinitions(ctx)
 }
 
-func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBackend, error) {
+func (repo *LocalGitRepository) Ref(ctx context.Context, _ *Query, ref string) (GitRefBackend, error) {
 	return &LocalGitRef{
-		Query: repo.Query,
-		Repo:  repo,
-		Ref:   ref,
+		Repo: repo,
+		Ref:  ref,
 	}, nil
 }
 
-func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+func (repo *LocalGitRepository) Tags(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	tags, err := repo.lsRemote(ctx, query, []string{"--tags"}, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -805,8 +806,8 @@ func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]
 	return tags, nil
 }
 
-func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+func (repo *LocalGitRepository) Branches(ctx context.Context, query *Query, patterns []string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, query, []string{"--heads"}, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -816,9 +817,9 @@ func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string)
 	return branches, nil
 }
 
-func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
+func (repo *LocalGitRepository) lsRemote(ctx context.Context, query *Query, args []string, patterns []string) ([]string, error) {
 	results := []string{}
-	err := repo.mount(ctx, func(src string) error {
+	err := repo.mount(ctx, query, func(src string) error {
 		queryArgs := []string{
 			"ls-remote",
 			"--refs", // we don't want to include ^{} entries for annotated tags
@@ -855,8 +856,8 @@ func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, pat
 	return results, nil
 }
 
-func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error) error {
-	svcs, err := repo.Query.Services(ctx)
+func (repo *LocalGitRepository) mount(ctx context.Context, query *Query, f func(string) error) error {
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
@@ -876,8 +877,6 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 }
 
 type LocalGitRef struct {
-	Query *Query
-
 	Repo *LocalGitRepository
 	Ref  string
 }
@@ -894,9 +893,14 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("no dagop")
 	}
 
-	cache := ref.Query.BuildkitCache()
+	queryInst, ok := srv.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", srv.Root())
+	}
+	query := queryInst.Self
+	cache := query.BuildkitCache()
 
-	commit, fullref, err := ref.Resolve(ctx)
+	commit, fullref, err := ref.Resolve(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -913,7 +917,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		}
 	}()
 
-	err = ref.Repo.mount(ctx, func(src string) error {
+	err = ref.Repo.mount(ctx, query, func(src string) error {
 		git := gitutil.NewGitCLI(gitutil.WithDir(src))
 		gitDir, err := git.GitDir(ctx)
 		if err != nil {
@@ -947,7 +951,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("failed to checkout %s: %w", fullref, err)
 	}
 
-	dir := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+	dir := NewDirectory(nil, "/", query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
@@ -957,13 +961,13 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	return dir, nil
 }
 
-func (ref *LocalGitRef) Resolve(ctx context.Context) (string, string, error) {
+func (ref *LocalGitRef) Resolve(ctx context.Context, query *Query) (string, string, error) {
 	if gitutil.IsCommitSHA(ref.Ref) {
 		return ref.Ref, ref.Ref, nil
 	}
 
 	var commit, fullref string
-	err := ref.Repo.mount(ctx, func(src string) error {
+	err := ref.Repo.mount(ctx, query, func(src string) error {
 		git := gitutil.NewGitCLI(gitutil.WithDir(src))
 
 		targetref := ref.Ref

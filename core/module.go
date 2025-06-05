@@ -17,8 +17,6 @@ import (
 )
 
 type Module struct {
-	Query *Query
-
 	// The source of the module
 	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
 
@@ -684,10 +682,6 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 
 func (mod Module) Clone() *Module {
 	cp := mod
-
-	if mod.Query != nil {
-		cp.Query = mod.Query.Clone()
-	}
 
 	if mod.Source.Self != nil {
 		cp.Source.Self = mod.Source.Self.Clone()

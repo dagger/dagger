@@ -90,8 +90,6 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 }
 
 type ModuleSource struct {
-	Query *Query
-
 	ConfigExists           bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
 	ModuleName             string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
@@ -146,9 +144,6 @@ func (src *ModuleSource) TypeDescription() string {
 }
 
 func (src ModuleSource) Clone() *ModuleSource {
-	if src.Query != nil {
-		src.Query = src.Query.Clone()
-	}
 
 	if src.CodegenConfig != nil {
 		src.CodegenConfig = src.CodegenConfig.Clone()
@@ -302,14 +297,18 @@ func (src *ModuleSource) LoadContext(
 	path string,
 	ignore []string,
 ) (inst dagql.Instance[*Directory], err error) {
-	bk, err := src.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
 	}
 
 	switch src.Kind {
 	case ModuleSourceKindLocal:
-		localSourceClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
 		}
@@ -449,11 +448,11 @@ func (src *ModuleSource) LoadContext(
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
 
-	mainClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
+	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 

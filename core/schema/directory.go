@@ -197,12 +197,13 @@ type directoryPipelineArgs struct {
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
-	return parent.WithPipeline(ctx, args.Name, args.Description)
+	// deprecated and a no-op
+	return parent, nil
 }
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, _ struct{}) (*core.Directory, error) {
 	platform := parent.Platform()
-	return core.NewScratchDirectory(ctx, parent, platform)
+	return core.NewScratchDirectory(ctx, platform)
 }
 
 type subdirectoryArgs struct {
@@ -242,7 +243,11 @@ type FilterArgs struct {
 }
 
 func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
-	dir, err := s.directory(ctx, parent.Query, struct{}{})
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := s.directory(ctx, query, struct{}{})
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +265,7 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Direc
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
 	name := path.Base(parent.Dir)
-	useSlash, err := core.SupportsDirSlash(ctx, parent.Query)
+	useSlash, err := core.SupportsDirSlash(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -395,7 +400,11 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 	if err != nil {
 		return "", err
 	}
-	bk, err := parent.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -487,7 +496,11 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Inst
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Self.Query.Platform()
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	platform := query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
@@ -497,7 +510,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		return nil, err
 	}
 
-	ctr, err := core.NewContainer(parent.Self.Query, platform)
+	ctr, err := core.NewContainer(platform)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +519,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 	if err != nil {
 		return nil, err
 	}
-	secretStore, err := parent.Self.Query.Secrets(ctx)
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
@@ -561,9 +574,7 @@ func (s *directorySchema) asGit(
 	_ struct{},
 ) (*core.GitRepository, error) {
 	return &core.GitRepository{
-		Query: dir.Query,
 		Backend: &core.LocalGitRepository{
-			Query:     dir.Query,
 			Directory: dir,
 		},
 	}, nil

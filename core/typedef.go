@@ -1105,8 +1105,6 @@ func (k TypeDefKind) ToLiteral() call.Literal {
 }
 
 type FunctionCall struct {
-	Query *Query
-
 	Name       string                  `field:"true" doc:"The name of the function being called."`
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
@@ -1129,7 +1127,11 @@ func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 	// filesystem. This ensures that the result is cached as part of the module
 	// function's Exec while also keeping SDKs as agnostic as possible to the
 	// format + location of that result.
-	bk, err := fnCall.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("get buildkit client: %w", err)
 	}
@@ -1146,7 +1148,11 @@ func (fnCall *FunctionCall) ReturnError(ctx context.Context, errID dagql.ID[*Err
 	// filesystem. This ensures that the result is cached as part of the module
 	// function's Exec while also keeping SDKs as agnostic as possible to the
 	// format + location of that result.
-	bk, err := fnCall.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("get buildkit client: %w", err)
 	}

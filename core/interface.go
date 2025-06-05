@@ -72,7 +72,11 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 }
 
 func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedIfaceImpl, error) {
-	deps, err := iface.mod.Query.IDDeps(ctx, id)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	deps, err := query.IDDeps(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("schema: %w", err)
 	}

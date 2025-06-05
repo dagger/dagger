@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/containerd/containerd/content"
 	bkcache "github.com/moby/buildkit/cache"
@@ -117,6 +118,24 @@ type Server interface {
 	SecretSalt() []byte
 }
 
+type queryKey struct{}
+
+func ContextWithQuery(ctx context.Context, q *Query) context.Context {
+	return context.WithValue(ctx, queryKey{}, q)
+}
+
+func CurrentQuery(ctx context.Context) (*Query, error) {
+	q, ok := ctx.Value(queryKey{}).(*Query)
+	if !ok {
+		// TODO:
+		// TODO:
+		// TODO:
+		// return nil, fmt.Errorf("no query in context")
+		return nil, fmt.Errorf("no query in context:\n%s", string(debug.Stack()))
+	}
+	return q, nil
+}
+
 func NewRoot(srv Server) *Query {
 	return &Query{Server: srv}
 }
@@ -142,21 +161,16 @@ func (q *Query) WithPipeline(name, desc string) *Query {
 
 func (q *Query) NewContainer(platform Platform) *Container {
 	return &Container{
-		Query:    q,
 		Platform: platform,
 	}
 }
 
 func (q *Query) NewHost() *Host {
-	return &Host{
-		Query: q,
-	}
+	return &Host{}
 }
 
 func (q *Query) NewModule() *Module {
-	return &Module{
-		Query: q,
-	}
+	return &Module{}
 }
 
 // IDDeps loads the module dependencies of a given ID.
