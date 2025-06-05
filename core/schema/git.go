@@ -292,7 +292,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				}
 				defer detach()
 
-				dnsConfig, err = core.DNSConfig(ctx, parent.Self)
+				dnsConfig, err = core.DNSConfig(ctx)
 				if err != nil {
 					return inst, err
 				}
@@ -434,11 +434,7 @@ type refArgs struct {
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.Instance[*core.GitRepository], args refArgs) (inst dagql.Instance[*core.GitRef], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	result, err := parent.Self.Ref(ctx, query, args.Name)
+	result, err := parent.Self.Ref(ctx, args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -507,18 +503,13 @@ type tagsArgs struct {
 }
 
 func (s *gitSchema) tags(ctx context.Context, parent dagql.Instance[*core.GitRepository], args tagsArgs) (dagql.Array[dagql.String], error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var patterns []string
 	if args.Patterns.Valid {
 		for _, pattern := range args.Patterns.Value {
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Self.Tags(ctx, query, patterns)
+	res, err := parent.Self.Tags(ctx, patterns)
 	return dagql.NewStringArray(res...), err
 }
 
@@ -531,18 +522,13 @@ type branchesArgs struct {
 }
 
 func (s *gitSchema) branches(ctx context.Context, parent dagql.Instance[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var patterns []string
 	if args.Patterns.Valid {
 		for _, pattern := range args.Patterns.Value {
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Self.Branches(ctx, query, patterns)
+	res, err := parent.Self.Branches(ctx, patterns)
 	return dagql.NewStringArray(res...), err
 }
 
@@ -595,6 +581,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	}
 
 	if core.DagOpInContext[core.FSDagOp](ctx) {
+		query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+		if !ok {
+			return inst, fmt.Errorf("server root was %T", s.srv.Root())
+		}
+		ctx = core.ContextWithQuery(ctx, query.Self)
 		dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
 		if err != nil {
 			return inst, err
@@ -607,11 +598,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return inst, err
 	}
 
-	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return inst, fmt.Errorf("failed to get root query")
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
 	}
-	bk, err := query.Self.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -645,8 +636,9 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 	if !ok {
 		return "", fmt.Errorf("server root was %T", s.srv.Root())
 	}
+	ctx = core.ContextWithQuery(ctx, query.Self)
 
-	commit, _, err := parent.Self.Resolve(ctx, query.Self)
+	commit, _, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -662,8 +654,9 @@ func (s *gitSchema) fetchRef(ctx context.Context, parent dagql.Instance[*core.Gi
 	if !ok {
 		return "", fmt.Errorf("server root was %T", s.srv.Root())
 	}
+	ctx = core.ContextWithQuery(ctx, query.Self)
 
-	_, ref, err := parent.Self.Resolve(ctx, query.Self)
+	_, ref, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
 	}

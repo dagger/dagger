@@ -1832,12 +1832,10 @@ func (s *containerSchema) asTarball(
 		return inst, err
 	}
 
-	queryInst, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return inst, fmt.Errorf("server root was %T", s.srv.Root())
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
 	}
-	query := queryInst.Self
-
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)

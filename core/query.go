@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"runtime/debug"
 
 	"github.com/containerd/containerd/content"
 	bkcache "github.com/moby/buildkit/cache"
@@ -127,11 +126,7 @@ func ContextWithQuery(ctx context.Context, q *Query) context.Context {
 func CurrentQuery(ctx context.Context) (*Query, error) {
 	q, ok := ctx.Value(queryKey{}).(*Query)
 	if !ok {
-		// TODO:
-		// TODO:
-		// TODO:
-		// return nil, fmt.Errorf("no query in context")
-		return nil, fmt.Errorf("no query in context:\n%s", string(debug.Stack()))
+		return nil, fmt.Errorf("no query in context")
 	}
 	return q, nil
 }

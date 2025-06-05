@@ -471,7 +471,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
-	gitCommit, _, err := gitRef.Self.Resolve(ctx, query.Self)
+	gitCommit, _, err := gitRef.Self.Resolve(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src to commit: %w", err)
 	}
