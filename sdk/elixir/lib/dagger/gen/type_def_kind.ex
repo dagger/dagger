@@ -7,17 +7,34 @@ defmodule Dagger.TypeDefKind do
   use Dagger.Core.Base, kind: :enum, name: "TypeDefKind"
 
   @type t() ::
-          :STRING_KIND
-          | :FLOAT_KIND
+          :STRING
+          | :STRING_KIND
+          | :INTEGER
           | :INTEGER_KIND
+          | :FLOAT
+          | :FLOAT_KIND
+          | :BOOLEAN
           | :BOOLEAN_KIND
+          | :SCALAR
           | :SCALAR_KIND
+          | :LIST
           | :LIST_KIND
+          | :OBJECT
           | :OBJECT_KIND
+          | :INTERFACE
           | :INTERFACE_KIND
+          | :INPUT
           | :INPUT_KIND
+          | :VOID
           | :VOID_KIND
+          | :ENUM
           | :ENUM_KIND
+
+  @doc """
+  A string value.
+  """
+  @spec string() :: :STRING
+  def string(), do: :STRING
 
   @doc """
   A string value.
@@ -26,16 +43,34 @@ defmodule Dagger.TypeDefKind do
   def string_kind(), do: :STRING_KIND
 
   @doc """
-  A float value.
+  An integer value.
   """
-  @spec float_kind() :: :FLOAT_KIND
-  def float_kind(), do: :FLOAT_KIND
+  @spec integer() :: :INTEGER
+  def integer(), do: :INTEGER
 
   @doc """
   An integer value.
   """
   @spec integer_kind() :: :INTEGER_KIND
   def integer_kind(), do: :INTEGER_KIND
+
+  @doc """
+  A float value.
+  """
+  @spec float() :: :FLOAT
+  def float(), do: :FLOAT
+
+  @doc """
+  A float value.
+  """
+  @spec float_kind() :: :FLOAT_KIND
+  def float_kind(), do: :FLOAT_KIND
+
+  @doc """
+  A boolean value.
+  """
+  @spec boolean() :: :BOOLEAN
+  def boolean(), do: :BOOLEAN
 
   @doc """
   A boolean value.
@@ -46,8 +81,22 @@ defmodule Dagger.TypeDefKind do
   @doc """
   A scalar value of any basic kind.
   """
+  @spec scalar() :: :SCALAR
+  def scalar(), do: :SCALAR
+
+  @doc """
+  A scalar value of any basic kind.
+  """
   @spec scalar_kind() :: :SCALAR_KIND
   def scalar_kind(), do: :SCALAR_KIND
+
+  @doc """
+  A list of values all having the same type.
+
+  Always paired with a ListTypeDef.
+  """
+  @spec list() :: :LIST
+  def list(), do: :LIST
 
   @doc """
   A list of values all having the same type.
@@ -62,8 +111,24 @@ defmodule Dagger.TypeDefKind do
 
   Always paired with an ObjectTypeDef.
   """
+  @spec object() :: :OBJECT
+  def object(), do: :OBJECT
+
+  @doc """
+  A named type defined in the GraphQL schema, with fields and functions.
+
+  Always paired with an ObjectTypeDef.
+  """
   @spec object_kind() :: :OBJECT_KIND
   def object_kind(), do: :OBJECT_KIND
+
+  @doc """
+  A named type of functions that can be matched+implemented by other objects+interfaces.
+
+  Always paired with an InterfaceTypeDef.
+  """
+  @spec interface() :: :INTERFACE
+  def interface(), do: :INTERFACE
 
   @doc """
   A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -76,8 +141,22 @@ defmodule Dagger.TypeDefKind do
   @doc """
   A graphql input type, used only when representing the core API via TypeDefs.
   """
+  @spec input() :: :INPUT
+  def input(), do: :INPUT
+
+  @doc """
+  A graphql input type, used only when representing the core API via TypeDefs.
+  """
   @spec input_kind() :: :INPUT_KIND
   def input_kind(), do: :INPUT_KIND
+
+  @doc """
+  A special kind used to signify that no value is returned.
+
+  This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+  """
+  @spec void() :: :VOID
+  def void(), do: :VOID
 
   @doc """
   A special kind used to signify that no value is returned.
@@ -92,6 +171,14 @@ defmodule Dagger.TypeDefKind do
 
   Always paired with an EnumTypeDef.
   """
+  @spec enum() :: :ENUM
+  def enum(), do: :ENUM
+
+  @doc """
+  A GraphQL enum type and its values
+
+  Always paired with an EnumTypeDef.
+  """
   @spec enum_kind() :: :ENUM_KIND
   def enum_kind(), do: :ENUM_KIND
 
@@ -99,15 +186,26 @@ defmodule Dagger.TypeDefKind do
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
+  def from_string("STRING"), do: :STRING
   def from_string("STRING_KIND"), do: :STRING_KIND
-  def from_string("FLOAT_KIND"), do: :FLOAT_KIND
+  def from_string("INTEGER"), do: :INTEGER
   def from_string("INTEGER_KIND"), do: :INTEGER_KIND
+  def from_string("FLOAT"), do: :FLOAT
+  def from_string("FLOAT_KIND"), do: :FLOAT_KIND
+  def from_string("BOOLEAN"), do: :BOOLEAN
   def from_string("BOOLEAN_KIND"), do: :BOOLEAN_KIND
+  def from_string("SCALAR"), do: :SCALAR
   def from_string("SCALAR_KIND"), do: :SCALAR_KIND
+  def from_string("LIST"), do: :LIST
   def from_string("LIST_KIND"), do: :LIST_KIND
+  def from_string("OBJECT"), do: :OBJECT
   def from_string("OBJECT_KIND"), do: :OBJECT_KIND
+  def from_string("INTERFACE"), do: :INTERFACE
   def from_string("INTERFACE_KIND"), do: :INTERFACE_KIND
+  def from_string("INPUT"), do: :INPUT
   def from_string("INPUT_KIND"), do: :INPUT_KIND
+  def from_string("VOID"), do: :VOID
   def from_string("VOID_KIND"), do: :VOID_KIND
+  def from_string("ENUM"), do: :ENUM
   def from_string("ENUM_KIND"), do: :ENUM_KIND
 end

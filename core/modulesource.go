@@ -31,9 +31,12 @@ type ModuleSourceKind string
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
 
 var (
-	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
-	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
-	ModuleSourceKindDir   = ModuleSourceKindEnum.Register("DIR_SOURCE")
+	ModuleSourceKindLocal = ModuleSourceKindEnum.RegisterView("LOCAL", AfterVersion("v0.16.0"))
+	_                     = ModuleSourceKindEnum.Alias("LOCAL_SOURCE", "LOCAL")
+	ModuleSourceKindGit   = ModuleSourceKindEnum.RegisterView("GIT", AfterVersion("v0.16.0"))
+	_                     = ModuleSourceKindEnum.Alias("GIT_SOURCE", "GIT")
+	ModuleSourceKindDir   = ModuleSourceKindEnum.RegisterView("DIR", AfterVersion("v0.16.0"))
+	_                     = ModuleSourceKindEnum.Alias("DIR_SOURCE", "DIR")
 )
 
 func (proto ModuleSourceKind) Type() *ast.Type {

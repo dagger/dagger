@@ -13,6 +13,7 @@ from dagger.client._core import Arg
 from dagger.client._guards import is_id_type, is_id_type_subclass
 from dagger.client.base import Interface, Scalar, Type
 from dagger.mod._resolver import Function
+from dagger.mod._types import Enum
 from dagger.mod._utils import (
     get_doc,
     get_module,
@@ -30,6 +31,7 @@ from dagger.mod._utils import (
     syncify,
     to_camel_case,
 )
+from dagger.client import base
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +48,25 @@ def make_converter():
         is_id_type_subclass,
         dagger_type_structure,
     )
-
     conv.register_unstructure_hook_func(
         lambda t: is_id_type_subclass(t) or is_dagger_interface_type(t),
         dagger_type_unstructure,
     )
+
+    def to_enum_name(val: enum.Enum) -> str:
+        return val.name
+
+    def from_enum_name(name: str, cls: type[enum.Enum]) -> enum.Enum:
+        return cls[name]
+
+    conv.register_unstructure_hook(enum.Enum, to_enum_name)
+    conv.register_structure_hook(enum.Enum, from_enum_name)
+
+    conv.register_unstructure_hook(base.Enum, to_enum_name)
+    conv.register_structure_hook(base.Enum, from_enum_name)
+
+    conv.register_unstructure_hook(Enum, to_enum_name)
+    conv.register_structure_hook(Enum, from_enum_name)
 
     conv.register_structure_hook_func(
         is_dagger_interface_type,

@@ -1,3 +1,4 @@
+import typing
 from typing import Any
 
 import graphql
@@ -24,6 +25,23 @@ def insert_stubs(introspection: Any, schema: graphql.GraphQLSchema):
                 fields=fields,
                 directives=parse_directives(tp["directives"]),
             )
+
+        elif isinstance(tp_schema, graphql.GraphQLEnumType):
+            if values := tp.get("enumValues"):
+                value_defs = []
+                for value in values:
+                    schema_value = tp_schema.values[value["name"]]
+                    schema_value.ast_node = graphql.EnumValueDefinitionNode(
+                        name=graphql.NameNode(value=value["name"]),
+                        description=value["description"],
+                        directives=parse_directives(value["directives"]),
+                    )
+                    value_defs.append(schema_value.ast_node)
+
+                tp_schema.ast_node = graphql.EnumTypeDefinitionNode(
+                    values=value_defs,
+                    directives=parse_directives(tp["directives"]),
+                )
 
     # TODO: add support for other graphql declarations
 

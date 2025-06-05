@@ -341,6 +341,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to create function: %w", err)
 	}
 
+	// spec, err := fn.metadata.FieldSpec(ctx, fn)
 	spec, err := fn.metadata.FieldSpec()
 	if err != nil {
 		return fmt.Errorf("failed to get field spec: %w", err)
@@ -443,6 +444,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to create function %q: %w", fun.Name, err)
 	}
+	// spec, err := fun.FieldSpec(ctx, modFun)
 	spec, err := fun.FieldSpec()
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)

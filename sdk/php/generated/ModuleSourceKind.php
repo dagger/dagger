@@ -13,7 +13,10 @@ namespace Dagger;
  */
 enum ModuleSourceKind: string
 {
+    case LOCAL = 'LOCAL';
     case LOCAL_SOURCE = 'LOCAL_SOURCE';
+    case GIT = 'GIT';
     case GIT_SOURCE = 'GIT_SOURCE';
+    case DIR = 'DIR';
     case DIR_SOURCE = 'DIR_SOURCE';
 }

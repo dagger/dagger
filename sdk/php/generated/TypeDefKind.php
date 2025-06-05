@@ -14,19 +14,41 @@ namespace Dagger;
 enum TypeDefKind: string
 {
     /** A string value. */
+    case STRING = 'STRING';
+
+    /** A string value. */
     case STRING_KIND = 'STRING_KIND';
+
+    /** An integer value. */
+    case INTEGER = 'INTEGER';
+
+    /** An integer value. */
+    case INTEGER_KIND = 'INTEGER_KIND';
+
+    /** A float value. */
+    case FLOAT = 'FLOAT';
 
     /** A float value. */
     case FLOAT_KIND = 'FLOAT_KIND';
 
-    /** An integer value. */
-    case INTEGER_KIND = 'INTEGER_KIND';
+    /** A boolean value. */
+    case BOOLEAN = 'BOOLEAN';
 
     /** A boolean value. */
     case BOOLEAN_KIND = 'BOOLEAN_KIND';
 
     /** A scalar value of any basic kind. */
+    case SCALAR = 'SCALAR';
+
+    /** A scalar value of any basic kind. */
     case SCALAR_KIND = 'SCALAR_KIND';
+
+    /**
+     * A list of values all having the same type.
+     *
+     * Always paired with a ListTypeDef.
+     */
+    case LIST = 'LIST';
 
     /**
      * A list of values all having the same type.
@@ -40,7 +62,21 @@ enum TypeDefKind: string
      *
      * Always paired with an ObjectTypeDef.
      */
+    case OBJECT = 'OBJECT';
+
+    /**
+     * A named type defined in the GraphQL schema, with fields and functions.
+     *
+     * Always paired with an ObjectTypeDef.
+     */
     case OBJECT_KIND = 'OBJECT_KIND';
+
+    /**
+     * A named type of functions that can be matched+implemented by other objects+interfaces.
+     *
+     * Always paired with an InterfaceTypeDef.
+     */
+    case INTERFACE = 'INTERFACE';
 
     /**
      * A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -50,6 +86,9 @@ enum TypeDefKind: string
     case INTERFACE_KIND = 'INTERFACE_KIND';
 
     /** A graphql input type, used only when representing the core API via TypeDefs. */
+    case INPUT = 'INPUT';
+
+    /** A graphql input type, used only when representing the core API via TypeDefs. */
     case INPUT_KIND = 'INPUT_KIND';
 
     /**
@@ -57,7 +96,21 @@ enum TypeDefKind: string
      *
      * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
      */
+    case VOID = 'VOID';
+
+    /**
+     * A special kind used to signify that no value is returned.
+     *
+     * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+     */
     case VOID_KIND = 'VOID_KIND';
+
+    /**
+     * A GraphQL enum type and its values
+     *
+     * Always paired with an EnumTypeDef.
+     */
+    case ENUM = 'ENUM';
 
     /**
      * A GraphQL enum type and its values

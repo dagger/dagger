@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go/token"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -73,6 +74,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatName":              formatName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
+		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
 		"IsArgOptional":           funcs.isArgOptional,
@@ -175,6 +177,34 @@ func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []intro
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+// groupEnumByValue returns a list of lists of enums, grouped by similar enum value.
+//
+// Additionally, enum names within a single value are removed (which would
+// result in duplicate codegen).
+func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	// XXX: ordering!
+	m := map[string]map[string]introspection.EnumValue{}
+	for _, v := range s {
+		name := strcase.ToCamel(v.Name)
+		value := v.Directives.EnumValue()
+		if _, ok := m[value]; !ok {
+			m[value] = map[string]introspection.EnumValue{}
+		}
+		if _, ok := m[value][name]; !ok {
+			m[value][name] = v
+		}
+	}
+
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		if res, ok := m[v.Directives.EnumValue()]; ok {
+			result = append(result, slices.Collect(maps.Values(res)))
+			delete(m, v.Directives.EnumValue())
+		}
+	}
+	return result
 }
 
 func (funcs goTemplateFuncs) formatArrayField(fields []*introspection.Field) string {

@@ -262,31 +262,49 @@ class CacheSharingMode(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
-    EStarGZ = "EStarGZ"
+    ESTARGZ = "ESTARGZ"
 
-    Gzip = "Gzip"
+    EStarGZ = "ESTARGZ"
 
-    Uncompressed = "Uncompressed"
+    GZIP = "GZIP"
 
-    Zstd = "Zstd"
+    Gzip = "GZIP"
+
+    UNCOMPRESSED = "UNCOMPRESSED"
+
+    Uncompressed = "UNCOMPRESSED"
+
+    ZSTD = "ZSTD"
+
+    Zstd = "ZSTD"
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
-    DockerMediaTypes = "DockerMediaTypes"
+    DOCKER = "DOCKER"
 
-    OCIMediaTypes = "OCIMediaTypes"
+    DockerMediaTypes = "DOCKER"
+
+    OCI = "OCI"
+
+    OCIMediaTypes = "OCI"
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
-    DIR_SOURCE = "DIR_SOURCE"
+    DIR = "DIR"
 
-    GIT_SOURCE = "GIT_SOURCE"
+    DIR_SOURCE = "DIR"
 
-    LOCAL_SOURCE = "LOCAL_SOURCE"
+    GIT = "GIT"
+
+    GIT_SOURCE = "GIT"
+
+    LOCAL = "LOCAL"
+
+    LOCAL_SOURCE = "LOCAL"
 
 
 class NetworkProtocol(Enum):
@@ -313,49 +331,97 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
-    BOOLEAN_KIND = "BOOLEAN_KIND"
+    BOOLEAN = "BOOLEAN"
     """A boolean value."""
 
-    ENUM_KIND = "ENUM_KIND"
+    BOOLEAN_KIND = "BOOLEAN"
+    """A boolean value."""
+
+    ENUM = "ENUM"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
     """
 
-    FLOAT_KIND = "FLOAT_KIND"
+    ENUM_KIND = "ENUM"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
+
+    FLOAT = "FLOAT"
     """A float value."""
 
-    INPUT_KIND = "INPUT_KIND"
+    FLOAT_KIND = "FLOAT"
+    """A float value."""
+
+    INPUT = "INPUT"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
-    INTEGER_KIND = "INTEGER_KIND"
+    INPUT_KIND = "INPUT"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
+
+    INTEGER = "INTEGER"
     """An integer value."""
 
-    INTERFACE_KIND = "INTERFACE_KIND"
+    INTEGER_KIND = "INTEGER"
+    """An integer value."""
+
+    INTERFACE = "INTERFACE"
     """A named type of functions that can be matched+implemented by other objects+interfaces.
 
     Always paired with an InterfaceTypeDef.
     """
 
-    LIST_KIND = "LIST_KIND"
+    INTERFACE_KIND = "INTERFACE"
+    """A named type of functions that can be matched+implemented by other objects+interfaces.
+
+    Always paired with an InterfaceTypeDef.
+    """
+
+    LIST = "LIST"
     """A list of values all having the same type.
 
     Always paired with a ListTypeDef.
     """
 
-    OBJECT_KIND = "OBJECT_KIND"
+    LIST_KIND = "LIST"
+    """A list of values all having the same type.
+
+    Always paired with a ListTypeDef.
+    """
+
+    OBJECT = "OBJECT"
     """A named type defined in the GraphQL schema, with fields and functions.
 
     Always paired with an ObjectTypeDef.
     """
 
-    SCALAR_KIND = "SCALAR_KIND"
+    OBJECT_KIND = "OBJECT"
+    """A named type defined in the GraphQL schema, with fields and functions.
+
+    Always paired with an ObjectTypeDef.
+    """
+
+    SCALAR = "SCALAR"
     """A scalar value of any basic kind."""
 
-    STRING_KIND = "STRING_KIND"
+    SCALAR_KIND = "SCALAR"
+    """A scalar value of any basic kind."""
+
+    STRING = "STRING"
     """A string value."""
 
-    VOID_KIND = "VOID_KIND"
+    STRING_KIND = "STRING"
+    """A string value."""
+
+    VOID = "VOID"
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+    """
+
+    VOID_KIND = "VOID"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -706,7 +772,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> "File":
         """Package the container state as an OCI image, and return it as a tar
         archive
@@ -737,7 +803,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -953,7 +1019,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
         expand: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
@@ -1009,7 +1075,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("export", _args)
@@ -1219,7 +1285,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCI,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -1272,7 +1338,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCI),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -3705,6 +3771,12 @@ class EnumTypeDef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
 
+    async def members(self) -> list["EnumValueTypeDef"]:
+        """The members of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("members", _args)
+        return await _ctx.execute_object_list(EnumValueTypeDef)
+
     async def name(self) -> str:
         """The name of the enum.
 
@@ -3753,12 +3825,6 @@ class EnumTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
-
-    async def values(self) -> list["EnumValueTypeDef"]:
-        """The values of the enum."""
-        _args: list[Arg] = []
-        _ctx = self._select("values", _args)
-        return await _ctx.execute_object_list(EnumValueTypeDef)
 
 
 @typecheck
@@ -3836,6 +3902,27 @@ class EnumValueTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    async def value(self) -> str:
+        """The value of the enum value
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -9644,8 +9731,9 @@ class TypeDef(Type):
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
 
-    def with_enum_value(
+    def with_enum_member(
         self,
+        name: str,
         value: str,
         *,
         description: str | None = "",
@@ -9656,6 +9744,39 @@ class TypeDef(Type):
 
         Parameters
         ----------
+        name:
+            The name of the member in the enum
+        value:
+            The value of the member in the enum
+        description:
+            A doc string for the value, if any
+        source_map:
+            The source map for the enum value definition.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
+        ]
+        _ctx = self._select("withEnumMember", _args)
+        return TypeDef(_ctx)
+
+    def with_enum_value(
+        self,
+        value: str,
+        *,
+        description: str | None = "",
+        source_map: SourceMap | None = None,
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        .. deprecated::
+            Use withEnumMember instead
+
+        Parameters
+        ----------
         value:
             The name of the value in the enum
         description:
@@ -9663,6 +9784,11 @@ class TypeDef(Type):
         source_map:
             The source map for the enum value definition.
         """
+        warnings.warn(
+            'Method "with_enum_value" is deprecated: Use withEnumMember instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("value", value),
             Arg("description", description, ""),

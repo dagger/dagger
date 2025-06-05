@@ -13,8 +13,12 @@ namespace Dagger;
  */
 enum ImageLayerCompression: string
 {
+    case GZIP = 'GZIP';
     case Gzip = 'Gzip';
+    case ZSTD = 'ZSTD';
     case Zstd = 'Zstd';
+    case ESTARGZ = 'ESTARGZ';
     case EStarGZ = 'EStarGZ';
+    case UNCOMPRESSED = 'UNCOMPRESSED';
     case Uncompressed = 'Uncompressed';
 }

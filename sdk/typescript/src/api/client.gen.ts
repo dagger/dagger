@@ -1041,16 +1041,18 @@ export type HostID = string & { __HostID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz = "EStarGZ",
-  Gzip = "Gzip",
-  Uncompressed = "Uncompressed",
-  Zstd = "Zstd",
+  Estargz = "ESTARGZ",
+  Gzip = "GZIP",
+  Uncompressed = "UNCOMPRESSED",
+  Zstd = "ZSTD",
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
+  Docker = "DOCKER",
   Dockermediatypes = "DockerMediaTypes",
+  Oci = "OCI",
   Ocimediatypes = "OCIMediaTypes",
 }
 /**
@@ -1121,8 +1123,11 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
+  Dir = "DIR",
   DirSource = "DIR_SOURCE",
+  Git = "GIT",
   GitSource = "GIT_SOURCE",
+  Local = "LOCAL",
   LocalSource = "LOCAL_SOURCE",
 }
 /**
@@ -1406,6 +1411,18 @@ export type TypeDefWithEnumOpts = {
   sourceMap?: SourceMap
 }
 
+export type TypeDefWithEnumMemberOpts = {
+  /**
+   * A doc string for the value, if any
+   */
+  description?: string
+
+  /**
+   * The source map for the enum value definition.
+   */
+  sourceMap?: SourceMap
+}
+
 export type TypeDefWithEnumValueOpts = {
   /**
    * A doc string for the value, if any
@@ -1456,7 +1473,19 @@ export enum TypeDefKind {
   /**
    * A boolean value.
    */
+  Boolean = "BOOLEAN",
+
+  /**
+   * A boolean value.
+   */
   BooleanKind = "BOOLEAN_KIND",
+
+  /**
+   * A GraphQL enum type and its values
+   *
+   * Always paired with an EnumTypeDef.
+   */
+  Enum = "ENUM",
 
   /**
    * A GraphQL enum type and its values
@@ -1468,7 +1497,17 @@ export enum TypeDefKind {
   /**
    * A float value.
    */
+  Float = "FLOAT",
+
+  /**
+   * A float value.
+   */
   FloatKind = "FLOAT_KIND",
+
+  /**
+   * A graphql input type, used only when representing the core API via TypeDefs.
+   */
+  Input = "INPUT",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -1478,7 +1517,19 @@ export enum TypeDefKind {
   /**
    * An integer value.
    */
+  Integer = "INTEGER",
+
+  /**
+   * An integer value.
+   */
   IntegerKind = "INTEGER_KIND",
+
+  /**
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
+   *
+   * Always paired with an InterfaceTypeDef.
+   */
+  Interface = "INTERFACE",
 
   /**
    * A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -1492,7 +1543,21 @@ export enum TypeDefKind {
    *
    * Always paired with a ListTypeDef.
    */
+  List = "LIST",
+
+  /**
+   * A list of values all having the same type.
+   *
+   * Always paired with a ListTypeDef.
+   */
   ListKind = "LIST_KIND",
+
+  /**
+   * A named type defined in the GraphQL schema, with fields and functions.
+   *
+   * Always paired with an ObjectTypeDef.
+   */
+  Object = "OBJECT",
 
   /**
    * A named type defined in the GraphQL schema, with fields and functions.
@@ -1504,12 +1569,29 @@ export enum TypeDefKind {
   /**
    * A scalar value of any basic kind.
    */
+  Scalar = "SCALAR",
+
+  /**
+   * A scalar value of any basic kind.
+   */
   ScalarKind = "SCALAR_KIND",
 
   /**
    * A string value.
    */
+  String = "STRING",
+
+  /**
+   * A string value.
+   */
   StringKind = "STRING_KIND",
+
+  /**
+   * A special kind used to signify that no value is returned.
+   *
+   * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+   */
+  Void = "VOID",
 
   /**
    * A special kind used to signify that no value is returned.
@@ -3854,6 +3936,23 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
+   * The members of the enum.
+   */
+  members = async (): Promise<EnumValueTypeDef[]> => {
+    type members = {
+      id: EnumValueTypeDefID
+    }
+
+    const ctx = this._ctx.select("members").select("id")
+
+    const response: Awaited<members[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    )
+  }
+
+  /**
    * The name of the enum.
    */
   name = async (): Promise<string> => {
@@ -3890,23 +3989,6 @@ export class EnumTypeDef extends BaseClient {
 
     return response
   }
-
-  /**
-   * The values of the enum.
-   */
-  values = async (): Promise<EnumValueTypeDef[]> => {
-    type values = {
-      id: EnumValueTypeDefID
-    }
-
-    const ctx = this._ctx.select("values").select("id")
-
-    const response: Awaited<values[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
-    )
-  }
 }
 
 /**
@@ -3916,6 +3998,7 @@ export class EnumValueTypeDef extends BaseClient {
   private readonly _id?: EnumValueTypeDefID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3925,12 +4008,14 @@ export class EnumValueTypeDef extends BaseClient {
     _id?: EnumValueTypeDefID,
     _description?: string,
     _name?: string,
+    _value?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._description = _description
     this._name = _name
+    this._value = _value
   }
 
   /**
@@ -3984,6 +4069,21 @@ export class EnumValueTypeDef extends BaseClient {
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
+  }
+
+  /**
+   * The value of the enum value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -8960,9 +9060,26 @@ export class TypeDef extends BaseClient {
 
   /**
    * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+   * @param name The name of the member in the enum
+   * @param value The value of the member in the enum
+   * @param opts.description A doc string for the value, if any
+   * @param opts.sourceMap The source map for the enum value definition.
+   */
+  withEnumMember = (
+    name: string,
+    value: string,
+    opts?: TypeDefWithEnumMemberOpts,
+  ): TypeDef => {
+    const ctx = this._ctx.select("withEnumMember", { name, value, ...opts })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
    * @param value The name of the value in the enum
    * @param opts.description A doc string for the value, if any
    * @param opts.sourceMap The source map for the enum value definition.
+   * @deprecated Use withEnumMember instead
    */
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
     const ctx = this._ctx.select("withEnumValue", { value, ...opts })

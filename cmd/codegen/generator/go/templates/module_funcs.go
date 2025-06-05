@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"github.com/iancoleman/strcase"
 )
 
 const errorTypeName = "error"
@@ -137,11 +138,25 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
 		}
 		if argSpec.defaultValue != "" {
+			defaultValue := argSpec.defaultValue
+
 			var v any
-			if err := json.Unmarshal([]byte(argSpec.defaultValue), &v); err != nil {
-				return nil, fmt.Errorf("default value %q must be valid JSON: %w", argSpec.defaultValue, err)
+			if err := json.Unmarshal([]byte(defaultValue), &v); err != nil {
+				return nil, fmt.Errorf("default value %q must be valid JSON: %w", defaultValue, err)
 			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(argSpec.defaultValue)))
+
+			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
+				v, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("unknown enum value %q", v)
+				}
+				res := enumType.lookup(v)
+				if res == nil {
+					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
+				}
+				defaultValue = strconv.Quote(strcase.ToScreamingSnake(res.name))
+			}
+			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
 		}
 
 		if argSpec.defaultPath != "" {

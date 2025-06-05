@@ -6012,8 +6012,9 @@ query { host { directory(path: ".") { asModule {
         asEnum {
             name
             description
-            values {
+            members {
                 name
+				value
 				description
 			}
         }

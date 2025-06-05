@@ -236,8 +236,9 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 			}
 
 			for _, value := range introspectionType.EnumValues {
-				typedef.Values = append(typedef.Values, &core.EnumValueTypeDef{
+				typedef.Members = append(typedef.Members, &core.EnumMemberTypeDef{
 					Name:        value.Name,
+					Value:       value.Directives.EnumValue(),
 					Description: value.Description,
 				})
 			}
