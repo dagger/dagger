@@ -37,7 +37,7 @@ export class Typescript {
     await dag
       .container()
       .from("alpine")
-      .withEnvVariable("NOW", new Date().toString())
+      .withEnvVariable("NOW", now)
       .withExec(["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"])
       .sync();
   }

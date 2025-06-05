@@ -18,6 +18,8 @@ Expected stderr:
 │ │ ├─● parseRefString: ./viztest X.Xs
 │ │ ├─● parseRefString: dep X.Xs
 │ │ │
+│ │ ├─● host: Host! X.Xs
+│ │ │
 │ │ ├─▼ moduleSource(refString: "/app/dagql/idtui/viztest/dep", disableFindUp: true): ModuleSource! X.Xs
 │ │ │ ├─● parseRefString: /app/dagql/idtui/viztest/dep X.Xs
 │ │ │ │
@@ -28,8 +30,7 @@ Expected stderr:
 │ │ │ │      
 │ │ │ ╰─● sdkForModule: go X.Xs
 │ │ │  
-│ │ ├─● host: Host! X.Xs
-│ │ ├─▼ .directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
+│ │ ├─▼ Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory! X.Xs
 │ │ │ ╰─▼ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) X.Xs
 │ │ │   ╰─▼ filesync X.Xs
 │ │ │     ╰─● copy X.Xs
@@ -120,20 +121,20 @@ Expected stderr:
 │ ├─▼ ModuleSource.digest: String! X.Xs
 │ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
-│ ├─▼ ModuleSource.sourceRootSubpath: String! X.Xs
-│ │ ┃ .
-│ │
 │ ├─▼ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
+│ ├─▼ ModuleSource.sourceRootSubpath: String! X.Xs
+│ │ ┃ .
+│ │
 │ ├─● ModuleSource.commit: String! X.Xs
+│ │
+│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ ├─● ModuleSource.version: String! X.Xs
 │ │
 │ ├─▼ Module.name: String! X.Xs
 │ │ ┃ viztest
-│ │
-│ ├─● ModuleSource.htmlRepoURL: String! X.Xs
 │ │
 │ ├─● Module.description: String! X.Xs
 │ │
