@@ -369,13 +369,6 @@ func (c *DagqlCache) call(
 
 	var argResults []Result
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	callCacheParams.Persist = true
-
 	if callCacheParams.Persist {
 		args := make([]NamedInput, 0, len(inputArgs))
 		for name, arg := range inputArgs {

@@ -1,14 +1,52 @@
 package core
 
-/*
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/util/gitutil"
+	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
+	"github.com/moby/buildkit/snapshot"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/sys/mount"
+	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sys/unix"
+)
+
 type GitRepository struct {
-	Query   *Query
+	Query   *Query `json:"-"`
 	Backend GitRepositoryBackend
 
 	DiscardGitDir bool
 }
 
 type GitRepositoryBackend interface {
+	json.Marshaler
+	json.Unmarshaler
+	dagql.JSONDecodable
+
 	HasPBDefinitions
 
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
@@ -25,6 +63,21 @@ func (*GitRepository) Type() *ast.Type {
 
 func (*GitRepository) TypeDescription() string {
 	return "A git repository."
+}
+
+func (*GitRepository) FromJSON(ctx context.Context, bs []byte) (dagql.Typed, error) {
+	query, ok := QueryFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get query from context")
+	}
+
+	var repo GitRepository
+	if err := json.Unmarshal(bs, &repo); err != nil {
+		return nil, err
+	}
+	repo.Query = query
+
+	return &repo, nil
 }
 
 func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -83,7 +136,7 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 type RemoteGitRepository struct {
-	Query *Query
+	Query *Query `json:"-"`
 
 	URL *gitutil.GitURL
 
@@ -1168,4 +1221,3 @@ func (md cacheRefMetadata) setGitSnapshot(key string) error {
 func (md cacheRefMetadata) setGitRemote(key string) error {
 	return md.SetString(keyGitRemote, key, gitRemoteIndex+key)
 }
-*/

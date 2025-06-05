@@ -17,10 +17,16 @@ import (
 
 // Typed is any value that knows its GraphQL type.
 type Typed interface {
+	JSONDecodable
+
 	// Type returns the GraphQL type of the value.
 	Type() *ast.Type
+}
 
-	// TODO:
+// TODO: feels like overlap with other stuff, but useful atm for GitRepositoryBackend
+// TODO: doc, especially why UnmarshalJSON doesn't suffice
+type JSONDecodable interface {
+	// TODO: doc
 	FromJSON(context.Context, []byte) (Typed, error)
 }
 

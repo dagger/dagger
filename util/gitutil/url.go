@@ -51,7 +51,7 @@ type GitURL struct {
 	// Fragment can contain additional metadata
 	Fragment *GitURLFragment
 
-	scpStyle bool // true if the URL is in SCP style
+	SCPStyle bool // true if the URL is in SCP style
 }
 
 // Remote is a valid URL remote to pass into the Git CLI tooling (i.e. without the fragment metadata)
@@ -62,7 +62,7 @@ func (gitURL *GitURL) Remote() string {
 }
 
 func (gitURL *GitURL) String() string {
-	if gitURL.scpStyle {
+	if gitURL.SCPStyle {
 		result := sshutil.SCPStyleURL{
 			User:     gitURL.User,
 			Host:     gitURL.Host,
@@ -163,6 +163,6 @@ func fromSCPStyleURL(url *sshutil.SCPStyleURL) *GitURL {
 		Host:     url.Host,
 		Path:     url.Path,
 		Fragment: splitGitFragment(url.Fragment),
-		scpStyle: true,
+		SCPStyle: true,
 	}
 }
