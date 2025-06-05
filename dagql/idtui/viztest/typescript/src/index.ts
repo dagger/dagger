@@ -1,4 +1,4 @@
-import { dag, object, func } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 import { getTracer } from "@dagger.io/dagger/telemetry"
 
 let now = new Date().toISOString()
@@ -30,5 +30,30 @@ export class Typescript {
       withExec(["false"]).
       withExec(["sleep", "1"]).
       sync()
+  }
+
+  @func()
+  async failLog(): Promise<void> {
+    await dag
+      .container()
+      .from("alpine")
+      .withEnvVariable("NOW", new Date().toString())
+      .withExec(["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"])
+      .sync();
+  }
+
+  @func()
+  async failLogNative(): Promise<void> {
+    console.log("im doing a lot of work");
+    console.log("and then failing");
+    throw new Error("i failed");
+  }
+
+  @func()
+  failEffect(): Container {
+    return dag
+      .container()
+      .from("alpine")
+      .withExec(["sh", "-c", "echo this is a failing effect; exit 1"]);
   }
 }

@@ -151,6 +151,9 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		// TypeScript SDK tests
 		{Module: "./viztest/typescript", Function: "pending", Fail: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
+		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
+		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
+		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {
