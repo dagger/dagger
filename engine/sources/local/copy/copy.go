@@ -290,6 +290,8 @@ func newCopier(root string, chown Chowner, tm *time.Time, mode *int, xeh XAttrEr
 }
 
 // dest is always clean
+//
+//nolint:gocyclo
 func (c *copier) copy(ctx context.Context, src, srcComponents, target string, overwriteTargetMetadata bool, parentIncludeMatchInfo, parentExcludeMatchInfo patternmatcher.MatchInfo) error {
 	select {
 	case <-ctx.Done():
@@ -369,10 +371,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		}
 		notify = false
 	case (fi.Mode() & os.ModeType) == 0:
-		link, err := getLinkSource(target, fi, c.inodes)
-		if err != nil {
-			return errors.Wrap(err, "failed to get hardlink")
-		}
+		link := getLinkSource(target, fi, c.inodes)
 		if link != "" {
 			if err := os.Link(link, target); err != nil {
 				return errors.Wrap(err, "failed to create hard link")
@@ -612,7 +611,7 @@ func containsWildcards(name string) bool {
 }
 
 func splitWildcards(p string) (d1, d2 string) {
-	parts := strings.Split(filepath.Join(p), string(filepath.Separator))
+	parts := strings.Split(p, string(filepath.Separator))
 	var p1, p2 []string
 	var found bool
 	for _, p := range parts {
