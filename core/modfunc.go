@@ -30,7 +30,6 @@ import (
 )
 
 type ModuleFunction struct {
-	root    *Query
 	mod     *Module
 	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
 	runtime *Container
@@ -47,7 +46,6 @@ type UserModFunctionArg struct {
 
 func NewModFunction(
 	ctx context.Context,
-	root *Query,
 	mod *Module,
 	objDef *ObjectTypeDef,
 	runtime *Container,
@@ -77,7 +75,6 @@ func NewModFunction(
 	}
 
 	return &ModuleFunction{
-		root:       root,
 		mod:        mod,
 		objDef:     objDef,
 		runtime:    runtime,
@@ -120,7 +117,12 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 		"target_function": fn.metadata.Name,
 	}
 	moduleAnalyticsProps(mod, "target_", props)
-	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		slog.Error("failed to get current query for module call analytics", "err", err)
+		return
+	}
+	if caller, err := query.CurrentModule(ctx); err == nil {
 		props["caller_type"] = "module"
 		moduleAnalyticsProps(caller, "caller_", props)
 	} else if dagql.IsInternal(ctx) {
@@ -345,7 +347,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	ctr := fn.runtime
 
-	metaDir, err := NewScratchDirectory(ctx, mod.Query, mod.Query.Platform())
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	metaDir, err := NewScratchDirectory(ctx, query.Platform())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
 	}
@@ -364,7 +370,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
-	bk, err := fn.root.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -450,7 +456,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	for _, id := range returnedIDs {
 		returnedIDsList = append(returnedIDsList, id)
 	}
-	secretTransferPostCall, err := ResourceTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}

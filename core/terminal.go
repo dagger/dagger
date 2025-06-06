@@ -45,7 +45,11 @@ func (container *Container) Terminal(
 		return err
 	}
 
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current query: %w", err)
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -179,7 +183,7 @@ func (dir *Directory) Terminal(
 	var err error
 
 	if ctr == nil {
-		ctr, err = NewContainer(dir.Query, dir.Platform)
+		ctr, err = NewContainer(dir.Platform)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}

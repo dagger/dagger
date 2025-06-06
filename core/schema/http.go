@@ -64,7 +64,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		}
 		snap = snap.Clone()
 
-		f := core.NewFile(parent.Self, nil, op.Path, parent.Self.Platform(), nil)
+		f := core.NewFile(nil, op.Path, parent.Self.Platform(), nil)
 		f.Result = snap
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 	}
@@ -105,8 +105,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 			return inst, err
 		}
 		binding := core.ServiceBinding{
-			ID:       svc.ID(),
-			Service:  svc.Self,
+			Service:  svc,
 			Hostname: host,
 		}
 

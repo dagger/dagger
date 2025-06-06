@@ -4,6 +4,8 @@ defmodule Dagger.Container do
   An OCI-compatible container, also known as a Docker container.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Container"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -1033,6 +1035,25 @@ defmodule Dagger.Container do
       |> QB.select("withServiceBinding")
       |> QB.put_arg("alias", alias)
       |> QB.put_arg("service", Dagger.ID.id!(service))
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Return a snapshot with a symlink
+  """
+  @spec with_symlink(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
+          Dagger.Container.t()
+  def with_symlink(%__MODULE__{} = container, target, link_name, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withSymlink")
+      |> QB.put_arg("target", target)
+      |> QB.put_arg("linkName", link_name)
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
       query_builder: query_builder,

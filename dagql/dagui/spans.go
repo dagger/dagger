@@ -406,21 +406,6 @@ func (span *Span) Parents(f func(*Span) bool) {
 	}
 }
 
-func (span *Span) VisibleParent(opts FrontendOpts) *Span {
-	if span.ParentSpan == nil {
-		return nil
-	}
-	// TODO: check links first?
-	if span.ParentSpan.Passthrough {
-		return span.ParentSpan.VisibleParent(opts)
-	}
-	for link := range span.CausalSpans {
-		// prioritize causal spans over the unlazier
-		return link
-	}
-	return span.ParentSpan
-}
-
 func (span *Span) Hidden(opts FrontendOpts) bool {
 	verbosity := opts.Verbosity
 	if v, ok := opts.SpanVerbosity[span.ID]; ok {

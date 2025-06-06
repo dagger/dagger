@@ -1,3 +1,5 @@
+import type { GraphQLErrorExtensions } from "graphql"
+
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
@@ -6,6 +8,7 @@ interface ExecErrorOptions extends DaggerSDKErrorOptions {
   exitCode: number
   stdout: string
   stderr: string
+  extensions?: GraphQLErrorExtensions
 }
 
 /**
@@ -36,6 +39,11 @@ export class ExecError extends DaggerSDKError {
   stderr: string
 
   /**
+   * GraphQL error extensions
+   */
+  extensions?: GraphQLErrorExtensions
+
+  /**
    *  @hidden
    */
   constructor(message: string, options: ExecErrorOptions) {
@@ -44,5 +52,6 @@ export class ExecError extends DaggerSDKError {
     this.exitCode = options.exitCode
     this.stdout = options.stdout
     this.stderr = options.stderr
+    this.extensions = options.extensions
   }
 }

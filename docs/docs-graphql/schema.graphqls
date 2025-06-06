@@ -1028,6 +1028,23 @@ type Container {
     service: ServiceID!
   ): Container!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
   """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
   """
@@ -1510,6 +1527,17 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+  ): Directory!
+
   """
   Retrieves this directory with all file/dir timestamps set to the given time.
   """
@@ -1579,7 +1607,12 @@ type EngineCache {
   minFreeSpace: Int!
 
   """Prune the cache of releaseable entries"""
-  prune: Void
+  prune(
+    """
+    Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    """
+    useDefaultPolicy: Boolean = false
+  ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
   reservedSpace: Int!

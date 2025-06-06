@@ -1,14 +1,14 @@
 from typing import Annotated
 
 import dagger
-from dagger import Doc, dag, function, object_type
+from dagger import Doc, dag, field, function, object_type
 
 
 @object_type
 class Workspace:
     """A module for editing code"""
 
-    source: dagger.Directory
+    source: Annotated[dagger.Directory, Doc("the workspace source code")] = field()
 
     @function
     async def read_file(
@@ -41,6 +41,16 @@ class Workspace:
         )
 
     @function
-    def get_source(self) -> dagger.Directory:
-        """Get the source code directory from the Workspace"""
-        return self.source
+    async def test(self) -> str:
+        """Return the result of running unit tests"""
+        node_cache = dag.cache_volume("node")
+        return await (
+            dag.container()
+            .from_("node:21-slim")
+            .with_directory("/src", self.source)
+            .with_mounted_cache("/root/.npm", node_cache)
+            .with_workdir("/src")
+            .with_exec(["npm", "install"])
+            .with_exec(["npm", "run", "test:unit", "run"])
+            .stdout()
+        )

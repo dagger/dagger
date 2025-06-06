@@ -4,5 +4,7 @@ defmodule Dagger.GitRepositoryID do
   The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "GitRepositoryID"
+
   @type t() :: String.t()
 end

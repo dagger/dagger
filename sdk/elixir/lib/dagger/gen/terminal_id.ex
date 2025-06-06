@@ -4,5 +4,7 @@ defmodule Dagger.TerminalID do
   The `TerminalID` scalar type represents an identifier for an object of type Terminal.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "TerminalID"
+
   @type t() :: String.t()
 end

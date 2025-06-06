@@ -4,5 +4,7 @@ defmodule Dagger.SecretID do
   The `SecretID` scalar type represents an identifier for an object of type Secret.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "SecretID"
+
   @type t() :: String.t()
 end

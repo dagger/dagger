@@ -39,8 +39,6 @@ type Service struct {
 	// link to.
 	Creator trace.SpanContext
 
-	Query *Query
-
 	// A custom hostname set by the user.
 	CustomHostname string
 
@@ -92,9 +90,15 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	if svc.CustomHostname != "" {
 		return svc.CustomHostname, nil
 	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -113,9 +117,14 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 }
 
 func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	switch {
 	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +143,12 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 
 func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
 	var host string
-	var err error
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	switch {
 	case svc.Container != nil:
 		host, err = svc.Hostname(ctx, id)
@@ -150,7 +164,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = svc.Container.Ports[0].Port
 		}
 	case svc.TunnelUpstream != nil:
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -175,7 +189,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 		}
 
 		if port == 0 {
-			socketStore, err := svc.Query.Sockets(ctx)
+			socketStore, err := query.Sockets(ctx)
 			if err != nil {
 				return "", fmt.Errorf("failed to get socket store: %w", err)
 			}
@@ -198,7 +212,11 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 }
 
 func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return err
 	}
@@ -207,7 +225,11 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 }
 
 func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return err
 	}
@@ -289,7 +311,11 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +331,7 @@ func (svc *Service) startContainer(
 	}()
 
 	var domain string
-	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
+	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
@@ -320,7 +346,7 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + domain
 
-	bk, err := svc.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -563,11 +589,15 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := svc.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -651,12 +681,16 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	fullHost := host + "." + network.SessionDomain(clientMetadata.SessionID)
 
-	bk, err := svc.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	sockStore, err := svc.Query.Sockets(ctx)
+	sockStore, err := query.Sockets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get socket store: %w", err)
 	}
@@ -756,8 +790,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	ID       *call.ID
-	Service  *Service
+	Service  dagql.Instance[*Service]
 	Hostname string
 	Aliases  AliasSet
 }

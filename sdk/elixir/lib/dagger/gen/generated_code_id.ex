@@ -4,5 +4,7 @@ defmodule Dagger.GeneratedCodeID do
   The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "GeneratedCodeID"
+
   @type t() :: String.t()
 end

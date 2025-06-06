@@ -440,6 +440,37 @@ Writes any specified operands, separated by single blank (' ') characters and fo
 `,
 		},
 		&ShellCommand{
+			Use:  ".printenv [name]",
+			Args: MaximumArgs(1),
+			Description: `Show available environment variables or a specific variable
+
+If no name is provided, all environment variables are printed. If a name is provided, the value of that environment variable is printed.
+			`,
+			State: NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
+
+				if len(args) == 0 {
+					// Print all environment variables
+					for name, vr := range hc.Env.Each {
+						fmt.Fprintf(hc.Stdout, "%s=%s\n", name, vr)
+					}
+
+					return nil
+				}
+
+				// Print a specific environment variable
+				name := args[0]
+
+				v := hc.Env.Get(name)
+				if !v.IsSet() {
+					return fmt.Errorf("environment variable %q not set", name)
+				}
+
+				return h.Print(ctx, v.String())
+			},
+		},
+		&ShellCommand{
 			Use: ".wait",
 			Description: `Wait for background processes to complete
 
@@ -534,7 +565,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if def.Source == nil {
 					newDef, err = initializeCore(ctx, h.dag)
 				} else {
-					newDef, err = initializeModule(ctx, h.dag, def.Source)
+					newDef, err = initializeModule(ctx, h.dag, def.SourceRoot, def.Source)
 				}
 				if err != nil {
 					return fmt.Errorf("failed to reinitialize module: %w", err)

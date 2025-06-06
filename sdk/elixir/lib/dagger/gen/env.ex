@@ -4,6 +4,8 @@ defmodule Dagger.Env do
   Dagger.Env
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Env"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

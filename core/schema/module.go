@@ -479,8 +479,15 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*core.Module], args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return void, err
+	}
+
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return dagql.Null[core.Void](), modMeta.Self.Query.ServeModule(ctx, modMeta.Self, includeDependencies)
+	return void, query.ServeModule(ctx, modMeta.Self, includeDependencies)
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {

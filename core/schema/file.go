@@ -77,7 +77,7 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 	Contents    string
 	Permissions int `default:"0644"`
 }) (*core.File, error) {
-	return core.NewFileWithContents(ctx, parent, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
+	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
@@ -133,7 +133,11 @@ func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExp
 	if err != nil {
 		return "", err
 	}
-	bk, err := parent.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}

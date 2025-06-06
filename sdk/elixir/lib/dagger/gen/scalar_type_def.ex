@@ -4,6 +4,8 @@ defmodule Dagger.ScalarTypeDef do
   A definition of a custom scalar defined in a Module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ScalarTypeDef"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

@@ -4,6 +4,8 @@ defmodule Dagger.EngineCacheEntry do
   An individual cache entry in a cache entry set
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EngineCacheEntry"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

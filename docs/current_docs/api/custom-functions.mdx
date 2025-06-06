@@ -11,7 +11,7 @@ import DaggerModuleInit from '../partials/_dagger_module_init.mdx';
 
 In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types. These custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger [modules](../features/modules.mdx).
 
-When a Dagger module is loaded into a Dagger session, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
+When a Dagger module is loaded into a Dagger session, the Dagger API is [dynamically extended](./internals.mdx#dynamic-api-extension) with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
 ## Initialize a Dagger module
 

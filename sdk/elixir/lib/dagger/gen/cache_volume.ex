@@ -4,6 +4,8 @@ defmodule Dagger.CacheVolume do
   A directory whose contents persist across runs.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "CacheVolume"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

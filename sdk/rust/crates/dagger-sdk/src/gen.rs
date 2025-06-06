@@ -2106,6 +2106,12 @@ pub struct ContainerWithNewFileOpts<'a> {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithSymlinkOpts {
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithUnixSocketOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -3700,6 +3706,52 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_symlink(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+    ) -> Container {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_symlink_opts(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+        opts: ContainerWithSymlinkOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
     /// # Arguments
@@ -4930,6 +4982,26 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    pub fn with_symlink(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+    ) -> Directory {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
     /// # Arguments
@@ -5025,6 +5097,12 @@ pub struct EngineCacheEntrySetOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EngineCachePruneOpts {
+    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    #[builder(setter(into, strip_option), default)]
+    pub use_default_policy: Option<bool>,
+}
 impl EngineCache {
     /// The current set of entries in the cache
     ///
@@ -5076,8 +5154,24 @@ impl EngineCache {
         query.execute(self.graphql_client.clone()).await
     }
     /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn prune(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("prune");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn prune_opts(&self, opts: EngineCachePruneOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("prune");
+        if let Some(use_default_policy) = opts.use_default_policy {
+            query = query.arg("useDefaultPolicy", use_default_policy);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The minimum amount of disk space this policy is guaranteed to retain.

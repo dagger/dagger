@@ -69,13 +69,9 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 	}
 
 	// pre-populate a reasonable underlying representation that has some inputs
-	var a *llb.FileAction = llb.Rm("/" + id.Encoded())
+	a := llb.Rm("/" + id.Encoded())
 	for _, input := range inputs {
-		if a == nil {
-			a = llb.Copy(input, "/", "/")
-		} else {
-			a = a.Copy(input, "/", "/")
-		}
+		a = a.Copy(input, "/", "/")
 	}
 	st := llb.Scratch().File(a)
 	customOpOpt, err := opWrapped.AsConstraintsOpt()

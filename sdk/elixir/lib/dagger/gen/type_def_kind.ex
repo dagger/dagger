@@ -4,6 +4,8 @@ defmodule Dagger.TypeDefKind do
   Distinguishes the different kinds of TypeDefs.
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "TypeDefKind"
+
   @type t() ::
           :STRING_KIND
           | :FLOAT_KIND

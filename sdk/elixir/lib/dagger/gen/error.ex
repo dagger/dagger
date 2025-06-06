@@ -4,6 +4,8 @@ defmodule Dagger.Error do
   Dagger.Error
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Error"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

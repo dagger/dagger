@@ -4,6 +4,8 @@ defmodule Dagger.BuildArg do
   Key value object that represents a build argument.
   """
 
+  use Dagger.Core.Base, kind: :input, name: "BuildArg"
+
   @type t() :: %__MODULE__{name: String.t(), value: String.t()}
 
   defstruct [:name, :value]

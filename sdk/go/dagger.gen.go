@@ -2016,6 +2016,29 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	}
 }
 
+// ContainerWithSymlinkOpts contains options for Container.WithSymlink
+type ContainerWithSymlinkOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	Expand bool
+}
+
+// Return a snapshot with a symlink
+func (r *Container) WithSymlink(target string, linkName string, opts ...ContainerWithSymlinkOpts) *Container {
+	q := r.query.Select("withSymlink")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("target", target)
+	q = q.Arg("linkName", linkName)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithUnixSocketOpts contains options for Container.WithUnixSocket
 type ContainerWithUnixSocketOpts struct {
 	// A user:group to set for the mounted socket.
@@ -2947,6 +2970,17 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
+// Return a snapshot with a symlink
+func (r *Directory) WithSymlink(target string, linkName string) *Directory {
+	q := r.query.Select("withSymlink")
+	q = q.Arg("target", target)
+	q = q.Arg("linkName", linkName)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.query.Select("withTimestamps")
@@ -3169,12 +3203,24 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCachePruneOpts contains options for EngineCache.Prune
+type EngineCachePruneOpts struct {
+	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	UseDefaultPolicy bool
+}
+
 // Prune the cache of releaseable entries
-func (r *EngineCache) Prune(ctx context.Context) error {
+func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) error {
 	if r.prune != nil {
 		return nil
 	}
 	q := r.query.Select("prune")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `useDefaultPolicy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
+			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+	}
 
 	return q.Execute(ctx)
 }

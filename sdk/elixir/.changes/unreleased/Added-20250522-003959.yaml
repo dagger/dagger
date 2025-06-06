@@ -1,0 +1,6 @@
+kind: Added
+body: The `init` function is now convert to a constructor function by the SDK.
+time: 2025-05-22T00:39:59.692634+07:00
+custom:
+    Author: wingyplus
+    PR: "10437"

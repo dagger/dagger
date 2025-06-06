@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -16,6 +17,11 @@ func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](
 ) dagql.NodeFuncHandler[T, A, R] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
 		if core.DagOpInContext[core.RawDagOp](ctx) {
+			query, ok := srv.Root().(dagql.Instance[*core.Query])
+			if !ok {
+				return inst, fmt.Errorf("server root was %T", srv.Root())
+			}
+			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOp(ctx, srv, self, args, fn)
@@ -55,6 +61,11 @@ func DagOpFileWrapper[T dagql.Typed, A any](
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
+			query, ok := srv.Root().(dagql.Instance[*core.Query])
+			if !ok {
+				return inst, fmt.Errorf("server root was %T", srv.Root())
+			}
+			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOpFile(ctx, srv, self, args, nil, fn, pfn)
@@ -111,6 +122,11 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
+			query, ok := srv.Root().(dagql.Instance[*core.Query])
+			if !ok {
+				return inst, fmt.Errorf("server root was %T", srv.Root())
+			}
+			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOpDirectory(ctx, srv, self, args, nil, fn, pfn)
@@ -143,6 +159,8 @@ func DagOpDirectory[T dagql.Typed, A any](
 	}
 
 	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
+		// FIXME: using this in the cache key means we effectively disable
+		// buildkit content caching
 		ID:   currentIDForDagOp(ctx),
 		Path: filename,
 		Data: data,
@@ -151,6 +169,43 @@ func DagOpDirectory[T dagql.Typed, A any](
 		return inst, err
 	}
 	return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
+}
+
+func DagOpContainerWrapper[A any](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
+	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
+		if core.DagOpInContext[core.ContainerDagOp](ctx) {
+			query, ok := srv.Root().(dagql.Instance[*core.Query])
+			if !ok {
+				return inst, fmt.Errorf("server root was %T", srv.Root())
+			}
+			ctx = core.ContextWithQuery(ctx, query.Self)
+			return fn(ctx, self, args)
+		}
+		return DagOpContainer(ctx, srv, self, args, nil, fn)
+	}
+}
+
+func DagOpContainer[A any](
+	ctx context.Context,
+	srv *dagql.Server,
+	self dagql.Instance[*core.Container],
+	args A,
+	data any,
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+) (inst dagql.Instance[*core.Container], _ error) {
+	deps, err := extractLLBDependencies(ctx, self.Self)
+	if err != nil {
+		return inst, err
+	}
+
+	ctr, err := core.NewContainerDagOp(ctx, currentIDForDagOp(ctx), self.Self, deps)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, srv, self, ctr)
 }
 
 const runDagOpDigestMixin = "runDagOpDigestMixin"

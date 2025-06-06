@@ -4,6 +4,8 @@ defmodule Dagger.Host do
   Information about the host environment.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Host"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

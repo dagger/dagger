@@ -4,6 +4,8 @@ defmodule Dagger.Client do
   The root of the DAG.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Query"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

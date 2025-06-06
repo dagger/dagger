@@ -4,5 +4,7 @@ defmodule Dagger.InterfaceTypeDefID do
   The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "InterfaceTypeDefID"
+
   @type t() :: String.t()
 end

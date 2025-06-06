@@ -6,6 +6,7 @@ import io.dagger.client.Container;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
+import io.dagger.client.CacheVolume;
 import io.dagger.client.File;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -14,8 +15,8 @@ import java.util.concurrent.ExecutionException;
 
 @Object
 public class Workspace {
-
-  private Directory source;
+  /** the workspace source code */
+  public Directory source;
 
   // Add a public no-argument constructor as required by the Java SDK
   public Workspace() {}
@@ -57,11 +58,19 @@ public class Workspace {
         .withExec(List.of("tree", "/src")).stdout();
   }
 
-  /**
-   * Get the source code directory from the Workspace
-   */
+  /** Return the result of running unit tests */
   @Function
-  public Directory getSource() {
-    return source;
+  public String test()
+      throws InterruptedException, ExecutionException, DaggerQueryException {
+    CacheVolume nodeCache = dag().cacheVolume("node");
+    return dag().container()
+        .from("node:21-slim")
+        .withDirectory("/src", source)
+        .withMountedCache("/root/.npm", nodeCache)
+        .withWorkdir("/src")
+        .withExec(List.of("npm", "install"))
+        .withExec(List.of("npm", "run", "test:unit", "run"))
+        .stdout();
   }
+
 }

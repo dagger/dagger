@@ -4,6 +4,8 @@ defmodule Dagger.Service do
   A content-addressed service providing TCP connectivity.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Service"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

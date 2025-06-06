@@ -648,7 +648,17 @@
                 <div class="col-md-8">
                     <a href="#method_withServiceBinding">withServiceBinding</a>(string $alias, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service)
         
-                                            <p><p>Establish a runtime dependency on a from a container to a network service.</p></p>                </div>
+                                            <p><p>Establish a runtime dependency from a container to a network service.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withSymlink">withSymlink</a>(string $target, string $linkName, bool|null $expand = false)
+        
+                                            <p><p>Return a snapshot with a symlink</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -3333,7 +3343,7 @@
             
 
         <div class="method-description">
-                            <p><p>Establish a runtime dependency on a from a container to a network service.</p></p>                <p><p>The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.</p>
+                            <p><p>Establish a runtime dependency from a container to a network service.</p></p>                <p><p>The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.</p>
 <p>The service will be reachable from the container via the provided hostname alias.</p>
 <p>The service dependency will also convey to any files or directories produced by the container.</p></p>        
         </div>
@@ -3371,8 +3381,60 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withUnixSocket">
+                    <h3 id="method_withSymlink">
         <div class="location">at line 889</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>withSymlink</strong>(string $target, string $linkName, bool|null $expand = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return a snapshot with a symlink</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$target</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$linkName</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$expand</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withUnixSocket">
+        <div class="location">at line 903</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withUnixSocket</strong>(string $path, <abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $source, string|null $owner = &#039;&#039;, bool|null $expand = false)
         </code>
@@ -3429,7 +3491,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUser">
-        <div class="location">at line 910</div>
+        <div class="location">at line 924</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withUser</strong>(string $name)
         </code>
@@ -3471,7 +3533,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withWorkdir">
-        <div class="location">at line 920</div>
+        <div class="location">at line 934</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withWorkdir</strong>(string $path, bool|null $expand = false)
         </code>
@@ -3518,7 +3580,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutAnnotation">
-        <div class="location">at line 933</div>
+        <div class="location">at line 947</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutAnnotation</strong>(string $name)
         </code>
@@ -3560,7 +3622,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDefaultArgs">
-        <div class="location">at line 943</div>
+        <div class="location">at line 957</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutDefaultArgs</strong>()
         </code>
@@ -3592,7 +3654,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDirectory">
-        <div class="location">at line 952</div>
+        <div class="location">at line 966</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutDirectory</strong>(string $path, bool|null $expand = false)
         </code>
@@ -3639,7 +3701,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutEntrypoint">
-        <div class="location">at line 965</div>
+        <div class="location">at line 979</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutEntrypoint</strong>(bool|null $keepDefaultArgs = false)
         </code>
@@ -3681,7 +3743,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutEnvVariable">
-        <div class="location">at line 977</div>
+        <div class="location">at line 991</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutEnvVariable</strong>(string $name)
         </code>
@@ -3723,7 +3785,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutExposedPort">
-        <div class="location">at line 987</div>
+        <div class="location">at line 1001</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutExposedPort</strong>(int $port, <abbr title="Dagger\Dagger\NetworkProtocol">NetworkProtocol</abbr>|null $protocol = null)
         </code>
@@ -3770,7 +3832,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFile">
-        <div class="location">at line 1000</div>
+        <div class="location">at line 1014</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutFile</strong>(string $path, bool|null $expand = false)
         </code>
@@ -3817,7 +3879,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFiles">
-        <div class="location">at line 1013</div>
+        <div class="location">at line 1027</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutFiles</strong>(array $paths, bool|null $expand = false)
         </code>
@@ -3864,7 +3926,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutLabel">
-        <div class="location">at line 1026</div>
+        <div class="location">at line 1040</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutLabel</strong>(string $name)
         </code>
@@ -3906,7 +3968,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutMount">
-        <div class="location">at line 1036</div>
+        <div class="location">at line 1050</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutMount</strong>(string $path, bool|null $expand = false)
         </code>
@@ -3953,7 +4015,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutRegistryAuth">
-        <div class="location">at line 1049</div>
+        <div class="location">at line 1063</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutRegistryAuth</strong>(string $address)
         </code>
@@ -3995,7 +4057,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSecretVariable">
-        <div class="location">at line 1059</div>
+        <div class="location">at line 1073</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutSecretVariable</strong>(string $name)
         </code>
@@ -4037,7 +4099,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutUnixSocket">
-        <div class="location">at line 1069</div>
+        <div class="location">at line 1083</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutUnixSocket</strong>(string $path, bool|null $expand = false)
         </code>
@@ -4084,7 +4146,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutUser">
-        <div class="location">at line 1084</div>
+        <div class="location">at line 1098</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutUser</strong>()
         </code>
@@ -4116,7 +4178,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutWorkdir">
-        <div class="location">at line 1095</div>
+        <div class="location">at line 1109</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutWorkdir</strong>()
         </code>
@@ -4148,7 +4210,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_workdir">
-        <div class="location">at line 1104</div>
+        <div class="location">at line 1118</div>
         <code>                    string
     <strong>workdir</strong>()
         </code>

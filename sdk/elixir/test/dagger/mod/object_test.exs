@@ -5,62 +5,79 @@ defmodule Dagger.Mod.ObjectTest do
   alias Dagger.Mod.Object.FieldDef
 
   describe "defn/2" do
-    test "store function information" do
-      assert ObjectMod.__object__(:functions) == [
+    test "primitive type arguments" do
+      assert PrimitiveTypeArgs.__object__(:functions) == [
                accept_string: %FunctionDef{
                  self: false,
                  args: [
-                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                   name: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :string}]
                  ],
                  return: :string
                },
                accept_string2: %FunctionDef{
                  self: false,
                  args: [
-                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                   name: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :string}]
                  ],
                  return: :string
                },
                accept_integer: %FunctionDef{
                  self: false,
                  args: [
-                   value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :integer}]
+                   value: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :integer}]
                  ],
                  return: :integer
                },
                accept_float: %FunctionDef{
                  self: false,
                  args: [
-                   value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :float}]
+                   value: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :float}]
                  ],
                  return: :float
                },
                accept_boolean: %FunctionDef{
                  self: false,
                  args: [
-                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :boolean}]
+                   name: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :boolean}]
                  ],
                  return: :string
-               },
-               empty_args: %FunctionDef{self: false, args: [], return: :string},
+               }
+             ]
+    end
+
+    test "empty arguments" do
+      assert EmptyArgs.__object__(:functions) == [
+               empty_args: %FunctionDef{self: false, args: [], return: :string}
+             ]
+    end
+
+    test "accept and return object" do
+      assert ObjectArgAndReturn.__object__(:functions) == [
                accept_and_return_module: %FunctionDef{
                  self: false,
                  args: [
                    container: [
                      {:ignore, nil},
                      {:default_path, nil},
+                     {:default, nil},
                      {:doc, nil},
                      {:type, Dagger.Container}
                    ]
                  ],
                  return: Dagger.Container
-               },
+               }
+             ]
+    end
+
+    test "list arguments" do
+      assert ListArgs.__object__(:functions) == [
                accept_list: %FunctionDef{
                  self: false,
                  args: [
                    alist: [
                      {:ignore, nil},
                      {:default_path, nil},
+                     {:default, nil},
                      {:doc, nil},
                      {:type, {:list, :string}}
                    ]
@@ -73,28 +90,41 @@ defmodule Dagger.Mod.ObjectTest do
                    alist: [
                      {:ignore, nil},
                      {:default_path, nil},
+                     {:default, nil},
                      {:doc, nil},
                      {:type, {:list, :string}}
                    ]
                  ],
                  return: :string
-               },
+               }
+             ]
+    end
+
+    test "optional arguments" do
+      assert OptionalArgs.__object__(:functions) == [
                optional_arg: %FunctionDef{
                  self: false,
                  args: [
                    s: [
                      {:ignore, nil},
                      {:default_path, nil},
+                     {:default, nil},
                      {:doc, nil},
                      {:type, {:optional, :string}}
                    ]
                  ],
                  return: :string
-               },
+               }
+             ]
+    end
+
+    test "argument options" do
+      assert ArgOptions.__object__(:functions) == [
                type_option: %FunctionDef{
                  self: false,
                  args: [
                    dir: [
+                     {:default, nil},
                      {:ignore, ["deps", "_build"]},
                      {:default_path, "/sdk/elixir"},
                      {:doc, "The directory to run on."},
@@ -102,13 +132,23 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               },
-               return_void: %FunctionDef{self: false, args: [], return: Dagger.Void},
+               }
+             ]
+    end
+
+    test "return void" do
+      assert ReturnVoid.__object__(:functions) == [
+               return_void: %FunctionDef{self: false, args: [], return: Dagger.Void}
+             ]
+    end
+
+    test "self object" do
+      assert SelfObject.__object__(:functions) == [
                only_self_arg: %FunctionDef{self: true, args: [], return: Dagger.Void},
                mix_self_and_args: %FunctionDef{
                  self: true,
                  args: [
-                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                   name: [{:ignore, nil}, {:default_path, nil}, {:default, nil}, {:doc, nil}, {:type, :string}]
                  ],
                  return: Dagger.Void
                }
@@ -235,6 +275,7 @@ defmodule Dagger.Mod.ObjectTest do
                  name: [
                    {:ignore, nil},
                    {:default_path, nil},
+                   {:default, nil},
                    {:doc, nil},
                    {:type, :string}
                  ]
@@ -243,7 +284,7 @@ defmodule Dagger.Mod.ObjectTest do
              },
              fan_out: %Dagger.Mod.Object.FunctionDef{
                self: false,
-               args: [name: [ignore: nil, default_path: nil, doc: nil, type: :string]],
+               args: [name: [ignore: nil, default_path: nil, default: nil, doc: nil, type: :string]],
                return: {:list, ObjectFieldAndFunction}
              }
            ]

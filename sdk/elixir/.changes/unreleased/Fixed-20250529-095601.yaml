@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix function cannot accept scalar and enum type.
+time: 2025-05-29T09:56:01.318757+07:00
+custom:
+    Author: wingyplus
+    PR: "10494"

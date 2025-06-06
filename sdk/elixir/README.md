@@ -10,7 +10,7 @@
 
 # Dagger
 
-[Dagger](dagger.io) SDK for Elixir.
+[Dagger](https://dagger.io) SDK for Elixir.
 
 ## Installation
 

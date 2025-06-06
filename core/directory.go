@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -29,8 +31,6 @@ import (
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	Query *Query
-
 	LLB    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
@@ -60,7 +60,7 @@ func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, erro
 		defs = append(defs, dir.LLB)
 	}
 	for _, bnd := range dir.Services {
-		ctr := bnd.Service.Container
+		ctr := bnd.Service.Self.Container
 		if ctr == nil {
 			continue
 		}
@@ -73,12 +73,8 @@ func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, erro
 	return defs, nil
 }
 
-func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
-	if query == nil {
-		panic("query must be non-nil")
-	}
+func NewDirectory(def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
 	return &Directory{
-		Query:    query,
 		LLB:      def,
 		Dir:      dir,
 		Platform: platform,
@@ -86,20 +82,17 @@ func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platfor
 	}
 }
 
-func NewScratchDirectory(ctx context.Context, query *Query, platform Platform) (*Directory, error) {
-	return NewDirectorySt(ctx, query, llb.Scratch(), "/", platform, nil)
+func NewScratchDirectory(ctx context.Context, platform Platform) (*Directory, error) {
+	return NewDirectorySt(ctx, llb.Scratch(), "/", platform, nil)
 }
 
-func NewDirectorySt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
-	if query == nil {
-		panic("query must be non-nil")
-	}
+func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(query, def.ToPB(), dir, platform, services), nil
+	return NewDirectory(def.ToPB(), dir, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -158,22 +151,20 @@ func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
 	return nil
 }
 
-func (dir *Directory) WithPipeline(ctx context.Context, name, description string) (*Directory, error) {
-	dir = dir.Clone()
-	dir.Query = dir.Query.WithPipeline(name, description)
-	return dir, nil
-}
-
 func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if dir.LLB == nil {
 		return nil, nil
 	}
 
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -212,7 +203,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start bindings: %w", err)
 	}
 	defer detach()
 
@@ -220,12 +211,12 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 		Definition: dir.LLB,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to solve: %w", err)
 	}
 
 	ref, err := res.SingleRef()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
 	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
@@ -240,19 +231,27 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
 	}
 
-	return ref.StatFile(ctx, bkgw.StatRequest{
+	st, err := ref.StatFile(ctx, bkgw.StatRequest{
 		Path: src,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
+	}
+	return st, nil
 }
 
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -289,7 +288,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 		return nil, err
 	}
 
-	useSlash, err := SupportsDirSlash(ctx, dir.Query)
+	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -308,11 +307,15 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -346,7 +349,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 		return nil, err
 	}
 
-	useSlash, err := SupportsDirSlash(ctx, dir.Query)
+	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -425,11 +428,15 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -451,11 +458,15 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -477,7 +488,6 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}
 
 	return &File{
-		Query:    dir.Query,
 		LLB:      dir.LLB,
 		Result:   dir.Result,
 		File:     path.Join(dir.Dir, file),
@@ -770,11 +780,15 @@ func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory,
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -817,12 +831,72 @@ func (dir *Directory) Root() (*Directory, error) {
 	return dir, nil
 }
 
+func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
+	dir = dir.Clone()
+
+	res, err := dir.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	var parentRef bkcache.ImmutableRef
+	if ref != nil {
+		parentRef, err = ref.CacheRef(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	linkName = path.Join(dir.Dir, linkName)
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(root string) error {
+		fullLinkName, err := containerdfs.RootPath(root, linkName)
+		if err != nil {
+			return err
+		}
+
+		linkNameDirPath, _ := filepath.Split(fullLinkName)
+		err = os.MkdirAll(filepath.Dir(linkNameDirPath), 0755)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, fullLinkName)
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
+	return dir, nil
+}
+
 func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
-	svcs, err := dir.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := dir.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -863,7 +937,11 @@ func validateFileName(file string) error {
 	return nil
 }
 
-func SupportsDirSlash(ctx context.Context, query *Query) (bool, error) {
+func SupportsDirSlash(ctx context.Context) (bool, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
 		return false, err

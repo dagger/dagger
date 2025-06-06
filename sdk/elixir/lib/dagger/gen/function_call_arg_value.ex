@@ -4,6 +4,8 @@ defmodule Dagger.FunctionCallArgValue do
   A value passed as a named argument to a function call.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "FunctionCallArgValue"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

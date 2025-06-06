@@ -41,7 +41,7 @@ func newModuleSDK(
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
 
-	defaultDeps, err := sdkModMeta.Self.Query.DefaultDeps(ctx)
+	defaultDeps, err := root.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}

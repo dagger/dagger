@@ -100,7 +100,7 @@ func (s *hostSchema) Install() {
 				slog.ErrorContext(ctx, "failed to unlazy layers", "err", err)
 			}
 
-			container, err := core.NewContainer(parent, parent.Platform())
+			container, err := core.NewContainer(parent.Platform())
 			if err != nil {
 				return nil, fmt.Errorf("new container: %w", err)
 			}
@@ -282,20 +282,26 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.Instance[*core.Ho
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 
 	localLLB := llb.Local(args.Path, localOpts...)
-	localDef, err := localLLB.Marshal(ctx, llb.Platform(host.Self.Query.Platform().Spec()))
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return i, err
+	}
+
+	localDef, err := localLLB.Marshal(ctx, llb.Platform(query.Platform().Spec()))
 	if err != nil {
 		return i, fmt.Errorf("failed to marshal local LLB: %w", err)
 	}
 	localPB := localDef.ToPB()
 
 	dir, err := dagql.NewInstanceForCurrentID(ctx, s.srv, host,
-		core.NewDirectory(host.Self.Query, localPB, "/", host.Self.Query.Platform(), nil),
+		core.NewDirectory(localPB, "/", query.Platform(), nil),
 	)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	bk, err := host.Self.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -320,7 +326,12 @@ func (s *hostSchema) socketCacheKey(
 }
 
 func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host], args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
-	socketStore, err := host.Self.Query.Sockets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	socketStore, err := query.Sockets(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get socket store: %w", err)
 	}
@@ -329,7 +340,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host]
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	accessor, err := core.GetClientResourceAccessor(ctx, host.Self.Query, args.Path)
+	accessor, err := core.GetClientResourceAccessor(ctx, query, args.Path)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client resource name: %w", err)
 	}
@@ -450,7 +461,6 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 
 	return &core.Service{
 		Creator:        trace.SpanContextFromContext(ctx),
-		Query:          parent.Query,
 		TunnelUpstream: &inst,
 		TunnelPorts:    ports,
 	}, nil
@@ -466,7 +476,11 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 		return inst, errors.New("no ports specified")
 	}
 
-	socketStore, err := parent.Query.Sockets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	socketStore, err := query.Sockets(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get socket store: %w", err)
 	}
@@ -479,7 +493,7 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 	ports := collectInputsSlice(args.Ports)
 	sockIDs := make([]dagql.ID[*core.Socket], 0, len(ports))
 	for _, port := range ports {
-		accessor, err := core.GetHostIPSocketAccessor(ctx, parent.Query, args.Host, port)
+		accessor, err := core.GetHostIPSocketAccessor(ctx, query, args.Host, port)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
 		}
@@ -547,7 +561,6 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 
 	return &core.Service{
 		Creator:     trace.SpanContextFromContext(ctx),
-		Query:       parent.Query,
 		HostSockets: socks,
 	}, nil
 }

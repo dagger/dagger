@@ -4,6 +4,8 @@ defmodule Dagger.ImageMediaTypes do
   Mediatypes to use in published or exported image metadata.
   """
 
+  use Dagger.Core.Base, kind: :enum, name: "ImageMediaTypes"
+
   @type t() :: :OCIMediaTypes | :DockerMediaTypes
 
   @spec oci_media_types() :: :OCIMediaTypes

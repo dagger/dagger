@@ -4,6 +4,8 @@ defmodule Dagger.Terminal do
   An interactive terminal that clients can connect to.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Terminal"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

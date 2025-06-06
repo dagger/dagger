@@ -565,6 +565,13 @@ export type ContainerWithNewFileOpts = {
   expand?: boolean
 }
 
+export type ContainerWithSymlinkOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithUnixSocketOpts = {
   /**
    * A user:group to set for the mounted socket.
@@ -808,6 +815,13 @@ export type DirectoryID = string & { __DirectoryID: never }
 
 export type EngineCacheEntrySetOpts = {
   key?: string
+}
+
+export type EngineCachePruneOpts = {
+  /**
+   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   */
+  useDefaultPolicy?: boolean
 }
 
 /**
@@ -2734,6 +2748,21 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  withSymlink = (
+    target: string,
+    linkName: string,
+    opts?: ContainerWithSymlinkOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
    * @param source Identifier of the socket to forward.
@@ -3342,6 +3371,16 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   */
+  withSymlink = (target: string, linkName: string): Directory => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName })
+    return new Directory(ctx)
+  }
+
+  /**
    * Retrieves this directory with all file/dir timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *
@@ -3535,13 +3574,14 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
+   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
-  prune = async (): Promise<void> => {
+  prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
       return
     }
 
-    const ctx = this._ctx.select("prune")
+    const ctx = this._ctx.select("prune", { ...opts })
 
     await ctx.execute()
   }
