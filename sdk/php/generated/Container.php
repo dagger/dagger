@@ -55,6 +55,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
+        ?bool $rewriteTimestamp = false,
     ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTarball');
         if (null !== $platformVariants) {
@@ -65,6 +66,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $mediaTypes) {
         $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $rewriteTimestamp) {
+        $innerQueryBuilder->setArgument('rewriteTimestamp', $rewriteTimestamp);
         }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -201,6 +205,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
         ?bool $expand = false,
+        ?bool $rewriteTimestamp = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
@@ -215,6 +220,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $expand) {
         $leafQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $rewriteTimestamp) {
+        $leafQueryBuilder->setArgument('rewriteTimestamp', $rewriteTimestamp);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
@@ -333,6 +341,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
+        ?bool $rewriteTimestamp = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -344,6 +353,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $rewriteTimestamp) {
+        $leafQueryBuilder->setArgument('rewriteTimestamp', $rewriteTimestamp);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }

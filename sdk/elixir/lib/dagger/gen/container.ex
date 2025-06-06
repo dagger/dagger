@@ -54,7 +54,8 @@ defmodule Dagger.Container do
   @spec as_tarball(t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
-          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+          {:media_types, Dagger.ImageMediaTypes.t() | nil},
+          {:rewrite_timestamp, boolean() | nil}
         ]) :: Dagger.File.t()
   def as_tarball(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
@@ -69,6 +70,7 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+      |> QB.maybe_put_arg("rewriteTimestamp", optional_args[:rewrite_timestamp])
 
     %Dagger.File{
       query_builder: query_builder,
@@ -243,7 +245,8 @@ defmodule Dagger.Container do
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil},
-          {:expand, boolean() | nil}
+          {:expand, boolean() | nil},
+          {:rewrite_timestamp, boolean() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -260,6 +263,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+      |> QB.maybe_put_arg("rewriteTimestamp", optional_args[:rewrite_timestamp])
 
     Client.execute(container.client, query_builder)
   end
@@ -423,7 +427,8 @@ defmodule Dagger.Container do
   @spec publish(t(), String.t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
-          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+          {:media_types, Dagger.ImageMediaTypes.t() | nil},
+          {:rewrite_timestamp, boolean() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def publish(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -439,6 +444,7 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+      |> QB.maybe_put_arg("rewriteTimestamp", optional_args[:rewrite_timestamp])
 
     Client.execute(container.client, query_builder)
   end

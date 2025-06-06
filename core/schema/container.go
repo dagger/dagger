@@ -26,6 +26,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -530,6 +531,9 @@ func (s *containerSchema) Install() {
 					`Defaults to "OCI", which is compatible with most recent
 				registries, but "Docker" may be needed for older registries without OCI
 				support.`),
+				dagql.Arg("rewriteTimestamp").Doc(
+					`Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.`,
+					`Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.`),
 			),
 
 		dagql.Func("platform", s.platform).
@@ -562,6 +566,8 @@ func (s *containerSchema) Install() {
 				dagql.Arg("expand").Doc(
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("rewriteTimestamp").Doc(`Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.`,
+					`Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.`),
 			),
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
@@ -584,6 +590,8 @@ func (s *containerSchema) Install() {
 					`Defaults to OCI, which is largely compatible with most recent
 					container runtimes, but Docker may be needed for older runtimes without
 					OCI support.`),
+				dagql.Arg("rewriteTimestamp").Doc(`Rewrite the file timestamps to the SOURCE_DATE_EPOCH value.`,
+					`Defaults to false. See build reproducibility for how to specify the SOURCE_DATE_EPOCH value.`),
 			),
 
 		dagql.Func("import", s.import_).
@@ -1323,6 +1331,7 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+	RewriteTimestamp  dagql.Boolean        `default:"false"`
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (dagql.String, error) {
@@ -1336,6 +1345,7 @@ func (s *containerSchema) publish(ctx context.Context, parent *core.Container, a
 		variants,
 		args.ForcedCompression.Value,
 		args.MediaTypes,
+		args.RewriteTimestamp,
 	)
 	if err != nil {
 		return "", err
@@ -1766,6 +1776,7 @@ type containerExportArgs struct {
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 	Expand            bool                 `default:"false"`
+	RewriteTimestamp  bool                 `default:"false"`
 }
 
 func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.String, error) {
@@ -1785,6 +1796,7 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 		variants,
 		args.ForcedCompression.Value,
 		args.MediaTypes,
+		args.RewriteTimestamp,
 	)
 	if err != nil {
 		return "", err
@@ -1816,6 +1828,7 @@ type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+	RewriteTimestamp  dagql.Boolean        `default:"false"`
 }
 
 func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container], _ containerAsTarballArgs) (string, error) {
@@ -1846,6 +1859,11 @@ func (s *containerSchema) asTarball(
 	}
 	engineHostPlatform := query.Platform()
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	if args.MediaTypes == "" {
 		args.MediaTypes = core.OCIMediaTypes
 	}
@@ -1857,6 +1875,14 @@ func (s *containerSchema) asTarball(
 	if args.ForcedCompression.Value != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(args.ForcedCompression.Value))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	if clientMetadata.SourceDateEpoch != nil {
+		opts[string(exptypes.OptKeySourceDateEpoch)] = strconv.FormatInt(clientMetadata.SourceDateEpoch.Unix(), 10)
+	}
+
+	if args.RewriteTimestamp {
+		opts[string(exptypes.OptKeyRewriteTimestamp)] = strconv.FormatBool(true)
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
