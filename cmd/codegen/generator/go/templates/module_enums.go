@@ -1,9 +1,11 @@
 package templates
 
 import (
+	"cmp"
 	"fmt"
 	"go/constant"
 	"go/types"
+	"slices"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
@@ -73,7 +75,17 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		spec.moduleName = ""
 	}
 
-	for _, obj := range ps.objs {
+	scope := named.Obj().Pkg().Scope()
+	objs := []types.Object{}
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		if obj == nil {
+			return nil, fmt.Errorf("%q should exist in scope, but doesn't", name)
+		}
+		objs = append(objs, obj)
+	}
+
+	for _, obj := range objs {
 		objConst, ok := obj.(*types.Const)
 		if !ok {
 			continue
@@ -90,20 +102,21 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 			value = objConst.Val().ExactString()
 		}
 
-		astSpec, err := ps.astSpecForObj(objConst)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
-		}
-
 		valueSpec := &parsedEnumValue{
 			originalName: name,
 			name:         name,
 			value:        value,
 		}
-		if doc := docForAstSpec(astSpec); doc != nil {
-			valueSpec.doc = doc.Text()
+		if !ps.isDaggerGenerated(named.Obj()) {
+			astSpec, err := ps.astSpecForObj(objConst)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
+			}
+			if doc := docForAstSpec(astSpec); doc != nil {
+				valueSpec.doc = doc.Text()
+			}
+			valueSpec.sourceMap = ps.sourceMap(astSpec)
 		}
-		valueSpec.sourceMap = ps.sourceMap(astSpec)
 		spec.values = append(spec.values, valueSpec)
 	}
 	if len(spec.values) == 0 {
@@ -126,15 +139,16 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 	}
 
 	// get the comment above the struct (if any)
-	astSpec, err := ps.astSpecForObj(named.Obj())
-	if err != nil {
-		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
+	if !ps.isDaggerGenerated(named.Obj()) {
+		astSpec, err := ps.astSpecForObj(named.Obj())
+		if err != nil {
+			return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
+		}
+		if doc := docForAstSpec(astSpec); doc != nil {
+			spec.doc = doc.Text()
+		}
+		spec.sourceMap = ps.sourceMap(astSpec)
 	}
-	if doc := docForAstSpec(astSpec); doc != nil {
-		spec.doc = doc.Text()
-	}
-
-	spec.sourceMap = ps.sourceMap(astSpec)
 
 	return spec, nil
 }
@@ -248,13 +262,24 @@ func (spec *parsedEnumType) isEnumMethodCode() *Statement {
 }
 
 func (spec *parsedEnumType) nameMethodCode() *Statement {
+	values := slices.Clone(spec.values)
+	slices.SortFunc(values, func(a, b *parsedEnumValue) int {
+		return cmp.Compare(a.value, b.value)
+	})
+	values = slices.CompactFunc(values, func(e1, e2 *parsedEnumValue) bool {
+		return e1.value == e2.value
+	})
+	slices.SortFunc(values, func(a, b *parsedEnumValue) int {
+		return cmp.Compare(a.name, b.name)
+	})
+
 	return Func().Params(Id("r").Id(spec.name)).
 		Id("Name").
 		Params().
 		Params(String()).
 		BlockFunc(func(g *Group) {
 			var cases []Code
-			for _, v := range spec.values {
+			for _, v := range values {
 				raw := strcase.ToScreamingSnake(v.name)
 				cases = append(cases, Case(Id(v.originalName)).Block(Return(Lit(raw))))
 			}
