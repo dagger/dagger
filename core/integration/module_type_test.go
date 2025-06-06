@@ -1038,6 +1038,13 @@ func (m *Test) FromProto(proto dagger.NetworkProtocol) string {
 	return string(proto)
 }
 
+func (m *Test) FromProtoDefault(
+	// +default="UDP"
+	proto dagger.NetworkProtocol,
+) string {
+	return string(proto)
+}
+
 func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 	return dagger.NetworkProtocol(proto)
 }
@@ -1052,6 +1059,10 @@ from dagger import function, object_type
 class Test:
     @function
     def from_proto(self, proto: dagger.NetworkProtocol) -> str:
+        return str(proto)
+
+    @function
+    def from_proto_default(self, proto: dagger.NetworkProtocol = dagger.NetworkProtocol.UDP) -> str:
         return str(proto)
 
     @function
@@ -1075,6 +1086,11 @@ class Test:
 export class Test {
   @func()
   fromProto(Proto: NetworkProtocol): string {
+    return Proto as string;
+  }
+
+  @func()
+  fromProtoDefault(Proto: NetworkProtocol = NetworkProtocol.Udp): string {
     return Proto as string;
   }
 
@@ -1105,6 +1121,10 @@ export class Test {
 
 			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
 			requireErrOut(t, err, "invalid enum value")
+
+			out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
 		})
 	}
 }
