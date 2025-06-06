@@ -96,7 +96,11 @@ func (sdk *module) withConfig(
 		return sdk, nil
 	}
 
+	// XXX: unimplemented
+	// return sdk, nil
+
 	fieldspec, err := withConfigFn.FieldSpec()
+	// fieldspec, err := withConfigFn.FieldSpec(context.TODO(), nil)
 	if err != nil {
 		return nil, err
 	}

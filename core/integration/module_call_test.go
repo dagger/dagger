@@ -2392,7 +2392,7 @@ func (m *Chain) Echo(msg string) string {
 	})
 }
 
-func (CallSuite) TestInvalidEnum(ctx context.Context, t *testctx.T) {
+func (CallSuite) TestWeirdEnum(ctx context.Context, t *testctx.T) {
 	t.Run("duplicated enum value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -2418,10 +2418,10 @@ func (m *Test) ToStatus(status string) Status {
 	`)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		requireErrOut(t, err, `enum value "ACTIVE" is already defined`)
+		requireErrOut(t, err, `enum "ACTIVE" is already defined with value "ACTIVE"`)
 	})
 
-	t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+	t.Run("weird value", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			enumValue string
 		}
@@ -2468,7 +2468,7 @@ func (m *Test) FromStatus(status Status) string {
 `, tc.enumValue))
 
 				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-				requireErrOut(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
+				require.NoError(t, err)
 			})
 		}
 	})
@@ -2516,7 +2516,7 @@ type Language string
 const (
 	Go Language = "GO"
 	Python Language = "PYTHON"
-	TypeScript Language = "TYPESCRIPT"
+	Typescript Language = "TYPESCRIPT"
 	PHP Language = "PHP"
 	Elixir Language = "ELIXIR"
 )
@@ -2531,7 +2531,7 @@ func (m *Test) Faves(
 }
 
 func (m *Test) Official() []Language {
-	return []Language{Go, Python, TypeScript}
+	return []Language{Go, Python, Typescript}
 }
 `,
 		},
@@ -2574,7 +2574,7 @@ class Test:
 export class Language {
   static readonly Go: string = "GO"
   static readonly Python: string = "PYTHON"
-  static readonly TypeScript: string = "TYPESCRIPT"
+  static readonly Typescript: string = "TYPESCRIPT"
   static readonly PHP: string = "PHP"
   static readonly Elixir: string = "ELIXIR"
 }
@@ -2588,7 +2588,7 @@ export class Test {
 
   @func()
   official(): Language[] {
-    return [Language.Go, Language.Python, Language.TypeScript]
+    return [Language.Go, Language.Python, Language.Typescript]
   }
 }
 `,

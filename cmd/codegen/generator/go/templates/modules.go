@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -101,6 +102,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
+		schema:     funcs.schema,
 		moduleName: funcs.cfg.ModuleName,
 
 		methods: make(map[string][]method),
@@ -175,7 +177,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 			obj := named.Obj()
 			basePkg := funcs.modulePkg.Types.Path()
-			if obj.Pkg().Path() != basePkg && !ps.isDaggerGenerated(obj) {
+			if ps.isDaggerGenerated(obj) {
+				continue
+			}
+			if obj.Pkg().Path() != basePkg {
 				// the type must be created in the target package (if not a
 				// generated type)
 				return "", fmt.Errorf("cannot code-generate for foreign type %s", obj.Name())
@@ -799,6 +804,8 @@ func (ps *parseState) fillObjectFunctionCase(
 }
 
 type parseState struct {
+	schema *introspection.Schema
+
 	pkg        *packages.Package
 	fset       *token.FileSet
 	moduleName string
@@ -856,6 +863,7 @@ func (ps *parseState) astSpecForObj(obj types.Object) (ast.Spec, error) {
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", obj.Name())
 	}
+
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue

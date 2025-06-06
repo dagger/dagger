@@ -1,3 +1,6 @@
+"""Indicates the underlying value of an enum member."""
+directive @enumValue(value: String!) on ENUM_VALUE
+
 """
 Explains why this element is marked experimental. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).
 """
@@ -184,7 +187,7 @@ type Container {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): File!
 
   """Initializes this container from a Dockerfile build."""
@@ -320,7 +323,7 @@ type Container {
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -433,7 +436,7 @@ type Container {
     Defaults to "OCI", which is compatible with most recent registries, but
     "Docker" may be needed for older registries without OCI support.
     """
-    mediaTypes: ImageMediaTypes = OCIMediaTypes
+    mediaTypes: ImageMediaTypes = OCI
   ): String!
 
   """
@@ -1685,6 +1688,9 @@ type EnumTypeDef {
   """A unique identifier for this EnumTypeDef."""
   id: EnumTypeDefID!
 
+  """The members of the enum."""
+  members: [EnumValueTypeDef!]!
+
   """The name of the enum."""
   name: String!
 
@@ -1696,8 +1702,7 @@ type EnumTypeDef {
   """
   sourceModuleName: String!
 
-  """The values of the enum."""
-  values: [EnumValueTypeDef!]!
+  values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
 """
@@ -1718,6 +1723,9 @@ type EnumValueTypeDef {
 
   """The location of this enum value declaration."""
   sourceMap: SourceMap!
+
+  """The value of the enum value"""
+  value: String!
 }
 
 """
@@ -2615,15 +2623,21 @@ scalar HostID
 
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
+  GZIP
   Gzip
+  ZSTD
   Zstd
+  ESTARGZ
   EStarGZ
+  UNCOMPRESSED
   Uncompressed
 }
 
 """Mediatypes to use in published or exported image metadata."""
 enum ImageMediaTypes {
+  OCI
   OCIMediaTypes
+  DOCKER
   DockerMediaTypes
 }
 
@@ -3108,8 +3122,11 @@ scalar ModuleSourceID
 
 """The kind of module source."""
 enum ModuleSourceKind {
+  LOCAL
   LOCAL_SOURCE
+  GIT
   GIT_SOURCE
+  DIR
   DIR_SOURCE
 }
 
@@ -3837,6 +3854,23 @@ type TypeDef {
   """
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.
   """
+  withEnumMember(
+    """The name of the member in the enum"""
+    name: String!
+
+    """The value of the member in the enum"""
+    value: String!
+
+    """A doc string for the value, if any"""
+    description: String = ""
+
+    """The source map for the enum value definition."""
+    sourceMap: SourceMapID
+  ): TypeDef!
+
+  """
+  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  """
   withEnumValue(
     """The name of the value in the enum"""
     value: String!
@@ -3846,7 +3880,7 @@ type TypeDef {
 
     """The source map for the enum value definition."""
     sourceMap: SourceMapID
-  ): TypeDef!
+  ): TypeDef! @deprecated(reason: "Use withEnumMember instead")
 
   """
   Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -3905,19 +3939,41 @@ scalar TypeDefID
 """Distinguishes the different kinds of TypeDefs."""
 enum TypeDefKind {
   """A string value."""
+  STRING
+
+  """A string value."""
   STRING_KIND
+
+  """An integer value."""
+  INTEGER
+
+  """An integer value."""
+  INTEGER_KIND
+
+  """A float value."""
+  FLOAT
 
   """A float value."""
   FLOAT_KIND
 
-  """An integer value."""
-  INTEGER_KIND
+  """A boolean value."""
+  BOOLEAN
 
   """A boolean value."""
   BOOLEAN_KIND
 
   """A scalar value of any basic kind."""
+  SCALAR
+
+  """A scalar value of any basic kind."""
   SCALAR_KIND
+
+  """
+  A list of values all having the same type.
+  
+  Always paired with a ListTypeDef.
+  """
+  LIST
 
   """
   A list of values all having the same type.
@@ -3931,6 +3987,13 @@ enum TypeDefKind {
   
   Always paired with an ObjectTypeDef.
   """
+  OBJECT
+
+  """
+  A named type defined in the GraphQL schema, with fields and functions.
+  
+  Always paired with an ObjectTypeDef.
+  """
   OBJECT_KIND
 
   """
@@ -3938,7 +4001,19 @@ enum TypeDefKind {
   
   Always paired with an InterfaceTypeDef.
   """
+  INTERFACE
+
+  """
+  A named type of functions that can be matched+implemented by other objects+interfaces.
+  
+  Always paired with an InterfaceTypeDef.
+  """
   INTERFACE_KIND
+
+  """
+  A graphql input type, used only when representing the core API via TypeDefs.
+  """
+  INPUT
 
   """
   A graphql input type, used only when representing the core API via TypeDefs.
@@ -3952,7 +4027,23 @@ enum TypeDefKind {
   specifying this Kind is always Optional, as the Void is never actually
   represented.
   """
+  VOID
+
+  """
+  A special kind used to signify that no value is returned.
+  
+  This is used for functions that have no return value. The outer TypeDef
+  specifying this Kind is always Optional, as the Void is never actually
+  represented.
+  """
   VOID_KIND
+
+  """
+  A GraphQL enum type and its values
+  
+  Always paired with an EnumTypeDef.
+  """
+  ENUM
 
   """
   A GraphQL enum type and its values

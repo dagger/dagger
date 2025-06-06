@@ -13,6 +13,8 @@ namespace Dagger;
  */
 enum ImageMediaTypes: string
 {
+    case OCI = 'OCI';
     case OCIMediaTypes = 'OCIMediaTypes';
+    case DOCKER = 'DOCKER';
     case DockerMediaTypes = 'DockerMediaTypes';
 }

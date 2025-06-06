@@ -1322,7 +1322,7 @@ type containerPublishArgs struct {
 	Address           dagql.String
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (dagql.String, error) {
@@ -1764,7 +1764,7 @@ type containerExportArgs struct {
 	Path              string
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 	Expand            bool                 `default:"false"`
 }
 
@@ -1815,7 +1815,7 @@ func (s *containerSchema) exportLegacy(ctx context.Context, parent *core.Contain
 type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 }
 
 func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container], _ containerAsTarballArgs) (string, error) {

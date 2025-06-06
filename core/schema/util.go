@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"golang.org/x/mod/semver"
-
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -72,35 +71,11 @@ func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 	return json.RawMessage(jsonBytes), nil
 }
 
-// AllVersion is a view that contains all versions.
-var AllVersion = dagql.AllView{}
-
-// AfterVersion is a view that checks if a target version is greater than *or*
-// equal to the filtered version.
-type AfterVersion string
-
-var _ dagql.ViewFilter = AfterVersion("")
-
-func (minVersion AfterVersion) Contains(version dagql.View) bool {
-	if version == "" {
-		return true
-	}
-	return semver.Compare(string(version), string(minVersion)) >= 0
-}
-
-// BeforeVersion is a view that checks if a target version is less than the
-// filtered version.
-type BeforeVersion string
-
-var _ dagql.ViewFilter = BeforeVersion("")
-
-func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
-	if version == "" {
-		return false
-	}
-	return semver.Compare(string(version), string(maxVersion)) < 0
-}
-
 func ptr[T any](v T) *T {
 	return &v
 }
+
+var AllVersion = core.AllVersion
+
+type BeforeVersion = core.BeforeVersion
+type AfterVersion = core.AfterVersion

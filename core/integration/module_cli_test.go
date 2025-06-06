@@ -1165,7 +1165,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 
 	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
-		requireErrOut(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
+		requireErrOut(t, err, `function "prim" returns type "STRING" with no further functions available`)
 	})
 
 	t.Run("alt casing", func(ctx context.Context, t *testctx.T) {

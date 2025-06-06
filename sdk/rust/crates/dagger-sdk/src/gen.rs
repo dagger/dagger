@@ -5272,6 +5272,15 @@ impl EnumTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The members of the enum.
+    pub fn members(&self) -> Vec<EnumValueTypeDef> {
+        let query = self.selection.select("members");
+        vec![EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// The name of the enum.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -5291,7 +5300,6 @@ impl EnumTypeDef {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The values of the enum.
     pub fn values(&self) -> Vec<EnumValueTypeDef> {
         let query = self.selection.select("values");
         vec![EnumValueTypeDef {
@@ -5331,6 +5339,11 @@ impl EnumValueTypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The value of the enum value
+    pub async fn value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("value");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -9885,6 +9898,15 @@ pub struct TypeDefWithEnumOpts<'a> {
     pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithEnumMemberOpts<'a> {
+    /// A doc string for the value, if any
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+    /// The source map for the enum value definition.
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
     /// A doc string for the value, if any
     #[builder(setter(into, strip_option), default)]
@@ -10037,6 +10059,51 @@ impl TypeDef {
     ) -> TypeDef {
         let mut query = self.selection.select("withEnum");
         query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
+        }
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the member in the enum
+    /// * `value` - The value of the member in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_member(&self, name: impl Into<String>, value: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withEnumMember");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the member in the enum
+    /// * `value` - The value of the member in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_member_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+        opts: TypeDefWithEnumMemberOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withEnumMember");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
@@ -10325,26 +10392,38 @@ pub enum CacheSharingMode {
 pub enum ImageLayerCompression {
     #[serde(rename = "EStarGZ")]
     EStarGz,
-    #[serde(rename = "Gzip")]
+    #[serde(rename = "ESTARGZ")]
+    Estargz,
+    #[serde(rename = "GZIP")]
     Gzip,
-    #[serde(rename = "Uncompressed")]
+    #[serde(rename = "UNCOMPRESSED")]
     Uncompressed,
-    #[serde(rename = "Zstd")]
+    #[serde(rename = "ZSTD")]
     Zstd,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageMediaTypes {
+    #[serde(rename = "DOCKER")]
+    Docker,
     #[serde(rename = "DockerMediaTypes")]
     DockerMediaTypes,
+    #[serde(rename = "OCI")]
+    Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
+    #[serde(rename = "DIR")]
+    Dir,
     #[serde(rename = "DIR_SOURCE")]
     DirSource,
+    #[serde(rename = "GIT")]
+    Git,
     #[serde(rename = "GIT_SOURCE")]
     GitSource,
+    #[serde(rename = "LOCAL")]
+    Local,
     #[serde(rename = "LOCAL_SOURCE")]
     LocalSource,
 }
@@ -10366,26 +10445,48 @@ pub enum ReturnType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {
+    #[serde(rename = "BOOLEAN")]
+    Boolean,
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "ENUM")]
+    Enum,
     #[serde(rename = "ENUM_KIND")]
     EnumKind,
+    #[serde(rename = "FLOAT")]
+    Float,
     #[serde(rename = "FLOAT_KIND")]
     FloatKind,
+    #[serde(rename = "INPUT")]
+    Input,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
+    #[serde(rename = "INTEGER")]
+    Integer,
     #[serde(rename = "INTEGER_KIND")]
     IntegerKind,
+    #[serde(rename = "INTERFACE")]
+    Interface,
     #[serde(rename = "INTERFACE_KIND")]
     InterfaceKind,
+    #[serde(rename = "LIST")]
+    List,
     #[serde(rename = "LIST_KIND")]
     ListKind,
+    #[serde(rename = "OBJECT")]
+    Object,
     #[serde(rename = "OBJECT_KIND")]
     ObjectKind,
+    #[serde(rename = "SCALAR")]
+    Scalar,
     #[serde(rename = "SCALAR_KIND")]
     ScalarKind,
+    #[serde(rename = "STRING")]
+    String,
     #[serde(rename = "STRING_KIND")]
     StringKind,
+    #[serde(rename = "VOID")]
+    Void,
     #[serde(rename = "VOID_KIND")]
     VoidKind,
 }

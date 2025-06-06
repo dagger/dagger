@@ -48,4 +48,13 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * The value of the enum value
+     */
+    public function value(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
+    }
 }
