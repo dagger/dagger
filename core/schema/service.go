@@ -323,7 +323,11 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to select host service: %w", err)
 	}
 
-	svcs, err := hostSvc.Self.Query.Services(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return void, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return void, fmt.Errorf("failed to get host services: %w", err)
 	}

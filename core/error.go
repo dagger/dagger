@@ -6,8 +6,6 @@ import (
 )
 
 type Error struct {
-	Query *Query
-
 	Message string        `field:"true" doc:"A description of the error."`
 	Values  []*ErrorValue `field:"true" doc:"The extensions of the error."`
 }

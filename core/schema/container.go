@@ -743,7 +743,11 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.Container], args containerFromArgs) (inst dagql.Instance[*core.Container], _ error) {
-	bk, err := parent.Self.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -815,7 +819,11 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
-	secretStore, err := parent.Query.Secrets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -857,7 +865,8 @@ type containerPipelineArgs struct {
 }
 
 func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.WithPipeline(ctx, args.Name, args.Description)
+	// deprecated no-op
+	return parent, nil
 }
 
 func (s *containerSchema) rootfs(ctx context.Context, parent *core.Container, args struct{}) (*core.Directory, error) {
@@ -1780,7 +1789,11 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	if err != nil {
 		return "", err
 	}
-	bk, err := parent.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit: %w", err)
 	}
@@ -1819,15 +1832,19 @@ func (s *containerSchema) asTarball(
 		return inst, err
 	}
 
-	bk, err := parent.Self.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := parent.Self.Query.Services(ctx)
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get services: %w", err)
 	}
-	engineHostPlatform := parent.Self.Query.Platform()
+	engineHostPlatform := query.Platform()
 
 	if args.MediaTypes == "" {
 		args.MediaTypes = core.OCIMediaTypes
@@ -1900,7 +1917,7 @@ func (s *containerSchema) asTarball(
 	if !ok {
 		return inst, fmt.Errorf("no dagop")
 	}
-	bkref, err := parent.Self.Query.BuildkitCache().New(ctx, nil, op.Group(),
+	bkref, err := query.BuildkitCache().New(ctx, nil, op.Group(),
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
@@ -1923,7 +1940,7 @@ func (s *containerSchema) asTarball(
 		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
 
-	f := core.NewFile(parent.Self.Query, nil, op.Path, parent.Self.Query.Platform(), nil)
+	f := core.NewFile(nil, op.Path, query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return inst, err
@@ -1971,7 +1988,11 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	secretStore, err := parent.Query.Secrets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1980,7 +2001,7 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	auth, err := parent.Query.Auth(ctx)
+	auth, err := query.Auth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1996,7 +2017,11 @@ type containerWithoutRegistryAuthArgs struct {
 }
 
 func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
-	auth, err := parent.Query.Auth(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	auth, err := query.Auth(ctx)
 	if err != nil {
 		return nil, err
 	}

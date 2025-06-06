@@ -213,7 +213,11 @@ func (s mcpServer) run(ctx context.Context) error {
 
 func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 	// Get buildkit client
-	bk, err := llm.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current query: %w", err)
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("buildkit client error: %w", err)
 	}

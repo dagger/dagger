@@ -81,7 +81,6 @@ func (s *secretSchema) secret(
 	}
 
 	secret := &core.Secret{
-		Query:             parent.Self,
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
@@ -179,7 +178,6 @@ func (s *secretSchema) setSecret(
 		return i, fmt.Errorf("failed to get secret store: %w", err)
 	}
 	secretVal := &core.Secret{
-		Query:     parent.Self,
 		Name:      args.Name,
 		Plaintext: []byte(args.Plaintext),
 	}
@@ -195,7 +193,11 @@ func (s *secretSchema) setSecret(
 }
 
 func (s *secretSchema) name(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
-	secretStore, err := secret.Self.Query.Secrets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
@@ -208,7 +210,11 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.Instance[*core.Sec
 }
 
 func (s *secretSchema) uri(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
-	secretStore, err := secret.Self.Query.Secrets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
@@ -221,7 +227,11 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.Instance[*core.Secr
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
-	secretStore, err := secret.Self.Query.Secrets(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	secretStore, err := query.Secrets(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}

@@ -17,8 +17,6 @@ import (
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	Query *Query
-
 	// The URI of the secret, if it's stored in a remote store.
 	URI string
 
@@ -64,9 +62,6 @@ func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
 	if secret.Self == nil {
 		return fmt.Errorf("secret must not be nil")
-	}
-	if secret.Self.Query == nil {
-		return fmt.Errorf("secret must have a query")
 	}
 
 	if secret.Self.URI != "" {

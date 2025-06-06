@@ -59,8 +59,6 @@ type ContainerAnnotation struct {
 
 // Container is a content-addressed container.
 type Container struct {
-	Query *Query
-
 	// The container's root filesystem.
 	FS       *pb.Definition
 	FSResult bkcache.ImmutableRef // only valid when returned by dagop
@@ -147,12 +145,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 	return defs, nil
 }
 
-func NewContainer(root *Query, platform Platform) (*Container, error) {
-	if root == nil {
-		panic("query must be non-nil")
-	}
+func NewContainer(platform Platform) (*Container, error) {
 	return &Container{
-		Query:    root,
 		Platform: platform,
 	}, nil
 }
@@ -334,7 +328,11 @@ func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, err
 }
 
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -377,7 +375,11 @@ func (container *Container) FromCanonicalRef(
 ) (*Container, error) {
 	container = container.Clone()
 
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -463,11 +465,15 @@ func (container *Container) Build(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -606,7 +612,6 @@ func (container *Container) Build(
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	return &Directory{
-		Query:    container.Query,
 		LLB:      container.FS,
 		Dir:      "/",
 		Platform: container.Platform,
@@ -949,11 +954,15 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return nil, err
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -995,7 +1004,7 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
-	init func(*Query, *pb.Definition, string, Platform, ServiceBindings) T,
+	init func(*pb.Definition, string, Platform, ServiceBindings) T,
 ) (T, *ContainerMount, error) {
 	containerPath = absPath(container.Config.WorkingDir, containerPath)
 
@@ -1022,7 +1031,6 @@ func locatePath[T *File | *Directory](
 			}
 
 			return init(
-				container.Query,
 				mnt.Source,
 				sub,
 				container.Platform,
@@ -1033,7 +1041,6 @@ func locatePath[T *File | *Directory](
 
 	// Not found in a mount
 	return init(
-		container.Query,
 		container.FS,
 		containerPath,
 		container.Platform,
@@ -1151,7 +1158,11 @@ func (container *Container) chown(
 			return nil, "", err
 		}
 
-		bk, err := container.Query.Buildkit(ctx)
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		bk, err := query.Buildkit(ctx)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get buildkit client: %w", err)
 		}
@@ -1232,12 +1243,6 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return container, nil
 }
 
-func (container *Container) WithPipeline(ctx context.Context, name, description string) (*Container, error) {
-	container = container.Clone()
-	container.Query = container.Query.WithPipeline(name, description)
-	return container, nil
-}
-
 type ContainerGPUOpts struct {
 	Devices []string
 }
@@ -1253,7 +1258,11 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, nil
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -1273,7 +1282,7 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, err
 	}
 
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1386,11 +1395,15 @@ func (container *Container) Publish(
 		return "", errors.New("no containers to export")
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1436,11 +1449,15 @@ func (container *Container) Export(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1526,12 +1543,16 @@ func (container *Container) Import(
 	source *File,
 	tag string,
 ) (*Container, error) {
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	store := container.Query.OCIStore()
-	lm := container.Query.LeaseManager()
+	store := query.OCIStore()
+	lm := query.LeaseManager()
 
 	container = container.Clone()
 
@@ -1738,7 +1759,6 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 	}
 	return &Service{
 		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
 		Container: container,
 	}, nil
 }
@@ -1777,7 +1797,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 
 	return &Service{
 		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
 		Container: container,
 	}, nil
 }
@@ -1793,7 +1812,11 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 		return nil, err
 	}
 
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}

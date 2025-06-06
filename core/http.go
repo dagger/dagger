@@ -69,7 +69,7 @@ func DoHTTPRequest(
 		}
 	}
 
-	dns, err := DNSConfig(ctx, query)
+	dns, err := DNSConfig(ctx)
 	if err != nil {
 		return nil, "", nil, err
 	}

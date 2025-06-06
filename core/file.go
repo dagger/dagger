@@ -27,8 +27,6 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	Query *Query
-
 	LLB    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
@@ -80,9 +78,8 @@ func (file *File) OnRelease(ctx context.Context) error {
 	return nil
 }
 
-func NewFile(query *Query, def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {
+func NewFile(def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {
 	return &File{
-		Query:    query,
 		LLB:      def,
 		File:     file,
 		Platform: platform,
@@ -92,7 +89,6 @@ func NewFile(query *Query, def *pb.Definition, file string, platform Platform, s
 
 func NewFileWithContents(
 	ctx context.Context,
-	query *Query,
 	name string,
 	content []byte,
 	permissions fs.FileMode,
@@ -102,7 +98,7 @@ func NewFileWithContents(
 	if dir, _ := filepath.Split(name); dir != "" {
 		return nil, fmt.Errorf("file name %q must not contain a directory", name)
 	}
-	dir, err := NewScratchDirectory(ctx, query, platform)
+	dir, err := NewScratchDirectory(ctx, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -113,13 +109,13 @@ func NewFileWithContents(
 	return dir.File(ctx, name)
 }
 
-func NewFileSt(ctx context.Context, query *Query, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
+func NewFileSt(ctx context.Context, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(query, def.ToPB(), file, platform, services), nil
+	return NewFile(def.ToPB(), file, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -135,11 +131,15 @@ func (file *File) State() (llb.State, error) {
 }
 
 func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	svcs, err := file.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -158,11 +158,15 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context) ([]byte, error) {
-	svcs, err := file.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -249,11 +253,15 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 }
 
 func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
-	svcs, err := file.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -320,11 +328,15 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 }
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	bk, err := file.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := file.Query.Services(ctx)
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -344,11 +356,15 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 }
 
 func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) (rerr error) {
-	svcs, err := file.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := file.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}

@@ -60,11 +60,11 @@ func NewDirectoryDagOp(
 	if err != nil {
 		return nil, err
 	}
-	query, ok := srv.Root().(dagql.Instance[*Query])
-	if !ok {
-		return nil, fmt.Errorf("server root was %T", srv.Root())
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
-	return NewDirectorySt(ctx, query.Self, st, dagop.Path, query.Self.Platform(), nil)
+	return NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
 }
 
 // NewFileDagOp takes a target ID for a File, and returns a File for it,
@@ -80,11 +80,11 @@ func NewFileDagOp(
 	if err != nil {
 		return nil, err
 	}
-	query, ok := srv.Root().(dagql.Instance[*Query])
-	if !ok {
-		return nil, fmt.Errorf("server root was %T", srv.Root())
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
-	return NewFileSt(ctx, query.Self, st, dagop.Path, query.Self.Platform(), nil)
+	return NewFileSt(ctx, st, dagop.Path, query.Platform(), nil)
 }
 
 func newFSDagOp[T dagql.Typed](
@@ -221,12 +221,7 @@ func NewRawDagOp[T dagql.Typed](
 		return t, err
 	}
 
-	query, ok := srv.Root().(dagql.Instance[*Query])
-	if !ok {
-		return t, fmt.Errorf("server root was %T", srv.Root())
-	}
-
-	f, err := NewFileSt(ctx, query.Self, st, dagop.Filename, Platform{}, nil)
+	f, err := NewFileSt(ctx, st, dagop.Filename, Platform{}, nil)
 	if err != nil {
 		return t, err
 	}
@@ -470,9 +465,18 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		return nil, err
 	}
 
+	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
 	switch inst := obj.(type) {
 	case dagql.Instance[*Container]:
-		return op.extractContainerBkOutputs(ctx, inst.Self, opt.Worker)
+		return op.extractContainerBkOutputs(ctx, inst.Self, bk, opt.Worker)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
@@ -649,12 +653,7 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 
 // extractContainerBkOutputs returns a list of outputs suitable to be returned
 // from CustomOp.Exec extracted from the container according to the dagop specification.
-func (op *ContainerDagOp) extractContainerBkOutputs(ctx context.Context, container *Container, wkr worker.Worker) ([]solver.Result, error) {
-	bk, err := container.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
+func (op *ContainerDagOp) extractContainerBkOutputs(ctx context.Context, container *Container, bk *buildkit.Client, wkr worker.Worker) ([]solver.Result, error) {
 	getResult := func(def *pb.Definition, ref bkcache.ImmutableRef) (solver.Result, error) {
 		if ref != nil {
 			return worker.NewWorkerRefResult(ref.Clone(), wkr), nil
@@ -684,6 +683,7 @@ func (op *ContainerDagOp) extractContainerBkOutputs(ctx context.Context, contain
 			continue
 		}
 		var ref solver.Result
+		var err error
 		switch mountIdx {
 		case 0:
 			ref, err = getResult(container.FS, container.FSResult)

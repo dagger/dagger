@@ -36,7 +36,6 @@ import (
 )
 
 type GitRepository struct {
-	Query   *Query
 	Backend GitRepositoryBackend
 
 	DiscardGitDir bool
@@ -117,8 +116,6 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 type RemoteGitRepository struct {
-	Query *Query
-
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
@@ -139,8 +136,7 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 
 func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
 	ref := &RemoteGitRef{
-		Query: repo.Query,
-		Repo:  repo,
+		Repo: repo,
 	}
 
 	// force resolution now, since the remote might change, and we don't want inconsistencies
@@ -176,7 +172,11 @@ func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string
 }
 
 func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
-	svcs, err := repo.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -225,6 +225,10 @@ func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, pa
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	var opts []gitutil.Option
 
 	cleanups := buildkit.Cleanups{}
@@ -241,7 +245,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			username = "x-token-auth"
 		}
 
-		secretStore, err := repo.Query.Secrets(ctx)
+		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
@@ -256,7 +260,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
 		))
 	} else if repo.AuthHeader.Self != nil {
-		secretStore, err := repo.Query.Secrets(ctx)
+		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
@@ -270,7 +274,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}
 
 	if repo.SSHAuthSocket != nil {
-		socketStore, err := repo.Query.Sockets(ctx)
+		socketStore, err := query.Sockets(ctx)
 		if err == nil {
 			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.IDDigest)
 			if err != nil {
@@ -294,7 +298,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		})
 	}
 
-	netConf, err := DNSConfig(ctx, repo.Query)
+	netConf, err := DNSConfig(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -314,7 +318,11 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func DNSConfig(ctx context.Context, query *Query) (*oci.DNSConfig, error) {
+func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -389,11 +397,15 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 }
 
 func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp, fn func(string) error) (retErr error) {
-	locker := repo.Query.Locker()
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	locker := query.Locker()
 	locker.Lock(indexGitRemote + repo.URL.Remote())
 	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
 
-	cache := repo.Query.BuildkitCache()
+	cache := query.BuildkitCache()
 
 	sis, err := searchGitRemote(ctx, cache, repo.URL.Remote())
 	if err != nil {
@@ -474,8 +486,6 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 }
 
 type RemoteGitRef struct {
-	Query *Query
-
 	Repo *RemoteGitRepository
 
 	FullRef string
@@ -494,9 +504,14 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, fmt.Errorf("no dagop")
 	}
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
-	cache := ref.Query.BuildkitCache()
 
-	locker := ref.Query.Locker()
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache := query.BuildkitCache()
+
+	locker := query.Locker()
 	locker.Lock(indexGitSnapshot + cacheKey)
 	defer locker.Unlock(indexGitSnapshot + cacheKey)
 	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
@@ -508,7 +523,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		if err != nil {
 			return nil, err
 		}
-		checkout := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+		checkout := NewDirectory(nil, "/", query.Platform(), nil)
 		checkout.Result = res
 		return checkout, nil
 	}
@@ -603,12 +618,17 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, err
 	}
 
-	checkout := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+	checkout := NewDirectory(nil, "/", query.Platform(), nil)
 	checkout.Result = snap
 	return checkout, nil
 }
 
 func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, depth int) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
 		return err
@@ -637,7 +657,7 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 	}
 	args = append(args, "origin", refSpec)
 
-	svcs, err := ref.Repo.Query.Services(ctx)
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
@@ -729,7 +749,11 @@ func doGitCheckout(
 }
 
 func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit string, fullref string, err error) {
-	svcs, err := ref.Repo.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get services: %w", err)
 	}
@@ -775,8 +799,6 @@ func (ref *RemoteGitRef) Resolve(ctx context.Context) (commit string, fullref st
 }
 
 type LocalGitRepository struct {
-	Query *Query
-
 	Directory *Directory
 }
 
@@ -788,9 +810,8 @@ func (repo *LocalGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defini
 
 func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBackend, error) {
 	return &LocalGitRef{
-		Query: repo.Query,
-		Repo:  repo,
-		Ref:   ref,
+		Repo: repo,
+		Ref:  ref,
 	}, nil
 }
 
@@ -856,7 +877,11 @@ func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, pat
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error) error {
-	svcs, err := repo.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
@@ -876,8 +901,6 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 }
 
 type LocalGitRef struct {
-	Query *Query
-
 	Repo *LocalGitRepository
 	Ref  string
 }
@@ -894,7 +917,11 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("no dagop")
 	}
 
-	cache := ref.Query.BuildkitCache()
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache := query.BuildkitCache()
 
 	commit, fullref, err := ref.Resolve(ctx)
 	if err != nil {
@@ -947,7 +974,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, fmt.Errorf("failed to checkout %s: %w", fullref, err)
 	}
 
-	dir := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+	dir := NewDirectory(nil, "/", query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
