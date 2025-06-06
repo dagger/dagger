@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -49,6 +50,12 @@ func (code *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode 
 func (code *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	code = code.Clone()
 	code.VCSIgnoredPaths = paths
+
+	// if the paths does not have a .env file we need to add it
+	if !slices.Contains(code.VCSIgnoredPaths, ".env") {
+		code.VCSIgnoredPaths = append(code.VCSIgnoredPaths, ".env")
+	}
+
 	return code
 }
 
