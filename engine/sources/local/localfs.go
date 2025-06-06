@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/sysx"
+	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/session"
@@ -19,7 +20,6 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
-	fscopy "github.com/tonistiigi/fsutil/copy"
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"

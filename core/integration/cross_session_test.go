@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	fs "github.com/tonistiigi/fsutil/copy"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -249,7 +249,7 @@ func (*Test) Fn(ctx context.Context, rand string) (string, error) {
 		require.NoError(t, err)
 
 		tmpdir2 := t.TempDir()
-		err = fs.Copy(ctx, tmpdir1, "/", tmpdir2, "/")
+		err = fscopy.Copy(ctx, tmpdir1, "/", tmpdir2, "/")
 		require.NoError(t, err)
 
 		c1 := connect(ctx, t)
