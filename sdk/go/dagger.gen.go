@@ -10205,8 +10205,8 @@ const (
 	ImageMediaTypesDocker           ImageMediaTypes = "DOCKER"
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = ImageMediaTypesDocker
 
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCI"
-	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
+	ImageMediaTypesOci           ImageMediaTypes = "OCI"
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOci
 )
 
 // The kind of module source.
@@ -10260,8 +10260,8 @@ func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ModuleSourceKindDirSource ModuleSourceKind = "DIR"
-	ModuleSourceKindDir       ModuleSourceKind = ModuleSourceKindDirSource
+	ModuleSourceKindDir       ModuleSourceKind = "DIR"
+	ModuleSourceKindDirSource ModuleSourceKind = ModuleSourceKindDir
 
 	ModuleSourceKindGit       ModuleSourceKind = "GIT"
 	ModuleSourceKindGitSource ModuleSourceKind = ModuleSourceKindGit
@@ -10386,8 +10386,8 @@ func (v TypeDefKind) Name() string {
 		return "FLOAT"
 	case TypeDefKindInput:
 		return "INPUT"
-	case TypeDefKindIntegerKind:
-		return "INTEGER_KIND"
+	case TypeDefKindInteger:
+		return "INTEGER"
 	case TypeDefKindInterface:
 		return "INTERFACE"
 	case TypeDefKindList:
@@ -10532,9 +10532,9 @@ const (
 	TypeDefKindScalarKind TypeDefKind = TypeDefKindScalar
 
 	// A string value.
-	TypeDefKindStringKind TypeDefKind = "STRING"
+	TypeDefKindString TypeDefKind = "STRING"
 	// A string value.
-	TypeDefKindString TypeDefKind = TypeDefKindStringKind
+	TypeDefKindStringKind TypeDefKind = TypeDefKindString
 
 	// A special kind used to signify that no value is returned.
 	//

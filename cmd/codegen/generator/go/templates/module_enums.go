@@ -12,10 +12,27 @@ import (
 )
 
 type parsedEnumTypeReference struct {
-	*parsedEnumType
+	name       string
+	moduleName string
+
+	values []*parsedEnumValue
 
 	goType types.Type
 	isPtr  bool
+}
+
+func (spec *parsedEnumTypeReference) lookup(key string) *parsedEnumValue {
+	for _, value := range spec.values {
+		if value.name == key {
+			return value
+		}
+	}
+	for _, value := range spec.values {
+		if value.value == key {
+			return value
+		}
+	}
+	return nil
 }
 
 func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
@@ -31,6 +48,33 @@ func (spec *parsedEnumTypeReference) GoSubTypes() []types.Type {
 }
 
 func (ps *parseState) parseGoEnumReference(t *types.Basic, named *types.Named, isPtr bool) (*parsedEnumTypeReference, error) {
+	if named == nil {
+		return nil, nil
+	}
+
+	if ps.isDaggerGenerated(named.Obj()) {
+		tp := ps.schema.Types.Get(named.Obj().Name())
+		if tp == nil {
+			return nil, fmt.Errorf("unknown type %q", named.Obj().Name())
+		}
+		if len(tp.EnumValues) == 0 {
+			return nil, nil
+		}
+
+		ref := &parsedEnumTypeReference{
+			name:   named.Obj().Name(),
+			goType: named,
+			isPtr:  isPtr,
+		}
+		for _, v := range tp.EnumValues {
+			ref.values = append(ref.values, &parsedEnumValue{
+				name:  v.Name,
+				value: v.Directives.EnumValue(),
+			})
+		}
+		return ref, nil
+	}
+
 	enum, err := ps.parseGoEnum(t, named)
 	if err != nil {
 		return nil, err
@@ -39,9 +83,11 @@ func (ps *parseState) parseGoEnumReference(t *types.Basic, named *types.Named, i
 		return nil, nil
 	}
 	return &parsedEnumTypeReference{
-		parsedEnumType: enum,
-		goType:         named,
-		isPtr:          isPtr,
+		name:       enum.name,
+		values:     enum.values,
+		moduleName: enum.moduleName,
+		goType:     named,
+		isPtr:      isPtr,
 	}, nil
 }
 
@@ -60,31 +106,10 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 	}
 
 	if ps.isDaggerGenerated(named.Obj()) {
-		isEnum := false
-		for i := range named.NumMethods() {
-			method := named.Method(i)
-			if method.Name() == "IsEnum" {
-				isEnum = true
-				break
-			}
-		}
-		if !isEnum {
-			return nil, nil
-		}
-		spec.moduleName = ""
+		return nil, nil
 	}
 
-	scope := named.Obj().Pkg().Scope()
-	objs := []types.Object{}
-	for _, name := range scope.Names() {
-		obj := scope.Lookup(name)
-		if obj == nil {
-			return nil, fmt.Errorf("%q should exist in scope, but doesn't", name)
-		}
-		objs = append(objs, obj)
-	}
-
-	for _, obj := range objs {
+	for _, obj := range ps.objs {
 		objConst, ok := obj.(*types.Const)
 		if !ok {
 			continue
@@ -106,16 +131,14 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 			name:         name,
 			value:        value,
 		}
-		if !ps.isDaggerGenerated(named.Obj()) {
-			astSpec, err := ps.astSpecForObj(objConst)
-			if err != nil {
-				return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
-			}
-			if doc := docForAstSpec(astSpec); doc != nil {
-				valueSpec.doc = doc.Text()
-			}
-			valueSpec.sourceMap = ps.sourceMap(astSpec)
+		astSpec, err := ps.astSpecForObj(objConst)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
 		}
+		if doc := docForAstSpec(astSpec); doc != nil {
+			valueSpec.doc = doc.Text()
+		}
+		valueSpec.sourceMap = ps.sourceMap(astSpec)
 		spec.values = append(spec.values, valueSpec)
 	}
 	if len(spec.values) == 0 {
@@ -138,16 +161,14 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 	}
 
 	// get the comment above the struct (if any)
-	if !ps.isDaggerGenerated(named.Obj()) {
-		astSpec, err := ps.astSpecForObj(named.Obj())
-		if err != nil {
-			return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
-		}
-		if doc := docForAstSpec(astSpec); doc != nil {
-			spec.doc = doc.Text()
-		}
-		spec.sourceMap = ps.sourceMap(astSpec)
+	astSpec, err := ps.astSpecForObj(named.Obj())
+	if err != nil {
+		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
+	if doc := docForAstSpec(astSpec); doc != nil {
+		spec.doc = doc.Text()
+	}
+	spec.sourceMap = ps.sourceMap(astSpec)
 
 	return spec, nil
 }
@@ -211,20 +232,6 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
-}
-
-func (spec *parsedEnumType) lookup(key string) *parsedEnumValue {
-	for _, value := range spec.values {
-		if value.name == key {
-			return value
-		}
-	}
-	for _, value := range spec.values {
-		if value.value == key {
-			return value
-		}
-	}
-	return nil
 }
 
 func (spec *parsedEnumType) GoType() types.Type {

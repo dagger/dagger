@@ -80,9 +80,13 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}, nil
 
 	case *types.Basic:
-		if parsedType, _ := ps.parseGoEnumReference(t, named, isPtr); parsedType != nil {
+		enumType, err := ps.parseGoEnumReference(t, named, isPtr)
+		if err != nil {
+			return nil, err
+		}
+		if enumType != nil {
 			// type can be parsed as an enum, so let's assume it is
-			return parsedType, nil
+			return enumType, nil
 		}
 
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}

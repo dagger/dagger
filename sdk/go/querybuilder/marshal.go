@@ -156,7 +156,7 @@ func marshalEnumName(v reflect.Value) string {
 	if len(result) != 1 {
 		panic(result)
 	}
-	return fmt.Sprintf("%q", result[0].String())
+	return result[0].String()
 }
 
 func IsZeroValue(value any) bool {

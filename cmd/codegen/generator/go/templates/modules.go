@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -101,6 +102,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
+		schema:     funcs.schema,
 		moduleName: funcs.cfg.ModuleName,
 
 		methods: make(map[string][]method),
@@ -802,6 +804,8 @@ func (ps *parseState) fillObjectFunctionCase(
 }
 
 type parseState struct {
+	schema *introspection.Schema
+
 	pkg        *packages.Package
 	fset       *token.FileSet
 	moduleName string

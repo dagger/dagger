@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"go/token"
-	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -184,23 +183,20 @@ func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []intro
 // Additionally, enum names within a single value are removed (which would
 // result in duplicate codegen).
 func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
-	// XXX: ordering!
-	m := map[string]map[string]introspection.EnumValue{}
+	m := map[string][]introspection.EnumValue{}
 	for _, v := range s {
-		name := strcase.ToCamel(v.Name)
 		value := v.Directives.EnumValue()
-		if _, ok := m[value]; !ok {
-			m[value] = map[string]introspection.EnumValue{}
-		}
-		if _, ok := m[value][name]; !ok {
-			m[value][name] = v
+		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
+			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+		}) {
+			m[value] = append(m[value], v)
 		}
 	}
 
 	var result [][]introspection.EnumValue
 	for _, v := range s {
 		if res, ok := m[v.Directives.EnumValue()]; ok {
-			result = append(result, slices.Collect(maps.Values(res)))
+			result = append(result, res)
 			delete(m, v.Directives.EnumValue())
 		}
 	}
