@@ -259,6 +259,19 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ExistsType(Enum):
+    """File type."""
+
+    DIRECTORY = "DIRECTORY"
+    """Tests path is a directory"""
+
+    FILE = "FILE"
+    """Tests path is a file"""
+
+    SYMLINK = "SYMLINK"
+    """Tests path is a directory"""
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -892,6 +905,41 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return await _ctx.execute_object_list(EnvVariable)
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "FILE",
+            "DIRECTORY", or "SYMLINK").
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def exit_code(self) -> int:
         """The exit code of the last executed command
@@ -2849,6 +2897,41 @@ class Directory(Type):
         ]
         _ctx = self._select("entries", _args)
         return await _ctx.execute(list[str])
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "FILE",
+            "DIRECTORY", or "SYMLINK").
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def export(
         self,
@@ -9886,6 +9969,7 @@ __all__ = [
     "ErrorID",
     "ErrorValue",
     "ErrorValueID",
+    "ExistsType",
     "FieldTypeDef",
     "FieldTypeDefID",
     "File",
