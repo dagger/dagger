@@ -9,6 +9,7 @@ from cattrs.preconf.json import make_converter as make_json_converter
 
 import dagger
 from dagger import dag
+from dagger.client import base
 from dagger.client._core import Arg
 from dagger.client._guards import is_id_type, is_id_type_subclass
 from dagger.client.base import Interface, Scalar, Type
@@ -31,7 +32,6 @@ from dagger.mod._utils import (
     syncify,
     to_camel_case,
 )
-from dagger.client import base
 
 logger = logging.getLogger(__name__)
 

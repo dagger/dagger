@@ -91,9 +91,10 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
-			parsedType.scalarType = named
 			parsedType.alias = named.Obj().Name()
-			if !ps.isDaggerGenerated(named.Obj()) {
+			if ps.isDaggerGenerated(named.Obj()) {
+				parsedType.scalarType = named
+			} else {
 				parsedType.moduleName = ps.moduleName
 			}
 		}

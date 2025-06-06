@@ -1,7 +1,6 @@
 import dataclasses
 import enum
 import inspect
-import json
 import logging
 
 from cattrs.preconf.json import make_converter as make_json_converter
@@ -104,7 +103,6 @@ class Parameter:
         try:
             conv = make_converter()
             self.default_value = dagger.JSON(conv.dumps(self.signature.default))
-            # self.default_value = dagger.JSON(json.dumps(self.signature.default))
         except TypeError as e:
             # Rather than failing on a default value that's not JSON
             # serializable and going through hoops to support more and more
