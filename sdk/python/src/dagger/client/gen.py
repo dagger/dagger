@@ -3826,6 +3826,19 @@ class EnumTypeDef(Type):
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
 
+    async def values(self) -> list["EnumValueTypeDef"]:
+        """.. deprecated::
+        use members instead
+        """
+        warnings.warn(
+            'Method "values" is deprecated: use members instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
+        _ctx = self._select("values", _args)
+        return await _ctx.execute_object_list(EnumValueTypeDef)
+
 
 @typecheck
 class EnumValueTypeDef(Type):

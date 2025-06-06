@@ -206,7 +206,7 @@ var coreDirectives = []DirectiveSpec{
 	},
 	{
 		Name:        "enumValue",
-		Description: FormatDescription(`XXX`),
+		Description: FormatDescription(`Indicates the underlying value of an enum member.`),
 		Args: NewInputSpecs(
 			InputSpec{
 				Name: "value",

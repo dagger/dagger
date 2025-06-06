@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
-	"github.com/iancoleman/strcase"
 )
 
 const errorTypeName = "error"
@@ -154,7 +153,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 				if res == nil {
 					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
 				}
-				defaultValue = strconv.Quote(strcase.ToScreamingSnake(res.name))
+				defaultValue = strconv.Quote(res.name)
 			}
 			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
 		}

@@ -3591,6 +3591,39 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use members instead
+func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id EnumValueTypeDefID
+	}
+
+	convert := func(fields []values) []EnumValueTypeDef {
+		out := []EnumValueTypeDef{}
+
+		for i := range fields {
+			val := EnumValueTypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // A definition of a value in a custom enum defined in a Module.
 type EnumValueTypeDef struct {
 	query *querybuilder.Selection
@@ -10172,8 +10205,8 @@ const (
 	ImageMediaTypesDocker           ImageMediaTypes = "DOCKER"
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = ImageMediaTypesDocker
 
-	ImageMediaTypesOci           ImageMediaTypes = "OCI"
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = ImageMediaTypesOci
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCI"
+	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
 )
 
 // The kind of module source.
@@ -10230,8 +10263,8 @@ const (
 	ModuleSourceKindDirSource ModuleSourceKind = "DIR"
 	ModuleSourceKindDir       ModuleSourceKind = ModuleSourceKindDirSource
 
-	ModuleSourceKindGitSource ModuleSourceKind = "GIT"
-	ModuleSourceKindGit       ModuleSourceKind = ModuleSourceKindGitSource
+	ModuleSourceKindGit       ModuleSourceKind = "GIT"
+	ModuleSourceKindGitSource ModuleSourceKind = ModuleSourceKindGit
 
 	ModuleSourceKindLocal       ModuleSourceKind = "LOCAL"
 	ModuleSourceKindLocalSource ModuleSourceKind = ModuleSourceKindLocal
@@ -10353,10 +10386,10 @@ func (v TypeDefKind) Name() string {
 		return "FLOAT"
 	case TypeDefKindInput:
 		return "INPUT"
-	case TypeDefKindInteger:
-		return "INTEGER"
-	case TypeDefKindInterfaceKind:
-		return "INTERFACE_KIND"
+	case TypeDefKindIntegerKind:
+		return "INTEGER_KIND"
+	case TypeDefKindInterface:
+		return "INTERFACE"
 	case TypeDefKindList:
 		return "LIST"
 	case TypeDefKindObject:
@@ -10499,9 +10532,9 @@ const (
 	TypeDefKindScalarKind TypeDefKind = TypeDefKindScalar
 
 	// A string value.
-	TypeDefKindString TypeDefKind = "STRING"
+	TypeDefKindStringKind TypeDefKind = "STRING"
 	// A string value.
-	TypeDefKindStringKind TypeDefKind = TypeDefKindString
+	TypeDefKindString TypeDefKind = TypeDefKindStringKind
 
 	// A special kind used to signify that no value is returned.
 	//

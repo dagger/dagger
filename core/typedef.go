@@ -516,11 +516,35 @@ func (typeDef *TypeDef) WithEnum(name, desc string, sourceMap *SourceMap) *TypeD
 	return typeDef
 }
 
+func (typeDef *TypeDef) WithEnumValue(name, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+	if !typeDef.AsEnum.Valid {
+		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
+	}
+	if err := typeDef.validateEnumMember(name, name); err != nil {
+		return nil, err
+	}
+
+	typeDef = typeDef.Clone()
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumValueTypeDef(name, desc, sourceMap))
+
+	return typeDef, nil
+}
+
 func (typeDef *TypeDef) WithEnumMember(name, value, desc string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
+	if err := typeDef.validateEnumMember(name, value); err != nil {
+		return nil, err
+	}
 
+	typeDef = typeDef.Clone()
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, sourceMap))
+
+	return typeDef, nil
+}
+
+func (typeDef *TypeDef) validateEnumMember(name, value string) error {
 	// Validate if the enum follows GraphQL spec.
 	// A GraphQL enum should be: only letters, digits and underscores, and has to start with a letter or a single underscore.
 	// To do so, we can use a regular expression.
@@ -530,23 +554,20 @@ func (typeDef *TypeDef) WithEnumMember(name, value, desc string, sourceMap *Sour
 	// $            : End of the string
 	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
 	if !regexp.MustCompile(pattern).MatchString(name) {
-		return nil, fmt.Errorf("enum value %q is not valid (only letters, digits and underscores are allowed)", name)
+		return fmt.Errorf("enum value %q is not valid (only letters, digits and underscores are allowed)", name)
 	}
 
 	// Verify if the enum value is duplicated.
 	for _, v := range typeDef.AsEnum.Value.Members {
 		if v.Name == name {
-			return nil, fmt.Errorf("enum %q is already defined", name)
+			return fmt.Errorf("enum %q is already defined", name)
 		}
 		if v.Value == value {
-			return nil, fmt.Errorf("enum %q is already defined with value %q", v.Name, value)
+			return fmt.Errorf("enum %q is already defined with value %q", v.Name, value)
 		}
 	}
 
-	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, sourceMap))
-
-	return typeDef, nil
+	return nil
 }
 
 func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
@@ -1019,6 +1040,16 @@ func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap)
 		Name:         strcase.ToScreamingSnake(name),
 		OriginalName: name,
 		Value:        value,
+		Description:  description,
+		SourceMap:    sourceMap,
+	}
+}
+
+func NewEnumValueTypeDef(name, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
+	return &EnumMemberTypeDef{
+		Name:         name,
+		OriginalName: name,
+		Value:        name,
 		Description:  description,
 		SourceMap:    sourceMap,
 	}

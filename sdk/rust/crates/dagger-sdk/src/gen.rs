@@ -5228,6 +5228,14 @@ impl EnumTypeDef {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
+    pub fn values(&self) -> Vec<EnumValueTypeDef> {
+        let query = self.selection.select("values");
+        vec![EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
 }
 #[derive(Clone)]
 pub struct EnumValueTypeDef {

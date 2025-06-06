@@ -3989,6 +3989,23 @@ export class EnumTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * @deprecated use members instead
+   */
+  values = async (): Promise<EnumValueTypeDef[]> => {
+    type values = {
+      id: EnumValueTypeDefID
+    }
+
+    const ctx = this._ctx.select("values").select("id")
+
+    const response: Awaited<values[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    )
+  }
 }
 
 /**

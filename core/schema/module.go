@@ -232,7 +232,7 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) ([]*core.EnumMemberTypeDef, error) {
 			return self.Members, nil
-		}).Deprecated("use members instead").View(BeforeVersion("v0.16.0")),
+		}).Deprecated("use members instead"),
 	}.Install(s.dag)
 	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(s.dag)
 }
@@ -372,7 +372,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumMember(args.Value, args.Value, args.Description, sourceMap)
+	return def.WithEnumValue(args.Value, args.Description, sourceMap)
 }
 
 func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
@@ -388,6 +388,9 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	if err != nil {
 		return nil, err
 	}
+
+	// check server version, if lower than vX, then, callback to withEnumValue
+
 	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
 }
 

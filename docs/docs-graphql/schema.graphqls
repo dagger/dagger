@@ -1,4 +1,4 @@
-"""XXX"""
+"""Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
 
 """
@@ -1673,6 +1673,8 @@ type EnumTypeDef {
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
+
+  values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
 """

@@ -2516,7 +2516,7 @@ type Language string
 const (
 	Go Language = "GO"
 	Python Language = "PYTHON"
-	TypeScript Language = "TYPESCRIPT"
+	Typescript Language = "TYPESCRIPT"
 	PHP Language = "PHP"
 	Elixir Language = "ELIXIR"
 )
@@ -2531,7 +2531,7 @@ func (m *Test) Faves(
 }
 
 func (m *Test) Official() []Language {
-	return []Language{Go, Python, TypeScript}
+	return []Language{Go, Python, Typescript}
 }
 `,
 		},
@@ -2588,7 +2588,7 @@ export class Test {
 
   @func()
   official(): Language[] {
-    return [Language.Go, Language.Python, Language.TypeScript]
+    return [Language.Go, Language.Python, Language.Typescript]
   }
 }
 `,

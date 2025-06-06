@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
-	"github.com/iancoleman/strcase"
 )
 
 type parsedEnumTypeReference struct {
@@ -192,9 +191,8 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withEnumArgsCode...)
 
 	for _, val := range spec.values {
-		// XXX: fallback to ye-olde behavior where name = value on ye-olde dagger versions
 		valueTypeDefCode := []Code{
-			Lit(strcase.ToScreamingSnake(val.name)),
+			Lit(val.name),
 			Lit(val.value),
 		}
 		var withEnumMemberOpts []Code
@@ -280,8 +278,7 @@ func (spec *parsedEnumType) nameMethodCode() *Statement {
 		BlockFunc(func(g *Group) {
 			var cases []Code
 			for _, v := range values {
-				raw := strcase.ToScreamingSnake(v.name)
-				cases = append(cases, Case(Id(v.originalName)).Block(Return(Lit(raw))))
+				cases = append(cases, Case(Id(v.originalName)).Block(Return(Lit(v.name))))
 			}
 			g.Switch(Id("r")).Block(cases...)
 			g.Return(Lit(""))
@@ -320,8 +317,7 @@ func (spec *parsedEnumType) unmarshalJSONMethodCode() *Statement {
 
 			var cases []Code
 			for _, v := range spec.values {
-				raw := strcase.ToScreamingSnake(v.name)
-				cases = append(cases, Case(Lit(raw)).Block(Op("*").Id("r").Op("=").Id(v.originalName)))
+				cases = append(cases, Case(Lit(v.name)).Block(Op("*").Id("r").Op("=").Id(v.originalName)))
 			}
 			cases = append(cases, Default().Block(Return(
 				Qual("fmt", "Errorf").Call(Lit("unknown enum value %q"), Id("s")),

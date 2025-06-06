@@ -94,6 +94,29 @@ defmodule Dagger.EnumTypeDef do
 
     Client.execute(enum_type_def.client, query_builder)
   end
+
+  @deprecated """
+  use members instead
+  """
+
+  @spec values(t()) :: {:ok, [Dagger.EnumValueTypeDef.t()]} | {:error, term()}
+  def values(%__MODULE__{} = enum_type_def) do
+    query_builder =
+      enum_type_def.query_builder |> QB.select("values") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(enum_type_def.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.EnumValueTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("loadEnumValueTypeDefFromID")
+             |> QB.put_arg("id", id),
+           client: enum_type_def.client
+         }
+       end}
+    end
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.EnumTypeDef do
