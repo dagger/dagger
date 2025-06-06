@@ -10,7 +10,15 @@ import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
- @Objectic class MyModule { Container ctr;dule() {}p    this.ctr = ctr.orElseGet(() -> dag().container().from("alpine:3.14.0"));
+
+@Object
+public class MyModule {
+  public Container ctr;
+
+  public MyModule() {}
+
+  public MyModule(Optional<Container> ctr) {
+    this.ctr = ctr.orElseGet(() -> dag().container().from("alpine:3.14.0"));
   }
 
   @Function
