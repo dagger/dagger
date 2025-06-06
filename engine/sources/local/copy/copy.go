@@ -17,7 +17,7 @@ import (
 )
 
 var bufferPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buffer := make([]byte, 32*1024)
 		return &buffer
 	},
@@ -299,11 +299,11 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 	fi, err := os.Lstat(src)
 	if err != nil {
-		return errors.Wrapf(err, "failed to stat %s", src)
+		return errors.Wrapf(err, "failed to stat source path %s", src)
 	}
 	targetFi, err := os.Lstat(target)
 	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrapf(err, "failed to stat %s", src)
+		return errors.Wrapf(err, "failed to stat target path %s", target)
 	}
 
 	include := true
@@ -475,7 +475,7 @@ func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTa
 
 		fi, err := os.Stat(parentDir.srcPath)
 		if err != nil {
-			return errors.Wrapf(err, "failed to stat %s", src)
+			return errors.Wrapf(err, "failed to stat parent dir %s", parentDir.srcPath)
 		}
 		if !fi.IsDir() {
 			return errors.Errorf("%s is not a directory", parentDir.srcPath)
