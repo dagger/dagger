@@ -67,6 +67,16 @@ const (
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
+	// Clarifies the meaning of a link between two spans.
+	LinkPurposeAttr = "dagger.io/link.purpose"
+	// The linked span caused the current span to run - in other words, this span
+	// is a continuation, or effect, of the other one.
+	//
+	// This is the default if no explicit purpose is given.
+	LinkPurposeCause = "cause"
+	// The linked span is the origin of the error bubbled up by the current span.
+	LinkPurposeErrorOrigin = "error_origin"
+
 	// NB: the following attributes are not currently used.
 
 	// Indicates that this span was a cache hit and did nothing.
