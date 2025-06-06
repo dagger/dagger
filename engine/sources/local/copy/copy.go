@@ -314,13 +314,13 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	if srcComponents != "" {
 		matchesIncludePattern := false
 		matchesExcludePattern := false
-		matchesIncludePattern, includeMatchInfo, err = c.include(srcComponents, fi, parentIncludeMatchInfo)
+		matchesIncludePattern, includeMatchInfo, err = c.include(srcComponents, parentIncludeMatchInfo)
 		if err != nil {
 			return err
 		}
 		include = matchesIncludePattern
 
-		matchesExcludePattern, excludeMatchInfo, err = c.exclude(srcComponents, fi, parentExcludeMatchInfo)
+		matchesExcludePattern, excludeMatchInfo, err = c.exclude(srcComponents, parentExcludeMatchInfo)
 		if err != nil {
 			return err
 		}
@@ -330,11 +330,11 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	}
 
 	if include {
-		if err := c.removeTargetIfNeeded(src, target, fi, targetFi); err != nil {
+		if err := c.removeTargetIfNeeded(target, fi, targetFi); err != nil {
 			return err
 		}
 
-		if err := c.createParentDirs(src, srcComponents, target, overwriteTargetMetadata); err != nil {
+		if err := c.createParentDirs(overwriteTargetMetadata); err != nil {
 			return err
 		}
 	}
@@ -426,7 +426,7 @@ func (c *copier) notifyChange(target string, fi os.FileInfo) error {
 	return nil
 }
 
-func (c *copier) include(path string, fi os.FileInfo, parentIncludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
+func (c *copier) include(path string, parentIncludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
 	if c.includePatternMatcher == nil {
 		return true, patternmatcher.MatchInfo{}, nil
 	}
@@ -438,7 +438,7 @@ func (c *copier) include(path string, fi os.FileInfo, parentIncludeMatchInfo pat
 	return m, matchInfo, nil
 }
 
-func (c *copier) exclude(path string, fi os.FileInfo, parentExcludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
+func (c *copier) exclude(path string, parentExcludeMatchInfo patternmatcher.MatchInfo) (bool, patternmatcher.MatchInfo, error) {
 	if c.excludePatternMatcher == nil {
 		return false, patternmatcher.MatchInfo{}, nil
 	}
@@ -450,7 +450,7 @@ func (c *copier) exclude(path string, fi os.FileInfo, parentExcludeMatchInfo pat
 	return m, matchInfo, nil
 }
 
-func (c *copier) removeTargetIfNeeded(src, target string, srcFi, targetFi os.FileInfo) error {
+func (c *copier) removeTargetIfNeeded(target string, srcFi, targetFi os.FileInfo) error {
 	if !c.alwaysReplaceExistingDestPaths {
 		return nil
 	}
@@ -467,7 +467,7 @@ func (c *copier) removeTargetIfNeeded(src, target string, srcFi, targetFi os.Fil
 
 // Delayed creation of parent directories when a file or dir matches an include
 // pattern.
-func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTargetMetadata bool) error {
+func (c *copier) createParentDirs(overwriteTargetMetadata bool) error {
 	for i, parentDir := range c.parentDirs {
 		if parentDir.copied {
 			continue
@@ -481,7 +481,7 @@ func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTa
 			return errors.Errorf("%s is not a directory", parentDir.srcPath)
 		}
 
-		created, err := copyDirectoryOnly(parentDir.srcPath, parentDir.dstPath, fi, overwriteTargetMetadata)
+		created, err := copyDirectoryOnly(parentDir.dstPath, fi, overwriteTargetMetadata)
 		if err != nil {
 			return err
 		}
@@ -528,7 +528,7 @@ func (c *copier) copyDirectory(
 	// encounter a/b/c.
 	if include {
 		var err error
-		created, err = copyDirectoryOnly(src, dst, stat, overwriteTargetMetadata)
+		created, err = copyDirectoryOnly(dst, stat, overwriteTargetMetadata)
 		if err != nil {
 			return created, err
 		}
@@ -565,7 +565,7 @@ func (c *copier) copyDirectory(
 	return created, nil
 }
 
-func copyDirectoryOnly(src, dst string, stat os.FileInfo, overwriteTargetMetadata bool) (bool, error) {
+func copyDirectoryOnly(dst string, stat os.FileInfo, overwriteTargetMetadata bool) (bool, error) {
 	if st, err := os.Lstat(dst); err != nil {
 		if !os.IsNotExist(err) {
 			return false, err
