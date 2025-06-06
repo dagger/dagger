@@ -2295,8 +2295,6 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/sdk").
-			With(daggerExec("init", "--name=only-codegen", "--sdk=go", "--source=.")).
 			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-codegen")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
@@ -2311,13 +2309,13 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 		t.Run("explicit error on dagger call", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(daggerExec("call", "foo")).Sync(ctx)
 
-			requireErrOut(t, err, "'./sdk' SDK does not support a runtime")
+			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
 		})
 
 		t.Run("explicit error on dagger functions", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(daggerFunctions()).Sync(ctx)
 
-			requireErrOut(t, err, "'./sdk' SDK does not support a runtime")
+			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
 		})
 	})
 
@@ -2326,9 +2324,7 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/sdk").
-			With(daggerExec("init", "--name=only-runtime", "--sdk=go", "--source=.")).
-			WithDirectory("/work/sdk/", c.Host().Directory("./testdata/sdks/only-runtime")).
+			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-runtime")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
 

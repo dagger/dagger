@@ -34,7 +34,7 @@ type ErrSDKRuntimeNotImplemented struct {
 }
 
 func (err ErrSDKRuntimeNotImplemented) Error() string {
-	return fmt.Sprintf("'%s' SDK does not support a runtime", err.SDK)
+	return fmt.Sprintf("%q SDK does not support defining and executing functions", err.SDK)
 }
 
 type ErrSDKCodegenNotImplemented struct {
@@ -42,7 +42,7 @@ type ErrSDKCodegenNotImplemented struct {
 }
 
 func (err ErrSDKCodegenNotImplemented) Error() string {
-	return fmt.Sprintf("'%s' SDK does not support code generation", err.SDK)
+	return fmt.Sprintf("%q SDK does not support module generation", err.SDK)
 }
 
 type ErrSDKClientGeneratorNotImplemented struct {
@@ -50,7 +50,7 @@ type ErrSDKClientGeneratorNotImplemented struct {
 }
 
 func (err ErrSDKClientGeneratorNotImplemented) Error() string {
-	return fmt.Sprintf("'%s' SDK does not support client generation", err.SDK)
+	return fmt.Sprintf("%q SDK does not support client generation", err.SDK)
 }
 
 type moduleSourceSchema struct {
@@ -1893,8 +1893,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
 	// we can transform it into a moduleto generate self bindings.
 	if srcInst.Self.SDK != nil {
-		// We must make that if inside the condition to avoid checking a nil pointer on `SDKImpl`
-		// and make the engine crash.
+		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
 		if _, ok := srcInst.Self.SDKImpl.AsRuntime(); ok {
 			var mod dagql.Instance[*core.Module]
 			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
