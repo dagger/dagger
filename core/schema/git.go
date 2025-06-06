@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -320,10 +321,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				break
 			}
 
-			hash := sha256.Sum256([]byte(credentials.Password))
+			secretPlaintext := "basic " + base64.StdEncoding.EncodeToString(
+				fmt.Appendf(nil, "%s:%s", credentials.Username, credentials.Password),
+			)
+			hash := sha256.Sum256([]byte(secretPlaintext))
 			secretName := hex.EncodeToString(hash[:])
-			var authToken dagql.Instance[*core.Secret]
-			if err := s.srv.Select(authCtx, s.srv.Root(), &authToken,
+			var authHeader dagql.Instance[*core.Secret]
+			if err := s.srv.Select(authCtx, s.srv.Root(), &authHeader,
 				dagql.Selector{
 					Field: "setSecret",
 					Args: []dagql.NamedInput{
@@ -333,7 +337,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 						},
 						{
 							Name:  "plaintext",
-							Value: dagql.NewString(credentials.Password),
+							Value: dagql.NewString(secretPlaintext),
 						},
 					},
 				},
@@ -348,8 +352,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 					Value: dagql.NewString(remote.String()),
 				},
 				{
-					Name:  "httpAuthToken",
-					Value: dagql.Opt(dagql.NewID[*core.Secret](authToken.ID())),
+					Name:  "httpAuthHeader",
+					Value: dagql.Opt(dagql.NewID[*core.Secret](authHeader.ID())),
 				},
 			}
 			if args.KeepGitDir.Valid {
