@@ -17,7 +17,7 @@ func main() {
 
 	name, err := dag.CurrentModule().Name(ctx)
 	if err != nil {
-		fmt.Println(fmt.Errorf("failed to module name: %w", err))
+		fmt.Println(fmt.Errorf("failed to get module name: %w", err))
 
 		os.Exit(2)
 	}
