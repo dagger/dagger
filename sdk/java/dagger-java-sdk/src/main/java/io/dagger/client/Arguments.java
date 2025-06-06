@@ -45,7 +45,7 @@ public class Arguments {
   }
 
   List<Argument> toList()
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerExecException, DaggerQueryException {
     List<Argument> argList = new ArrayList<>();
     for (Map.Entry<String, Object> entry : args.entrySet()) {
       argList.add(arg(entry.getKey(), toArgumentValue(entry.getValue())));
@@ -54,7 +54,7 @@ public class Arguments {
   }
 
   private Object toArgumentValue(Object value)
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerExecException, DaggerQueryException {
     if (value == null) {
       return null;
     } else if (value instanceof Scalar<?>) {
