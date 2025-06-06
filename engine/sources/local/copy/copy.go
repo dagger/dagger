@@ -299,16 +299,8 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	default:
 	}
 
-	fi, err := os.Lstat(src)
-	if err != nil {
-		return errors.Wrapf(err, "failed to stat source path %s", src)
-	}
-	targetFi, err := os.Lstat(target)
-	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrapf(err, "failed to stat target path %s", target)
-	}
-
 	include := true
+	var err error
 	var (
 		includeMatchInfo patternmatcher.MatchInfo
 		excludeMatchInfo patternmatcher.MatchInfo
@@ -329,6 +321,28 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		if matchesExcludePattern {
 			include = false
 		}
+	}
+
+	fi, err := os.Lstat(src)
+	switch {
+	case err == nil:
+	case os.IsNotExist(err) && !include:
+		// If the source does not exist and we are not including it, then nothing to do here.
+		//
+		// Tricky case: if this is a directory which isn't included but there are sub files/dirs
+		// that do end up being included, it will be skipped here. We rely on the caller performing
+		// synchronization to ensure that directories which will end up being included are not
+		// modified during this call.
+		// Handling this case only saves the caller from trying to lock modifications to *files* that
+		// are not included in the copy, which they shouldn't be responsible for anyways.
+		return nil
+	default:
+		return errors.Wrapf(err, "failed to stat source path %s", src)
+	}
+
+	targetFi, err := os.Lstat(target)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrapf(err, "failed to stat target path %s", target)
 	}
 
 	if include {
