@@ -279,6 +279,35 @@ defmodule Dagger.Mod.ModuleTest do
                |> Dagger.TypeDef.as_enum()
                |> Dagger.EnumTypeDef.name()
     end
+
+    test "accept and return custom enum", %{dag: dag} do
+      assert {:ok, [simple, enum_opt]} =
+               root_object(dag, CustomEnum) |> Dagger.ObjectTypeDef.functions()
+
+      assert {:ok, [arg]} = Dagger.Function.args(simple)
+      arg_type_def = Dagger.FunctionArg.type_def(arg)
+      assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(arg_type_def)
+
+      assert {:ok, "SimpleEnum"} =
+               arg_type_def
+               |> Dagger.TypeDef.as_enum()
+               |> Dagger.EnumTypeDef.name()
+
+      return_type_def = Dagger.Function.return_type(simple)
+      assert {:ok, :ENUM_KIND} = Dagger.TypeDef.kind(return_type_def)
+
+      assert {:ok, "SimpleEnum"} =
+               return_type_def
+               |> Dagger.TypeDef.as_enum()
+               |> Dagger.EnumTypeDef.name()
+
+      assert {:ok, [arg]} = Dagger.Function.args(enum_opt)
+      enum_type_def = arg |> Dagger.FunctionArg.type_def() |> Dagger.TypeDef.as_enum()
+      [low, high, unknown] = Dagger.EnumTypeDef.values(enum_type_def)
+      assert {:ok, "low"} = Dagger.EnumValueTypeDef.name(low)
+      assert {:ok, "high"} = Dagger.EnumValueTypeDef.name(high)
+      assert {:ok, "unknown"} = Dagger.EnumValueTypeDef.name(unknown)
+    end
   end
 
   defp root_object(dag, module) do

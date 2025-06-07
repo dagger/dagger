@@ -45,6 +45,10 @@ defmodule Dagger.Mod.DecoderTest do
     test "decode error", %{dag: dag} do
       assert {:error, _} = Decoder.decode(json(1), :string, dag)
     end
+
+    test "decode enum", %{dag: dag} do
+      assert {:ok, :unknown} = Decoder.decode(json("unknown"), SimpleEnum, dag)
+    end
   end
 
   defp json(value), do: Jason.encode!(value)
