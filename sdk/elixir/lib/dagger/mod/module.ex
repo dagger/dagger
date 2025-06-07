@@ -15,15 +15,24 @@ defmodule Dagger.Mod.Module do
     module
     |> Registry.register()
     |> Registry.all_modules()
-    |> Enum.reduce(Dagger.Client.module(dag), fn module, dag_module ->
-      dag_module
-      |> Dagger.Module.with_object(define_object(dag, module))
-    end)
+    |> Enum.reduce(Dagger.Client.module(dag), &define(dag, &2, &1))
     |> maybe_with_description(Object.get_module_doc(module))
   end
 
   defp maybe_with_description(module, nil), do: module
   defp maybe_with_description(module, doc), do: Dagger.Module.with_description(module, doc)
+
+  defp define(dag, dag_module, module) do
+    case module.__kind__() do
+      :object ->
+        dag_module
+        |> Dagger.Module.with_object(define_object(dag, module))
+
+      :enum ->
+        dag_module
+        |> Dagger.Module.with_enum(define_enum(dag, module))
+    end
+  end
 
   defp define_object(dag, module) do
     mod_name = module.__object__(:name)
@@ -34,6 +43,30 @@ defmodule Dagger.Mod.Module do
     |> then(&define_fields(&1, dag, module))
     |> then(&define_functions(&1, dag, module))
     |> then(&define_constructor(&1, dag, module))
+  end
+
+  defp define_enum(dag, module) do
+    mod_name = module.__object__(:name)
+
+    type_def =
+      dag
+      |> Dagger.Client.type_def()
+      |> Dagger.TypeDef.with_enum(Helper.camelize(mod_name))
+
+    Enum.reduce(module.__enum__(:keys), type_def, fn key, type_def ->
+      value = module.__enum__(:value, key)
+      doc = module.__enum__(:doc, key)
+      opts = []
+
+      opts =
+        if doc do
+          Keyword.put(opts, :description, doc)
+        else
+          opts
+        end
+
+      Dagger.TypeDef.with_enum_value(type_def, value, opts)
+    end)
   end
 
   defp define_constructor(type_def, dag, module) do
