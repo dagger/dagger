@@ -3,7 +3,8 @@ package io.dagger.modules.workspace;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
 import io.dagger.client.File;
@@ -31,7 +32,7 @@ public class Workspace {
    */
   @Function
   public String readFile(String path)
-    throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return source.file(path).contents();
   }
 
@@ -51,7 +52,7 @@ public class Workspace {
    * List all of the files in the Workspace
    */
   @Function
-  public String listFiles() throws ExecutionException, DaggerQueryException, InterruptedException {
+  public String listFiles() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return dag()
       .container()
       .from("alpine:3")
@@ -64,7 +65,7 @@ public class Workspace {
   /** Return the result of running unit tests */
   @Function
   public String test()
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     CacheVolume nodeCache = dag().cacheVolume("node");
     return dag().container()
         .from("node:21-slim")

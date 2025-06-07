@@ -3,7 +3,7 @@ package io.dagger.modules.hellodagger;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
 import io.dagger.module.annotation.DefaultPath;
@@ -18,7 +18,7 @@ public class HelloDagger {
   /** Publish the application container after building and testing it on-the-fly */
   @Function
   public String publish(@DefaultPath("/") Directory source)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     this.test(source);
     return this.build(source).
         publish("ttl.sh/hello-dagger-%d".formatted((int) (Math.random() * 10000000)));
@@ -27,7 +27,7 @@ public class HelloDagger {
   /** Build the application container */
   @Function
   public Container build(@DefaultPath("/") Directory source)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     Directory build = this
         .buildEnv(source)
         .withExec(List.of("npm", "run", "build"))
@@ -41,7 +41,7 @@ public class HelloDagger {
   /** Return the result of running unit tests */
   @Function
   public String test(@DefaultPath("/") Directory source)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     return this
         .buildEnv(source)
         .withExec(List.of("npm", "run", "test:unit", "run"))
@@ -51,7 +51,7 @@ public class HelloDagger {
   /** Build a ready-to-use development environment */
   @Function
   public Container buildEnv(@DefaultPath("/") Directory source)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     CacheVolume nodeCache = dag().cacheVolume("node");
     return dag().container()
         .from("node:21-slim")

@@ -1,6 +1,9 @@
 package io.dagger.sample;
 
-import io.dagger.client.*;
+import io.dagger.client.AutoCloseableClient;
+import io.dagger.client.Container;
+import io.dagger.client.Dagger;
+import io.dagger.client.Service;
 import java.util.List;
 
 @Description("Run a sample CI test pipeline with MariaDB, Drupal and PHPUnit")

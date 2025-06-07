@@ -1,8 +1,12 @@
 package io.dagger.sample;
 
-import io.dagger.client.*;
+import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Client.ContainerArguments;
+import io.dagger.client.Container;
 import io.dagger.client.Container.WithNewFileArguments;
+import io.dagger.client.Dagger;
+import io.dagger.client.Platform;
+import io.dagger.client.Secret;
 
 @Description("Publish a container image to a remote registry")
 public class PublishImage {

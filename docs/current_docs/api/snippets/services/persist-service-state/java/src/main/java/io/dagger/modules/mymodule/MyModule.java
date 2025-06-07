@@ -3,7 +3,8 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -25,16 +26,13 @@ public class MyModule {
             .withMountedCache("/data", dag().cacheVolume("my-redis"))
             .withWorkdir("/data")
             .asService(new Container.AsServiceArguments().withUseEntrypoint(true));
-
     Container redisCli =
         dag().container()
             .from("redis")
             .withServiceBinding("redis-srv", redisSrv)
             .withEntrypoint(List.of("redis-cli", "-h", "redis-srv"));
-
     return redisCli;
   }
-
   /**
    * Set key and value in Redis service
    *
@@ -43,13 +41,12 @@ public class MyModule {
    */
   @Function
   public String set(String key, String value)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return redis()
         .withExec(List.of("set", key, value), execOpts)
         .withExec(List.of("save"), execOpts)
         .stdout();
   }
-
   /**
    * Get value from Redis service
    *
@@ -57,7 +54,7 @@ public class MyModule {
    */
   @Function
   public String get(String key)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return redis().withExec(List.of("get", key), execOpts).stdout();
   }
 }

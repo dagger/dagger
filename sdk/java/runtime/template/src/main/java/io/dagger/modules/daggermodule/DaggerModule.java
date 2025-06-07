@@ -3,7 +3,7 @@ package io.dagger.modules.daggermoduleplaceholder;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -22,7 +22,7 @@ public class DaggerModule {
   /** Returns lines that match a pattern in the files of the provided Directory */
   @Function
   public String grepDir(Directory directoryArg, String pattern)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     return dag()
         .container()
         .from("alpine:latest")

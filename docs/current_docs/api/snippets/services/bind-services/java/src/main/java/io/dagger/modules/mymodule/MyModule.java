@@ -3,7 +3,8 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -25,7 +26,7 @@ public class MyModule {
   }
 
   @Function
-  public String get() throws ExecutionException, DaggerQueryException, InterruptedException {
+  public String get() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return dag().container()
         .from("alpine")
         .withServiceBinding("www", httpService())

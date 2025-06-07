@@ -1,20 +1,18 @@
 package io.dagger.modules.mymodule;
 
-import static io.dagger.client.Dagger.dag;
-
-import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
-import io.dagger.client.Directory;
-import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Ignore;
-import io.dagger.module.annotation.Object;
+import java.util.concurrent.ExecutionExcep
+import java.util.List;
 import java.util.concurrent.ExecutionException;
+import io.dagger.client.Secret;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.Function;
 
 @Object
 public class MyModule {
   @Function
   public Container foo(@Ignore({"*", "!src/**/*.java", "!pom.xml"}) Directory source)
-      throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     return dag().container().from("alpine:latest").withDirectory("/src", source).sync();
   }
 }

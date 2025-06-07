@@ -1,6 +1,9 @@
 package io.dagger.sample;
 
-import io.dagger.client.*;
+import io.dagger.client.AutoCloseableClient;
+import io.dagger.client.Dagger;
+import io.dagger.client.PortForward;
+import io.dagger.client.Service;
 import java.util.List;
 
 @Description("Expose MySQL service running on the host to client containers")

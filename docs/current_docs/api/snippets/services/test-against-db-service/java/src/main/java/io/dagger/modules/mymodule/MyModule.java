@@ -3,7 +3,8 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -14,7 +15,7 @@ import java.util.concurrent.ExecutionException;
 public class MyModule {
   /** Run unit tests against a database service */
   @Function
-  public String test() throws ExecutionException, DaggerQueryException, InterruptedException {
+  public String test() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
     Service mariadb =
         dag().container()
             .from("mariadb:10.11.2")
@@ -24,7 +25,6 @@ public class MyModule {
             .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
             .withExposedPort(3306)
             .asService(new Container.AsServiceArguments().withUseEntrypoint(true));
-
     // get Drupal base image
     // install additional dependencies
     Container drupal =
@@ -37,7 +37,6 @@ public class MyModule {
                     "drupal/core-dev",
                     "--dev",
                     "--update-with-all-dependencies"));
-
     // add service binding for MariaDB
     // run kernel test using PHPUnit
     return drupal

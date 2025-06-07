@@ -1,15 +1,20 @@
 package io.dagger.java.module;
 
 import static io.dagger.client.Dagger.dag;
-
-import io.dagger.client.*;
-import io.dagger.module.annotation.*;
-import io.dagger.module.annotation.Enum;
-import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.client.Platform;
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.Default;
+import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.Enum;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Ignore;
+import io.dagger.module.annotation.Object;
 
 /** Dagger Java Module main object */
 @Object
@@ -72,7 +77,7 @@ public class DaggerJava {
   public String grepDir(
       @DefaultPath("sdk/java") @Ignore({"**", "!*.java"}) Directory directoryArg,
       Optional<String> pattern)
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     String grepPattern = pattern.orElse("dagger");
     return dag()
         .container()
@@ -142,7 +147,7 @@ public class DaggerJava {
   /** return the default platform as a Scalar value */
   @Function
   public Platform defaultPlatform()
-      throws InterruptedException, ExecutionException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
     return dag().defaultPlatform();
   }
 
