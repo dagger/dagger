@@ -2,7 +2,8 @@ defmodule Dagger.Mod do
   @moduledoc false
 
   alias Dagger.Mod.Encoder
-  alias Dagger.Mod.Decoder
+  alias Dagger.Mod.Scope
+  alias Dagger.Mod.Registry
 
   @doc """
   Invoke a function.
@@ -17,13 +18,8 @@ defmodule Dagger.Mod do
   def invoke(dag, module) do
     fn_call = Dagger.Client.current_function_call(dag)
 
-    with {:ok, parent_name} <- Dagger.FunctionCall.parent_name(fn_call),
-         {:ok, fn_name} <- Dagger.FunctionCall.name(fn_call),
-         {:ok, parent_json} <- Dagger.FunctionCall.parent(fn_call),
-         {:ok, parent} <- Decoder.decode(parent_json, {:optional, module}, dag),
-         {:ok, input_args} <- Dagger.FunctionCall.input_args(fn_call),
-         input_args = fetch_args!(input_args),
-         {:ok, json} <- invoke(dag, module, parent, parent_name, fn_name, input_args) do
+    with {:ok, scope} <- Scope.from_fn_call(fn_call),
+         {:ok, json} <- invoke(dag, module, scope) do
       Dagger.FunctionCall.return_value(fn_call, json)
     else
       {:error, error} ->
@@ -35,27 +31,36 @@ defmodule Dagger.Mod do
   end
 
   # Register module.
-  def invoke(dag, module, _parent, "", _fn_name, _input_args) do
+  def invoke(dag, module, %Scope{parent_name: ""}) do
     dag
     |> Dagger.Mod.Module.define(module)
     |> Encoder.validate_and_encode(Dagger.Module)
   end
 
   # Constructor call.
-  def invoke(dag, module, _parent, _parent_name, "", input_args) do
+  def invoke(dag, module, %Scope{fn_name: ""} = scope) do
     fun_def = module.__object__(:function, :init)
-    args = decode_args!(dag, input_args, fun_def.args)
+    args = Scope.args!(scope, fun_def.args, dag)
     return_type = fun_def.return
 
     execute_function(module, :init, args, return_type)
   end
 
   # Invoke function.
-  def invoke(dag, module, parent, _parent_name, fn_name, input_args) do
-    fun_name = fn_name |> Macro.underscore() |> String.to_existing_atom()
+  def invoke(dag, root_module, %Scope{} = scope) do
+    registry = Registry.register(root_module)
+    module = Registry.get_module_by_name!(registry, scope.parent_name)
+    {:ok, parent} = Scope.into_module(scope, module, dag)
+    fun_name = Scope.fn_name(scope)
     fun_def = module.__object__(:function, fun_name)
-    args = decode_args!(dag, input_args, fun_def.args)
-    args = if(fun_def.self, do: [parent | args], else: args)
+
+    args =
+      scope
+      |> Scope.args!(fun_def.args, dag)
+      |> then(fn args ->
+        if(fun_def.self, do: [parent | args], else: args)
+      end)
+
     return_type = fun_def.return
 
     execute_function(module, fun_name, args, return_type)
@@ -66,26 +71,6 @@ defmodule Dagger.Mod do
       {:error, _} = error -> error
       {:ok, result} -> Encoder.validate_and_encode(result, return_type)
       result -> Encoder.validate_and_encode(result, return_type)
-    end
-  end
-
-  defp fetch_args!(input_args) do
-    Enum.into(input_args, %{}, fn arg ->
-      {:ok, name} = Dagger.FunctionCallArgValue.name(arg)
-      {:ok, value} = Dagger.FunctionCallArgValue.value(arg)
-      {Macro.underscore(name), value}
-    end)
-  end
-
-  # Get the value from a given `input_args` and make it positional by `args_def`.
-  def decode_args!(dag, input_args, arg_defs) do
-    for {name, arg_def} <- arg_defs do
-      {:ok, value} =
-        input_args
-        |> Map.get(to_string(name))
-        |> Decoder.decode(arg_def[:type], dag)
-
-      value
     end
   end
 
