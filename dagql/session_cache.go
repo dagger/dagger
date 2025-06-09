@@ -41,7 +41,7 @@ type CacheCallOpts struct {
 	Telemetry TelemetryFunc
 }
 
-type TelemetryFunc func(context.Context) (context.Context, func(Typed, bool, error) error)
+type TelemetryFunc func(context.Context) (context.Context, func(Typed, bool, error))
 
 func (o CacheCallOpts) SetCacheCallOpt(opts *CacheCallOpts) {
 	*opts = o
@@ -110,7 +110,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 				val = res.Result()
 				cached = res.HitCache()
 			}
-			err = done(val, cached, err)
+			done(val, cached, err)
 		}()
 		ctx = telemetryCtx
 	}

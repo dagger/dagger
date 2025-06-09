@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -40,7 +38,7 @@ func AroundFunc(
 	id *call.ID,
 ) (
 	context.Context,
-	func(res dagql.Typed, cached bool, rerr error) error,
+	func(res dagql.Typed, cached bool, rerr error),
 ) {
 	if isIntrospection(id) || isMeta(id) {
 		// very uninteresting spans
@@ -85,43 +83,12 @@ func AroundFunc(
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
-	return ctx, func(res dagql.Typed, cached bool, err error) error {
+	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error { return err })
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
-		if err != nil {
-			return err
-		}
-		return nil
 	}
-}
-
-// TrackOriginError tracks the origin of an error by propagating the trace
-// context into extended fields.
-//
-// If the inner error already has a trace context propagated, it takes
-// precedence.
-type TrackOriginError struct {
-	Err    error
-	Origin context.Context
-}
-
-var _ dagql.ExtendedError = TrackOriginError{}
-
-func (e TrackOriginError) Error() string {
-	return e.Err.Error()
-}
-
-func (e TrackOriginError) Extensions() map[string]any {
-	exts := map[string]any{}
-	telemetry.Propagator.Inject(e.Origin, telemetry.AnyMapCarrier(exts))
-	var inner dagql.ExtendedError
-	if errors.As(e.Err, &inner) {
-		// NB: original origin takes priority by overwriting
-		maps.Copy(exts, inner.Extensions())
-	}
-	return exts
 }
 
 // recordStatus records the status of a call on a span.

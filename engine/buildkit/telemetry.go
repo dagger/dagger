@@ -183,12 +183,7 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 
 	if causeCtx.IsValid() {
 		// link the vertex span to its causal span
-		span.AddLink(trace.Link{
-			SpanContext: causeCtx,
-			Attributes: []attribute.KeyValue{
-				attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
-			},
-		})
+		span.AddLink(trace.Link{SpanContext: causeCtx})
 	}
 
 	// convert cache prefixes into cached attribute (this is set deep inside

@@ -393,9 +393,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			}
 			dagErr := errInst.Self
 			originCtx := trace.SpanContextFromContext(
-				telemetry.Propagator.Extract(ctx, telemetry.AnyMapCarrier(dagErr.Extensions())),
+				telemetry.Propagator.Extract(ctx,
+					telemetry.AnyMapCarrier(dagErr.Extensions())),
 			)
 			if !originCtx.IsValid() {
+				// If the Error doesn't already have an origin, inject the current trace
+				// context as its origin.
 				tm := propagation.MapCarrier{}
 				telemetry.Propagator.Inject(ctx, tm)
 				for _, key := range tm.Keys() {

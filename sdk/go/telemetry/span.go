@@ -70,6 +70,7 @@ func End(span trace.Span, fn func() error) {
 	if err := fn(); err != nil {
 		var extErr ExtendedError
 		if errors.As(err, &extErr) {
+			// Look for an error origin embedded in error extensions, and link to it.
 			originCtx := trace.SpanContextFromContext(
 				Propagator.Extract(
 					context.Background(),

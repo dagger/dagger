@@ -388,6 +388,8 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		return err
 	}
 
+	// Embed the error origin, either from when the op was built, or from the
+	// current context if none is found.
 	spanCtx := SpanContextFromDescription(opErr.Description)
 	if !spanCtx.IsValid() {
 		spanCtx = trace.SpanContextFromContext(ctx)
