@@ -436,8 +436,8 @@ func spectaql() *dagger.Directory {
 	// snippets (can be removed if anvilco/spectaql#976 is merged and released)
 	return dag.Container().
 		From("node:18").
-		// https://github.com/jedevc/spectaql/commit/1a59bf93c6ff0d13195eea98e5d2d27cd2ee8fc7
-		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("1a59bf93c6ff0d13195eea98e5d2d27cd2ee8fc7").Tree()).
+		// https://github.com/jedevc/spectaql/commit/174cde65e8457cea4f594a71686a1cfcd6042fd0
+		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("174cde65e8457cea4f594a71686a1cfcd6042fd0").Tree()).
 		WithWorkdir("/src").
 		WithExec([]string{"yarn", "install"}).
 		WithExec([]string{"yarn", "run", "build"}).
