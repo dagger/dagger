@@ -135,3 +135,74 @@ defmodule AcceptAndReturnEnum do
     value
   end
 end
+
+defmodule Deps.C do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "C"
+
+  object do
+  end
+
+  defn hello() :: String.t() do
+    "Hello"
+  end
+end
+
+defmodule Deps.B do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "B"
+
+  object do
+  end
+
+  defn hello() :: String.t() do
+    "Hello"
+  end
+end
+
+defmodule Deps.A do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "A"
+
+  object do
+  end
+
+  defn do_b() :: Deps.B.t() do
+    %Deps.B{}
+  end
+
+  defn do_c() :: Deps.C.t() do
+    %Deps.B{}
+  end
+end
+
+defmodule Deps do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "Deps"
+
+  object do
+  end
+
+  defn do_a() :: Deps.A.t() do
+    %Deps.A{}
+  end
+end
+
+defmodule CustomEnum do
+  @moduledoc false
+
+  use Dagger.Mod.Object, name: "CustomEnum"
+
+  defn scan(severity: SimpleEnum.t()) :: SimpleEnum.t() do
+    severity
+  end
+
+  defn enum_opt(opt: EnumWithOption.t()) :: Dagger.Void.t() do
+    _ = opt
+    :ok
+  end
+end

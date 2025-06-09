@@ -213,6 +213,25 @@ func (ElixirSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "bar", out)
 }
 
+func (ElixirSuite) TestReturnChildObject(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	mod := elixirModule(t, c, "objects")
+
+	out, err := mod.
+		With(daggerCall("object-a", "message")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello from A", out)
+
+	out, err = mod.
+		With(daggerCall("object-a", "object-b", "message")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello from B", out)
+}
+
 func (ElixirSuite) TestConstructorArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
