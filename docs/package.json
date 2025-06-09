@@ -15,17 +15,17 @@
     "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.8.0",
-    "@docusaurus/preset-classic": "^3.8.0",
+    "@docusaurus/core": "^3.8.1",
+    "@docusaurus/preset-classic": "^3.8.1",
     "@docusaurus/theme-classic": "^3.5.2",
-    "@docusaurus/theme-mermaid": "^3.8.0",
+    "@docusaurus/theme-mermaid": "^3.8.1",
     "@mdx-js/react": "^3.1.0",
     "clsx": "^2.1.1",
     "docusaurus-plugin-image-zoom": "^3.0.1",
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.0",
     "posthog-docusaurus": "^2.0.4",
-    "posthog-js": "^1.249.0",
+    "posthog-js": "^1.249.4",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.5.2",
-    "@docusaurus/tsconfig": "^3.8.0",
+    "@docusaurus/tsconfig": "^3.8.1",
     "@docusaurus/types": "^3.5.2"
   },
   "browserslist": {
