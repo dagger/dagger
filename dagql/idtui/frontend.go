@@ -301,7 +301,6 @@ func (r *renderer) renderCall(
 					r.fancyIndent(out, row, true, false)
 					indentLevel -= row.Depth
 					indentLevel -= 1
-					// r.indent(out, 1)
 				}
 				r.indent(out, indentLevel)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
@@ -388,7 +387,14 @@ func (r *renderer) renderSpan(
 		quick.Highlight(out, name, "markdown", "terminal16", highlightStyle())
 	default:
 		label := out.String(name)
-		if span != nil && len(span.Links) > 0 {
+		var isEffect bool
+		if span != nil {
+			for range span.CausalSpans {
+				isEffect = true
+				break
+			}
+		}
+		if isEffect {
 			label = label.Italic()
 		}
 		fmt.Fprint(out, label)
@@ -479,13 +485,6 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
-}
-
-func (r *renderer) renderCached(out TermOutput, span *dagui.Span) {
-	if !span.IsRunningOrEffectsRunning() && span.IsCached() {
-		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
-	}
 }
 
 var metricsVerbosity = map[string]int{

@@ -14,12 +14,12 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● python: Python! X.Xs
-▼ .pending: Void X.Xs
+▼ .pending: Void X.Xs ERROR
 ! process "false" did not complete successfully: exit code: 1
 ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 ├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
 ├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
-├─✘ .withExec(args: ["false"]): Container! X.Xs
+├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
 │ ! process "false" did not complete successfully: exit code: 1
 ╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
