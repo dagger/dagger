@@ -277,7 +277,7 @@ func (d Docs) GenerateSchemaReference(
 	version string, // +optional
 ) *dagger.Directory {
 	generatedHTML := dag.Container().
-		From("node:18").
+		From("node:22").
 		WithMountedDirectory("/src", d.Source.WithDirectory(".", d.GenerateSchema(version))).
 		WithWorkdir("/src/docs").
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
