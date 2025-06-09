@@ -104,14 +104,10 @@ defmodule Dagger.Mod.Object do
   end
 
   defmacro __before_compile__(env) do
-    required_fields = Module.get_attribute(env.module, :required_fields) || []
-    optional_fields = Module.get_attribute(env.module, :optional_fields) || []
-    fields = required_fields ++ optional_fields
-
-    if fields == [] do
-      quote do
-      end
-    else
+    if Module.get_attribute(env.module, :struct_declared) do
+      required_fields = Module.get_attribute(env.module, :required_fields) || []
+      optional_fields = Module.get_attribute(env.module, :optional_fields) || []
+      fields = required_fields ++ optional_fields
       fields = Macro.escape(fields)
 
       quote do
@@ -120,6 +116,9 @@ defmodule Dagger.Mod.Object do
             {:ok, Dagger.Mod.Object.decoder_hint(unquote(fields))}
           end
         end
+      end
+    else
+      quote do
       end
     end
   end
@@ -203,6 +202,8 @@ defmodule Dagger.Mod.Object do
       @derive Jason.Encoder
       @enforce_keys Keyword.keys(required_fields)
       defstruct fields |> Keyword.keys() |> Enum.sort()
+
+      @struct_declared true
     end
   end
 
