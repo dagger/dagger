@@ -3,12 +3,14 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/identity"
 	"github.com/pelletier/go-toml"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
@@ -764,4 +767,71 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for errCh2")
 	}
+}
+
+func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineCtr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+	})
+	devEngine := devEngineContainerAsService(devEngineCtr)
+
+	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+
+	var eg errgroup.Group
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	t.Cleanup(clientCancel)
+	eg.Go(func() error {
+		_, err := clientCtr.
+			With(daggerNonNestedExec("listen")).
+			Sync(clientCtx)
+		if strings.Contains(err.Error(), "context canceled") {
+			return nil // expected, we cancel it later
+		}
+		if err != nil {
+			t.Logf("error running dagger listen: %v", err)
+		}
+		return err
+	})
+
+	found := false
+retryLoop:
+	for range 30 {
+		out, err := clientCtr.
+			WithExec([]string{"apk", "add", "curl"}).
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			Stdout(ctx)
+		if err != nil {
+			t.Logf("error fetching metrics: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		// find the line that starts with "dagger_connected_clients"
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			numStr, ok := strings.CutPrefix(line, "dagger_connected_clients ")
+			if !ok {
+				continue
+			}
+			num, err := strconv.Atoi(numStr)
+			require.NoError(t, err)
+			if num != 1 {
+				t.Logf("dagger_connected_clients is %d, expected 1", num)
+				time.Sleep(1 * time.Second)
+				continue retryLoop
+			}
+			found = true
+			break retryLoop
+		}
+	}
+	require.True(t, found, "did not find dagger_connected_clients = 1 in metrics output")
+
+	clientCancel()
+	require.NoError(t, eg.Wait(), "error waiting for client exec to finish")
 }
