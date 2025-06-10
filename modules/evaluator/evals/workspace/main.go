@@ -4,16 +4,13 @@ import "errors"
 
 type Workspace struct {
 	Facts []string
-	// +private
-	Attempt int
 }
 
 func New(
-	attempt int,
+	// A dummy arg just to prevent deduping telemetry across attempts.
+	buster string,
 ) *Workspace {
-	return &Workspace{
-		Attempt: attempt,
-	}
+	return &Workspace{}
 }
 
 // Record an interesting fact.

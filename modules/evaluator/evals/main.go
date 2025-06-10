@@ -2,76 +2,23 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"dagger/evals/internal/dagger"
 	"dagger/evals/internal/telemetry"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime/debug"
+	"io"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/codes"
+	"github.com/vito/runt"
+	"go.opentelemetry.io/otel/attribute"
 )
-
-type Evals struct {
-	Model        string
-	Attempt      int
-	SystemPrompt string
-}
-
-func New() *Evals {
-	return &Evals{
-		Attempt: 1,
-	}
-}
-
-func (m *Evals) WithAttempt(attempt int) *Evals {
-	m.Attempt = attempt
-	return m
-}
-
-func (m *Evals) WithModel(model string) *Evals {
-	m.Model = model
-	return m
-}
-
-func (m *Evals) WithSystemPrompt(prompt string) *Evals {
-	m.SystemPrompt = prompt
-	return m
-}
-
-// Test manual intervention allowing the prompt to succeed.
-func (m *Evals) LifeAlert(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 10}).
-			WithEnv(dag.Env().
-				WithDirectoryInput("dir", dag.Directory(), "A directory to write a file into.").
-				WithFileOutput("file", "A file containing knowledge you don't have."),
-			).
-			WithPrompt("Ask me what to write to the file."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			reply, err := llm.Env().Output("file").AsFile().Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, strings.ToLower(reply), "potato")
-		})
-}
-
-// Test basic prompting.
-func (m *Evals) Basic(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 5}).
-			WithPrompt("Hello there! Simply respond with 'potato' and take no other action."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			reply, err := llm.LastReply(ctx)
-			require.NoError(t, err)
-			require.Contains(t, strings.ToLower(reply), "potato")
-		})
-}
 
 // Models smart enough to follow instructions like 'do X three times.'
 var SmartModels = []string{
@@ -83,70 +30,198 @@ var SmartModels = []string{
 	"claude-sonnet-4-0",
 }
 
+type Evals struct {
+	Base *dagger.LLM
+}
+
+func New(base *dagger.LLM) *Evals {
+	return &Evals{
+		Base: base,
+	}
+}
+
+type LifeAlert struct {
+	Base *dagger.LLM
+}
+
+func (e *LifeAlert) WithBase(base *dagger.LLM) *LifeAlert {
+	e.Base = base
+	return e
+}
+
+func (e *LifeAlert) Name() string {
+	return "LifeAlert"
+}
+
+func (e *LifeAlert) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env().
+			WithDirectoryInput("dir", dag.Directory(), "A directory to write a file into.").
+			WithFileOutput("file", "A file containing knowledge you don't have."),
+		).
+		WithPrompt("Ask me what to write to the file.")
+}
+
+func (e *LifeAlert) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		reply, err := prompt.Env().Output("file").AsFile().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, strings.ToLower(reply), "potato")
+	})
+}
+
+// Test manual intervention allowing the prompt to succeed.
+func (m *Evals) LifeAlert() *LifeAlert {
+	return &LifeAlert{
+		Base: m.Base,
+	}
+}
+
+type WorkspacePattern struct {
+	Base *dagger.LLM
+}
+
+func (e *WorkspacePattern) Name() string {
+	return "WorkspacePattern"
+}
+
+func (e *WorkspacePattern) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env().
+			WithWorkspaceInput("dir", dag.Workspace(time.Now().String()),
+				"Your workspace for performing research.").
+			WithWorkspaceOutput("out",
+				"The workspace containing your facts."),
+		).
+		WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`)
+}
+
+func (e *WorkspacePattern) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		facts, err := prompt.Env().Output("out").AsWorkspace().Facts(ctx)
+		require.NoError(t, err)
+		model, err := prompt.Model(ctx)
+		require.NoError(t, err)
+		if slices.Contains(SmartModels, model) {
+			require.ElementsMatch(t, []string{
+				"The human body has at least five bones.",
+				"Most sand is wet.",
+				"Go is a programming language for garbage collection.",
+			}, facts)
+		} else {
+			// can't expect much from local models atm
+			require.NotEmpty(t, facts)
+		}
+	})
+}
+
 // Test the common workspace pattern.
-func (m *Evals) WorkspacePattern(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(dag.Env().
-				WithWorkspaceInput("dir", dag.Workspace(m.Attempt),
-					"Your workspace for performing research.").
-				WithWorkspaceOutput("out",
-					"The workspace containing your facts."),
-			).
-			WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			facts, err := llm.Env().Output("out").AsWorkspace().Facts(ctx)
-			require.NoError(t, err)
-			model, err := llm.Model(ctx)
-			require.NoError(t, err)
-			if slices.Contains(SmartModels, model) {
-				require.ElementsMatch(t, []string{
-					"The human body has at least five bones.",
-					"Most sand is wet.",
-					"Go is a programming language for garbage collection.",
-				}, facts)
-			} else {
-				// can't expect much from local models atm
-				require.NotEmpty(t, facts)
-			}
-		})
+func (m *Evals) WorkspacePattern() *WorkspacePattern {
+	return &WorkspacePattern{
+		Base: m.Base,
+	}
+}
+
+type Basic struct {
+	Base *dagger.LLM
+}
+
+func (e *Basic) Name() string {
+	return "Basic"
+}
+
+func (e *Basic) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithPrompt("Hello there! Simply respond with 'potato' and take no other action.")
+}
+
+func (e *Basic) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		reply, err := prompt.LastReply(ctx)
+		require.NoError(t, err)
+		require.Contains(t, strings.ToLower(reply), "potato")
+	})
+}
+
+// Test basic prompting.
+func (m *Evals) Basic() *Basic {
+	return &Basic{
+		Base: m.Base,
+	}
+}
+
+type CoreAPI struct {
+	Base *dagger.LLM
+}
+
+func (e *CoreAPI) Name() string {
+	return "CoreAPI"
+}
+
+func (e *CoreAPI) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+			WithFileOutput("starch", "A file containing the word potato")).
+		WithPrompt("Create a file that contains the word potato, and return it.")
+}
+
+func (e *CoreAPI) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		reply, err := prompt.Env().Output("starch").AsFile().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reply, "potato")
+	})
 }
 
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
-func (m *Evals) CoreAPI(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
-				WithFileOutput("starch", "A file containing the word potato")).
-			WithPrompt("Create a file that contains the word potato, and return it."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			reply, err := llm.Env().Output("starch").AsFile().Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, reply, "potato")
-		})
+func (m *Evals) CoreAPI() *CoreAPI {
+	return &CoreAPI{
+		Base: m.Base,
+	}
+}
+
+type ModuleDependencies struct {
+	Base *dagger.LLM
+}
+
+func (e *ModuleDependencies) Name() string {
+	return "ModuleDependencies"
+}
+
+func (e *ModuleDependencies) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
+			WithStringOutput("methods", "The list of methods that you can see.")).
+		WithPrompt("List all of the methods that you can see.")
+}
+
+func (e *ModuleDependencies) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		reply, err := prompt.Env().Output("methods").AsString(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reply, "llmTestModule")
+		require.Contains(t, reply, "llmDirModuleDepender")
+	})
 }
 
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
-func (m *Evals) ModuleDependencies(ctx context.Context) (*Report, error) {
+func (m *Evals) ModuleDependencies(ctx context.Context) (*ModuleDependencies, error) {
 	err := dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender").AsModule().Serve(ctx, dagger.ModuleServeOpts{
 		IncludeDependencies: true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
-				WithStringOutput("methods", "The list of methods that you can see.")).
-			WithPrompt("List all of the methods that you can see."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			reply, err := llm.Env().Output("methods").AsString(ctx)
-			require.NoError(t, err)
-			require.Contains(t, reply, "llmTestModule")
-			require.Contains(t, reply, "llmDirModuleDepender")
-		})
+	return &ModuleDependencies{
+		Base: m.Base,
+	}, nil
 }
 
 // func (m *Evals) CoreMulti(ctx context.Context) (*Report, error) {
@@ -162,79 +237,133 @@ func (m *Evals) ModuleDependencies(ctx context.Context) (*Report, error) {
 // 		})
 // }
 
+type UndoChanges struct {
+	Base *dagger.LLM
+}
+
+func (e *UndoChanges) Name() string {
+	return "UndoChanges"
+}
+
+func (e *UndoChanges) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env().
+			WithDirectoryInput("dir", dag.Directory(),
+				"A directory in which to write files.").
+			WithDirectoryOutput("out", "The directory with the desired contents.")).
+		WithPrompt("Create the file /a with contents 1.").
+		Loop().
+		WithPrompt("Create the file /b with contents 2.").
+		Loop().
+		WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that.")
+}
+
+func (e *UndoChanges) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		entries, err := prompt.Env().Output("out").AsDirectory().Entries(ctx)
+		require.NoError(t, err)
+		sort.Strings(entries)
+		require.ElementsMatch(t, []string{"a", "c"}, entries)
+	})
+}
+
 // Test the model's eagerness to switch to prior states instead of mutating the
 // current state to undo past actions.
-func (m *Evals) UndoChanges(ctx context.Context) (*Report, error) {
-	env := dag.Env().
-		WithDirectoryInput("dir", dag.Directory(),
-			"A directory in which to write files.").
-		WithDirectoryOutput("out", "The directory with the desired contents.")
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(env).
-			WithPrompt("Create the file /a with contents 1.").
-			Loop().
-			WithPrompt("Create the file /b with contents 2.").
-			Loop().
-			WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			entries, err := llm.Env().Output("out").AsDirectory().Entries(ctx)
-			require.NoError(t, err)
-			sort.Strings(entries)
-			require.ElementsMatch(t, []string{"a", "c"}, entries)
-		})
+func (m *Evals) UndoChanges() *UndoChanges {
+	return &UndoChanges{
+		Base: m.Base,
+	}
+}
+
+type BuildMulti struct {
+	Base *dagger.LLM
+}
+
+func (e *BuildMulti) Name() string {
+	return "BuildMulti"
+}
+
+func (e *BuildMulti) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(
+			dag.Env().
+				WithDirectoryInput("repo",
+					dag.Git("https://github.com/vito/booklit").Head().Tree(),
+					"The Booklit repository.").
+				WithContainerInput("ctr",
+					dag.Container().
+						From("golang").
+						WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
+						WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+						WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
+						WithEnvVariable("GOCACHE", "/go/build-cache").
+						WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", attempt, time.Now())),
+					"The Go container to use to build Booklit.").
+				WithFileOutput("bin", "The /out/booklit binary."),
+		).
+		WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit.")
+}
+
+func (e *BuildMulti) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		buildMultiAssert(ctx, t, prompt)
+	})
 }
 
 // Test the model's ability to pass objects around to one another and execute a
 // series of operations given at once.
-func (m *Evals) BuildMulti(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(
-				dag.Env().
-					WithDirectoryInput("repo",
-						dag.Git("https://github.com/vito/booklit").Head().Tree(),
-						"The Booklit repository.").
-					WithContainerInput("ctr",
-						dag.Container().
-							From("golang").
-							WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-							WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-							WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
-							WithEnvVariable("GOCACHE", "/go/build-cache").
-							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
-						"The Go container to use to build Booklit.").
-					WithFileOutput("bin", "The /out/booklit binary."),
-			).
-			WithPrompt("Mount $repo into $ctr at /src, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit."),
-		buildMultiAssert)
+func (m *Evals) BuildMulti() *BuildMulti {
+	return &BuildMulti{
+		Base: m.Base,
+	}
+}
+
+type BuildMultiNoVar struct {
+	Base *dagger.LLM
+}
+
+func (e *BuildMultiNoVar) Name() string {
+	return "BuildMultiNoVar"
+}
+
+func (e *BuildMultiNoVar) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(
+			dag.Env().
+				WithDirectoryInput("notRepo", dag.Directory(), "Bait - ignore this.").
+				WithDirectoryInput("repo",
+					dag.Git("https://github.com/vito/booklit").Head().Tree(),
+					"The Booklit repository.").
+				WithContainerInput("notCtr", dag.Container(), "Bait - ignore this.").
+				WithContainerInput("ctr",
+					dag.Container().
+						From("golang").
+						WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
+						WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+						WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
+						WithEnvVariable("GOCACHE", "/go/build-cache").
+						WithEnvVariable("BUSTER", rand.Text()),
+					"The Go container to use to build Booklit.").
+				WithFileOutput("bin", "The /out/booklit binary."),
+		).
+		WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit.")
+}
+
+func (e *BuildMultiNoVar) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		buildMultiAssert(ctx, t, prompt)
+	})
 }
 
 // BuildMulti is like BuildMulti but without explicitly referencing the relevant
 // objects, leaving the LLM to figure it out.
-func (m *Evals) BuildMultiNoVar(ctx context.Context) (*Report, error) {
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(
-				dag.Env().
-					WithDirectoryInput("notRepo", dag.Directory(), "Bait - ignore this.").
-					WithDirectoryInput("repo",
-						dag.Git("https://github.com/vito/booklit").Head().Tree(),
-						"The Booklit repository.").
-					WithContainerInput("notCtr", dag.Container(), "Bait - ignore this.").
-					WithContainerInput("ctr",
-						dag.Container().
-							From("golang").
-							WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-							WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-							WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
-							WithEnvVariable("GOCACHE", "/go/build-cache").
-							WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", m.Attempt, time.Now())),
-						"The Go container to use to build Booklit.").
-					WithFileOutput("bin", "The /out/booklit binary."),
-			).
-			WithPrompt("Mount my repo into the container, set it as your workdir, and build ./cmd/booklit with the CGO_ENABLED env var set to 0, writing it to /out/booklit."),
-		buildMultiAssert)
+func (m *Evals) BuildMultiNoVar() *BuildMultiNoVar {
+	return &BuildMultiNoVar{
+		Base: m.Base,
+	}
 }
 
 // Extracted for reuse between BuildMulti tests
@@ -260,9 +389,44 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 	require.Equal(t, "0.0.0-dev", out)
 }
 
+type ReadImplicitVars struct {
+	Base      *dagger.LLM
+	WeirdText string
+}
+
+func (e *ReadImplicitVars) Name() string {
+	return "ReadImplicitVars"
+}
+
+func (e *ReadImplicitVars) Prompt(attempt int) *dagger.LLM {
+	return e.Base.
+		Attempt(attempt).
+		WithEnv(dag.Env().
+			WithStringInput("myContent", e.WeirdText,
+				"The content to write.").
+			WithStringInput("desiredName", "/weird.txt",
+				"The name of the file to write to.").
+			WithDirectoryInput("dest", dag.Directory(),
+				"The directory in which to write the file.").
+			WithDirectoryOutput("out", "The directory containing the written file.")).
+		WithPrompt("I gave you some content, a directory, and a filename. Write the content to the specified file in the directory.")
+}
+
+func (e *ReadImplicitVars) Check(ctx context.Context, prompt *dagger.LLM) error {
+	return runt.Run(ctx, func(t testing.TB) {
+		content, err := prompt.Env().
+			Output("out").
+			AsDirectory().
+			File("weird.txt").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, e.WeirdText, content)
+	})
+}
+
 // Test that the LLM is able to access the content of variables without the user
 // having to expand them in the prompt.
-func (m *Evals) ReadImplicitVars(ctx context.Context) (*Report, error) {
+func (m *Evals) ReadImplicitVars() *ReadImplicitVars {
 	// use some fun formatting here to make sure it doesn't get lost in
 	// the shuffle
 	//
@@ -271,40 +435,10 @@ func (m *Evals) ReadImplicitVars(ctx context.Context) (*Report, error) {
 	// similar issue you might run into with passing it around in a shell, which
 	// these vars already draw parallels to (and may even be sourced from).
 	weirdText := "I'm a strawberry!"
-	return withLLMReport(ctx,
-		m.llm(dagger.LLMOpts{MaxAPICalls: 20}).
-			WithEnv(dag.Env().
-				WithStringInput("myContent", weirdText,
-					"The content to write.").
-				WithStringInput("desiredName", "/weird.txt",
-					"The name of the file to write to.").
-				WithDirectoryInput("dest", dag.Directory(),
-					"The directory in which to write the file.").
-				WithDirectoryOutput("out", "The directory containing the written file.")).
-			WithPrompt("I gave you some content, a directory, and a filename. Write the content to the specified file in the directory."),
-		func(ctx context.Context, t testing.TB, llm *dagger.LLM) {
-			content, err := llm.Env().
-				Output("out").
-				AsDirectory().
-				File("weird.txt").
-				Contents(ctx)
-			require.NoError(t, err)
-			require.Equal(t, weirdText, content)
-		})
-}
-
-func (m *Evals) llm(opts ...dagger.LLMOpts) *dagger.LLM {
-	opts = append(opts, dagger.LLMOpts{
-		Model: m.Model,
-	})
-	llm := dag.LLM(opts...)
-	if m.SystemPrompt != "" {
-		llm = llm.WithSystemPrompt(m.SystemPrompt)
+	return &ReadImplicitVars{
+		Base:      m.Base,
+		WeirdText: weirdText,
 	}
-	if m.Attempt > 0 {
-		llm = llm.Attempt(m.Attempt)
-	}
-	return llm
 }
 
 type Report struct {
@@ -317,7 +451,7 @@ type Report struct {
 	CachedTokensWrites int
 }
 
-func withLLMReport(
+func report(
 	ctx context.Context,
 	llm *dagger.LLM,
 	check func(context.Context, testing.TB, *dagger.LLM),
@@ -326,32 +460,26 @@ func withLLMReport(
 
 	report := &Report{}
 
-	t := newT(ctx, "eval")
+	logs := new(strings.Builder)
+	t := testctx.New(runt.New(ctx, "eval"),
+		oteltest.WithTracing[*runt.T](oteltest.TraceConfig[*runt.T]{
+			Attributes: []attribute.KeyValue{
+				attribute.Bool(telemetry.UIRevealAttr, true),
+			},
+		}),
+		oteltest.WithLogging[*runt.T](oteltest.LogConfig{
+			LoggerProvider: telemetry.LoggerProvider(ctx),
+		}),
+		func(next testctx.RunFunc[*runt.T]) testctx.RunFunc[*runt.T] {
+			return func(ctx context.Context, w *testctx.W[*runt.T]) {
+				next(ctx, w.WithLogger(&logger{logs}))
+			}
+		},
+	).WithContext(ctx)
 
 	evaledLlm, evalErr := llm.Sync(ctx)
-	(func() {
-		// demarcate assertions from the eval
-		ctx, span := Tracer().Start(ctx, "assert", telemetry.Reveal())
-		defer func() {
-			if t.Failed() {
-				span.SetStatus(codes.Error, "assertions failed")
-			}
-			span.End()
-		}()
 
-		// capture test panics, from assertions, skips, or otherwise
-		defer func() {
-			x := recover()
-			switch x {
-			case nil:
-			case testSkipped{}, testFailed{}:
-			default:
-				fmt.Fprintln(reportMD, "PANIC:", x)
-				reportMD.Write(debug.Stack())
-				fmt.Fprintln(reportMD)
-			}
-		}()
-
+	t.Run("assert", func(ctx context.Context, t *testctx.W[*runt.T]) {
 		// basic check: running the evals succeeded without e.g. hitting API limits
 		require.NoError(t, evalErr, "LLM evaluation did not complete")
 
@@ -360,7 +488,9 @@ func withLLMReport(
 
 		// run eval-specific assertions
 		check(ctx, t, llm)
-	}())
+
+		require.True(t, false)
+	})
 
 	fmt.Fprintln(reportMD, "### Message Log")
 	fmt.Fprintln(reportMD)
@@ -405,10 +535,10 @@ func withLLMReport(
 	fmt.Fprintln(reportMD, "### Evaluation Result")
 	fmt.Fprintln(reportMD)
 	if t.Failed() {
-		fmt.Fprintln(reportMD, t.Logs())
+		fmt.Fprintln(reportMD, logs.String())
 		fmt.Fprintln(reportMD, "FAILED")
 	} else if t.Skipped() {
-		fmt.Fprintln(reportMD, t.Logs())
+		fmt.Fprintln(reportMD, logs.String())
 		fmt.Fprintln(reportMD, "SKIPPED")
 	} else {
 		fmt.Fprintln(reportMD, "SUCCESS")
@@ -426,130 +556,22 @@ func withLLMReport(
 	return report, nil
 }
 
-type evalT struct {
-	*testing.T
-	name    string
-	ctx     context.Context
-	logs    *strings.Builder
-	failed  bool
-	skipped bool
+type logger struct {
+	w io.Writer
 }
 
-var _ testing.TB = (*evalT)(nil)
-
-func newT(ctx context.Context, name string) *evalT {
-	return &evalT{
-		T:    &testing.T{}, // unused, has to be here because private()
-		name: name,
-		ctx:  ctx,
-		logs: &strings.Builder{},
-	}
+func (l *logger) Log(args ...any) {
+	fmt.Fprintln(l.w, args...)
 }
 
-func (e *evalT) Name() string {
-	return e.name
+func (l *logger) Logf(format string, args ...any) {
+	fmt.Fprintf(l.w, format+"\n", args...)
 }
 
-func (e *evalT) Helper() {}
-
-func (e *evalT) Logs() string {
-	return e.logs.String()
+func (l *logger) Error(args ...any) {
+	fmt.Fprintln(l.w, args...)
 }
 
-func (e *evalT) Context() context.Context {
-	return e.ctx
-}
-
-func (e *evalT) Error(args ...interface{}) {
-	e.Log(args...)
-	e.Fail()
-}
-
-func (e *evalT) Errorf(format string, args ...interface{}) {
-	e.Logf(format, args...)
-	e.Fail()
-}
-
-func (e *evalT) Log(args ...interface{}) {
-	fmt.Fprintln(e.logs, args...)
-}
-
-func (e *evalT) Logf(format string, args ...interface{}) {
-	fmt.Fprintf(e.logs, format+"\n", args...)
-}
-
-func (e *evalT) Fatal(args ...interface{}) {
-	e.Log(args...)
-	e.FailNow()
-}
-
-func (e *evalT) Fatalf(format string, args ...interface{}) {
-	e.Logf(format, args...)
-	e.FailNow()
-}
-
-func (e *evalT) Fail() {
-	e.failed = true
-}
-
-type testFailed struct{}
-type testSkipped struct{}
-
-func (e *evalT) FailNow() {
-	e.failed = true
-	panic(testFailed{})
-}
-
-func (e *evalT) Failed() bool {
-	return e.failed
-}
-
-func (e *evalT) TempDir() string {
-	// Create temporary directory for test
-	dir := filepath.Join(os.TempDir(), fmt.Sprintf("evalT-%d", time.Now().UnixNano()))
-	err := os.MkdirAll(dir, 0755)
-	if err != nil {
-		e.Fatal(err)
-	}
-	return dir
-}
-
-func (e *evalT) Chdir(dir string) {
-	err := os.Chdir(dir)
-	if err != nil {
-		e.Fatal(err)
-	}
-}
-
-func (e *evalT) Cleanup(func()) {}
-
-func (e *evalT) Setenv(key, value string) {
-	err := os.Setenv(key, value)
-	if err != nil {
-		e.Fatal(err)
-	}
-}
-
-func (e *evalT) Skip(args ...interface{}) {
-	e.Log(args...)
-	e.SkipNow()
-}
-
-func (e *evalT) Skipf(format string, args ...interface{}) {
-	e.Logf(format, args...)
-	e.SkipNow()
-}
-
-func (e *evalT) SkipNow() {
-	e.skipped = true
-	panic(testSkipped{})
-}
-
-func (e *evalT) Skipped() bool {
-	return e.skipped
-}
-
-func (e *evalT) Deadline() (time.Time, bool) {
-	deadline, ok := e.ctx.Deadline()
-	return deadline, ok
+func (l *logger) Errorf(format string, args ...any) {
+	fmt.Fprintf(l.w, format+"\n", args...)
 }
