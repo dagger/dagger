@@ -126,7 +126,7 @@ type ModelMessage struct {
 	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string        `json:"tool_call_id,omitempty"`
 	ToolErrored bool          `json:"tool_errored,omitempty"`
-	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
+	TokenUsage  LLMTokenUsage `json:"token_usage,omitzero"`
 }
 
 type LLMToolCall struct {
@@ -532,7 +532,7 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 	return result, nil
 }
 
-func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
+func (llm *LLM) WithModel(model string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
 
@@ -540,16 +540,14 @@ func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) 
 	defer llm.endpointMtx.Unlock()
 	llm.endpoint = nil
 
-	return llm, nil
+	return llm
 }
 
 // Append a user message (prompt) to the message history
 func (llm *LLM) WithPrompt(
-	ctx context.Context,
 	// The prompt message.
 	prompt string,
-	srv *dagql.Server,
-) (*LLM, error) {
+) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
 		if binding, found := llm.mcp.env.Input(key); found {
 			return binding.String()
@@ -558,31 +556,20 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	func() {
-		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
-			attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
-			attribute.String(telemetry.UIMessageAttr, "sent"),
-		))
-		defer span.End()
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-			log.String(telemetry.ContentTypeAttr, "text/markdown"))
-		defer stdio.Close()
-		fmt.Fprint(stdio.Stdout, prompt)
-	}()
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
 		Content: prompt,
 	})
-	return llm, nil
+	return llm
 }
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
-func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Server) (*LLM, error) {
+func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 	contents, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPrompt(ctx, string(contents), srv)
+	return llm.WithPrompt(string(contents)), nil
 }
 
 // Append a system prompt message to the history
@@ -765,6 +752,29 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 
 		messagesToSend := llm.messagesWithSystemPrompt()
+
+		var userMessages []ModelMessage
+		for _, msg := range slices.Backward(messagesToSend) {
+			if msg.Role != "user" || msg.ToolCallID != "" {
+				// only display user messages appended since the last response
+				break
+			}
+			userMessages = append(userMessages, msg)
+		}
+		slices.Reverse(userMessages)
+		for _, msg := range userMessages {
+			func() {
+				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+					attribute.String(telemetry.UIMessageAttr, "sent"),
+				))
+				defer span.End()
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				defer stdio.Close()
+				fmt.Fprint(stdio.Stdout, msg.Content)
+			}()
+		}
 
 		var res *LLMResponse
 
