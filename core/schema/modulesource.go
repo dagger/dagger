@@ -1891,7 +1891,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	}
 
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
-	// we can transform it into a moduleto generate self bindings.
+	// we can transform it into a module to generate self bindings.
 	if srcInst.Self.SDK != nil {
 		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
 		if _, ok := srcInst.Self.SDKImpl.AsRuntime(); ok {
