@@ -80,6 +80,10 @@ type LLM struct {
 
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
+
+	// Keep track of the last-used server state, so we know where to introspect
+	// types from in case the LLM gets passed around.
+	lastSrv *dagql.Server
 }
 
 type LLMEndpoint struct {
@@ -516,8 +520,14 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.mcp.Tools(srv)
+func (llm *LLM) ToolsDoc(currentSrv *dagql.Server) (string, error) {
+	dag := currentSrv
+	if llm.lastSrv != nil {
+		// use the last-used server if present; only fall back to currentSrv when
+		// the LLM hasn't run yet
+		dag = llm.lastSrv
+	}
+	tools, err := llm.mcp.Tools(dag)
 	if err != nil {
 		return "", err
 	}
@@ -733,6 +743,9 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		// until a prompt is given
 		return nil
 	}
+
+	// keep track of the last used server
+	llm.lastSrv = dag
 
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)

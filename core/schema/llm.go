@@ -209,7 +209,7 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.ToolsDoc(ctx, s.srv)
+	return llm.ToolsDoc(s.srv)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
