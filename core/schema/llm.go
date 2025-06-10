@@ -173,8 +173,9 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*co
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	Number int
 }) (*core.LLM, error) {
-	// nothing to do; we've "forked" it by nature of changing the query
-	return llm, nil
+	// clone the LLM object, since it updates in-place when Sync is called, and we
+	// want to branch off from here
+	return llm.Clone(), nil
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
