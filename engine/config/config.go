@@ -127,7 +127,7 @@ type GCSpace struct {
 	// SweepSize is the minimum amount of space to sweep during a single gc pass.
 	// Either an absolute number of bytes, or a percentage of the "allowed
 	// space" between reserved and max.
-	SweepSize DiskSpace `json:"sweep,omitempty"`
+	SweepSize DiskSpace `json:"sweepSize,omitempty"`
 }
 
 func (space *GCSpace) IsUnset() bool {
