@@ -300,11 +300,7 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string,
 		ctx,
 		// an initial env with no outputs, since message history is all we want at
 		// first
-		dag.Env().
-			WithFileInput("docs", m.Docs,
-				"The documentation the model is meant to adhere to.").
-			WithFileInput("initialSystemPrompt", m.InitialPrompt,
-				"An initial system prompt to evaluate and improve.").
+		m.env().
 			WithFileInput("report",
 				dag.Directory().
 					WithNewFile("report.txt", report).
@@ -345,12 +341,7 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 			ctx,
 			// an initial env with no outputs, since message history is all we want at
 			// first
-			dag.Env().
-				WithFileInput("docs", m.Docs,
-					"The documentation the model is meant to adhere to.").
-				WithFileInput("systemPrompt",
-					promptFile,
-					"The system prompt to evaluate and improve.").
+			m.env().
 				WithStringInput("failures", evals.Check().Error(), "The summary of failures.").
 				WithDirectoryInput("reports",
 					reports,
