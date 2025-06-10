@@ -21,8 +21,19 @@ type Workspace struct {
 	// The current system prompt.
 	SystemPrompt string
 
+	// Evaluations to perform.
+	Evals []Eval
+
 	// Observations made throughout running evaluations.
 	Findings []string
+}
+
+type Eval interface {
+	Name(context.Context) (string, error)
+	Prompt(base *dagger.LLM) *dagger.LLM
+	Check(ctx context.Context, prompt *dagger.LLM) error
+
+	DaggerObject
 }
 
 var testedModels = []string{
@@ -57,35 +68,16 @@ func (w *Workspace) Backoff(seconds int) *Workspace {
 	return w
 }
 
-type Eval interface {
-	Name(context.Context) (string, error)
-	Prompt(attempt int) *dagger.LLM
-	Check(ctx context.Context, prompt *dagger.LLM) error
-
-	DaggerObject
-}
-
-func (w *Workspace) Evals(
-	// +optional
-	base *dagger.LLM,
-) []Eval {
-	return []Eval{
-		w.evals(base).Basic(),
-		w.evals(base).BuildMulti(),
-		w.evals(base).BuildMultiNoVar(),
-		w.evals(base).WorkspacePattern(),
-		w.evals(base).ReadImplicitVars(),
-		w.evals(base).UndoChanges(),
-		w.evals(base).CoreAPI(),
-		w.evals(base).ModuleDependencies(),
-		// dag.Evals().CoreMulti(),
-	}
+// Register an eval to perform.
+func (w *Workspace) WithEval(eval Eval) *Workspace {
+	w.Evals = append(w.Evals, eval)
+	return w
 }
 
 // The list of possible evals you can run.
 func (w *Workspace) EvalNames(ctx context.Context) ([]string, error) {
 	var names []string
-	for _, eval := range w.Evals(nil) {
+	for _, eval := range w.Evals {
 		name, err := eval.Name(ctx)
 		if err != nil {
 			return nil, err
@@ -149,12 +141,8 @@ func (w *Workspace) Evaluate(
 	// +optional
 	attempts int,
 ) (_ *AttemptsReport, rerr error) {
-	base := dag.LLM(dagger.LLMOpts{
-		Model: model,
-	})
-
 	var eval Eval
-	for _, e := range w.Evals(base) {
+	for _, e := range w.Evals {
 		evalName, err := e.Name(ctx)
 		if err != nil {
 			return nil, err
@@ -167,6 +155,8 @@ func (w *Workspace) Evaluate(
 	if eval == nil {
 		return nil, fmt.Errorf("unknown evaluation: %s", name)
 	}
+
+	base := w.baseLLM(dag.LLM(), model)
 
 	if attempts == 0 {
 		provider, err := base.Provider(ctx)
@@ -193,7 +183,7 @@ func (w *Workspace) Evaluate(
 			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
 
-			prompt := eval.Prompt(attempt)
+			prompt := eval.Prompt(base.Attempt(attempt))
 
 			var succeeded bool
 			evalErr := eval.Check(ctx, prompt)
@@ -256,9 +246,9 @@ func (w *Workspace) Evaluate(
 			reports[attempt] = reportMD.String()
 
 			// Write report to OTel too
-			toolsDoc, evalErr := prompt.Tools(ctx)
-			if evalErr != nil {
-				return evalErr
+			toolsDoc, err := prompt.Tools(ctx)
+			if err != nil {
+				return err
 			}
 			// Only print this to OTel, it's too expensive to process with an LLM in the report
 			fmt.Fprintln(stdio.Stdout, "## Tools")
@@ -303,15 +293,18 @@ func (w *Workspace) Evaluate(
 	}, nil
 }
 
-func (w *Workspace) evals(base *dagger.LLM) *dagger.Evals {
+func (w *Workspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
 	if base == nil {
 		base = dag.LLM()
 	}
-	if w.Model != "" {
-		base = base.WithModel(w.Model)
+	if modelOverride == "" {
+		modelOverride = w.Model
+	}
+	if modelOverride != "" {
+		base = base.WithModel(modelOverride)
 	}
 	if w.SystemPrompt != "" {
 		base = base.WithSystemPrompt(w.SystemPrompt)
 	}
-	return dag.Evals(base)
+	return base
 }

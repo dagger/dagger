@@ -6,10 +6,6 @@
   },
   "dependencies": [
     {
-      "name": "evals",
-      "source": "evals"
-    },
-    {
       "name": "workspace",
       "source": "workspace"
     }

@@ -4,20 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"dagger/evals/internal/dagger"
-	"dagger/evals/internal/telemetry"
 	"fmt"
-	"io"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/runt"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // Models smart enough to follow instructions like 'do X three times.'
@@ -30,32 +25,16 @@ var SmartModels = []string{
 	"claude-sonnet-4-0",
 }
 
-type Evals struct {
-	Base *dagger.LLM
-}
+type Evals struct{}
 
-func New(base *dagger.LLM) *Evals {
-	return &Evals{
-		Base: base,
-	}
-}
-
-type LifeAlert struct {
-	Base *dagger.LLM
-}
-
-func (e *LifeAlert) WithBase(base *dagger.LLM) *LifeAlert {
-	e.Base = base
-	return e
-}
+type LifeAlert struct{}
 
 func (e *LifeAlert) Name() string {
 	return "LifeAlert"
 }
 
-func (e *LifeAlert) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *LifeAlert) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env().
 			WithDirectoryInput("dir", dag.Directory(), "A directory to write a file into.").
 			WithFileOutput("file", "A file containing knowledge you don't have."),
@@ -73,22 +52,17 @@ func (e *LifeAlert) Check(ctx context.Context, prompt *dagger.LLM) error {
 
 // Test manual intervention allowing the prompt to succeed.
 func (m *Evals) LifeAlert() *LifeAlert {
-	return &LifeAlert{
-		Base: m.Base,
-	}
+	return &LifeAlert{}
 }
 
-type WorkspacePattern struct {
-	Base *dagger.LLM
-}
+type WorkspacePattern struct{}
 
 func (e *WorkspacePattern) Name() string {
 	return "WorkspacePattern"
 }
 
-func (e *WorkspacePattern) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *WorkspacePattern) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env().
 			WithWorkspaceInput("dir", dag.Workspace(time.Now().String()),
 				"Your workspace for performing research.").
@@ -119,22 +93,17 @@ func (e *WorkspacePattern) Check(ctx context.Context, prompt *dagger.LLM) error 
 
 // Test the common workspace pattern.
 func (m *Evals) WorkspacePattern() *WorkspacePattern {
-	return &WorkspacePattern{
-		Base: m.Base,
-	}
+	return &WorkspacePattern{}
 }
 
-type Basic struct {
-	Base *dagger.LLM
-}
+type Basic struct{}
 
 func (e *Basic) Name() string {
 	return "Basic"
 }
 
-func (e *Basic) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *Basic) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithPrompt("Hello there! Simply respond with 'potato' and take no other action.")
 }
 
@@ -148,22 +117,17 @@ func (e *Basic) Check(ctx context.Context, prompt *dagger.LLM) error {
 
 // Test basic prompting.
 func (m *Evals) Basic() *Basic {
-	return &Basic{
-		Base: m.Base,
-	}
+	return &Basic{}
 }
 
-type CoreAPI struct {
-	Base *dagger.LLM
-}
+type CoreAPI struct{}
 
 func (e *CoreAPI) Name() string {
 	return "CoreAPI"
 }
 
-func (e *CoreAPI) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *CoreAPI) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 			WithFileOutput("starch", "A file containing the word potato")).
 		WithPrompt("Create a file that contains the word potato, and return it.")
@@ -180,22 +144,17 @@ func (e *CoreAPI) Check(ctx context.Context, prompt *dagger.LLM) error {
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
 func (m *Evals) CoreAPI() *CoreAPI {
-	return &CoreAPI{
-		Base: m.Base,
-	}
+	return &CoreAPI{}
 }
 
-type ModuleDependencies struct {
-	Base *dagger.LLM
-}
+type ModuleDependencies struct{}
 
 func (e *ModuleDependencies) Name() string {
 	return "ModuleDependencies"
 }
 
-func (e *ModuleDependencies) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *ModuleDependencies) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 			WithStringOutput("methods", "The list of methods that you can see.")).
 		WithPrompt("List all of the methods that you can see.")
@@ -219,9 +178,7 @@ func (m *Evals) ModuleDependencies(ctx context.Context) (*ModuleDependencies, er
 	if err != nil {
 		return nil, err
 	}
-	return &ModuleDependencies{
-		Base: m.Base,
-	}, nil
+	return &ModuleDependencies{}, nil
 }
 
 // func (m *Evals) CoreMulti(ctx context.Context) (*Report, error) {
@@ -237,17 +194,14 @@ func (m *Evals) ModuleDependencies(ctx context.Context) (*ModuleDependencies, er
 // 		})
 // }
 
-type UndoChanges struct {
-	Base *dagger.LLM
-}
+type UndoChanges struct{}
 
 func (e *UndoChanges) Name() string {
 	return "UndoChanges"
 }
 
-func (e *UndoChanges) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *UndoChanges) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env().
 			WithDirectoryInput("dir", dag.Directory(),
 				"A directory in which to write files.").
@@ -271,22 +225,17 @@ func (e *UndoChanges) Check(ctx context.Context, prompt *dagger.LLM) error {
 // Test the model's eagerness to switch to prior states instead of mutating the
 // current state to undo past actions.
 func (m *Evals) UndoChanges() *UndoChanges {
-	return &UndoChanges{
-		Base: m.Base,
-	}
+	return &UndoChanges{}
 }
 
-type BuildMulti struct {
-	Base *dagger.LLM
-}
+type BuildMulti struct{}
 
 func (e *BuildMulti) Name() string {
 	return "BuildMulti"
 }
 
-func (e *BuildMulti) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *BuildMulti) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(
 			dag.Env().
 				WithDirectoryInput("repo",
@@ -299,7 +248,7 @@ func (e *BuildMulti) Prompt(attempt int) *dagger.LLM {
 						WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 						WithMountedCache("/go/build-cache", dag.CacheVolume("go-build")).
 						WithEnvVariable("GOCACHE", "/go/build-cache").
-						WithEnvVariable("BUSTER", fmt.Sprintf("%d-%s", attempt, time.Now())),
+						WithEnvVariable("BUSTER", fmt.Sprintf("%s", time.Now())),
 					"The Go container to use to build Booklit.").
 				WithFileOutput("bin", "The /out/booklit binary."),
 		).
@@ -315,22 +264,17 @@ func (e *BuildMulti) Check(ctx context.Context, prompt *dagger.LLM) error {
 // Test the model's ability to pass objects around to one another and execute a
 // series of operations given at once.
 func (m *Evals) BuildMulti() *BuildMulti {
-	return &BuildMulti{
-		Base: m.Base,
-	}
+	return &BuildMulti{}
 }
 
-type BuildMultiNoVar struct {
-	Base *dagger.LLM
-}
+type BuildMultiNoVar struct{}
 
 func (e *BuildMultiNoVar) Name() string {
 	return "BuildMultiNoVar"
 }
 
-func (e *BuildMultiNoVar) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *BuildMultiNoVar) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(
 			dag.Env().
 				WithDirectoryInput("notRepo", dag.Directory(), "Bait - ignore this.").
@@ -361,9 +305,7 @@ func (e *BuildMultiNoVar) Check(ctx context.Context, prompt *dagger.LLM) error {
 // BuildMulti is like BuildMulti but without explicitly referencing the relevant
 // objects, leaving the LLM to figure it out.
 func (m *Evals) BuildMultiNoVar() *BuildMultiNoVar {
-	return &BuildMultiNoVar{
-		Base: m.Base,
-	}
+	return &BuildMultiNoVar{}
 }
 
 // Extracted for reuse between BuildMulti tests
@@ -390,7 +332,6 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 }
 
 type ReadImplicitVars struct {
-	Base      *dagger.LLM
 	WeirdText string
 }
 
@@ -398,9 +339,8 @@ func (e *ReadImplicitVars) Name() string {
 	return "ReadImplicitVars"
 }
 
-func (e *ReadImplicitVars) Prompt(attempt int) *dagger.LLM {
-	return e.Base.
-		Attempt(attempt).
+func (e *ReadImplicitVars) Prompt(base *dagger.LLM) *dagger.LLM {
+	return base.
 		WithEnv(dag.Env().
 			WithStringInput("myContent", e.WeirdText,
 				"The content to write.").
@@ -436,142 +376,6 @@ func (m *Evals) ReadImplicitVars() *ReadImplicitVars {
 	// these vars already draw parallels to (and may even be sourced from).
 	weirdText := "I'm a strawberry!"
 	return &ReadImplicitVars{
-		Base:      m.Base,
 		WeirdText: weirdText,
 	}
-}
-
-type Report struct {
-	Succeeded          bool
-	Report             string
-	ToolsDoc           string
-	InputTokens        int
-	OutputTokens       int
-	CachedTokensReads  int
-	CachedTokensWrites int
-}
-
-func report(
-	ctx context.Context,
-	llm *dagger.LLM,
-	check func(context.Context, testing.TB, *dagger.LLM),
-) (*Report, error) {
-	reportMD := new(strings.Builder)
-
-	report := &Report{}
-
-	logs := new(strings.Builder)
-	t := testctx.New(runt.New(ctx, "eval"),
-		oteltest.WithTracing[*runt.T](oteltest.TraceConfig[*runt.T]{
-			Attributes: []attribute.KeyValue{
-				attribute.Bool(telemetry.UIRevealAttr, true),
-			},
-		}),
-		oteltest.WithLogging[*runt.T](oteltest.LogConfig{
-			LoggerProvider: telemetry.LoggerProvider(ctx),
-		}),
-		func(next testctx.RunFunc[*runt.T]) testctx.RunFunc[*runt.T] {
-			return func(ctx context.Context, w *testctx.W[*runt.T]) {
-				next(ctx, w.WithLogger(&logger{logs}))
-			}
-		},
-	).WithContext(ctx)
-
-	evaledLlm, evalErr := llm.Sync(ctx)
-
-	t.Run("assert", func(ctx context.Context, t *testctx.W[*runt.T]) {
-		// basic check: running the evals succeeded without e.g. hitting API limits
-		require.NoError(t, evalErr, "LLM evaluation did not complete")
-
-		// now that we know it didn't error, re-assign
-		llm = evaledLlm
-
-		// run eval-specific assertions
-		check(ctx, t, llm)
-
-		require.True(t, false)
-	})
-
-	fmt.Fprintln(reportMD, "### Message Log")
-	fmt.Fprintln(reportMD)
-	history, err := llm.History(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get history:", err)
-	} else {
-		numLines := len(history)
-		// Calculate the width needed for the largest line number
-		width := len(fmt.Sprintf("%d", numLines))
-		for i, line := range history {
-			// Format with right-aligned padding, number, separator, and content
-			fmt.Fprintf(reportMD, "    %*d | %s\n", width, i+1, line)
-		}
-	}
-	report.InputTokens, err = llm.TokenUsage().InputTokens(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get input tokens:", err)
-	}
-	report.OutputTokens, err = llm.TokenUsage().OutputTokens(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
-	}
-	report.CachedTokensReads, err = llm.TokenUsage().CachedTokenReads(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
-	}
-	report.CachedTokensWrites, err = llm.TokenUsage().CachedTokenWrites(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get output tokens:", err)
-	}
-	fmt.Fprintln(reportMD)
-
-	fmt.Fprintln(reportMD, "### Total Token Cost")
-	fmt.Fprintln(reportMD)
-	fmt.Fprintln(reportMD, "* Input Tokens:", report.InputTokens)
-	fmt.Fprintln(reportMD, "* Output Tokens:", report.OutputTokens)
-	fmt.Fprintln(reportMD, "* Cached Token Reads:", report.CachedTokensReads)
-	fmt.Fprintln(reportMD, "* Cached Token Writes:", report.CachedTokensWrites)
-	fmt.Fprintln(reportMD)
-
-	fmt.Fprintln(reportMD, "### Evaluation Result")
-	fmt.Fprintln(reportMD)
-	if t.Failed() {
-		fmt.Fprintln(reportMD, logs.String())
-		fmt.Fprintln(reportMD, "FAILED")
-	} else if t.Skipped() {
-		fmt.Fprintln(reportMD, logs.String())
-		fmt.Fprintln(reportMD, "SKIPPED")
-	} else {
-		fmt.Fprintln(reportMD, "SUCCESS")
-		report.Succeeded = true
-	}
-
-	report.Report = reportMD.String()
-
-	toolsDoc, err := llm.Tools(ctx)
-	if err != nil {
-		fmt.Fprintln(reportMD, "Failed to get tools:", err)
-	}
-	report.ToolsDoc = toolsDoc
-
-	return report, nil
-}
-
-type logger struct {
-	w io.Writer
-}
-
-func (l *logger) Log(args ...any) {
-	fmt.Fprintln(l.w, args...)
-}
-
-func (l *logger) Logf(format string, args ...any) {
-	fmt.Fprintf(l.w, format+"\n", args...)
-}
-
-func (l *logger) Error(args ...any) {
-	fmt.Fprintln(l.w, args...)
-}
-
-func (l *logger) Errorf(format string, args ...any) {
-	fmt.Fprintf(l.w, format+"\n", args...)
 }
