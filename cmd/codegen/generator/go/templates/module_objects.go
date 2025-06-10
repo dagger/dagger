@@ -448,6 +448,16 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 			s.Id(typeSpec.GoType().String())
 		}
 
+	case *parsedEnumTypeReference:
+		if typeSpec.isPtr {
+			s.Op("*")
+		}
+		if typeSpec.moduleName == "" {
+			s.Id("dagger." + typeSpec.name)
+		} else {
+			s.Id(typeSpec.name)
+		}
+
 	case *parsedSliceType:
 		fieldTypeCode, err := spec.concreteFieldTypeCode(typeSpec.underlying)
 		if err != nil {
@@ -480,7 +490,7 @@ The code for setting the fields of the real object from the concrete struct unma
 func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := field.typeSpec.(type) {
-	case *parsedPrimitiveType, *parsedObjectTypeReference:
+	case *parsedPrimitiveType, *parsedEnumTypeReference, *parsedObjectTypeReference:
 		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 
 	case *parsedSliceType:
