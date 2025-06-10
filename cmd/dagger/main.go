@@ -65,7 +65,7 @@ var (
 	interactiveCommandParsed []string
 	web                      bool
 	noExit                   bool
-	useCloudEngine           bool
+	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -164,7 +164,7 @@ func init() {
 
 	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
 	// all those functions will run in a remote cloud engine which gets created at execution time
-	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", false, "Run in a Dagger Cloud Engine")
+	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
 	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
 
 	disableFlagsInUseLine(rootCmd)
