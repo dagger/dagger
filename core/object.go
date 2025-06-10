@@ -119,7 +119,7 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 			unknownCollectIDs(v, ids)
 			continue
 		}
-		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, _, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
 		}
@@ -181,7 +181,7 @@ type Callable interface {
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
 	mod := t.mod
 	if field, ok := t.typeDef.FieldByName(name); ok {
-		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, _, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("get field return type: %w", err)
 		}
@@ -233,7 +233,7 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 			// missing field
 			continue
 		}
-		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, _, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
@@ -344,7 +344,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to create function: %w", err)
 	}
 
-	spec, err := fn.metadata.FieldSpec()
+	spec, err := fn.metadata.FieldSpec(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to get field spec: %w", err)
 	}
@@ -412,7 +412,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+			modType, ok, _, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
 			}
@@ -445,7 +445,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to create function %q: %w", fun.Name, err)
 	}
-	spec, err := fun.FieldSpec()
+	spec, err := fun.FieldSpec(ctx, mod)
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}

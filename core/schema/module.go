@@ -206,8 +206,19 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			Deprecated("Use withEnumMember instead").
 			Args(
 				dagql.Arg("value").Doc(`The name of the value in the enum`),
+				dagql.Arg("description").Doc(`A doc string for the value, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
+			),
+
+		dagql.Func("withEnumMember", s.typeDefWithEnumMember).
+			View(AllVersion).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the member in the enum`),
+				dagql.Arg("value").Doc(`The value of the member in the enum`),
 				dagql.Arg("description").Doc(`A doc string for the value, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
 			),
@@ -219,8 +230,12 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumTypeDef]{
+		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) ([]*core.EnumMemberTypeDef, error) {
+			return self.Members, nil
+		}).Deprecated("use members instead"),
+	}.Install(s.dag)
+	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(s.dag)
 }
 
 func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}) (*core.TypeDef, error) {
@@ -358,7 +373,36 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumValue(args.Value, args.Description, sourceMap)
+	return def.WithEnumValue(args.Value, args.Value, args.Description, sourceMap)
+}
+
+func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Value       string
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+}) (*core.TypeDef, error) {
+	if args.Value == "" {
+		return nil, fmt.Errorf("enum value must not be empty")
+	}
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+
+	supports, err := supportEnumMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !supports {
+		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
+	}
+
+	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
+}
+
+func supportEnumMembers(ctx context.Context) (bool, error) {
+	return core.Supports(ctx, "v0.18.11")
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {

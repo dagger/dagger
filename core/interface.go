@@ -309,7 +309,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				// if the return type of this function is an interface or list of interface, we may need to wrap the
 				// return value of the underlying object's function (due to support for covariant matching on return types)
 
-				underlyingReturnType, ok, err := iface.mod.ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
+				underlyingReturnType, ok, _, err := iface.mod.ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get return mod type: %w", err)
 				}
@@ -481,7 +481,7 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 			// missing field
 			continue
 		}
-		fieldType, ok, err := iface.UnderlyingType.SourceMod().ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, _, err := iface.UnderlyingType.SourceMod().ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
