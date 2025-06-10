@@ -397,7 +397,7 @@ func main() { //nolint:gocyclo
 
 		// start Prometheus metrics server if configured
 		if metricsAddr := os.Getenv("_EXPERIMENTAL_DAGGER_METRICS_ADDR"); metricsAddr != "" {
-			if err := setupMetricsServer(srv, metricsAddr); err != nil {
+			if err := setupMetricsServer(ctx, srv, metricsAddr); err != nil {
 				return fmt.Errorf("failed to start metrics server: %w", err)
 			}
 		}
