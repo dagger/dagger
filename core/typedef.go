@@ -967,20 +967,6 @@ func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
 }
 
-// Implements dagql.Enum interface
-func (enum *EnumTypeDef) ListValues() ast.EnumValueList {
-	var values ast.EnumValueList
-
-	for _, val := range enum.Values {
-		values = append(values, &ast.EnumValueDefinition{
-			Name:        val.Name,
-			Description: val.Description,
-		})
-	}
-
-	return values
-}
-
 func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef {
 	return &EnumTypeDef{
 		Name:         strcase.ToCamel(name),
