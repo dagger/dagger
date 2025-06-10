@@ -1,12 +1,12 @@
 package templates
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"go/token"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -170,8 +170,12 @@ func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
-	sort.SliceStable(s, func(i, j int) bool {
-		return s[i].Name < s[j].Name
+	s = slices.Clone(s)
+	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
+		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
+	})
+	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
+		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
 	})
 	return s
 }
