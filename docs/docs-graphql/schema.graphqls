@@ -1705,6 +1705,9 @@ type EnumTypeDef {
   """A unique identifier for this EnumTypeDef."""
   id: EnumTypeDefID!
 
+  """The members of the enum."""
+  members: [EnumValueTypeDef!]!
+
   """The name of the enum."""
   name: String!
 
@@ -1716,8 +1719,7 @@ type EnumTypeDef {
   """
   sourceModuleName: String!
 
-  """The values of the enum."""
-  values: [EnumValueTypeDef!]!
+  values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
 """
@@ -1738,6 +1740,9 @@ type EnumValueTypeDef {
 
   """The location of this enum value declaration."""
   sourceMap: SourceMap!
+
+  """The value of the enum value"""
+  value: String!
 }
 
 """
@@ -3879,6 +3884,23 @@ type TypeDef {
   """
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.
   """
+  withEnumMember(
+    """The name of the member in the enum"""
+    name: String!
+
+    """The value of the member in the enum"""
+    value: String!
+
+    """A doc string for the value, if any"""
+    description: String = ""
+
+    """The source map for the enum value definition."""
+    sourceMap: SourceMapID
+  ): TypeDef!
+
+  """
+  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  """
   withEnumValue(
     """The name of the value in the enum"""
     value: String!
@@ -3888,7 +3910,7 @@ type TypeDef {
 
     """The source map for the enum value definition."""
     sourceMap: SourceMapID
-  ): TypeDef!
+  ): TypeDef! @deprecated(reason: "Use withEnumMember instead")
 
   """
   Adds a static field for an Object TypeDef, failing if the type is not an object.

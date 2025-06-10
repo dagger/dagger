@@ -2623,6 +2623,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnumTypeDef::members",
+			"p": "Dagger/EnumTypeDef.html#method_members",
+			"d": "<p>The members of the enum.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnumTypeDef::name",
 			"p": "Dagger/EnumTypeDef.html#method_name",
 			"d": "<p>The name of the enum.</p>"
@@ -2643,7 +2649,7 @@
 			"t": "M",
 			"n": "Dagger\\EnumTypeDef::values",
 			"p": "Dagger/EnumTypeDef.html#method_values",
-			"d": "<p>The values of the enum.</p>"
+			"d": null
 		},
 		{
 			"t": "M",
@@ -2668,6 +2674,12 @@
 			"n": "Dagger\\EnumValueTypeDef::sourceMap",
 			"p": "Dagger/EnumValueTypeDef.html#method_sourceMap",
 			"d": "<p>The location of this enum value declaration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnumValueTypeDef::value",
+			"p": "Dagger/EnumValueTypeDef.html#method_value",
+			"d": "<p>The value of the enum value</p>"
 		},
 		{
 			"t": "M",
@@ -4246,6 +4258,12 @@
 			"n": "Dagger\\TypeDef::withEnum",
 			"p": "Dagger/TypeDef.html#method_withEnum",
 			"d": "<p>Returns a TypeDef of kind Enum with the provided name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::withEnumMember",
+			"p": "Dagger/TypeDef.html#method_withEnumMember",
+			"d": "<p>Adds a static value for an Enum TypeDef, failing if the type is not an enum.</p>"
 		},
 		{
 			"t": "M",

@@ -368,7 +368,7 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 var TypesHiddenFromEnvExtensions = []dagql.Typed{
 	&CurrentModule{},
 	&EnumTypeDef{},
-	&EnumValueTypeDef{},
+	&EnumMemberTypeDef{},
 	&Env{},
 	&Error{},
 	&ErrorValue{},

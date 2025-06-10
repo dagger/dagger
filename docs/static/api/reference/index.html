@@ -6671,6 +6671,10 @@
                         <td> A unique identifier for this EnumTypeDef. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-members" href="#EnumTypeDef-members"><code>members</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td> The members of the enum. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-name" href="#EnumTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the enum. </td>
                       </tr>
@@ -6683,8 +6687,10 @@
                         <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td> The values of the enum. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td>
+                          <span class="deprecation-reason">use members instead</span>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6742,6 +6748,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
                         <td> The location of this enum value declaration. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-value" href="#EnumValueTypeDef-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The value of the enum value </td>
                       </tr>
                     </tbody>
                   </table>
@@ -11021,8 +11031,38 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumMember" href="#TypeDef-withEnumMember"><code>withEnumMember</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
                         <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The value of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the value, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum value definition.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. <span class="deprecation-reason">Use withEnumMember instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">

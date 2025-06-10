@@ -96,7 +96,7 @@ func (sdk *module) withConfig(
 		return sdk, nil
 	}
 
-	fieldspec, err := withConfigFn.FieldSpec()
+	fieldspec, err := withConfigFn.FieldSpec(ctx, sdk.mod.Self)
 	if err != nil {
 		return nil, err
 	}

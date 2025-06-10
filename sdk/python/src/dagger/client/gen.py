@@ -3815,6 +3815,12 @@ class EnumTypeDef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
 
+    async def members(self) -> list["EnumValueTypeDef"]:
+        """The members of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("members", _args)
+        return await _ctx.execute_object_list(EnumValueTypeDef)
+
     async def name(self) -> str:
         """The name of the enum.
 
@@ -3865,7 +3871,14 @@ class EnumTypeDef(Type):
         return await _ctx.execute(str)
 
     async def values(self) -> list["EnumValueTypeDef"]:
-        """The values of the enum."""
+        """.. deprecated::
+        use members instead
+        """
+        warnings.warn(
+            'Method "values" is deprecated: use members instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("values", _args)
         return await _ctx.execute_object_list(EnumValueTypeDef)
@@ -3946,6 +3959,27 @@ class EnumValueTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    async def value(self) -> str:
+        """The value of the enum value
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -9780,8 +9814,9 @@ class TypeDef(Type):
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
 
-    def with_enum_value(
+    def with_enum_member(
         self,
+        name: str,
         value: str,
         *,
         description: str | None = "",
@@ -9792,6 +9827,39 @@ class TypeDef(Type):
 
         Parameters
         ----------
+        name:
+            The name of the member in the enum
+        value:
+            The value of the member in the enum
+        description:
+            A doc string for the value, if any
+        source_map:
+            The source map for the enum value definition.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
+        ]
+        _ctx = self._select("withEnumMember", _args)
+        return TypeDef(_ctx)
+
+    def with_enum_value(
+        self,
+        value: str,
+        *,
+        description: str | None = "",
+        source_map: SourceMap | None = None,
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        .. deprecated::
+            Use withEnumMember instead
+
+        Parameters
+        ----------
         value:
             The name of the value in the enum
         description:
@@ -9799,6 +9867,11 @@ class TypeDef(Type):
         source_map:
             The source map for the enum value definition.
         """
+        warnings.warn(
+            'Method "with_enum_value" is deprecated: Use withEnumMember instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("value", value),
             Arg("description", description, ""),

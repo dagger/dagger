@@ -1412,6 +1412,18 @@ export type TypeDefWithEnumOpts = {
   sourceMap?: SourceMap
 }
 
+export type TypeDefWithEnumMemberOpts = {
+  /**
+   * A doc string for the value, if any
+   */
+  description?: string
+
+  /**
+   * The source map for the enum value definition.
+   */
+  sourceMap?: SourceMap
+}
+
 export type TypeDefWithEnumValueOpts = {
   /**
    * A doc string for the value, if any
@@ -3941,6 +3953,23 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
+   * The members of the enum.
+   */
+  members = async (): Promise<EnumValueTypeDef[]> => {
+    type members = {
+      id: EnumValueTypeDefID
+    }
+
+    const ctx = this._ctx.select("members").select("id")
+
+    const response: Awaited<members[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    )
+  }
+
+  /**
    * The name of the enum.
    */
   name = async (): Promise<string> => {
@@ -3979,7 +4008,7 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
-   * The values of the enum.
+   * @deprecated use members instead
    */
   values = async (): Promise<EnumValueTypeDef[]> => {
     type values = {
@@ -4003,6 +4032,7 @@ export class EnumValueTypeDef extends BaseClient {
   private readonly _id?: EnumValueTypeDefID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4012,12 +4042,14 @@ export class EnumValueTypeDef extends BaseClient {
     _id?: EnumValueTypeDefID,
     _description?: string,
     _name?: string,
+    _value?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._description = _description
     this._name = _name
+    this._value = _value
   }
 
   /**
@@ -4071,6 +4103,21 @@ export class EnumValueTypeDef extends BaseClient {
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
+  }
+
+  /**
+   * The value of the enum value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -9058,9 +9105,26 @@ export class TypeDef extends BaseClient {
 
   /**
    * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+   * @param name The name of the member in the enum
+   * @param value The value of the member in the enum
+   * @param opts.description A doc string for the value, if any
+   * @param opts.sourceMap The source map for the enum value definition.
+   */
+  withEnumMember = (
+    name: string,
+    value: string,
+    opts?: TypeDefWithEnumMemberOpts,
+  ): TypeDef => {
+    const ctx = this._ctx.select("withEnumMember", { name, value, ...opts })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
    * @param value The name of the value in the enum
    * @param opts.description A doc string for the value, if any
    * @param opts.sourceMap The source map for the enum value definition.
+   * @deprecated Use withEnumMember instead
    */
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
     const ctx = this._ctx.select("withEnumValue", { value, ...opts })

@@ -68,7 +68,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	return nil
 }
 
-func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {
+func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, bool, error) {
 	var modType core.ModType
 
 	switch typeDef.Kind {
@@ -76,12 +76,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &core.PrimitiveType{Def: typeDef}
 
 	case core.TypeDefKindList:
-		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
+		underlyingType, ok, _, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
+			return nil, false, false, fmt.Errorf("failed to get underlying type: %w", err)
 		}
 		if !ok {
-			return nil, false, nil
+			return nil, false, false, nil
 		}
 		modType = &core.ListType{
 			Elem:       typeDef.AsList.Value.ElementTypeDef,
@@ -91,13 +91,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindScalar:
 		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Name)
 		if !ok {
-			return nil, false, nil
+			return nil, false, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindScalar && def.AsScalar.Value.Name == typeDef.AsScalar.Value.Name {
@@ -106,7 +106,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
+			return nil, false, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
 		}
 
 		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Name}
@@ -114,13 +114,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindObject:
 		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
-			return nil, false, nil
+			return nil, false, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindObject && def.AsObject.Value.Name == typeDef.AsObject.Value.Name {
@@ -129,7 +129,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
+			return nil, false, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
 		}
 
 		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Name}
@@ -137,13 +137,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindEnum:
 		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
 		if !ok {
-			return nil, false, nil
+			return nil, false, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindEnum && def.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
@@ -152,17 +152,17 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
+			return nil, false, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
 		}
 
 		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet define any interfaces
-		return nil, false, nil
+		return nil, false, false, nil
 
 	default:
-		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+		return nil, false, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
 
 	if typeDef.Optional {
@@ -172,7 +172,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 	}
 
-	return modType, true, nil
+	return modType, true, true, nil
 }
 
 func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
@@ -315,8 +315,9 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 			}
 
 			for _, value := range introspectionType.EnumValues {
-				typedef.Values = append(typedef.Values, &core.EnumValueTypeDef{
+				typedef.Members = append(typedef.Members, &core.EnumMemberTypeDef{
 					Name:        value.Name,
+					Value:       value.Directives.EnumValue(),
 					Description: value.Description,
 				})
 			}
@@ -461,6 +462,9 @@ type CoreModEnum struct {
 var _ core.ModType = (*CoreModEnum)(nil)
 
 func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+	if enum, ok := value.(*core.ModuleEnum); ok {
+		value = enum.Name
+	}
 	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
@@ -469,11 +473,15 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
+	var input any = value
+	if enum, ok := value.(*core.ModuleEnum); ok {
+		input = enum.Name
+	}
 	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
 	}
-	return s.DecodeInput(value)
+	return s.DecodeInput(input)
 }
 
 func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
