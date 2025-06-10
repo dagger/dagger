@@ -137,13 +137,13 @@ func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{})
 func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Model string
 }) (*core.LLM, error) {
-	return llm.WithModel(ctx, args.Model, s.srv)
+	return llm.WithModel(args.Model), nil
 }
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
 }) (*core.LLM, error) {
-	return llm.WithPrompt(ctx, args.Prompt, s.srv)
+	return llm.WithPrompt(args.Prompt), nil
 }
 
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
@@ -163,7 +163,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPromptFile(ctx, file.Self, s.srv)
+	return llm.WithPromptFile(ctx, file.Self)
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
