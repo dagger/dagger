@@ -181,7 +181,7 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 			),
-		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, nil)).
+		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, s.withSymlinkPath)).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
@@ -591,4 +591,8 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance
 		return inst, err
 	}
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+}
+
+func (s *directorySchema) withSymlinkPath(ctx context.Context, val dagql.Instance[*core.Directory], _ directoryWithSymlinkArgs) (string, error) {
+	return val.Self.Dir, nil
 }
