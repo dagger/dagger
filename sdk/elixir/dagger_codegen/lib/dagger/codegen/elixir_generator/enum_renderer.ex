@@ -14,6 +14,7 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
   end
 
   def render_module_body(type) do
+    unique_enum_values = Enum.uniq_by(type.enum_values, &Formatter.format_function_name(&1.name))
     [
       """
       use Dagger.Core.Base, kind: :enum, name: "#{type.name}"
@@ -26,7 +27,7 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
       |> render_union_type(),
       ?\n,
       ?\n,
-      for enum_value <- type.enum_values do
+      for enum_value <- unique_enum_values do
         [
           render_function(enum_value),
           ?\n,
