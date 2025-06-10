@@ -29,6 +29,30 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type ErrSDKRuntimeNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKRuntimeNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support defining and executing functions", err.SDK)
+}
+
+type ErrSDKCodegenNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKCodegenNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support module generation", err.SDK)
+}
+
+type ErrSDKClientGeneratorNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKClientGeneratorNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support client generation", err.SDK)
+}
+
 type moduleSourceSchema struct {
 	dag *dagql.Server
 }
@@ -1712,7 +1736,7 @@ func (s *moduleSourceSchema) runCodegen(
 
 	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
 	if !ok {
-		return genDirInst, fmt.Errorf("sdk implementation does not implement CodeGenerator interface")
+		return genDirInst, ErrSDKCodegenNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	// run codegen to get the generated context directory
@@ -1838,7 +1862,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
-		return genDirInst, fmt.Errorf("sdk implementation does not implement ClientGenerator interface")
+		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	requiredClientGenerationFiles, err := clientGeneratorImpl.RequiredClientGenerationFiles(ctx)
@@ -1866,18 +1890,21 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
 
-	// If the current module source has sources, we can transform it into a module
-	// to generate self bindings.
+	// If the current module source has sources and its SDK implements the `Runtime` interface,
+	// we can transform it into a module to generate self bindings.
 	if srcInst.Self.SDK != nil {
-		var mod dagql.Instance[*core.Module]
-		err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
-			Field: "asModule",
-		})
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
-		}
+		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
+		if _, ok := srcInst.Self.SDKImpl.AsRuntime(); ok {
+			var mod dagql.Instance[*core.Module]
+			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
 
-		deps = mod.Self.Deps.Append(mod.Self)
+			deps = mod.Self.Deps.Append(mod.Self)
+		}
 	}
 
 	dev := dagql.Boolean(false)
@@ -1932,7 +1959,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	genDirInst = srcInst.Self.ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
 		genDirInst, err = s.runCodegen(ctx, srcInst, genDirInst)
-		if err != nil {
+
+		var missingImplErr ErrSDKCodegenNotImplemented
+		if err != nil && !errors.As(err, &missingImplErr) {
 			return genDirInst, fmt.Errorf("failed to run codegen: %w", err)
 		}
 	}
@@ -1941,7 +1970,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	for _, client := range modCfg.Clients {
 		genDirInst, err = s.runClientGenerator(ctx, srcInst, genDirInst, client)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to run client generator %s: %w", client.Generator, err)
+			return genDirInst, fmt.Errorf("failed to generate client %s: %w", client.Generator, err)
 		}
 	}
 
@@ -1985,7 +2014,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.Instance[*core.ModuleSource], mod *core.Module) (*core.Module, error) {
 	runtimeImpl, ok := src.Self.SDKImpl.AsRuntime()
 	if !ok {
-		return nil, fmt.Errorf("sdk implementation does not implement Runtime interface")
+		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self.SDK.Source}
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
