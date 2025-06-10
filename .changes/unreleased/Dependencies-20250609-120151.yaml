@@ -1,6 +1,0 @@
-kind: Dependencies
-body: Update go to 1.24.4
-time: 2025-06-09T12:01:51.169897688+01:00
-custom:
-    Author: jedevc
-    PR: "10553"

@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Fix occasional "no such file or directory" errors during filesync caused by concurrent syncs.
-time: 2025-06-06T15:30:56.847567096-07:00
-custom:
-  Author: sipsma
-  PR: "10541"
