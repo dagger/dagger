@@ -799,8 +799,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 		return err
 	})
 
-	found := false
-retryLoop:
+	var foundAll bool
 	for range 30 {
 		out, err := clientCtr.
 			WithExec([]string{"apk", "add", "curl"}).
@@ -812,26 +811,74 @@ retryLoop:
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		// find the line that starts with "dagger_connected_clients"
+
+		// find the lines with metrics we care about testing
+		soughtMetrics := map[string]struct{}{
+			"dagger_connected_clients":                 {},
+			"dagger_local_cache_total_disk_size_bytes": {},
+			"dagger_local_cache_entry_count":           {},
+		}
+		foundMetrics := map[string]int{}
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
-			numStr, ok := strings.CutPrefix(line, "dagger_connected_clients ")
-			if !ok {
-				continue
+
+			for metricName := range soughtMetrics {
+				numStr, found := strings.CutPrefix(line, metricName+" ")
+				if !found {
+					continue
+				}
+				num, err := strconv.Atoi(numStr)
+				require.NoError(t, err)
+
+				delete(soughtMetrics, metricName)
+				foundMetrics[metricName] = num
 			}
-			num, err := strconv.Atoi(numStr)
-			require.NoError(t, err)
-			if num != 1 {
-				t.Logf("dagger_connected_clients is %d, expected 1", num)
-				time.Sleep(1 * time.Second)
-				continue retryLoop
+
+			if len(soughtMetrics) == 0 {
+				break
 			}
-			found = true
-			break retryLoop
 		}
+
+		if len(soughtMetrics) != 0 {
+			t.Logf("did not find all sought metrics in output: %v", soughtMetrics)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// found everything, but validate values
+		validatedAll := true
+		for metricName, num := range foundMetrics {
+			switch metricName {
+			case "dagger_connected_clients":
+				if num != 1 {
+					t.Logf("expected dagger_connected_clients = 1, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_total_disk_size_bytes":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_entry_count":
+				if num < 0 {
+					t.Logf("expected dagger_local_cache_entry_count >= 0, got %d", num)
+					validatedAll = false
+				}
+			default:
+				t.Fatalf("unexpected metric %q found in output", metricName)
+			}
+		}
+
+		if validatedAll {
+			foundAll = true
+			break // everything found + validated, exit retry loop
+		}
+
+		// retry again in a second
+		time.Sleep(1 * time.Second)
 	}
-	require.True(t, found, "did not find dagger_connected_clients = 1 in metrics output")
+	require.True(t, foundAll, "did not find all expected metrics in output after 30 attempts")
 
 	clientCancel()
-	require.NoError(t, eg.Wait(), "error waiting for client exec to finish")
+	require.NoError(t, eg.Wait(), "error from client exec")
 }
