@@ -80,33 +80,23 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}, nil
 
 	case *types.Basic:
+		enumType, err := ps.parseGoEnumReference(t, named, isPtr)
+		if err != nil {
+			return nil, err
+		}
+		if enumType != nil {
+			// type can be parsed as an enum, so let's assume it is
+			return enumType, nil
+		}
+
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
-			if enum, _ := ps.parseGoEnum(t, named); enum != nil {
-				// type can be parsed as an enum, so let's assume it is
-				parsedType.enumType = named
-			}
-
+			parsedType.alias = named.Obj().Name()
 			if ps.isDaggerGenerated(named.Obj()) {
-				isEnum := false
-				for i := range named.NumMethods() {
-					method := named.Method(i)
-					if method.Name() == "IsEnum" {
-						isEnum = true
-						break
-					}
-				}
-
-				if isEnum {
-					parsedType.enumType = named
-				} else {
-					parsedType.scalarType = named
-				}
+				parsedType.scalarType = named
 			} else {
 				parsedType.moduleName = ps.moduleName
 			}
-
-			parsedType.alias = named.Obj().Name()
 		}
 		return parsedType, nil
 
@@ -159,7 +149,6 @@ type parsedPrimitiveType struct {
 	moduleName string
 
 	scalarType *types.Named
-	enumType   *types.Named
 
 	// if this is something like `type Foo string`, then alias will be "Foo"
 	alias string
@@ -191,8 +180,6 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	var def *Statement
 	if spec.scalarType != nil {
 		def = Qual("dag", "TypeDef").Call().Dot("WithScalar").Call(Lit(spec.scalarType.Obj().Name()))
-	} else if spec.enumType != nil {
-		def = Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.enumType.Obj().Name()))
 	} else {
 		def = Qual("dag", "TypeDef").Call().Dot("WithKind").Call(kind)
 	}
@@ -210,9 +197,6 @@ func (spec *parsedPrimitiveType) GoSubTypes() []types.Type {
 	subTypes := []types.Type{}
 	if spec.scalarType != nil {
 		subTypes = append(subTypes, spec.scalarType)
-	}
-	if spec.enumType != nil {
-		subTypes = append(subTypes, spec.enumType)
 	}
 	return subTypes
 }
