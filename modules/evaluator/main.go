@@ -14,9 +14,12 @@ import (
 )
 
 type Evaluator struct {
-	Docs          *dagger.File
-	InitialPrompt *dagger.File
-	WriterModel   string
+	Docs           *dagger.File
+	InitialPrompt  *dagger.File
+	EvaluatorModel string
+
+	// +private
+	Evals []*dagger.WorkspaceEval
 }
 
 const MinSuccessRate = 0.8
@@ -33,14 +36,36 @@ func New(
 	model string,
 ) *Evaluator {
 	return &Evaluator{
-		Docs:          docs,
-		InitialPrompt: initialPrompt,
-		WriterModel:   model,
+		Docs:           docs,
+		InitialPrompt:  initialPrompt,
+		EvaluatorModel: model,
 	}
 }
 
+type Eval interface {
+	Name(context.Context) (string, error)
+	Prompt(base *dagger.LLM) *dagger.LLM
+	Check(ctx context.Context, prompt *dagger.LLM) error
+
+	DaggerObject
+}
+
+func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error) {
+	id, err := eval.XXX_GraphQLID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// FIXME: it would be nice to not have to do this workaround. it's hard
+	// because we want to accept Eval, but then the type has no AsWorkspaceEval().
+	//
+	// fortunately the IDs are the same nonetheless, so we can just convert it
+	// with the available plumbing
+	m.Evals = append(m.Evals, dag.LoadWorkspaceEvalFromID(dagger.WorkspaceEvalID(id)))
+	return m, nil
+}
+
 func (m *Evaluator) llm() *dagger.LLM {
-	return dag.LLM(dagger.LLMOpts{Model: m.WriterModel})
+	return dag.LLM(dagger.LLMOpts{Model: m.EvaluatorModel})
 }
 
 func (m *Evaluator) env() *dagger.Env {
@@ -128,10 +153,7 @@ func (m *Evaluator) EvalsAcrossModels(
 	// +optional
 	systemPrompt *dagger.File,
 ) (*EvalsAcrossModels, error) {
-	work := dag.Workspace()
-	if systemPrompt != nil {
-		work = work.WithSystemPromptFile(systemPrompt)
-	}
+	work := m.work()
 	if len(evals) == 0 {
 		names, err := work.EvalNames(ctx)
 		if err != nil {
@@ -375,6 +397,9 @@ func (m *Evaluator) work() *dagger.Workspace {
 	work := dag.Workspace()
 	if m.InitialPrompt != nil {
 		work = work.WithSystemPromptFile(m.InitialPrompt)
+	}
+	for _, eval := range m.Evals {
+		work = work.WithEval(eval)
 	}
 	return work
 }

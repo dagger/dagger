@@ -5,8 +5,6 @@ go 1.24.3
 require (
 	github.com/99designs/gqlgen v0.17.74
 	github.com/Khan/genqlient v0.8.1
-	github.com/dagger/testctx v0.0.5
-	github.com/dagger/testctx/oteltest v0.0.3
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.27
 	github.com/vito/runt v0.0.0-20250610184720-a202b5b41b87
@@ -29,7 +27,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.15.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
