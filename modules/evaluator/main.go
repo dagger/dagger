@@ -77,24 +77,6 @@ func (m *Evaluator) WithEvals(ctx context.Context, evals []Eval) (*Evaluator, er
 	return m, nil
 }
 
-func (m *Evaluator) llm() *dagger.LLM {
-	return dag.LLM(dagger.LLMOpts{Model: m.EvaluatorModel})
-}
-
-func (m *Evaluator) env() *dagger.Env {
-	env := dag.Env().
-		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
-	if m.Docs != nil {
-		env = env.WithFileInput("docs", m.Docs,
-			"The documentation the model is meant to adhere to.")
-	}
-	if m.InitialPrompt != nil {
-		env = env.WithFileInput("initialSystemPrompt", m.InitialPrompt,
-			"An initial system prompt to evaluate and improve.")
-	}
-	return env
-}
-
 type ModelResult struct {
 	ModelName   string
 	SpanID      string
@@ -406,13 +388,29 @@ func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, research
 		AsString(ctx)
 }
 
+func (m *Evaluator) llm() *dagger.LLM {
+	return dag.LLM(dagger.LLMOpts{Model: m.EvaluatorModel})
+}
+
+func (m *Evaluator) env() *dagger.Env {
+	env := dag.Env().
+		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
+	if m.Docs != nil {
+		env = env.WithFileInput("docs", m.Docs,
+			"The documentation the model is meant to adhere to.")
+	}
+	if m.InitialPrompt != nil {
+		env = env.WithFileInput("initialSystemPrompt", m.InitialPrompt,
+			"An initial system prompt to evaluate and improve.")
+	}
+	return env
+}
+
 func (m *Evaluator) work() *dagger.Workspace {
-	work := dag.Workspace()
+	work := dag.Workspace().
+		WithEvals(m.Evals)
 	if m.InitialPrompt != nil {
 		work = work.WithSystemPromptFile(m.InitialPrompt)
-	}
-	for _, eval := range m.Evals {
-		work = work.WithEval(eval)
 	}
 	return work
 }
