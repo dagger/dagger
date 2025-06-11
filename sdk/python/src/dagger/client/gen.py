@@ -267,19 +267,19 @@ class CacheSharingMode(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
-    ESTARGZ = "ESTARGZ"
+    ESTARGZ = "EStarGZ"
 
     EStarGZ = "EStarGZ"
 
-    GZIP = "GZIP"
+    GZIP = "Gzip"
 
     Gzip = "Gzip"
 
-    UNCOMPRESSED = "UNCOMPRESSED"
+    UNCOMPRESSED = "Uncompressed"
 
     Uncompressed = "Uncompressed"
 
-    ZSTD = "ZSTD"
+    ZSTD = "Zstd"
 
     Zstd = "Zstd"
 
@@ -287,11 +287,11 @@ class ImageLayerCompression(Enum):
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
-    DOCKER = "DOCKER"
+    DOCKER = "DockerMediaTypes"
 
     DockerMediaTypes = "DockerMediaTypes"
 
-    OCI = "OCI"
+    OCI = "OCIMediaTypes"
 
     OCIMediaTypes = "OCIMediaTypes"
 
@@ -299,15 +299,15 @@ class ImageMediaTypes(Enum):
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
-    DIR = "DIR"
+    DIR = "DIR_SOURCE"
 
     DIR_SOURCE = "DIR_SOURCE"
 
-    GIT = "GIT"
+    GIT = "GIT_SOURCE"
 
     GIT_SOURCE = "GIT_SOURCE"
 
-    LOCAL = "LOCAL"
+    LOCAL = "LOCAL_SOURCE"
 
     LOCAL_SOURCE = "LOCAL_SOURCE"
 
@@ -336,13 +336,13 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
-    BOOLEAN = "BOOLEAN"
+    BOOLEAN = "BOOLEAN_KIND"
     """A boolean value."""
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
 
-    ENUM = "ENUM"
+    ENUM = "ENUM_KIND"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
@@ -354,25 +354,25 @@ class TypeDefKind(Enum):
     Always paired with an EnumTypeDef.
     """
 
-    FLOAT = "FLOAT"
+    FLOAT = "FLOAT_KIND"
     """A float value."""
 
     FLOAT_KIND = "FLOAT_KIND"
     """A float value."""
 
-    INPUT = "INPUT"
+    INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
-    INTEGER = "INTEGER"
+    INTEGER = "INTEGER_KIND"
     """An integer value."""
 
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
 
-    INTERFACE = "INTERFACE"
+    INTERFACE = "INTERFACE_KIND"
     """Always paired with an InterfaceTypeDef.
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -384,7 +384,7 @@ class TypeDefKind(Enum):
     A named type of functions that can be matched+implemented by other objects+interfaces.
     """
 
-    LIST = "LIST"
+    LIST = "LIST_KIND"
     """Always paired with a ListTypeDef.
 
     A list of values all having the same type.
@@ -396,7 +396,7 @@ class TypeDefKind(Enum):
     A list of values all having the same type.
     """
 
-    OBJECT = "OBJECT"
+    OBJECT = "OBJECT_KIND"
     """Always paired with an ObjectTypeDef.
 
     A named type defined in the GraphQL schema, with fields and functions.
@@ -408,19 +408,19 @@ class TypeDefKind(Enum):
     A named type defined in the GraphQL schema, with fields and functions.
     """
 
-    SCALAR = "SCALAR"
+    SCALAR = "SCALAR_KIND"
     """A scalar value of any basic kind."""
 
     SCALAR_KIND = "SCALAR_KIND"
     """A scalar value of any basic kind."""
 
-    STRING = "STRING"
+    STRING = "STRING_KIND"
     """A string value."""
 
     STRING_KIND = "STRING_KIND"
     """A string value."""
 
-    VOID = "VOID"
+    VOID = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
