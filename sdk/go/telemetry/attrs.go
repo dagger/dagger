@@ -7,6 +7,10 @@ const (
 	// represents.
 	DagCallAttr = "dagger.io/dag.call"
 
+	// The base64-encoded, protobuf-marshalled receiver callpbv1.Call that this span
+	// represents.
+	DagCallReceiverAttr = "dagger.io/dag.receiver"
+
 	// The scope of the call.
 	//
 	// Examples: llm, graphql
@@ -145,6 +149,21 @@ const (
 	// The subpath of the module, relative to the root, e.g. "/modules/my-module"
 	ModuleSubpathAttr = "dagger.io/module.subpath"
 
+	// The module context directory path
+	ModuleContextDirAttr = "dagger.io/module.context_dir"
+
+	// The function name of the current module
+	ModuleFunctionCallAttr = "dagger.io/module.function.name"
+
+	// The name of the current module
+	ModuleNameAttr = "dagger.io/module.name"
+
 	// The HTML URL of the module, e.g. "https://github.com/dagger/dagger"
 	ModuleHTMLRepoURLAttr = "dagger.io/module.htmlRepoURL"
+
+	// Caller's git remote
+	GitRemoteAtrr = "dagger.io/git.remote"
+
+	// Caller's git ref
+	GitRefAttr = "dagger.io/git.ref"
 )

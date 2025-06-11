@@ -68,6 +68,52 @@ func AroundFunc(
 		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
+
+	// if inside a module call, add call trace metadata. this is useful
+	// since within a single span, we can correlate the caller's and callee's
+	// module and functions
+	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
+		cm, _ := q.MainClientCallerMetadata(ctx)
+		fc, _ := q.CurrentFunctionCall(ctx)
+		m, _ := q.CurrentModule(ctx)
+
+		if cm != nil {
+			if r, ok := cm.Labels[telemetry.GitRefAttr]; ok {
+				attrs = append(attrs,
+					attribute.String(telemetry.GitRefAttr, r))
+			}
+
+			if r, ok := cm.Labels[telemetry.GitRemoteAtrr]; ok {
+				attrs = append(attrs,
+					attribute.String(telemetry.GitRemoteAtrr, r))
+			}
+		}
+
+		if m != nil {
+			if m.GetSource().Git != nil {
+				attrs = append(attrs,
+					attribute.String(telemetry.ModuleHTMLRepoURLAttr, m.GetSource().Git.HTMLRepoURL),
+					attribute.String(telemetry.ModuleVersionAttr, m.GetSource().Git.Commit),
+				)
+			}
+			attrs = append(attrs,
+				attribute.String(telemetry.ModuleSubpathAttr, m.GetSource().SourceRootSubpath),
+				attribute.String(telemetry.ModuleNameAttr, m.Name()),
+			)
+
+			if m.GetSource().Local != nil {
+				attrs = append(attrs,
+					attribute.String(telemetry.ModuleContextDirAttr, m.GetSource().Local.ContextDirectoryPath),
+				)
+			}
+		}
+
+		if fc != nil {
+			attrs = append(attrs,
+				attribute.String(telemetry.ModuleFunctionCallAttr, fc.Name))
+		}
+	}
+
 	if idInputs, err := id.Inputs(); err != nil {
 		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
 	} else {
