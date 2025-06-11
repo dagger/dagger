@@ -181,7 +181,7 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 			),
-		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, s.withSymlinkPath)).
+		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, WithPathFn(s.withSymlinkPath))).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
