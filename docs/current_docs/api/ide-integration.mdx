@@ -174,7 +174,7 @@ Poetry manages the project environment in a central location instead of `.venv`.
 </Tabs>
 
 :::tip
-If you place the virtual environment (`.venv`) inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json` to avoid uploading those files to the runtime container unnecessarily.
+If you place the virtual environment (`.venv`) inside the module, don't forget to add it to `.gitignore` and to `"include": ["!.venv"]` in `dagger.json` to avoid uploading those files to the runtime container unnecessarily.
 :::
 
 <Tabs>
