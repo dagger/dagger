@@ -51,7 +51,9 @@ type Eval interface {
 }
 
 func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error) {
-	id, err := eval.XXX_GraphQLID(ctx)
+	id, err := eval.(interface {
+		ID(context.Context) (EvalID, error)
+	}).ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +63,17 @@ func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error)
 	// fortunately the IDs are the same nonetheless, so we can just convert it
 	// with the available plumbing
 	m.Evals = append(m.Evals, dag.LoadWorkspaceEvalFromID(dagger.WorkspaceEvalID(id)))
+	return m, nil
+}
+
+func (m *Evaluator) WithEvals(ctx context.Context, evals []Eval) (*Evaluator, error) {
+	for _, eval := range evals {
+		var err error
+		m, err = m.WithEval(ctx, eval)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return m, nil
 }
 
