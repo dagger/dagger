@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
@@ -20,6 +21,9 @@ import (
 // implicit dependency of every user module.
 type CoreMod struct {
 	Dag *dagql.Server
+
+	cachedTypedefs   []*core.TypeDef
+	cachedTypedefsMu sync.Mutex
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -89,21 +93,69 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		if !ok {
 			return nil, false, nil
 		}
-		modType = &CoreModScalar{coreMod: m, name: typeDef.AsScalar.Value.Name}
+
+		var resolvedDef *core.TypeDef
+		defs, err := m.typedefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, def := range defs {
+			if def.Kind == core.TypeDefKindScalar && def.AsScalar.Value.Name == typeDef.AsScalar.Value.Name {
+				resolvedDef = def
+				break
+			}
+		}
+		if resolvedDef == nil {
+			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
+		}
+
+		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Name}
 
 	case core.TypeDefKindObject:
 		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
-		modType = &CoreModObject{coreMod: m, name: typeDef.AsObject.Value.Name}
+
+		var resolvedDef *core.TypeDef
+		defs, err := m.typedefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, def := range defs {
+			if def.Kind == core.TypeDefKindObject && def.AsObject.Value.Name == typeDef.AsObject.Value.Name {
+				resolvedDef = def
+				break
+			}
+		}
+		if resolvedDef == nil {
+			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
+		}
+
+		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Name}
+
 	case core.TypeDefKindEnum:
 		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
 
-		modType = &CoreModEnum{coreMod: m, typeDef: typeDef.AsEnum.Value}
+		var resolvedDef *core.TypeDef
+		defs, err := m.typedefs(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, def := range defs {
+			if def.Kind == core.TypeDefKindEnum && def.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
+				resolvedDef = def
+				break
+			}
+		}
+		if resolvedDef == nil {
+			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
+		}
+
+		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet define any interfaces
@@ -115,12 +167,26 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 
 	if typeDef.Optional {
 		modType = &core.NullableType{
-			InnerDef: typeDef.WithOptional(false),
+			InnerDef: modType.TypeDef().WithOptional(false),
 			Inner:    modType,
 		}
 	}
 
 	return modType, true, nil
+}
+
+func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
+	m.cachedTypedefsMu.Lock()
+	defer m.cachedTypedefsMu.Unlock()
+
+	if m.cachedTypedefs == nil {
+		typedefs, err := m.TypeDefs(ctx, m.Dag)
+		if err != nil {
+			return nil, err
+		}
+		m.cachedTypedefs = typedefs
+	}
+	return m.cachedTypedefs, nil
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.TypeDef, error) {
@@ -230,6 +296,18 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				Kind:    core.TypeDefKindInput,
 				AsInput: dagql.NonNull(typeDef),
 			})
+
+		case introspection.TypeKindScalar:
+			typedef := &core.ScalarTypeDef{
+				Name:        introspectionType.Name,
+				Description: introspectionType.Description,
+			}
+
+			typeDefs = append(typeDefs, &core.TypeDef{
+				Kind:     core.TypeDefKindScalar,
+				AsScalar: dagql.NonNull(typedef),
+			})
+
 		case introspection.TypeKindEnum:
 			typedef := &core.EnumTypeDef{
 				Name:        introspectionType.Name,
