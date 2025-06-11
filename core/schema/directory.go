@@ -65,7 +65,7 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.Func("withFile", s.withFile).
+		dagql.NodeFunc("withFile", DagOpDirectoryWrapper(s.srv, s.withFile, keepParentDir)).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied file (e.g., "/file.txt").`),
@@ -181,7 +181,7 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 			),
-		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, s.withSymlinkPath)).
+		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, keepParentDir)).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
@@ -324,15 +324,25 @@ type WithFileArgs struct {
 	Path        string
 	Source      core.FileID
 	Permissions *int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args WithFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withFile(ctx context.Context, parent dagql.Instance[*core.Directory], args WithFileArgs) (inst dagql.Instance[*core.Directory], err error) {
 	file, err := args.Source.Load(ctx, s.srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, nil)
+	dir, err := parent.Self.WithFileDagOp(ctx, s.srv, args.Path, file.Self, args.Permissions, nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+}
+
+func keepParentDir[A any](_ context.Context, val dagql.Instance[*core.Directory], _ A) (string, error) {
+	return val.Self.Dir, nil
 }
 
 type WithFilesArgs struct {
@@ -593,8 +603,4 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance
 		return inst, err
 	}
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
-}
-
-func (s *directorySchema) withSymlinkPath(ctx context.Context, val dagql.Instance[*core.Directory], _ directoryWithSymlinkArgs) (string, error) {
-	return val.Self.Dir, nil
 }
