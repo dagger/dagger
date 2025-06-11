@@ -1524,4 +1524,23 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "some-content", s)
 	})
+
+	t.Run("symlink correctly passes dir path", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().WithNewFile("some-file", "data")
+
+		d2 := c.Directory().
+			WithNewFile("some-other-file", "other-data").
+			WithNewDirectory("dir1").
+			Directory("/dir1").
+			WithDirectory("/", d).
+			WithSymlink("anything", "link")
+
+		// this should no longer be available, since dir.Dir should now be "/dir1"
+		_, err := d2.File("some-other-file").Contents(ctx)
+		require.Error(t, err)
+
+		s, err := d2.File("some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
 }
