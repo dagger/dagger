@@ -182,7 +182,7 @@ public function publish(): string
 ```java
 @Function
 public String publish()
-    throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+    throws InterruptedException, ExecutionException, DaggerQueryException {
   return dag()
       .container()
       .from("alpine:latest")
@@ -339,7 +339,7 @@ public class Basics {
    */
   @Function
   public String buildAndPublish()
-      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return this.build().publish("ttl.sh/bar");
   }
 }
@@ -466,7 +466,7 @@ public Container build(@Default("alpine:latest") String image) {
 
 @Function
 public String publish2(@Default("alpine:latest") String image)
-    throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+    throws InterruptedException, ExecutionException, DaggerQueryException {
   return this
       .build(image)
       .withEntrypoint(List.of("cat", "/hi.txt"))
@@ -537,7 +537,7 @@ public function check(): string
 ```java
 @Function
 public String check()
-    throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+    throws InterruptedException, ExecutionException, DaggerQueryException {
   Container ctr = dag()
       .wolfi()
       .container();

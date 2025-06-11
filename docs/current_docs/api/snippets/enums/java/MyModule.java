@@ -2,7 +2,6 @@ package io.dagger.modules.mymodule;
 
 import static io.dagger.client.Dagger.dag;
 
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
@@ -12,8 +11,7 @@ import java.util.concurrent.ExecutionException;
 @Object
 public class MyModule {
   @Function
-  public String scan(String ref, Severity severity)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+  public String scan(String ref,Severity severity) throws ExecutionException, DaggerQueryException, InterruptedException {
     var ctr = dag().container().from(ref);
 
     return dag()

@@ -3,6 +3,7 @@ package io.dagger.client.exception;
 public class DaggerExceptionConstants {
   public static final String CMD_KEY = "cmd";
   public static final String EXIT_CODE_KEY = "exitCode";
+  public static final String STDOUT_KEY = "stdout";
   public static final String STDERR_KEY = "stderr";
   public static final String TYPE_KEY = "_type";
 

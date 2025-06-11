@@ -3,7 +3,6 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
@@ -13,6 +12,7 @@ import java.util.concurrent.ExecutionException;
 
 @Object
 public class MyModule {
+
   private Container.WithExecArguments execOpts =
       new Container.WithExecArguments().withUseEntrypoint(true);
 
@@ -41,7 +41,7 @@ public class MyModule {
    */
   @Function
   public String set(String key, String value)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return redis()
         .withExec(List.of("set", key, value), execOpts)
         .withExec(List.of("save"), execOpts)
@@ -54,7 +54,7 @@ public class MyModule {
    */
   @Function
   public String get(String key)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return redis().withExec(List.of("get", key), execOpts).stdout();
   }
 }

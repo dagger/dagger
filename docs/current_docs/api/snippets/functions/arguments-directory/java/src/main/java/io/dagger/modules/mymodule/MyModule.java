@@ -1,8 +1,6 @@
 package io.dagger.modules.mymodule;
 
 import static io.dagger.client.Dagger.dag;
-
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 
 
@@ -16,7 +14,7 @@ import java.util.concurrent.ExecutionException;
 public class MyModule {
   @Function
   public String tree(Directory src, String depth)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return dag().container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", src)

@@ -1,14 +1,11 @@
 package io.dagger.client;
 
-import static io.dagger.client.exception.DaggerExceptionConstants.CMD_KEY;
-import static io.dagger.client.exception.DaggerExceptionConstants.EXIT_CODE_KEY;
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.dagger.client.exception.DaggerExecException;
 import io.smallrye.graphql.client.GraphQLError;
-import jakarta.json.Json;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -16,33 +13,20 @@ import org.junit.jupiter.api.Test;
 public class DaggerExecExceptionTest {
 
   @Test
-  void shouldReturnEnanchedMessage() {
+  void shouldReturnDefaultMessage() {
     GraphQLError error =
         buildError(
             "ERROR",
             new Object[] {"container", "from", "withExec", "stdout"},
-            Map.of(
-                TYPE_KEY,
-                TYPE_EXEC_ERROR_VALUE,
-                EXIT_CODE_KEY,
-                "1",
-                CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG").build()));
+            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
     GraphQLError error2 =
         buildError(
             "ERROR2",
             new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(
-                TYPE_KEY,
-                TYPE_EXEC_ERROR_VALUE,
-                EXIT_CODE_KEY,
-                "2",
-                CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG2").build()));
+            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
 
     String result = new DaggerExecException(error, error2).getMessage();
-    String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\n";
+    String expected = "ERROR\nERROR2";
     assertThat(result).isEqualTo(expected);
   }
 

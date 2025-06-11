@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import org.apache.commons.lang3.StringUtils;
 
 public class Entrypoint {
   Entrypoint() {}
@@ -67,6 +68,9 @@ public class Entrypoint {
     } catch (InvocationTargetException e) {
       fnCall.returnError(dag().error(e.getTargetException().getMessage()));
       throw e;
+    } catch (DaggerExecException e) {
+      fnCall.returnError(dag().error(e.getMessage()).withValue("exitCode", JSON.from(StringUtils.join(e.getExitCode()))).withValue("path", JSON.from(StringUtils.join(e.getPath()))).withValue("cmd", JSON.from(StringUtils.join(e.getCmd()))).withValue("stderr", JSON.from(e.getStdErr())));
+      throw e;
     } catch (Exception e) {
       fnCall.returnError(dag().error(e.getMessage()));
       throw e;
@@ -74,7 +78,7 @@ public class Entrypoint {
   }
 
   private ModuleID register()
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     Module module = dag().module().withDescription("Dagger Java Module example").withObject(dag()
         .typeDef()
         .withObject("DaggerJava",
