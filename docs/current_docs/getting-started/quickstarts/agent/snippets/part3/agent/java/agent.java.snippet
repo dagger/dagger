@@ -12,7 +12,7 @@
     Integer issueID,
     String repository,
     @DefaultPath("/") Directory source
-  ) throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+  ) throws ExecutionException, DaggerQueryException, InterruptedException {
     // Get the Github issue
     var args = new Client.GithubIssueArguments().withToken(githubToken);
     GithubIssue issueClient = dag().githubIssue(args);

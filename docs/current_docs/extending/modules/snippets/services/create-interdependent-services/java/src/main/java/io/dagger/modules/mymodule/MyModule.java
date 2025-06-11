@@ -3,7 +3,6 @@ package io.dagger.modules.mymodule;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Service;
 import io.dagger.module.annotation.Function;
@@ -14,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 @Object
 public class MyModule {
   @Function
-  public Service services() throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+  public Service services() throws ExecutionException, DaggerQueryException, InterruptedException {
     Service svcA = dag().container()
         .from("nginx")
         .withExposedPort(80)

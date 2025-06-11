@@ -7,7 +7,6 @@ import java.util.concurrent.ExecutionException;
 import io.dagger.client.Container;
 import io.dagger.client.Directory;
 import io.dagger.client.Platform;
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
@@ -77,7 +76,7 @@ public class DaggerJava {
   public String grepDir(
       @DefaultPath("sdk/java") @Ignore({"**", "!*.java"}) Directory directoryArg,
       Optional<String> pattern)
-      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     String grepPattern = pattern.orElse("dagger");
     return dag()
         .container()
@@ -147,7 +146,7 @@ public class DaggerJava {
   /** return the default platform as a Scalar value */
   @Function
   public Platform defaultPlatform()
-      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return dag().defaultPlatform();
   }
 

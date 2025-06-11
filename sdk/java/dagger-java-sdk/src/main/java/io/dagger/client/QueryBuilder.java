@@ -89,7 +89,7 @@ class QueryBuilder {
     return new QueryBuilder(client, list, leaves);
   }
 
-  private void handleErrors(Response response) throws DaggerQueryException, DaggerExecException {
+  private void handleErrors(Response response) throws DaggerQueryException {
     if (!response.hasError()) {
       return;
     }
@@ -113,8 +113,7 @@ class QueryBuilder {
     throw new DaggerQueryException(response.getErrors().toArray(new GraphQLError[0]));
   }
 
-  Document buildDocument()
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+  Document buildDocument() throws ExecutionException, InterruptedException, DaggerQueryException {
     Field leafField = parts.pop().toField();
     leafField.setFields(
         leaves.stream().<FieldOrFragment>map(qp -> field(qp.getOperation())).toList());
@@ -135,7 +134,7 @@ class QueryBuilder {
   }
 
   Response executeQuery(Document document)
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerQueryException {
     LOG.debug("Executing query: {}", document.build());
     Response response = client.executeSync(document);
     handleErrors(response);
@@ -149,16 +148,14 @@ class QueryBuilder {
    * @throws ExecutionException
    * @throws InterruptedException
    * @throws DaggerQueryException
-   * @throws DaggerExecException
    */
-  void executeQuery()
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+  void executeQuery() throws ExecutionException, InterruptedException, DaggerQueryException {
     Document query = buildDocument();
     executeQuery(query);
   }
 
   <T> T executeQuery(Class<T> klass)
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerQueryException {
     String path =
         StreamSupport.stream(
                 Spliterators.spliteratorUnknownSize(parts.descendingIterator(), 0), false)
@@ -184,7 +181,7 @@ class QueryBuilder {
   }
 
   <T> List<T> executeListQuery(Class<T> klass)
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerQueryException {
     List<String> pathElts =
         StreamSupport.stream(
                 Spliterators.spliteratorUnknownSize(parts.descendingIterator(), 0), false)
@@ -205,7 +202,7 @@ class QueryBuilder {
   }
 
   <T> List<QueryBuilder> executeObjectListQuery(Class<T> klass)
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+      throws ExecutionException, InterruptedException, DaggerQueryException {
     List<String> pathElts =
         StreamSupport.stream(
                 Spliterators.spliteratorUnknownSize(parts.descendingIterator(), 0), false)

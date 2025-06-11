@@ -22,7 +22,7 @@ public class DaggerModule {
   /** Returns lines that match a pattern in the files of the provided Directory */
   @Function
   public String grepDir(Directory directoryArg, String pattern)
-      throws InterruptedException, ExecutionException, DaggerExecException, DaggerQueryException {
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return dag()
         .container()
         .from("alpine:latest")

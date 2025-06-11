@@ -6,7 +6,7 @@
 */
 @Function
 public Directory develop(String assignment, @DefaultPath("/") Directory source)
-throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+throws ExecutionException, DaggerQueryException, InterruptedException {
 // Environment with agent inputs and outputs
 Env environment = dag()
     .env()

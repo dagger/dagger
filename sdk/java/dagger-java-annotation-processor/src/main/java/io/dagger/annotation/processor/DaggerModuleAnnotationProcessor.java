@@ -64,6 +64,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
+import org.apache.commons.lang3.StringUtils;
 
 @SupportedAnnotationTypes({
   "io.dagger.module.annotation.Module",
@@ -366,7 +367,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addModifiers(Modifier.PRIVATE)
               .returns(ModuleID.class)
               .addException(ExecutionException.class)
-              .addException(DaggerExecException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
               .addCode(
@@ -556,17 +556,18 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .nextControlFlow("catch ($T e)", DaggerExecException.class)
                               .addStatement(
                                   "fnCall.returnError($T.dag().error(e.getMessage())"
-                                      + ".withValue(\"stdout\", $T.toJSON(e.getStdOut()))"
-                                      + ".withValue(\"stderr\", $T.toJSON(e.getStdErr()))"
-                                      + ".withValue(\"cmd\", $T.toJSON(e.getCmd()))"
-                                      + ".withValue(\"exitCode\", $T.toJSON(e.getExitCode()))"
-                                      + ".withValue(\"path\", $T.toJSON(e.getPath())))",
+                                      + ".withValue(\"exitCode\", $T.from($T.join(e.getExitCode())))"
+                                      + ".withValue(\"path\", $T.from($T.join(e.getPath())))"
+                                      + ".withValue(\"cmd\", $T.from($T.join(e.getCmd())))"
+                                      + ".withValue(\"stderr\", $T.from(e.getStdErr())))",
                                   Dagger.class,
-                                  JsonConverter.class,
-                                  JsonConverter.class,
-                                  JsonConverter.class,
-                                  JsonConverter.class,
-                                  JsonConverter.class)
+                                  JSON.class,
+                                  StringUtils.class,
+                                  JSON.class,
+                                  StringUtils.class,
+                                  JSON.class,
+                                  StringUtils.class,
+                                  JSON.class)
                               .addStatement("throw e")
                               .nextControlFlow("catch ($T e)", Exception.class)
                               .addStatement(

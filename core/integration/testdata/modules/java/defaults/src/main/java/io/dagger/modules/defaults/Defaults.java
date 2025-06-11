@@ -1,6 +1,5 @@
 package io.dagger.modules.defaults;
 
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.File;
@@ -33,31 +32,31 @@ public class Defaults {
 
   @Function
   public String fileName(@DefaultPath("dagger.json") File file)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return file.name();
   }
 
   @Function
   public String fileNames(@DefaultPath("src/main/java/io/dagger/modules/defaults") Directory dir)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return String.join(" ", dir.entries());
   }
 
   @Function
   public String filesNoIgnore(@DefaultPath(".") Directory dir)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return String.join(" ", dir.entries());
   }
 
   @Function
   public String filesIgnore(@DefaultPath(".") @Ignore({"*.xml"}) Directory dir)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return String.join(" ", dir.entries());
   }
 
   @Function
   public String filesNegIgnore(@DefaultPath(".") @Ignore({"**", "!**/*.java"}) Directory dir)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return String.join(" ", dir.entries());
   }
 }

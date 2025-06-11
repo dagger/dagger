@@ -6,6 +6,7 @@ import static io.dagger.client.exception.DaggerExceptionConstants.EXIT_CODE_KEY;
 import static io.dagger.client.exception.DaggerExceptionConstants.FULL_MESSAGE;
 import static io.dagger.client.exception.DaggerExceptionConstants.SIMPLE_MESSAGE;
 import static io.dagger.client.exception.DaggerExceptionConstants.STDERR_KEY;
+import static io.dagger.client.exception.DaggerExceptionConstants.STDOUT_KEY;
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 
 import io.smallrye.graphql.client.GraphQLError;
@@ -33,15 +34,13 @@ public class DaggerExceptionUtils {
 
   public static String getCmd(GraphQLError error) {
     Object cmdList = getExtensionValueByKey(error, CMD_KEY);
-    String cmd = "";
     if (cmdList != null && cmdList instanceof JsonArray array) {
-      cmd =
-          array.stream()
-              .map(JsonValue::toString)
-              .collect(Collectors.joining(" "))
-              .replace("\"", "");
+      return array.stream()
+          .map(JsonValue::toString)
+          .collect(Collectors.joining(" "))
+          .replace("\"", "");
     }
-    return cmd;
+    return null;
   }
 
   public static String getType(GraphQLError error) {
@@ -50,6 +49,10 @@ public class DaggerExceptionUtils {
 
   public static String getExitCode(GraphQLError error) {
     return String.valueOf(getExtensionValueByKey(error, EXIT_CODE_KEY));
+  }
+
+  public static String getStdOut(GraphQLError error) {
+    return String.valueOf(getExtensionValueByKey(error, STDOUT_KEY));
   }
 
   public static String getStdErr(GraphQLError error) {

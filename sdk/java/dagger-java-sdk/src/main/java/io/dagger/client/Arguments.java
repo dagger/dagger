@@ -4,7 +4,6 @@ import static io.smallrye.graphql.client.core.Argument.arg;
 import static io.smallrye.graphql.client.core.InputObject.inputObject;
 import static io.smallrye.graphql.client.core.InputObjectField.prop;
 
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.smallrye.graphql.client.core.Argument;
 import io.smallrye.graphql.client.core.InputObjectField;
@@ -44,8 +43,7 @@ public class Arguments {
     return new Arguments(newMap);
   }
 
-  List<Argument> toList()
-      throws ExecutionException, InterruptedException, DaggerExecException, DaggerQueryException {
+  List<Argument> toList() throws ExecutionException, InterruptedException, DaggerQueryException {
     List<Argument> argList = new ArrayList<>();
     for (Map.Entry<String, Object> entry : args.entrySet()) {
       argList.add(arg(entry.getKey(), toArgumentValue(entry.getValue())));
@@ -54,7 +52,7 @@ public class Arguments {
   }
 
   private Object toArgumentValue(Object value)
-      throws ExecutionException, InterruptedException, DaggerExecException, DaggerQueryException {
+      throws ExecutionException, InterruptedException, DaggerQueryException {
     if (value == null) {
       return null;
     } else if (value instanceof Scalar<?>) {

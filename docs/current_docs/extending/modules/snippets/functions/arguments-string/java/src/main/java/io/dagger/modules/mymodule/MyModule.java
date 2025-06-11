@@ -4,10 +4,6 @@ import static io.dagger.client.Dagger.dag;
 import io.dagger.client.exception.DaggerQueryException;
 
 
-import io.dagger.client.exception.DaggerExecException;
-import io.dagger.client.exception.DaggerQueryException;
-
-
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -17,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 public class MyModule {
   @Function
   public String getUser(String gender)
-      throws ExecutionException, DaggerExecException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return dag().container()
         .from("alpine:latest")
         .withExec(List.of("apk", "add", "curl"))

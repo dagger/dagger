@@ -2,7 +2,6 @@ package io.dagger.client;
 
 import static io.smallrye.graphql.client.core.Field.field;
 
-import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
 import io.smallrye.graphql.client.core.Field;
 import java.util.concurrent.ExecutionException;
@@ -25,8 +24,7 @@ class QueryPart {
     return fieldName;
   }
 
-  Field toField()
-      throws ExecutionException, InterruptedException, DaggerQueryException, DaggerExecException {
+  Field toField() throws ExecutionException, InterruptedException, DaggerQueryException {
     // List<Argument> argList = arguments.entrySet().stream().map(e -> arg(e.getKey(),
     // e.getValue().serialize())).toList();
     return field(fieldName, arguments.toList());
