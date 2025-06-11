@@ -8909,6 +8909,34 @@
                         <td>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <p><code>GZIP</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ZSTD</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ESTARGZ</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>UNCOMPRESSED</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8953,6 +8981,20 @@
                       <tr>
                         <td>
                           <p><code>DockerMediaTypes</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OCI</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DOCKER</code></p>
                         </td>
                         <td>
                         </td>
@@ -10086,6 +10128,27 @@
                       <tr>
                         <td>
                           <p><code>DIR_SOURCE</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LOCAL</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>GIT</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIR</code></p>
                         </td>
                         <td>
                         </td>
@@ -11293,15 +11356,15 @@
                       </tr>
                       <tr>
                         <td>
-                          <p><code>FLOAT_KIND</code></p>
-                        </td>
-                        <td> A float value. </td>
-                      </tr>
-                      <tr>
-                        <td>
                           <p><code>INTEGER_KIND</code></p>
                         </td>
                         <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
                       </tr>
                       <tr>
                         <td>
@@ -11320,8 +11383,8 @@
                           <p><code>LIST_KIND</code></p>
                         </td>
                         <td>
-                          <p>A list of values all having the same type.</p>
                           <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11329,8 +11392,8 @@
                           <p><code>OBJECT_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                           <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11338,8 +11401,8 @@
                           <p><code>INTERFACE_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                           <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11360,6 +11423,87 @@
                       <tr>
                         <td>
                           <p><code>ENUM_KIND</code></p>
+                        </td>
+                        <td>
+                          <p>A GraphQL enum type and its values</p>
+                          <p>Always paired with an EnumTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>STRING</code></p>
+                        </td>
+                        <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTEGER</code></p>
+                        </td>
+                        <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT</code></p>
+                        </td>
+                        <td> A float value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>BOOLEAN</code></p>
+                        </td>
+                        <td> A boolean value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SCALAR</code></p>
+                        </td>
+                        <td> A scalar value of any basic kind. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LIST</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OBJECT</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTERFACE</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INPUT</code></p>
+                        </td>
+                        <td> A graphql input type, used only when representing the core API via TypeDefs. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>VOID</code></p>
+                        </td>
+                        <td>
+                          <p>A special kind used to signify that no value is returned.</p>
+                          <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ENUM</code></p>
                         </td>
                         <td>
                           <p>A GraphQL enum type and its values</p>

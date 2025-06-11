@@ -32,8 +32,11 @@ var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
 
 var (
 	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("LOCAL", "LOCAL_SOURCE", enumView)
 	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("GIT", "GIT_SOURCE", enumView)
 	ModuleSourceKindDir   = ModuleSourceKindEnum.Register("DIR_SOURCE")
+	_                     = ModuleSourceKindEnum.AliasView("DIR", "DIR_SOURCE", enumView)
 )
 
 func (proto ModuleSourceKind) Type() *ast.Type {

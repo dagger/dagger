@@ -329,3 +329,7 @@ func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
 	}
 	return semver.Compare(string(version), string(maxVersion)) < 0
 }
+
+var (
+	enumView = AfterVersion("v0.18.11")
+)

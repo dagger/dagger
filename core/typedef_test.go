@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -64,9 +65,13 @@ func TestTypeDefConversions(t *testing.T) {
 		val := val
 		sample, ok := Samples[TypeDefKind(val.Name)]
 		if !ok {
-			if val.Name == "INPUT_KIND" {
+			if val.Name == TypeDefKindInput.String() {
 				// inputs are not needed for handling in conversion
 				// and not implemented, so skip them
+				continue
+			}
+			if !strings.HasSuffix(val.Name, "_KIND") {
+				// these values are duplicates
 				continue
 			}
 			t.Fatalf("missing TypeDefKind sample for %s", val.Name)

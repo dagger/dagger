@@ -10467,6 +10467,8 @@ pub enum CacheSharingMode {
 pub enum ImageLayerCompression {
     #[serde(rename = "EStarGZ")]
     EStarGz,
+    #[serde(rename = "ESTARGZ")]
+    Estargz,
     #[serde(rename = "Gzip")]
     Gzip,
     #[serde(rename = "Uncompressed")]
@@ -10476,17 +10478,27 @@ pub enum ImageLayerCompression {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageMediaTypes {
+    #[serde(rename = "DOCKER")]
+    Docker,
     #[serde(rename = "DockerMediaTypes")]
     DockerMediaTypes,
+    #[serde(rename = "OCI")]
+    Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
+    #[serde(rename = "DIR")]
+    Dir,
     #[serde(rename = "DIR_SOURCE")]
     DirSource,
+    #[serde(rename = "GIT")]
+    Git,
     #[serde(rename = "GIT_SOURCE")]
     GitSource,
+    #[serde(rename = "LOCAL")]
+    Local,
     #[serde(rename = "LOCAL_SOURCE")]
     LocalSource,
 }
@@ -10508,26 +10520,48 @@ pub enum ReturnType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {
+    #[serde(rename = "BOOLEAN")]
+    Boolean,
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "ENUM")]
+    Enum,
     #[serde(rename = "ENUM_KIND")]
     EnumKind,
+    #[serde(rename = "FLOAT")]
+    Float,
     #[serde(rename = "FLOAT_KIND")]
     FloatKind,
+    #[serde(rename = "INPUT")]
+    Input,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
+    #[serde(rename = "INTEGER")]
+    Integer,
     #[serde(rename = "INTEGER_KIND")]
     IntegerKind,
+    #[serde(rename = "INTERFACE")]
+    Interface,
     #[serde(rename = "INTERFACE_KIND")]
     InterfaceKind,
+    #[serde(rename = "LIST")]
+    List,
     #[serde(rename = "LIST_KIND")]
     ListKind,
+    #[serde(rename = "OBJECT")]
+    Object,
     #[serde(rename = "OBJECT_KIND")]
     ObjectKind,
+    #[serde(rename = "SCALAR")]
+    Scalar,
     #[serde(rename = "SCALAR_KIND")]
     ScalarKind,
+    #[serde(rename = "STRING")]
+    String,
     #[serde(rename = "STRING_KIND")]
     StringKind,
+    #[serde(rename = "VOID")]
+    Void,
     #[serde(rename = "VOID_KIND")]
     VoidKind,
 }

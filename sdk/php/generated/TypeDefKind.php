@@ -16,11 +16,11 @@ enum TypeDefKind: string
     /** A string value. */
     case STRING_KIND = 'STRING_KIND';
 
-    /** A float value. */
-    case FLOAT_KIND = 'FLOAT_KIND';
-
     /** An integer value. */
     case INTEGER_KIND = 'INTEGER_KIND';
+
+    /** A float value. */
+    case FLOAT_KIND = 'FLOAT_KIND';
 
     /** A boolean value. */
     case BOOLEAN_KIND = 'BOOLEAN_KIND';
@@ -29,23 +29,23 @@ enum TypeDefKind: string
     case SCALAR_KIND = 'SCALAR_KIND';
 
     /**
-     * A list of values all having the same type.
-     *
      * Always paired with a ListTypeDef.
+     *
+     * A list of values all having the same type.
      */
     case LIST_KIND = 'LIST_KIND';
 
     /**
-     * A named type defined in the GraphQL schema, with fields and functions.
-     *
      * Always paired with an ObjectTypeDef.
+     *
+     * A named type defined in the GraphQL schema, with fields and functions.
      */
     case OBJECT_KIND = 'OBJECT_KIND';
 
     /**
-     * A named type of functions that can be matched+implemented by other objects+interfaces.
-     *
      * Always paired with an InterfaceTypeDef.
+     *
+     * A named type of functions that can be matched+implemented by other objects+interfaces.
      */
     case INTERFACE_KIND = 'INTERFACE_KIND';
 
@@ -65,4 +65,57 @@ enum TypeDefKind: string
      * Always paired with an EnumTypeDef.
      */
     case ENUM_KIND = 'ENUM_KIND';
+
+    /** A string value. */
+    case STRING = 'STRING';
+
+    /** An integer value. */
+    case INTEGER = 'INTEGER';
+
+    /** A float value. */
+    case FLOAT = 'FLOAT';
+
+    /** A boolean value. */
+    case BOOLEAN = 'BOOLEAN';
+
+    /** A scalar value of any basic kind. */
+    case SCALAR = 'SCALAR';
+
+    /**
+     * Always paired with a ListTypeDef.
+     *
+     * A list of values all having the same type.
+     */
+    case LIST = 'LIST';
+
+    /**
+     * Always paired with an ObjectTypeDef.
+     *
+     * A named type defined in the GraphQL schema, with fields and functions.
+     */
+    case OBJECT = 'OBJECT';
+
+    /**
+     * Always paired with an InterfaceTypeDef.
+     *
+     * A named type of functions that can be matched+implemented by other objects+interfaces.
+     */
+    case INTERFACE = 'INTERFACE';
+
+    /** A graphql input type, used only when representing the core API via TypeDefs. */
+    case INPUT = 'INPUT';
+
+    /**
+     * A special kind used to signify that no value is returned.
+     *
+     * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+     */
+    case VOID = 'VOID';
+
+    /**
+     * A GraphQL enum type and its values
+     *
+     * Always paired with an EnumTypeDef.
+     */
+    case ENUM = 'ENUM';
 }

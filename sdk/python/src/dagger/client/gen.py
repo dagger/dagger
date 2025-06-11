@@ -267,11 +267,19 @@ class CacheSharingMode(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
+    ESTARGZ = "ESTARGZ"
+
     EStarGZ = "EStarGZ"
+
+    GZIP = "GZIP"
 
     Gzip = "Gzip"
 
+    UNCOMPRESSED = "UNCOMPRESSED"
+
     Uncompressed = "Uncompressed"
+
+    ZSTD = "ZSTD"
 
     Zstd = "Zstd"
 
@@ -279,7 +287,11 @@ class ImageLayerCompression(Enum):
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
+    DOCKER = "DOCKER"
+
     DockerMediaTypes = "DockerMediaTypes"
+
+    OCI = "OCI"
 
     OCIMediaTypes = "OCIMediaTypes"
 
@@ -287,9 +299,15 @@ class ImageMediaTypes(Enum):
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
+    DIR = "DIR"
+
     DIR_SOURCE = "DIR_SOURCE"
 
+    GIT = "GIT"
+
     GIT_SOURCE = "GIT_SOURCE"
+
+    LOCAL = "LOCAL"
 
     LOCAL_SOURCE = "LOCAL_SOURCE"
 
@@ -318,8 +336,17 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
+    BOOLEAN = "BOOLEAN"
+    """A boolean value."""
+
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+
+    ENUM = "ENUM"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
 
     ENUM_KIND = "ENUM_KIND"
     """A GraphQL enum type and its values
@@ -327,38 +354,77 @@ class TypeDefKind(Enum):
     Always paired with an EnumTypeDef.
     """
 
+    FLOAT = "FLOAT"
+    """A float value."""
+
     FLOAT_KIND = "FLOAT_KIND"
     """A float value."""
+
+    INPUT = "INPUT"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
+    INTEGER = "INTEGER"
+    """An integer value."""
+
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
 
-    INTERFACE_KIND = "INTERFACE_KIND"
-    """A named type of functions that can be matched+implemented by other objects+interfaces.
+    INTERFACE = "INTERFACE"
+    """Always paired with an InterfaceTypeDef.
 
-    Always paired with an InterfaceTypeDef.
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
+
+    INTERFACE_KIND = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
+
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
+
+    LIST = "LIST"
+    """Always paired with a ListTypeDef.
+
+    A list of values all having the same type.
     """
 
     LIST_KIND = "LIST_KIND"
-    """A list of values all having the same type.
+    """Always paired with a ListTypeDef.
 
-    Always paired with a ListTypeDef.
+    A list of values all having the same type.
+    """
+
+    OBJECT = "OBJECT"
+    """Always paired with an ObjectTypeDef.
+
+    A named type defined in the GraphQL schema, with fields and functions.
     """
 
     OBJECT_KIND = "OBJECT_KIND"
-    """A named type defined in the GraphQL schema, with fields and functions.
+    """Always paired with an ObjectTypeDef.
 
-    Always paired with an ObjectTypeDef.
+    A named type defined in the GraphQL schema, with fields and functions.
     """
+
+    SCALAR = "SCALAR"
+    """A scalar value of any basic kind."""
 
     SCALAR_KIND = "SCALAR_KIND"
     """A scalar value of any basic kind."""
 
+    STRING = "STRING"
+    """A string value."""
+
     STRING_KIND = "STRING_KIND"
     """A string value."""
+
+    VOID = "VOID"
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+    """
 
     VOID_KIND = "VOID_KIND"
     """A special kind used to signify that no value is returned.

@@ -10214,6 +10214,8 @@ func (ImageLayerCompression) IsEnum() {}
 const (
 	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
 
+	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
+
 	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
@@ -10227,7 +10229,11 @@ type ImageMediaTypes string
 func (ImageMediaTypes) IsEnum() {}
 
 const (
+	ImageMediaTypesDocker ImageMediaTypes = "DOCKER"
+
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
+
+	ImageMediaTypesOci ImageMediaTypes = "OCI"
 
 	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
 )
@@ -10238,9 +10244,15 @@ type ModuleSourceKind string
 func (ModuleSourceKind) IsEnum() {}
 
 const (
+	ModuleSourceKindDir ModuleSourceKind = "DIR"
+
 	ModuleSourceKindDirSource ModuleSourceKind = "DIR_SOURCE"
 
+	ModuleSourceKindGit ModuleSourceKind = "GIT"
+
 	ModuleSourceKindGitSource ModuleSourceKind = "GIT_SOURCE"
+
+	ModuleSourceKindLocal ModuleSourceKind = "LOCAL"
 
 	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
 )
@@ -10279,7 +10291,15 @@ func (TypeDefKind) IsEnum() {}
 
 const (
 	// A boolean value.
+	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
+
+	// A boolean value.
 	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	TypeDefKindEnum TypeDefKind = "ENUM"
 
 	// A GraphQL enum type and its values
 	//
@@ -10287,34 +10307,69 @@ const (
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
 
 	// A float value.
+	TypeDefKindFloat TypeDefKind = "FLOAT"
+
+	// A float value.
 	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
+
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	TypeDefKindInput TypeDefKind = "INPUT"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
 
 	// An integer value.
+	TypeDefKindInteger TypeDefKind = "INTEGER"
+
+	// An integer value.
 	TypeDefKindIntegerKind TypeDefKind = "INTEGER_KIND"
 
-	// A named type of functions that can be matched+implemented by other objects+interfaces.
-	//
 	// Always paired with an InterfaceTypeDef.
+	//
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	TypeDefKindInterface TypeDefKind = "INTERFACE"
+
+	// Always paired with an InterfaceTypeDef.
+	//
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
 
-	// A list of values all having the same type.
-	//
 	// Always paired with a ListTypeDef.
+	//
+	// A list of values all having the same type.
+	TypeDefKindList TypeDefKind = "LIST"
+
+	// Always paired with a ListTypeDef.
+	//
+	// A list of values all having the same type.
 	TypeDefKindListKind TypeDefKind = "LIST_KIND"
 
-	// A named type defined in the GraphQL schema, with fields and functions.
-	//
 	// Always paired with an ObjectTypeDef.
+	//
+	// A named type defined in the GraphQL schema, with fields and functions.
+	TypeDefKindObject TypeDefKind = "OBJECT"
+
+	// Always paired with an ObjectTypeDef.
+	//
+	// A named type defined in the GraphQL schema, with fields and functions.
 	TypeDefKindObjectKind TypeDefKind = "OBJECT_KIND"
+
+	// A scalar value of any basic kind.
+	TypeDefKindScalar TypeDefKind = "SCALAR"
 
 	// A scalar value of any basic kind.
 	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
 
 	// A string value.
+	TypeDefKindString TypeDefKind = "STRING"
+
+	// A string value.
 	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
+
+	// A special kind used to signify that no value is returned.
+	//
+	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+	TypeDefKindVoid TypeDefKind = "VOID"
 
 	// A special kind used to signify that no value is returned.
 	//
