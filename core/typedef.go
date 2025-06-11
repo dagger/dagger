@@ -1116,41 +1116,53 @@ func (k TypeDefKind) String() string {
 var TypeDefKinds = dagql.NewEnum[TypeDefKind]()
 
 var (
-	TypeDefKindString = TypeDefKinds.Register("STRING_KIND",
-		"A string value.")
+	TypeDefKindString = TypeDefKinds.Register("STRING_KIND", "A string value.")
+	_                 = TypeDefKinds.AliasView("STRING", "STRING_KIND", enumView)
 
-	TypeDefKindFloat = TypeDefKinds.Register("FLOAT_KIND",
-		"A float value.")
+	TypeDefKindInteger = TypeDefKinds.Register("INTEGER_KIND", "An integer value.")
+	_                  = TypeDefKinds.AliasView("INTEGER", "INTEGER_KIND", enumView)
 
-	TypeDefKindInteger = TypeDefKinds.Register("INTEGER_KIND",
-		"An integer value.")
-	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND",
-		"A boolean value.")
-	TypeDefKindScalar = TypeDefKinds.Register("SCALAR_KIND",
-		"A scalar value of any basic kind.")
+	TypeDefKindFloat = TypeDefKinds.Register("FLOAT_KIND", "A float value.")
+	_                = TypeDefKinds.AliasView("FLOAT", "FLOAT_KIND", enumView)
+
+	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND", "A boolean value.")
+	_                  = TypeDefKinds.AliasView("BOOLEAN", "BOOLEAN_KIND", enumView)
+
+	TypeDefKindScalar = TypeDefKinds.Register("SCALAR_KIND", "A scalar value of any basic kind.")
+	_                 = TypeDefKinds.AliasView("SCALAR", "SCALAR_KIND", enumView)
+
 	TypeDefKindList = TypeDefKinds.Register("LIST_KIND",
-		"A list of values all having the same type.",
-		"Always paired with a ListTypeDef.")
+		"Always paired with a ListTypeDef.",
+		"A list of values all having the same type.")
+	_ = TypeDefKinds.AliasView("LIST", "LIST_KIND", enumView)
+
 	TypeDefKindObject = TypeDefKinds.Register("OBJECT_KIND",
-		"A named type defined in the GraphQL schema, with fields and functions.",
-		"Always paired with an ObjectTypeDef.")
+		"Always paired with an ObjectTypeDef.",
+		"A named type defined in the GraphQL schema, with fields and functions.")
+	_ = TypeDefKinds.AliasView("OBJECT", "OBJECT_KIND", enumView)
+
 	TypeDefKindInterface = TypeDefKinds.Register("INTERFACE_KIND",
-		`A named type of functions that can be matched+implemented by other
-		objects+interfaces.`,
-		"Always paired with an InterfaceTypeDef.")
+		"Always paired with an InterfaceTypeDef.",
+		`A named type of functions that can be matched+implemented by other objects+interfaces.`)
+	_ = TypeDefKinds.AliasView("INTERFACE", "INTERFACE_KIND", enumView)
+
 	TypeDefKindInput = TypeDefKinds.Register("INPUT_KIND",
-		`A graphql input type, used only when representing the core API via TypeDefs.`,
-	)
+		`A graphql input type, used only when representing the core API via TypeDefs.`)
+	_ = TypeDefKinds.AliasView("INPUT", "INPUT_KIND", enumView)
+
 	TypeDefKindVoid = TypeDefKinds.Register("VOID_KIND",
 		"A special kind used to signify that no value is returned.",
 		`This is used for functions that have no return value. The outer TypeDef
 		specifying this Kind is always Optional, as the Void is never actually
 		represented.`,
 	)
+	_ = TypeDefKinds.AliasView("VOID", "VOID_KIND", enumView)
+
 	TypeDefKindEnum = TypeDefKinds.Register("ENUM_KIND",
 		"A GraphQL enum type and its values",
 		"Always paired with an EnumTypeDef.",
 	)
+	_ = TypeDefKinds.AliasView("ENUM", "ENUM_KIND", enumView)
 )
 
 func (k TypeDefKind) Type() *ast.Type {
