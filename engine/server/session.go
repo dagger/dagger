@@ -643,12 +643,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(
-			sdklog.NewBatchProcessor(
-				srv.telemetryPubSub.Logs(client),
-				sdklog.WithExportInterval(telemetry.NearlyImmediate),
-			),
-		),
+		sdklog.WithProcessor(clientLogs{client: client}),
 	}
 
 	const metricReaderInterval = 1 * time.Second
@@ -669,10 +664,7 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			sdklog.NewBatchProcessor(
-				srv.telemetryPubSub.Logs(parent),
-				sdklog.WithExportInterval(telemetry.NearlyImmediate),
-			),
+			clientLogs{client: parent},
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
