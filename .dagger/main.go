@@ -196,28 +196,22 @@ func (dev *DaggerDev) Evals(ctx context.Context) error {
 }
 
 func (dev *DaggerDev) evaluator() *dagger.Evaluator {
-	evaluator := dag.Evaluator(dagger.EvaluatorOpts{
+	return dag.Evaluator(dagger.EvaluatorOpts{
 		Docs:          dev.Source.File("core/llm_docs.md"),
 		InitialPrompt: dev.Source.File("core/llm_dagger_prompt.md"),
-	})
-	for _, eval := range []interface {
-		AsEvaluatorEval() *dagger.EvaluatorEval
-	}{
+	}).WithEvals([]*dagger.EvaluatorEval{
 		// FIXME: ideally this list would live closer to where the evals are
 		// defined, but it's not possible for a module to return an interface type
 		// https://github.com/dagger/dagger/issues/7582
-		dag.Evals().Basic(),
-		dag.Evals().BuildMulti(),
-		dag.Evals().BuildMultiNoVar(),
-		dag.Evals().WorkspacePattern(),
-		dag.Evals().ReadImplicitVars(),
-		dag.Evals().UndoChanges(),
-		dag.Evals().CoreAPI(),
-		dag.Evals().ModuleDependencies(),
-	} {
-		evaluator = evaluator.WithEval(eval.AsEvaluatorEval())
-	}
-	return evaluator
+		dag.Evals().Basic().AsEvaluatorEval(),
+		dag.Evals().BuildMulti().AsEvaluatorEval(),
+		dag.Evals().BuildMultiNoVar().AsEvaluatorEval(),
+		dag.Evals().WorkspacePattern().AsEvaluatorEval(),
+		dag.Evals().ReadImplicitVars().AsEvaluatorEval(),
+		dag.Evals().UndoChanges().AsEvaluatorEval(),
+		dag.Evals().CoreAPI().AsEvaluatorEval(),
+		dag.Evals().ModuleDependencies().AsEvaluatorEval(),
+	})
 }
 
 // Find benchmark suites to run
