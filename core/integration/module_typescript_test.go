@@ -1485,8 +1485,8 @@ export class Test {
 		schema := inspectModule(ctx, t, modGen)
 
 		require.Equal(t, "Test Enum", schema.Get("enums.#.asEnum|#(name=TestEnum).description").String())
-		require.Equal(t, "A", schema.Get("enums.#.asEnum|#(name=TestEnum).values.#(name=a).description").String())
-		require.Equal(t, "B", schema.Get("enums.#.asEnum|#(name=TestEnum).values.#(name=b).description").String())
+		require.Equal(t, "A", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=a).description").String())
+		require.Equal(t, "B", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=b).description").String())
 	})
 
 	t.Run("native enum type - correct input / output", func(ctx context.Context, t *testctx.T) {
