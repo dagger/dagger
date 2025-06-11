@@ -73,7 +73,7 @@ type LLM struct {
 	err  error
 
 	// History of messages
-	messages []ModelMessage
+	messages []*ModelMessage
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -98,7 +98,7 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (*LLMResponse, error)
 	IsRetryable(err error) bool
 }
 
@@ -191,7 +191,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []ModelMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -566,7 +566,7 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "user",
 		Content: prompt,
 	})
@@ -585,7 +585,7 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "system",
 		Content: prompt,
 	})
@@ -618,12 +618,12 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
 	if llm.disableDefaultSystemPrompt {
 		return llm.messages
 	}
 	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
-		return append([]ModelMessage{
+		return append([]*ModelMessage{
 			{
 				Role:    "system",
 				Content: prompt,
@@ -691,7 +691,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		return errors.New("no interjection provided; giving up")
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "user",
 		Content: msg,
 	})
@@ -766,7 +766,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 
 		messagesToSend := llm.messagesWithSystemPrompt()
 
-		var userMessages []ModelMessage
+		var userMessages []*ModelMessage
 		for _, msg := range slices.Backward(messagesToSend) {
 			if msg.Role != "user" || msg.ToolCallID != "" {
 				// only display user messages appended since the last response
@@ -838,7 +838,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 
 		// Add the model reply to the history
-		llm.messages = append(llm.messages, ModelMessage{
+		llm.messages = append(llm.messages, &ModelMessage{
 			Role:       "assistant",
 			Content:    res.Content,
 			ToolCalls:  res.ToolCalls,
@@ -859,7 +859,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		for _, toolCall := range res.ToolCalls {
 			content, isError := llm.mcp.Call(ctx, tools, toolCall)
-			llm.messages = append(llm.messages, ModelMessage{
+			llm.messages = append(llm.messages, &ModelMessage{
 				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
 				ToolCallID:  toolCall.ID,
