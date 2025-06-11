@@ -74,6 +74,14 @@ func (w *Workspace) WithEval(eval Eval) *Workspace {
 	return w
 }
 
+// Register evals to perform.
+func (w *Workspace) WithEvals(evals []Eval) *Workspace {
+	for _, eval := range evals {
+		w.Evals = append(w.Evals, eval)
+	}
+	return w
+}
+
 // The list of possible evals you can run.
 func (w *Workspace) EvalNames(ctx context.Context) ([]string, error) {
 	var names []string
