@@ -330,7 +330,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withFile", s.withFile).
+		dagql.NodeFunc("withFile", DagOpContainerWrapper(s.srv, s.withFile)).
 			Doc(`Return a container snapshot with a file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "/path/to/new-file.txt"`),
@@ -1609,18 +1609,23 @@ type containerWithFileArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
+func (s *containerSchema) withFile(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithFileArgs) (inst dagql.Instance[*core.Container], err error) {
 	file, err := args.Source.Load(ctx, s.srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFile(ctx, path, file.Self, args.Permissions, args.Owner)
+	ctr, err := parent.Self.WithFile(ctx, s.srv, path, file.Self, args.Permissions, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithFilesArgs struct {

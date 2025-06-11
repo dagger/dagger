@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -565,6 +566,133 @@ func (dir *Directory) WithFile(
 
 	dir.Services.Merge(src.Services)
 
+	return dir, nil
+}
+
+func copyFile(srcPath, dstPath string) (err error) {
+	srcStat, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	srcPerm := srcStat.Mode().Perm()
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(dstPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcPerm)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(dstPath)
+		}
+	}()
+	defer dst.Close()
+	_, err = io.Copy(dst, src)
+	return err
+}
+
+// TODO delete old WithFile and use this instead
+func (dir *Directory) WithFileDagOp(
+	ctx context.Context,
+	srv *dagql.Server,
+	destPath string,
+	src *File,
+	permissions *int,
+	owner *Ownership,
+) (*Directory, error) {
+	dir = dir.Clone()
+
+	srcRes, err := src.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dirRes, err := dir.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	srcRef, err := srcRes.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	dirRef, err := dirRes.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	var srcCacheRef bkcache.ImmutableRef
+	if srcRef != nil {
+		srcCacheRef, err = srcRef.CacheRef(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var dirCacheRef bkcache.ImmutableRef
+	if dirRef != nil {
+		dirCacheRef, err = dirRef.CacheRef(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	destPath = path.Join(dir.Dir, destPath)
+	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, src.File)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(dirRoot string) error {
+		destPath, err := containerdfs.RootPath(dirRoot, destPath)
+		if err != nil {
+			return err
+		}
+		destPathDir, _ := filepath.Split(destPath)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, srcCacheRef, nil, func(srcRoot string) error {
+			srcPath, err := containerdfs.RootPath(srcRoot, src.File)
+			if err != nil {
+				return err
+			}
+			return copyFile(srcPath, destPath)
+		})
+		if err != nil {
+			return err
+		}
+		if permissions != nil {
+			if err := os.Chmod(destPath, os.FileMode(*permissions)); err != nil {
+				return fmt.Errorf("failed to set chmod %s: err", destPath)
+			}
+		}
+		if owner != nil {
+			if err := os.Chown(destPath, owner.UID, owner.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: err", destPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
