@@ -10195,15 +10195,54 @@ type CacheSharingMode string
 
 func (CacheSharingMode) IsEnum() {}
 
+func (v CacheSharingMode) Name() string {
+	switch v {
+	case CacheSharingModeShared:
+		return "SHARED"
+	case CacheSharingModePrivate:
+		return "PRIVATE"
+	case CacheSharingModeLocked:
+		return "LOCKED"
+	default:
+		return ""
+	}
+}
+
+func (v CacheSharingMode) Value() string {
+	return string(v)
+}
+
+func (v *CacheSharingMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "LOCKED":
+		*v = CacheSharingModeLocked
+	case "PRIVATE":
+		*v = CacheSharingModePrivate
+	case "SHARED":
+		*v = CacheSharingModeShared
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	// Shares the cache volume amongst many build pipelines, but will serialize the writes
-	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+	// Shares the cache volume amongst many build pipelines
+	CacheSharingModeShared CacheSharingMode = "SHARED"
 
 	// Keeps a cache volume for a single build pipeline
 	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 
-	// Shares the cache volume amongst many build pipelines
-	CacheSharingModeShared CacheSharingMode = "SHARED"
+	// Shares the cache volume amongst many build pipelines, but will serialize the writes
+	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 )
 
 // Compression algorithm to use for image layers.
@@ -10211,16 +10250,60 @@ type ImageLayerCompression string
 
 func (ImageLayerCompression) IsEnum() {}
 
+func (v ImageLayerCompression) Name() string {
+	switch v {
+	case ImageLayerCompressionGzip:
+		return "Gzip"
+	case ImageLayerCompressionZstd:
+		return "Zstd"
+	case ImageLayerCompressionEstarGz:
+		return "EStarGZ"
+	case ImageLayerCompressionUncompressed:
+		return "Uncompressed"
+	default:
+		return ""
+	}
+}
+
+func (v ImageLayerCompression) Value() string {
+	return string(v)
+}
+
+func (v *ImageLayerCompression) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "EStarGZ":
+		*v = ImageLayerCompressionEstarGz
+	case "ESTARGZ":
+		*v = ImageLayerCompressionEstargz
+	case "Gzip":
+		*v = ImageLayerCompressionGzip
+	case "Uncompressed":
+		*v = ImageLayerCompressionUncompressed
+	case "Zstd":
+		*v = ImageLayerCompressionZstd
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-
-	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
-
 	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
 
-	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
-
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
+
+	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+
+	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -10228,14 +10311,51 @@ type ImageMediaTypes string
 
 func (ImageMediaTypes) IsEnum() {}
 
+func (v ImageMediaTypes) Name() string {
+	switch v {
+	case ImageMediaTypesOcimediaTypes:
+		return "OCIMediaTypes"
+	case ImageMediaTypesDockerMediaTypes:
+		return "DockerMediaTypes"
+	default:
+		return ""
+	}
+}
+
+func (v ImageMediaTypes) Value() string {
+	return string(v)
+}
+
+func (v *ImageMediaTypes) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "DOCKER":
+		*v = ImageMediaTypesDocker
+	case "DockerMediaTypes":
+		*v = ImageMediaTypesDockerMediaTypes
+	case "OCI":
+		*v = ImageMediaTypesOci
+	case "OCIMediaTypes":
+		*v = ImageMediaTypesOcimediaTypes
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	ImageMediaTypesDocker ImageMediaTypes = "DOCKER"
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesOci           ImageMediaTypes = ImageMediaTypesOcimediaTypes
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
-
-	ImageMediaTypesOci ImageMediaTypes = "OCI"
-
-	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
 )
 
 // The kind of module source.
@@ -10243,24 +10363,101 @@ type ModuleSourceKind string
 
 func (ModuleSourceKind) IsEnum() {}
 
+func (v ModuleSourceKind) Name() string {
+	switch v {
+	case ModuleSourceKindLocalSource:
+		return "LOCAL_SOURCE"
+	case ModuleSourceKindGitSource:
+		return "GIT_SOURCE"
+	case ModuleSourceKindDirSource:
+		return "DIR_SOURCE"
+	default:
+		return ""
+	}
+}
+
+func (v ModuleSourceKind) Value() string {
+	return string(v)
+}
+
+func (v *ModuleSourceKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "DIR":
+		*v = ModuleSourceKindDir
+	case "DIR_SOURCE":
+		*v = ModuleSourceKindDirSource
+	case "GIT":
+		*v = ModuleSourceKindGit
+	case "GIT_SOURCE":
+		*v = ModuleSourceKindGitSource
+	case "LOCAL":
+		*v = ModuleSourceKindLocal
+	case "LOCAL_SOURCE":
+		*v = ModuleSourceKindLocalSource
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	ModuleSourceKindDir ModuleSourceKind = "DIR"
-
-	ModuleSourceKindDirSource ModuleSourceKind = "DIR_SOURCE"
-
-	ModuleSourceKindGit ModuleSourceKind = "GIT"
+	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
+	ModuleSourceKindLocal       ModuleSourceKind = ModuleSourceKindLocalSource
 
 	ModuleSourceKindGitSource ModuleSourceKind = "GIT_SOURCE"
+	ModuleSourceKindGit       ModuleSourceKind = ModuleSourceKindGitSource
 
-	ModuleSourceKindLocal ModuleSourceKind = "LOCAL"
-
-	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
+	ModuleSourceKindDirSource ModuleSourceKind = "DIR_SOURCE"
+	ModuleSourceKindDir       ModuleSourceKind = ModuleSourceKindDirSource
 )
 
 // Transport layer network protocol associated to a port.
 type NetworkProtocol string
 
 func (NetworkProtocol) IsEnum() {}
+
+func (v NetworkProtocol) Name() string {
+	switch v {
+	case NetworkProtocolTcp:
+		return "TCP"
+	case NetworkProtocolUdp:
+		return "UDP"
+	default:
+		return ""
+	}
+}
+
+func (v NetworkProtocol) Value() string {
+	return string(v)
+}
+
+func (v *NetworkProtocol) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "TCP":
+		*v = NetworkProtocolTcp
+	case "UDP":
+		*v = NetworkProtocolUdp
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
 
 const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
@@ -10273,15 +10470,54 @@ type ReturnType string
 
 func (ReturnType) IsEnum() {}
 
+func (v ReturnType) Name() string {
+	switch v {
+	case ReturnTypeSuccess:
+		return "SUCCESS"
+	case ReturnTypeFailure:
+		return "FAILURE"
+	case ReturnTypeAny:
+		return "ANY"
+	default:
+		return ""
+	}
+}
+
+func (v ReturnType) Value() string {
+	return string(v)
+}
+
+func (v *ReturnType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ReturnType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "ANY":
+		*v = ReturnTypeAny
+	case "FAILURE":
+		*v = ReturnTypeFailure
+	case "SUCCESS":
+		*v = ReturnTypeSuccess
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	// Any execution (exit codes 0-127)
-	ReturnTypeAny ReturnType = "ANY"
+	// A successful execution (exit code 0)
+	ReturnTypeSuccess ReturnType = "SUCCESS"
 
 	// A failed execution (exit codes 1-127)
 	ReturnTypeFailure ReturnType = "FAILURE"
 
-	// A successful execution (exit code 0)
-	ReturnTypeSuccess ReturnType = "SUCCESS"
+	// Any execution (exit codes 0-127)
+	ReturnTypeAny ReturnType = "ANY"
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -10289,90 +10525,172 @@ type TypeDefKind string
 
 func (TypeDefKind) IsEnum() {}
 
+func (v TypeDefKind) Name() string {
+	switch v {
+	case TypeDefKindStringKind:
+		return "STRING_KIND"
+	case TypeDefKindIntegerKind:
+		return "INTEGER_KIND"
+	case TypeDefKindFloatKind:
+		return "FLOAT_KIND"
+	case TypeDefKindBooleanKind:
+		return "BOOLEAN_KIND"
+	case TypeDefKindScalarKind:
+		return "SCALAR_KIND"
+	case TypeDefKindListKind:
+		return "LIST_KIND"
+	case TypeDefKindObjectKind:
+		return "OBJECT_KIND"
+	case TypeDefKindInterfaceKind:
+		return "INTERFACE_KIND"
+	case TypeDefKindInputKind:
+		return "INPUT_KIND"
+	case TypeDefKindVoidKind:
+		return "VOID_KIND"
+	case TypeDefKindEnumKind:
+		return "ENUM_KIND"
+	default:
+		return ""
+	}
+}
+
+func (v TypeDefKind) Value() string {
+	return string(v)
+}
+
+func (v *TypeDefKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "BOOLEAN":
+		*v = TypeDefKindBoolean
+	case "BOOLEAN_KIND":
+		*v = TypeDefKindBooleanKind
+	case "ENUM":
+		*v = TypeDefKindEnum
+	case "ENUM_KIND":
+		*v = TypeDefKindEnumKind
+	case "FLOAT":
+		*v = TypeDefKindFloat
+	case "FLOAT_KIND":
+		*v = TypeDefKindFloatKind
+	case "INPUT":
+		*v = TypeDefKindInput
+	case "INPUT_KIND":
+		*v = TypeDefKindInputKind
+	case "INTEGER":
+		*v = TypeDefKindInteger
+	case "INTEGER_KIND":
+		*v = TypeDefKindIntegerKind
+	case "INTERFACE":
+		*v = TypeDefKindInterface
+	case "INTERFACE_KIND":
+		*v = TypeDefKindInterfaceKind
+	case "LIST":
+		*v = TypeDefKindList
+	case "LIST_KIND":
+		*v = TypeDefKindListKind
+	case "OBJECT":
+		*v = TypeDefKindObject
+	case "OBJECT_KIND":
+		*v = TypeDefKindObjectKind
+	case "SCALAR":
+		*v = TypeDefKindScalar
+	case "SCALAR_KIND":
+		*v = TypeDefKindScalarKind
+	case "STRING":
+		*v = TypeDefKindString
+	case "STRING_KIND":
+		*v = TypeDefKindStringKind
+	case "VOID":
+		*v = TypeDefKindVoid
+	case "VOID_KIND":
+		*v = TypeDefKindVoidKind
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
-	// A boolean value.
-	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
-
-	// A boolean value.
-	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
-
-	// A GraphQL enum type and its values
-	//
-	// Always paired with an EnumTypeDef.
-	TypeDefKindEnum TypeDefKind = "ENUM"
-
-	// A GraphQL enum type and its values
-	//
-	// Always paired with an EnumTypeDef.
-	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
-
-	// A float value.
-	TypeDefKindFloat TypeDefKind = "FLOAT"
-
-	// A float value.
-	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
-
-	// A graphql input type, used only when representing the core API via TypeDefs.
-	TypeDefKindInput TypeDefKind = "INPUT"
-
-	// A graphql input type, used only when representing the core API via TypeDefs.
-	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
-
-	// An integer value.
-	TypeDefKindInteger TypeDefKind = "INTEGER"
+	// A string value.
+	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
+	// A string value.
+	TypeDefKindString TypeDefKind = TypeDefKindStringKind
 
 	// An integer value.
 	TypeDefKindIntegerKind TypeDefKind = "INTEGER_KIND"
+	// An integer value.
+	TypeDefKindInteger TypeDefKind = TypeDefKindIntegerKind
 
-	// Always paired with an InterfaceTypeDef.
-	//
-	// A named type of functions that can be matched+implemented by other objects+interfaces.
-	TypeDefKindInterface TypeDefKind = "INTERFACE"
+	// A float value.
+	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
+	// A float value.
+	TypeDefKindFloat TypeDefKind = TypeDefKindFloatKind
 
-	// Always paired with an InterfaceTypeDef.
-	//
-	// A named type of functions that can be matched+implemented by other objects+interfaces.
-	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
+	// A boolean value.
+	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
+	// A boolean value.
+	TypeDefKindBoolean TypeDefKind = TypeDefKindBooleanKind
 
-	// Always paired with a ListTypeDef.
-	//
-	// A list of values all having the same type.
-	TypeDefKindList TypeDefKind = "LIST"
+	// A scalar value of any basic kind.
+	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
+	// A scalar value of any basic kind.
+	TypeDefKindScalar TypeDefKind = TypeDefKindScalarKind
 
 	// Always paired with a ListTypeDef.
 	//
 	// A list of values all having the same type.
 	TypeDefKindListKind TypeDefKind = "LIST_KIND"
-
-	// Always paired with an ObjectTypeDef.
+	// Always paired with a ListTypeDef.
 	//
-	// A named type defined in the GraphQL schema, with fields and functions.
-	TypeDefKindObject TypeDefKind = "OBJECT"
+	// A list of values all having the same type.
+	TypeDefKindList TypeDefKind = TypeDefKindListKind
 
 	// Always paired with an ObjectTypeDef.
 	//
 	// A named type defined in the GraphQL schema, with fields and functions.
 	TypeDefKindObjectKind TypeDefKind = "OBJECT_KIND"
-
-	// A scalar value of any basic kind.
-	TypeDefKindScalar TypeDefKind = "SCALAR"
-
-	// A scalar value of any basic kind.
-	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
-
-	// A string value.
-	TypeDefKindString TypeDefKind = "STRING"
-
-	// A string value.
-	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
-
-	// A special kind used to signify that no value is returned.
+	// Always paired with an ObjectTypeDef.
 	//
-	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-	TypeDefKindVoid TypeDefKind = "VOID"
+	// A named type defined in the GraphQL schema, with fields and functions.
+	TypeDefKindObject TypeDefKind = TypeDefKindObjectKind
+
+	// Always paired with an InterfaceTypeDef.
+	//
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
+	// Always paired with an InterfaceTypeDef.
+	//
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	TypeDefKindInterface TypeDefKind = TypeDefKindInterfaceKind
+
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	TypeDefKindInput TypeDefKind = TypeDefKindInputKind
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
 	TypeDefKindVoidKind TypeDefKind = "VOID_KIND"
+	// A special kind used to signify that no value is returned.
+	//
+	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+	TypeDefKindVoid TypeDefKind = TypeDefKindVoidKind
+
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
