@@ -1,10 +1,13 @@
 import dataclasses
+import enum
 import inspect
-import json
 import logging
 
+from cattrs.preconf.json import make_converter as make_json_converter
+
 import dagger
-from dagger.mod._types import APIName, ContextPath
+from dagger.client import base
+from dagger.mod._types import APIName, ContextPath, Enum
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +101,8 @@ class Parameter:
         if not self.has_default:
             return
         try:
-            self.default_value = dagger.JSON(json.dumps(self.signature.default))
+            conv = make_converter()
+            self.default_value = dagger.JSON(conv.dumps(self.signature.default))
         except TypeError as e:
             # Rather than failing on a default value that's not JSON
             # serializable and going through hoops to support more and more
@@ -148,3 +152,26 @@ class Parameter:
                     f"parameter '{self.signature.name}'"
                 )
                 raise ValueError(msg)
+
+
+def make_converter():
+    conv = make_json_converter(
+        detailed_validation=True,
+    )
+
+    def to_enum_name(val: enum.Enum) -> str:
+        return val.name
+
+    def from_enum_name(name: str, cls: type[enum.Enum]) -> enum.Enum:
+        return cls[name]
+
+    conv.register_unstructure_hook(enum.Enum, to_enum_name)
+    conv.register_structure_hook(enum.Enum, from_enum_name)
+
+    conv.register_unstructure_hook(base.Enum, to_enum_name)
+    conv.register_structure_hook(base.Enum, from_enum_name)
+
+    conv.register_unstructure_hook(Enum, to_enum_name)
+    conv.register_structure_hook(Enum, from_enum_name)
+
+    return conv

@@ -738,8 +738,18 @@ class Enum(Handler[GraphQLEnumType]):
         for name, value in sorted(t.values.items()):
             yield ""
 
+            val = None
+            if value.ast_node and (
+                directive := self.ctx.schema.get_directive("enumValue")
+            ):
+                args = graphql.get_directive_values(directive, value.ast_node)
+                if args:
+                    val = args["value"]
+            if not val:
+                val = value.value
+
             # repr uses single quotes for strings, contrary to black
-            val = repr(value.value).replace("'", '"')
+            val = repr(val).replace("'", '"')
             yield f"{name} = {val}"
 
             if value.description:
