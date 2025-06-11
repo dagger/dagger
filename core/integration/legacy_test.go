@@ -12,6 +12,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // LegacySuite contains tests for module versioning compatibility
@@ -1020,4 +1021,230 @@ func (m *Bare) dir() *dagger.Directory {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
+}
+
+func (LegacySuite) TestLegacyCustomEnum(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#9518
+	//
+	// Checks that old modules still use the enum values in the API (even
+	// though, internally we're doing name-by-name serialization)
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	tcs := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+// Enum for Status
+type Status string
+
+const (
+	// Active status
+	Active Status = "here"
+
+	// Inactive status
+	Inactive Status = "there"
+)
+
+func New(
+	// +default="here"
+	status Status,
+) *Test {
+	return &Test{Status: status}
+}
+
+type Test struct {
+	Status Status
+}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+
+@dagger.enum_type
+class Status(dagger.Enum):
+    """Enum for Status"""
+
+    ACTIVE = "here", "Active status"
+    INACTIVE = "there", "Inactive status"
+
+
+@dagger.object_type
+class Test:
+    status: Status = dagger.field(default=Status.ACTIVE)
+
+    @dagger.function
+    def from_status(self, status: Status) -> str:
+        return str(status)
+
+    @dagger.function
+    def to_status(self, status: str) -> Status:
+        # Doing "Status(proto)" will fail in Python, so mock
+        # it to force sending the invalid value back to the server.
+        class MockEnum(dagger.Enum):
+            ACTIVE = "here"
+            INACTIVE = "there"
+            INVALID = "INVALID"
+
+        return MockEnum(status)
+`,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source).
+				With(daggerExec("develop", "--compat=v0.18.10"))
+
+			// status property
+			out, err := modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "here", gjson.Get(out, "test.status").String())
+
+			// fromStatus
+			out, err = modGen.With(daggerQuery(`{test{fromStatus(status: there)}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "there", gjson.Get(out, "test.fromStatus").String())
+
+			// toStatus
+			out, err = modGen.With(daggerQuery(`{test{toStatus(status: "there")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "there", gjson.Get(out, "test.toStatus").String())
+		})
+	}
+}
+
+func (LegacySuite) TestLegacyCustomExternalEnum(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#9518
+	//
+	// Checks that old modules still expose the same enum values as they used
+	// to, and that the names are effectively discarded.
+
+	depSrc := `package main
+
+// Enum for Status
+type Status string
+
+const (
+	// Active status
+	Active Status = "here"
+
+	// Inactive status
+	Inactive Status = "there"
+)
+
+type Dep struct{}
+
+func (m *Dep) Active() Status {
+	return Active
+}
+
+func (m *Dep) Inactive() Status {
+	return Inactive
+}
+
+func (m *Dep) Invert(status Status) Status {
+	switch status {
+	case Active:
+		return Inactive
+	case Inactive:
+		return Active
+	default:
+		panic("invalid status")
+	}
+}
+`
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	tcs := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Status dagger.DepStatus // +private
+}
+
+func New() *Test {
+	return &Test{Status: dagger.DepStatusHere}
+}
+
+func (m *Test) Active() (string) {
+	return string(m.Status)
+}
+
+func (m *Test) Inactive(ctx context.Context) (string, error) {
+	status, err := dag.Dep().Active(ctx)
+	if err != nil {
+		return "", err
+	}
+	status, err = dag.Dep().Invert(ctx, status)
+	if err != nil {
+		return "", err
+	}
+	return string(status), nil
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+import dataclasses
+from dagger import dag, DepStatus
+
+@dagger.object_type
+class Test:
+    status: DepStatus = dataclasses.field(default=DepStatus.here, init=False)
+
+    @dagger.function
+    def active(self) -> str:
+        return str(self.status)
+
+    @dagger.function
+    async def inactive(self) -> str:
+        status = await dag.dep().active()
+        status = await dag.dep().invert(status)
+        return str(status)
+`,
+		},
+	}
+	for _, tc := range tcs {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := modInit(t, c, tc.sdk, tc.source).
+				// With(daggerExec("develop", "-m", ".", "--compat=v0.18.10")).
+				With(withModInitAt("./dep", "go", depSrc)).
+				With(daggerExec("develop", "-m", "./dep", "--compat=v0.18.10")).
+				With(daggerExec("install", "./dep"))
+
+			out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "here", gjson.Get(out, "test.active").String())
+			require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+		})
+	}
 }
