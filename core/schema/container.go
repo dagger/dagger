@@ -420,7 +420,12 @@ func (s *containerSchema) Install() {
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
-
+		dagql.Func("exists", s.exists).
+			Doc(`check if a file or directory exists`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "FILE", "DIRECTORY", or "SYMLINK").`),
+			),
 		dagql.Func("withExec", s.withExec).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -1316,6 +1321,11 @@ type containerWithoutAnnotationArgs struct {
 
 func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
 	return parent.WithoutAnnotation(ctx, args.Name)
+}
+
+func (s *containerSchema) exists(ctx context.Context, parent *core.Container, args existsArgs) (dagql.Boolean, error) {
+	exists, err := parent.Exists(ctx, s.srv, args.Path, args.ExpectedType.Value)
+	return dagql.NewBoolean(exists), err
 }
 
 type containerPublishArgs struct {
