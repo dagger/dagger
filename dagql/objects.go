@@ -27,8 +27,9 @@ type Class[T Typed] struct {
 	inner   T
 	idable  bool
 	fields  map[string][]*Field[T]
-	dirtier func()
 	fieldsL *sync.Mutex
+
+	invalidateSchemaCache func()
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -54,7 +55,8 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
-		dirtier: srv.bumpRevision,
+
+		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
 		class.Install(
@@ -148,8 +150,8 @@ func (class Class[T]) Install(fields ...Field[T]) {
 
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
-	if class.dirtier != nil {
-		class.dirtier()
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
 	}
 }
 
@@ -170,8 +172,8 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 	}
 	f.CacheSpec = cacheSpec
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
-	if class.dirtier != nil {
-		class.dirtier()
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
 	}
 }
 

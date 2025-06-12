@@ -124,11 +124,11 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	return srv
 }
 
-func (s *Server) bumpRevision() {
+func (s *Server) invalidateSchemaCache() {
 	s.schemaLock.Lock()
-	s.schemas = make(map[View]*ast.Schema)
-	s.schemaDigests = make(map[View]digest.Digest)
-	s.schemaOnces = make(map[View]*sync.Once)
+	clear(s.schemas)
+	clear(s.schemaDigests)
+	clear(s.schemaOnces)
 	s.schemaLock.Unlock()
 }
 
@@ -246,7 +246,7 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 		return class
 	}
 
-	s.bumpRevision()
+	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
 	if idType, hasID := class.IDType(); hasID {
@@ -301,7 +301,7 @@ func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
 		return scalar
 	}
-	s.bumpRevision()
+	s.invalidateSchemaCache()
 	s.scalars[scalar.TypeName()] = scalar
 	return scalar
 }
@@ -311,7 +311,7 @@ func (s *Server) InstallDirective(directive DirectiveSpec) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.directives[directive.Name] = directive
-	s.bumpRevision()
+	s.invalidateSchemaCache()
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
@@ -319,7 +319,7 @@ func (s *Server) InstallTypeDef(def TypeDef) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.typeDefs[def.TypeName()] = def
-	s.bumpRevision()
+	s.invalidateSchemaCache()
 }
 
 // ObjectType returns the ObjectType with the given name, if it exists.
@@ -375,36 +375,38 @@ func (s *Server) Schema() *ast.Schema {
 
 	s.schemaOnces[view].Do(func() {
 		queryType := s.Root().Type().Name()
-		s.schemas[view] = &ast.Schema{
+		schema := &ast.Schema{
 			Types:         make(map[string]*ast.Definition),
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		for _, t := range s.objects { // TODO stable order
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
-				s.schemas[view].Query = def
+				schema.Query = def
 			}
-			s.schemas[view].AddTypes(def)
-			s.schemas[view].AddPossibleType(def.Name, def)
+			schema.AddTypes(def)
+			schema.AddPossibleType(def.Name, def)
 		}
 		for _, t := range s.scalars {
 			def := definition(ast.Scalar, t, view)
-			s.schemas[view].AddTypes(def)
-			s.schemas[view].AddPossibleType(def.Name, def)
+			schema.AddTypes(def)
+			schema.AddPossibleType(def.Name, def)
 		}
 		for _, t := range s.typeDefs {
 			def := t.TypeDefinition(view)
-			s.schemas[view].AddTypes(def)
-			s.schemas[view].AddPossibleType(def.Name, def)
+			schema.AddTypes(def)
+			schema.AddPossibleType(def.Name, def)
 		}
-		s.schemas[view].Directives = map[string]*ast.DirectiveDefinition{}
+		schema.Directives = map[string]*ast.DirectiveDefinition{}
 		for n, d := range s.directives {
-			s.schemas[view].Directives[n] = d.DirectiveDefinition(view)
+			schema.Directives[n] = d.DirectiveDefinition(view)
 		}
 		h := xxh3.New()
-		json.NewEncoder(h).Encode(s.schemas[view])
+		json.NewEncoder(h).Encode(schema)
+		s.schemas[view] = schema
 		s.schemaDigests[view] = digest.NewDigest(XXH3, h)
 	})
+
 	return s.schemas[view]
 }
 
