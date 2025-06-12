@@ -50,10 +50,10 @@ type Server struct {
 	typeDefs   map[string]TypeDef
 	directives map[string]DirectiveSpec
 
-	schema       *ast.Schema
-	schemaDigest digest.Digest
-	schemaOnce   *sync.Once
-	schemaLock   *sync.Mutex
+	schemas       map[View]*ast.Schema
+	schemaDigests map[View]digest.Digest
+	schemaOnces   map[View]*sync.Once
+	schemaLock    *sync.Mutex
 
 	installLock  *sync.Mutex
 	installHooks []InstallHook
@@ -93,14 +93,16 @@ type TypeDef interface {
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T, c *SessionCache) *Server {
 	srv := &Server{
-		Cache:       c,
-		objects:     map[string]ObjectType{},
-		scalars:     map[string]ScalarType{},
-		typeDefs:    map[string]TypeDef{},
-		directives:  map[string]DirectiveSpec{},
-		installLock: &sync.Mutex{},
-		schemaOnce:  &sync.Once{},
-		schemaLock:  &sync.Mutex{},
+		Cache:         c,
+		objects:       map[string]ObjectType{},
+		scalars:       map[string]ScalarType{},
+		typeDefs:      map[string]TypeDef{},
+		directives:    map[string]DirectiveSpec{},
+		installLock:   &sync.Mutex{},
+		schemas:       make(map[View]*ast.Schema),
+		schemaDigests: make(map[View]digest.Digest),
+		schemaOnces:   make(map[View]*sync.Once),
+		schemaLock:    &sync.Mutex{},
 	}
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
@@ -125,7 +127,9 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 
 func (s *Server) bumpRevision() {
 	s.schemaLock.Lock()
-	s.schemaOnce = &sync.Once{}
+	s.schemas = make(map[View]*ast.Schema)
+	s.schemaDigests = make(map[View]digest.Digest)
+	s.schemaOnces = make(map[View]*sync.Once)
 	s.schemaLock.Unlock()
 }
 
@@ -364,47 +368,53 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 func (s *Server) Schema() *ast.Schema {
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
-	s.schemaOnce.Do(func() {
+
+	view := s.View
+	if s.schemaOnces[view] == nil {
+		s.schemaOnces[view] = &sync.Once{}
+	}
+
+	s.schemaOnces[view].Do(func() {
 		queryType := s.Root().Type().Name()
-		s.schema = &ast.Schema{
+		s.schemas[view] = &ast.Schema{
 			Types:         make(map[string]*ast.Definition),
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		for _, t := range s.objects { // TODO stable order
-			def := definition(ast.Object, t, s.View)
+			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
-				s.schema.Query = def
+				s.schemas[view].Query = def
 			}
-			s.schema.AddTypes(def)
-			s.schema.AddPossibleType(def.Name, def)
+			s.schemas[view].AddTypes(def)
+			s.schemas[view].AddPossibleType(def.Name, def)
 		}
 		for _, t := range s.scalars {
-			def := definition(ast.Scalar, t, s.View)
-			s.schema.AddTypes(def)
-			s.schema.AddPossibleType(def.Name, def)
+			def := definition(ast.Scalar, t, view)
+			s.schemas[view].AddTypes(def)
+			s.schemas[view].AddPossibleType(def.Name, def)
 		}
 		for _, t := range s.typeDefs {
-			def := t.TypeDefinition(s.View)
-			s.schema.AddTypes(def)
-			s.schema.AddPossibleType(def.Name, def)
+			def := t.TypeDefinition(view)
+			s.schemas[view].AddTypes(def)
+			s.schemas[view].AddPossibleType(def.Name, def)
 		}
-		s.schema.Directives = map[string]*ast.DirectiveDefinition{}
+		s.schemas[view].Directives = map[string]*ast.DirectiveDefinition{}
 		for n, d := range s.directives {
-			s.schema.Directives[n] = d.DirectiveDefinition(s.View)
+			s.schemas[view].Directives[n] = d.DirectiveDefinition(view)
 		}
 		h := xxh3.New()
-		json.NewEncoder(h).Encode(s.schema)
-		s.schemaDigest = digest.NewDigest(XXH3, h)
+		json.NewEncoder(h).Encode(s.schemas[view])
+		s.schemaDigests[view] = digest.NewDigest(XXH3, h)
 	})
-	return s.schema
+	return s.schemas[view]
 }
 
 // SchemaDigest returns the digest of the current schema.
 func (s *Server) SchemaDigest() digest.Digest {
-	s.Schema() // make sure we calculate it first
+	s.Schema() // ensure it's built
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
-	return s.schemaDigest
+	return s.schemaDigests[s.View]
 }
 
 // Complexity returns the complexity of the given field.
