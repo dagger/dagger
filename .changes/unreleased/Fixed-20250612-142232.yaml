@@ -1,0 +1,6 @@
+kind: Fixed
+body: Schema introspection is now cached, as long as the schema doesn't change. In the same scenario as the high log volume fix, this further reduced heap usage from 7GB to 1.4GB.
+time: 2025-06-12T14:22:32.678239656-04:00
+custom:
+    Author: vito
+    PR: "10579"

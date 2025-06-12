@@ -39,28 +39,28 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	DirectiveLocations.Install(srv)
 
 	for _, class := range []dagql.ObjectType{
-		dagql.NewClass[*Directive](dagql.ClassOpts[*Directive]{
+		dagql.NewClass[*Directive](srv, dagql.ClassOpts[*Directive]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*DirectiveApplication](dagql.ClassOpts[*DirectiveApplication]{
+		dagql.NewClass[*DirectiveApplication](srv, dagql.ClassOpts[*DirectiveApplication]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*DirectiveApplicationArg](dagql.ClassOpts[*DirectiveApplicationArg]{
+		dagql.NewClass[*DirectiveApplicationArg](srv, dagql.ClassOpts[*DirectiveApplicationArg]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*EnumValue](dagql.ClassOpts[*EnumValue]{
+		dagql.NewClass[*EnumValue](srv, dagql.ClassOpts[*EnumValue]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*Field](dagql.ClassOpts[*Field]{
+		dagql.NewClass[*Field](srv, dagql.ClassOpts[*Field]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*InputValue](dagql.ClassOpts[*InputValue]{
+		dagql.NewClass[*InputValue](srv, dagql.ClassOpts[*InputValue]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*Schema](dagql.ClassOpts[*Schema]{
+		dagql.NewClass[*Schema](srv, dagql.ClassOpts[*Schema]{
 			NoIDs: true,
 		}),
-		dagql.NewClass[*Type](dagql.ClassOpts[*Type]{
+		dagql.NewClass[*Type](srv, dagql.ClassOpts[*Type]{
 			NoIDs: true,
 		}),
 	} {

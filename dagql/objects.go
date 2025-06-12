@@ -28,6 +28,8 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
+
+	invalidateSchemaCache func()
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -44,7 +46,7 @@ type ClassOpts[T Typed] struct {
 }
 
 // NewClass returns a new empty class for a given type.
-func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
+func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	var opts ClassOpts[T]
 	if len(opts_) > 0 {
 		opts = opts_[0]
@@ -53,6 +55,8 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
+
+		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
 		class.Install(
@@ -146,17 +150,20 @@ func (class Class[T]) Install(fields ...Field[T]) {
 
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
 }
 
 var _ ObjectType = Class[Typed]{}
 
-func (cls Class[T]) TypeName() string {
-	return cls.inner.Type().Name()
+func (class Class[T]) TypeName() string {
+	return class.inner.Type().Name()
 }
 
-func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
-	cls.fieldsL.Lock()
-	defer cls.fieldsL.Unlock()
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
 	f := &Field[T]{
 		Spec: &spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
@@ -164,7 +171,10 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 		},
 	}
 	f.CacheSpec = cacheSpec
-	cls.fields[spec.Name] = append(cls.fields[spec.Name], f)
+	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
 }
 
 // TypeDefinition returns the schema definition of the class.
@@ -173,24 +183,24 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
-	cls.fieldsL.Lock()
-	defer cls.fieldsL.Unlock()
-	var val any = cls.inner
+func (class Class[T]) TypeDefinition(view View) *ast.Definition {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	var val any = class.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.TypeDefinition(view)
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
-			Name: cls.inner.Type().Name(),
+			Name: class.inner.Type().Name(),
 		}
 	}
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	for name := range cls.fields {
-		if field, ok := cls.fieldLocked(name, view); ok {
+	for name := range class.fields {
+		if field, ok := class.fieldLocked(name, view); ok {
 			def.Fields = append(def.Fields, field.FieldDefinition(view))
 		}
 	}
@@ -202,16 +212,16 @@ func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
-	field, ok := cls.Field(astField.Name, view)
+func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+	field, ok := class.Field(astField.Name, view)
 	if !ok {
-		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
+		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", class.TypeName(), astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Input(arg.Name, view)
 		if !ok {
-			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", cls.TypeName(), field.Spec.Name, arg.Name)
+			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", class.TypeName(), field.Spec.Name, arg.Name)
 		}
 
 		val, err := arg.Value.Value(vars)
@@ -240,30 +250,30 @@ func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Fie
 }
 
 // New returns a new instance of the class.
-func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
+func (class Class[T]) New(id *call.ID, val Typed) (Object, error) {
 	self, ok := val.(T)
 	if !ok {
 		// NB: Nullable values should already be unwrapped by now.
-		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
+		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 	}
 	return Instance[T]{
 		Constructor: id,
 		Self:        self,
-		Class:       cls,
+		Class:       class,
 	}, nil
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(
+func (class Class[T]) Call(
 	ctx context.Context,
 	node Instance[T],
 	fieldName string,
 	view View,
 	args map[string]Input,
 ) (*CacheValWithCallbacks, error) {
-	field, ok := cls.Field(fieldName, view)
+	field, ok := class.Field(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", class.inner.Type().Name(), fieldName)
 	}
 
 	val, err := field.Func(ctx, node, args, view)
@@ -1119,7 +1129,7 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	class := server.InstallObject(NewClass[T]()).(Class[T])
+	class := server.InstallObject(NewClass[T](server)).(Class[T])
 
 	var t T
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
