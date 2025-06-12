@@ -361,11 +361,10 @@ func (s *Server) Query(ctx context.Context, query string, vars map[string]any) (
 var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
-func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whenever something is installed, instead
+func (s *Server) Schema() *ast.Schema {
 	s.schemaLock.Lock()
 	defer s.schemaLock.Unlock()
 	s.schemaOnce.Do(func() {
-		// TODO track when the schema changes, cache until it changes again
 		queryType := s.Root().Type().Name()
 		s.schema = &ast.Schema{
 			Types:         make(map[string]*ast.Definition),
