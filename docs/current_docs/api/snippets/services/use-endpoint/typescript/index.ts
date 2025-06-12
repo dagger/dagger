@@ -9,7 +9,7 @@ export class MyModule {
     service = await service.start()
 
     // wait for service to be ready
-    let endpoint = await service.endpoint({"port": 80, "scheme": "http"})
+    const endpoint = await service.endpoint({ port: 80, scheme: "http" })
 
     // send HTTP request to service endpoint
     return await dag.http(endpoint).contents()
