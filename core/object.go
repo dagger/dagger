@@ -273,7 +273,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 
-	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
+	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
 		Typed: obj,
 	})
 	objDef := obj.TypeDef

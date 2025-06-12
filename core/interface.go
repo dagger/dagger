@@ -180,7 +180,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	if iface.mod.InstanceID == nil {
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
 	}
-	class := dagql.NewClass(dagql.ClassOpts[*InterfaceAnnotatedValue]{
+	class := dagql.NewClass(dag, dagql.ClassOpts[*InterfaceAnnotatedValue]{
 		Typed: &InterfaceAnnotatedValue{
 			TypeDef:   iface.typeDef,
 			IfaceType: iface,

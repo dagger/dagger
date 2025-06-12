@@ -42,13 +42,10 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
-
-	// A function to call whenever the schema has been modified.
-	OnSchemaChange func()
 }
 
 // NewClass returns a new empty class for a given type.
-func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
+func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	var opts ClassOpts[T]
 	if len(opts_) > 0 {
 		opts = opts_[0]
@@ -57,7 +54,7 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
-		dirtier: opts.OnSchemaChange,
+		dirtier: srv.bumpRevision,
 	}
 	if !opts.NoIDs {
 		class.Install(
@@ -1130,7 +1127,7 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	class := server.InstallObject(NewClass[T]()).(Class[T])
+	class := server.InstallObject(NewClass[T](server)).(Class[T])
 
 	var t T
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
