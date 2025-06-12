@@ -28,6 +28,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Dagger Cloud configuration and state
+  """
+  @spec cloud(t()) :: Dagger.Cloud.t()
+  def cloud(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("cloud")
+
+    %Dagger.Cloud{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Creates a scratch container, with no image or metadata.
 
   To pull an image, follow up with the "from" function.
@@ -335,6 +349,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadCacheVolumeFromID") |> QB.put_arg("id", id)
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Cloud from its ID.
+  """
+  @spec load_cloud_from_id(t(), Dagger.CloudID.t()) :: Dagger.Cloud.t()
+  def load_cloud_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCloudFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Cloud{
       query_builder: query_builder,
       client: client.client
     }

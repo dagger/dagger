@@ -58,6 +58,11 @@ export enum CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+/**
+ * The `CloudID` scalar type represents an identifier for an object of type Cloud.
+ */
+export type CloudID = string & { __CloudID: never }
+
 export type ContainerAsServiceOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
@@ -1590,6 +1595,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Cloud
+   */
+  asCloud = (): Cloud => {
+    const ctx = this._ctx.select("asCloud")
+    return new Cloud(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Container
    */
   asContainer = (): Container => {
@@ -1795,6 +1808,54 @@ export class CacheVolume extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<CacheVolumeID> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * Dagger Cloud configuration and state
+ */
+export class Cloud extends BaseClient {
+  private readonly _id?: CloudID = undefined
+  private readonly _traceURL?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: CloudID, _traceURL?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._traceURL = _traceURL
+  }
+
+  /**
+   * A unique identifier for this Cloud.
+   */
+  id = async (): Promise<CloudID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<CloudID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL for the Dagger Cloud instance associated with the current trace
+   */
+  traceURL = async (): Promise<string> => {
+    if (this._traceURL) {
+      return this._traceURL
+    }
+
+    const ctx = this._ctx.select("traceURL")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -4114,6 +4175,27 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Cloud in the environment
+   * @param name The name of the binding
+   * @param value The Cloud value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCloudInput = (name: string, value: Cloud, description: string): Env => {
+    const ctx = this._ctx.select("withCloudInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Cloud output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCloudOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCloudOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -7662,6 +7744,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Dagger Cloud configuration and state
+   */
+  cloud = (): Cloud => {
+    const ctx = this._ctx.select("cloud")
+    return new Cloud(ctx)
+  }
+
+  /**
    * Creates a scratch container, with no image or metadata.
    *
    * To pull an image, follow up with the "from" function.
@@ -7846,6 +7936,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Cloud from its ID.
+   */
+  loadCloudFromID = (id: CloudID): Cloud => {
+    const ctx = this._ctx.select("loadCloudFromID", { id })
+    return new Cloud(ctx)
   }
 
   /**

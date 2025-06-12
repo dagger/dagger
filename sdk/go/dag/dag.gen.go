@@ -52,6 +52,12 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
+// Dagger Cloud configuration and state
+func Cloud() *dagger.Cloud {
+	client := initClient()
+	return client.Cloud()
+}
+
 // Creates a scratch container, with no image or metadata.
 //
 // To pull an image, follow up with the "from" function.
@@ -166,6 +172,12 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Cloud from its ID.
+func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
+	client := initClient()
+	return client.LoadCloudFromID(id)
 }
 
 // Load a Container from its ID.

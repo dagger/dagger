@@ -18,7 +18,7 @@ func URLForTrace(ctx context.Context) (url string, msg string, ok bool) {
 	var orgName string
 	if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
 		// Try token auth first
-		token, ok := parseDaggerToken(cloudToken)
+		token, ok := ParseDaggerToken(cloudToken)
 		if ok {
 			orgName = token.orgName
 		}
@@ -48,7 +48,7 @@ type daggerToken struct {
 	token   string
 }
 
-func parseDaggerToken(s string) (daggerToken, bool) {
+func ParseDaggerToken(s string) (daggerToken, bool) {
 	s, ok := strings.CutPrefix(s, "dag_")
 	if !ok {
 		return daggerToken{}, false

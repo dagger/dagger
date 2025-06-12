@@ -24,6 +24,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Dagger Cloud configuration and state
+     */
+    public function cloud(): Cloud
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cloud');
+        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a scratch container, with no image or metadata.
      *
      * To pull an image, follow up with the "from" function.
@@ -257,6 +266,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCacheVolumeFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Cloud from its ID.
+     */
+    public function loadCloudFromID(CloudId|Cloud $id): Cloud
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCloudFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
