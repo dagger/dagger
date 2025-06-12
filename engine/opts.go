@@ -74,8 +74,8 @@ type ClientMetadata struct {
 	// Export configuration for Buildkit's remote cache
 	UpstreamCacheExportConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_export_config"`
 
-	// Dagger Cloud Token
-	CloudToken string `json:"cloud_token"`
+	// Dagger Cloud Org
+	CloudOrg string `json:"cloud_org"`
 
 	// Disable analytics
 	DoNotTrack bool `json:"do_not_track"`
