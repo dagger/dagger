@@ -61,10 +61,6 @@ type Config struct {
 	// ClientOnly indicates that the codegen should only generate the client code.
 	ClientOnly bool
 
-	// Dev indicates that the codegen should use the local SDK instead of the published one.
-	// This is only relevant when ClientOnly is true.
-	Dev bool
-
 	// The list of all dependencies used by the module.
 	// This is used by the client generator to automatically serves the
 	// dependencies when connecting to the client.

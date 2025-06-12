@@ -62,7 +62,6 @@ func (sdk *goSDK) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
@@ -85,7 +84,6 @@ func (sdk *goSDK) GenerateClient(
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
 	}

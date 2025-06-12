@@ -20,3 +20,6 @@ var GoMod []byte
 
 //go:embed go.sum
 var GoSum []byte
+
+//go:embed engineconn/*.go querybuilder/marshal.go querybuilder/querybuilder.go go.mod go.sum client.go dagger.gen.go telemetry/*.go
+var GoSDK embed.FS
