@@ -13,12 +13,14 @@ import (
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
+	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
 	"github.com/vektah/gqlparser/v2/validator/rules"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -41,12 +43,18 @@ func init() {
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root         Object
-	telemetry    AroundFunc
-	objects      map[string]ObjectType
-	scalars      map[string]ScalarType
-	typeDefs     map[string]TypeDef
-	directives   map[string]DirectiveSpec
+	root       Object
+	telemetry  AroundFunc
+	objects    map[string]ObjectType
+	scalars    map[string]ScalarType
+	typeDefs   map[string]TypeDef
+	directives map[string]DirectiveSpec
+
+	schema       *ast.Schema
+	schemaDigest digest.Digest
+	schemaOnce   *sync.Once
+	schemaLock   *sync.Mutex
+
 	installLock  *sync.Mutex
 	installHooks []InstallHook
 
@@ -84,23 +92,26 @@ type TypeDef interface {
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T, c *SessionCache) *Server {
-	rootClass := NewClass(ClassOpts[T]{
-		// NB: there's nothing actually stopping this from being a thing, except it
-		// currently confuses the Dagger Go SDK. could be a nifty way to pass
-		// around global config I suppose.
-		NoIDs: true,
-	})
 	srv := &Server{
-		Cache: c,
-		root: Instance[T]{
-			Self:  root,
-			Class: rootClass,
-		},
+		Cache:       c,
 		objects:     map[string]ObjectType{},
 		scalars:     map[string]ScalarType{},
 		typeDefs:    map[string]TypeDef{},
 		directives:  map[string]DirectiveSpec{},
 		installLock: &sync.Mutex{},
+		schemaOnce:  &sync.Once{},
+		schemaLock:  &sync.Mutex{},
+	}
+	rootClass := NewClass(ClassOpts[T]{
+		// NB: there's nothing actually stopping this from being a thing, except it
+		// currently confuses the Dagger Go SDK. could be a nifty way to pass
+		// around global config I suppose.
+		NoIDs:          true,
+		OnSchemaChange: srv.bumpRevision,
+	})
+	srv.root = Instance[T]{
+		Self:  root,
+		Class: rootClass,
 	}
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -110,6 +121,12 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
+}
+
+func (s *Server) bumpRevision() {
+	s.schemaLock.Lock()
+	s.schemaOnce = &sync.Once{}
+	s.schemaLock.Unlock()
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
@@ -226,6 +243,8 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 		return class
 	}
 
+	s.bumpRevision()
+
 	s.objects[class.TypeName()] = class
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
@@ -279,6 +298,7 @@ func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
 		return scalar
 	}
+	s.bumpRevision()
 	s.scalars[scalar.TypeName()] = scalar
 	return scalar
 }
@@ -288,6 +308,7 @@ func (s *Server) InstallDirective(directive DirectiveSpec) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.directives[directive.Name] = directive
+	s.bumpRevision()
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
@@ -295,6 +316,7 @@ func (s *Server) InstallTypeDef(def TypeDef) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.typeDefs[def.TypeName()] = def
+	s.bumpRevision()
 }
 
 // ObjectType returns the ObjectType with the given name, if it exists.
@@ -340,37 +362,50 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whenever something is installed, instead
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	// TODO track when the schema changes, cache until it changes again
-	queryType := s.Root().Type().Name()
-	schema := &ast.Schema{
-		Types:         make(map[string]*ast.Definition),
-		PossibleTypes: make(map[string][]*ast.Definition),
-	}
-	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, t, s.View)
-		if def.Name == queryType {
-			schema.Query = def
+	s.schemaLock.Lock()
+	defer s.schemaLock.Unlock()
+	s.schemaOnce.Do(func() {
+		// TODO track when the schema changes, cache until it changes again
+		queryType := s.Root().Type().Name()
+		s.schema = &ast.Schema{
+			Types:         make(map[string]*ast.Definition),
+			PossibleTypes: make(map[string][]*ast.Definition),
 		}
-		schema.AddTypes(def)
-		schema.AddPossibleType(def.Name, def)
-	}
-	for _, t := range s.scalars {
-		def := definition(ast.Scalar, t, s.View)
-		schema.AddTypes(def)
-		schema.AddPossibleType(def.Name, def)
-	}
-	for _, t := range s.typeDefs {
-		def := t.TypeDefinition(s.View)
-		schema.AddTypes(def)
-		schema.AddPossibleType(def.Name, def)
-	}
-	schema.Directives = map[string]*ast.DirectiveDefinition{}
-	for n, d := range s.directives {
-		schema.Directives[n] = d.DirectiveDefinition(s.View)
-	}
-	return schema
+		for _, t := range s.objects { // TODO stable order
+			def := definition(ast.Object, t, s.View)
+			if def.Name == queryType {
+				s.schema.Query = def
+			}
+			s.schema.AddTypes(def)
+			s.schema.AddPossibleType(def.Name, def)
+		}
+		for _, t := range s.scalars {
+			def := definition(ast.Scalar, t, s.View)
+			s.schema.AddTypes(def)
+			s.schema.AddPossibleType(def.Name, def)
+		}
+		for _, t := range s.typeDefs {
+			def := t.TypeDefinition(s.View)
+			s.schema.AddTypes(def)
+			s.schema.AddPossibleType(def.Name, def)
+		}
+		s.schema.Directives = map[string]*ast.DirectiveDefinition{}
+		for n, d := range s.directives {
+			s.schema.Directives[n] = d.DirectiveDefinition(s.View)
+		}
+		h := xxh3.New()
+		json.NewEncoder(h).Encode(s.schema)
+		s.schemaDigest = digest.NewDigest(XXH3, h)
+	})
+	return s.schema
+}
+
+// SchemaDigest returns the digest of the current schema.
+func (s *Server) SchemaDigest() digest.Digest {
+	s.Schema() // make sure we calculate it first
+	s.schemaLock.Lock()
+	defer s.schemaLock.Unlock()
+	return s.schemaDigest
 }
 
 // Complexity returns the complexity of the given field.

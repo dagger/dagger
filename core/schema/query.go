@@ -27,7 +27,10 @@ func (s *querySchema) Install() {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, dagql.CachePerCall).
+		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, func(_ context.Context, _ dagql.Instance[*core.Query], _ schemaJSONArgs, cfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+			cfg.Digest = s.srv.SchemaDigest()
+			return &cfg, nil
+		}).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
@@ -85,12 +88,14 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 	return engine.Version, nil
 }
 
+type schemaJSONArgs struct {
+	HiddenTypes []string `default:"[]"`
+}
+
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
 	parent dagql.Instance[*core.Query],
-	args struct {
-		HiddenTypes []string `default:"[]"`
-	},
+	args schemaJSONArgs,
 ) (inst dagql.Instance[*core.File], rerr error) {
 	data, err := s.srv.Query(ctx, codegenintrospection.Query, nil)
 	if err != nil {
