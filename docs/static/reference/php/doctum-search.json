@@ -3635,12 +3635,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleConfigClient::dev",
-			"p": "Dagger/ModuleConfigClient.html#method_dev",
-			"d": "<p>If true, generate the client in developer mode.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleConfigClient::directory",
 			"p": "Dagger/ModuleConfigClient.html#method_directory",
 			"d": "<p>The directory the client is generated in.</p>"
