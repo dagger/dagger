@@ -47,9 +47,10 @@ type ClientGenerator interface {
 		For example (executing go mod tidy, updating tsconfig.json etc...)
 
 		The generated client should use the published library version of the SDK.
-		However, if the last parameter is set to true, a copy of the current SDK
+		However, depending on the local configuration, a copy of the current SDK
 		library should be copied to test the generated client with latest changes.
 		NOTE: this should only be used for testing purposes.
+		For example (if go.mod has a replace directive on dagger.io/dagger for a local path)
 
 		This function prototype is different from the one exposed by the SDK.
 		SDK must implement the `GenerateClient` function with the following signature:
@@ -59,9 +60,6 @@ type ClientGenerator interface {
 			  modSource: ModuleSource!
 			  introspectionJSON: File!
 			  outputDir: String!
-
-			  """This argument may be omit if not used."""
-			  dev: Boolean!
 		  ): Directory!
 		```
 	*/
@@ -76,10 +74,6 @@ type ClientGenerator interface {
 
 		// Output directory of the generated client.
 		string,
-
-		// Dev flag to indicate if the generated client should be
-		// generated in developer mode
-		bool,
 	) (dagql.Instance[*Directory], error)
 }
 
