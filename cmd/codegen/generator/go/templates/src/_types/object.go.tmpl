@@ -141,11 +141,11 @@ type {{ $field | FieldOptionsStructName }} struct {
     }
 
     {{$eleType := $field.TypeRef | InnerType}}
-    convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
-        out := {{ $field.TypeRef | FormatOutputType }}{}
+    convert := func(fields []*{{ $field.Name | ToLowerCase }}) {{ $field | FormatReturnType }} {
+        out := {{ $field | FormatReturnType }}{}
 
         for i := range fields {
-            val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
+            val := &{{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
               val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
             {{- end }}
@@ -157,7 +157,7 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- end }}
 
     {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
-	var response []{{ $field.Name | ToLowerCase }}
+	var response []*{{ $field.Name | ToLowerCase }}
     {{- else }}
 	var response {{ $field.TypeRef | FormatOutputType }}
     {{- end  }}
