@@ -14,9 +14,12 @@ import (
 )
 
 type Evaluator struct {
-	Docs          *dagger.File
-	InitialPrompt *dagger.File
-	WriterModel   string
+	Docs           *dagger.File
+	InitialPrompt  *dagger.File
+	EvaluatorModel string
+
+	// +private
+	Evals []*dagger.WorkspaceEval
 }
 
 const MinSuccessRate = 0.8
@@ -33,28 +36,45 @@ func New(
 	model string,
 ) *Evaluator {
 	return &Evaluator{
-		Docs:          docs,
-		InitialPrompt: initialPrompt,
-		WriterModel:   model,
+		Docs:           docs,
+		InitialPrompt:  initialPrompt,
+		EvaluatorModel: model,
 	}
 }
 
-func (m *Evaluator) llm() *dagger.LLM {
-	return dag.LLM(dagger.LLMOpts{Model: m.WriterModel})
+type Eval interface {
+	Name(context.Context) (string, error)
+	Prompt(base *dagger.LLM) *dagger.LLM
+	Check(ctx context.Context, prompt *dagger.LLM) error
+
+	DaggerObject
 }
 
-func (m *Evaluator) env() *dagger.Env {
-	env := dag.Env().
-		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
-	if m.Docs != nil {
-		env = env.WithFileInput("docs", m.Docs,
-			"The documentation the model is meant to adhere to.")
+func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error) {
+	id, err := eval.(interface {
+		ID(context.Context) (EvalID, error)
+	}).ID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if m.InitialPrompt != nil {
-		env = env.WithFileInput("initialSystemPrompt", m.InitialPrompt,
-			"An initial system prompt to evaluate and improve.")
+	// FIXME: it would be nice to not have to do this workaround. it's hard
+	// because we want to accept Eval, but then the type has no AsWorkspaceEval().
+	//
+	// fortunately the IDs are the same nonetheless, so we can just convert it
+	// with the available plumbing
+	m.Evals = append(m.Evals, dag.LoadWorkspaceEvalFromID(dagger.WorkspaceEvalID(id)))
+	return m, nil
+}
+
+func (m *Evaluator) WithEvals(ctx context.Context, evals []Eval) (*Evaluator, error) {
+	for _, eval := range evals {
+		var err error
+		m, err = m.WithEval(ctx, eval)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return env
+	return m, nil
 }
 
 type ModelResult struct {
@@ -128,10 +148,7 @@ func (m *Evaluator) EvalsAcrossModels(
 	// +optional
 	systemPrompt *dagger.File,
 ) (*EvalsAcrossModels, error) {
-	work := dag.Workspace()
-	if systemPrompt != nil {
-		work = work.WithSystemPromptFile(systemPrompt)
-	}
+	work := m.work()
 	if len(evals) == 0 {
 		names, err := work.EvalNames(ctx)
 		if err != nil {
@@ -300,11 +317,7 @@ func (m *Evaluator) Evaluate(ctx context.Context, model, name string,
 		ctx,
 		// an initial env with no outputs, since message history is all we want at
 		// first
-		dag.Env().
-			WithFileInput("docs", m.Docs,
-				"The documentation the model is meant to adhere to.").
-			WithFileInput("initialSystemPrompt", m.InitialPrompt,
-				"An initial system prompt to evaluate and improve.").
+		m.env().
 			WithFileInput("report",
 				dag.Directory().
 					WithNewFile("report.txt", report).
@@ -345,12 +358,7 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 			ctx,
 			// an initial env with no outputs, since message history is all we want at
 			// first
-			dag.Env().
-				WithFileInput("docs", m.Docs,
-					"The documentation the model is meant to adhere to.").
-				WithFileInput("systemPrompt",
-					promptFile,
-					"The system prompt to evaluate and improve.").
+			m.env().
 				WithStringInput("failures", evals.Check().Error(), "The summary of failures.").
 				WithDirectoryInput("reports",
 					reports,
@@ -380,8 +388,27 @@ func (m *Evaluator) analyzeAndGenerateSystemPrompt(ctx context.Context, research
 		AsString(ctx)
 }
 
+func (m *Evaluator) llm() *dagger.LLM {
+	return dag.LLM(dagger.LLMOpts{Model: m.EvaluatorModel})
+}
+
+func (m *Evaluator) env() *dagger.Env {
+	env := dag.Env().
+		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
+	if m.Docs != nil {
+		env = env.WithFileInput("docs", m.Docs,
+			"The documentation the model is meant to adhere to.")
+	}
+	if m.InitialPrompt != nil {
+		env = env.WithFileInput("initialSystemPrompt", m.InitialPrompt,
+			"An initial system prompt to evaluate and improve.")
+	}
+	return env
+}
+
 func (m *Evaluator) work() *dagger.Workspace {
-	work := dag.Workspace()
+	work := dag.Workspace().
+		WithEvals(m.Evals)
 	if m.InitialPrompt != nil {
 		work = work.WithSystemPromptFile(m.InitialPrompt)
 	}

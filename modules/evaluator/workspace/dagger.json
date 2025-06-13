@@ -1,13 +1,7 @@
 {
   "name": "workspace",
-  "engineVersion": "v0.18.2",
+  "engineVersion": "v0.18.10",
   "sdk": {
     "source": "go"
-  },
-  "dependencies": [
-    {
-      "name": "evals",
-      "source": "../evals"
-    }
-  ]
+  }
 }
