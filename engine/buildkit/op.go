@@ -110,7 +110,7 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
 	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
 
-	server, err := op.server.DagqlServer(ctx)
+	server, err := op.server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
