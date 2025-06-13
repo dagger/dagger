@@ -36,7 +36,6 @@ func (s *cloudSchema) cloud(ctx context.Context, parent *core.Query, args struct
 
 func (s *cloudSchema) traceURL(ctx context.Context, parent *core.Cloud, args struct{}) (string, error) {
 	m, err := engine.ClientMetadataFromContext(ctx)
-
 	if err != nil {
 		return "", err
 	}
