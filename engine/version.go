@@ -31,7 +31,7 @@ var (
 
 	// MinimumEngineVersion is used by the client to determine the minimum
 	// allowed engine version that can be used by that client.
-	MinimumEngineVersion = "v0.18.6"
+	MinimumEngineVersion = "v0.18.11"
 
 	// MinimumClientVersion is used by the engine to determine the minimum
 	// allowed client version that can connect to that engine.

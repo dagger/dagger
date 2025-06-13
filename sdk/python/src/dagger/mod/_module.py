@@ -189,7 +189,8 @@ class Module:
         for name, cls in self._enums.items():
             enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
             for member in cls:
-                enum_def = enum_def.with_enum_value(
+                enum_def = enum_def.with_enum_member(
+                    str(member.name),
                     str(member.value),
                     description=getattr(member, "description", None),
                 )

@@ -6,7 +6,7 @@ defmodule Dagger.ImageMediaTypes do
 
   use Dagger.Core.Base, kind: :enum, name: "ImageMediaTypes"
 
-  @type t() :: :OCIMediaTypes | :DockerMediaTypes
+  @type t() :: :OCIMediaTypes | :DockerMediaTypes | :OCI | :DOCKER
 
   @spec oci_media_types() :: :OCIMediaTypes
   def oci_media_types(), do: :OCIMediaTypes
@@ -14,10 +14,18 @@ defmodule Dagger.ImageMediaTypes do
   @spec docker_media_types() :: :DockerMediaTypes
   def docker_media_types(), do: :DockerMediaTypes
 
+  @spec oci() :: :OCI
+  def oci(), do: :OCI
+
+  @spec docker() :: :DOCKER
+  def docker(), do: :DOCKER
+
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
   def from_string("OCIMediaTypes"), do: :OCIMediaTypes
   def from_string("DockerMediaTypes"), do: :DockerMediaTypes
+  def from_string("OCI"), do: :OCI
+  def from_string("DOCKER"), do: :DOCKER
 end

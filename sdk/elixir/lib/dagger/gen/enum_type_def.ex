@@ -38,6 +38,28 @@ defmodule Dagger.EnumTypeDef do
   end
 
   @doc """
+  The members of the enum.
+  """
+  @spec members(t()) :: {:ok, [Dagger.EnumValueTypeDef.t()]} | {:error, term()}
+  def members(%__MODULE__{} = enum_type_def) do
+    query_builder =
+      enum_type_def.query_builder |> QB.select("members") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(enum_type_def.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.EnumValueTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("loadEnumValueTypeDefFromID")
+             |> QB.put_arg("id", id),
+           client: enum_type_def.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   The name of the enum.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
@@ -73,9 +95,10 @@ defmodule Dagger.EnumTypeDef do
     Client.execute(enum_type_def.client, query_builder)
   end
 
-  @doc """
-  The values of the enum.
+  @deprecated """
+  use members instead
   """
+
   @spec values(t()) :: {:ok, [Dagger.EnumValueTypeDef.t()]} | {:error, term()}
   def values(%__MODULE__{} = enum_type_def) do
     query_builder =

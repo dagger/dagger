@@ -58,7 +58,10 @@ type Server struct {
 	installLock  *sync.Mutex
 	installHooks []InstallHook
 
-	// View is the view that is applied to all queries on this server
+	// View is the default view that is applied to queries on this server.
+	//
+	// WARNING: this is *not* the view of the current query (for that, inspect
+	// the current id)
 	View View
 
 	// Cache is the inner cache used by the server. It can be replicated to
@@ -222,6 +225,19 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnum,
 			DirectiveLocationEnumValue,
 			DirectiveLocationInputObject,
+		},
+	},
+	{
+		Name:        "enumValue",
+		Description: FormatDescription(`Indicates the underlying value of an enum member.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "value",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationEnumValue,
 		},
 	},
 }

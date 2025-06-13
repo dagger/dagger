@@ -61,6 +61,17 @@ defmodule Dagger.EnumValueTypeDef do
       client: enum_value_type_def.client
     }
   end
+
+  @doc """
+  The value of the enum value
+  """
+  @spec value(t()) :: {:ok, String.t()} | {:error, term()}
+  def value(%__MODULE__{} = enum_value_type_def) do
+    query_builder =
+      enum_value_type_def.query_builder |> QB.select("value")
+
+    Client.execute(enum_value_type_def.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.EnumValueTypeDef do

@@ -209,7 +209,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*cor
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  s.srv.View,
+			View:  dagql.View(dagql.CurrentID(ctx).View()),
 			Args:  inputs,
 		},
 	)
@@ -227,7 +227,7 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.Instanc
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  s.srv.View,
+			View:  dagql.View(dagql.CurrentID(ctx).View()),
 		},
 	)
 	if err != nil {

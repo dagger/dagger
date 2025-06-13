@@ -1918,11 +1918,14 @@ type ImageLayerCompression string
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
 var (
-	// FIXME: should be canonicalized as GZIP, ZSTD, ESTARGZ, UNCOMPRESSED
 	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
+	_                       = ImageLayerCompressions.AliasView("GZIP", "Gzip", enumView)
 	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
+	_                       = ImageLayerCompressions.AliasView("ZSTD", "Zstd", enumView)
 	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
+	_                       = ImageLayerCompressions.AliasView("ESTARGZ", "EStarGZ", enumView)
 	CompressionUncompressed = ImageLayerCompressions.Register("Uncompressed")
+	_                       = ImageLayerCompressions.AliasView("UNCOMPRESSED", "Uncompressed", enumView)
 )
 
 func (proto ImageLayerCompression) Type() *ast.Type {
@@ -1949,9 +1952,10 @@ type ImageMediaTypes string
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
-	// FIXME: should be canonicalized as OCI_MEDIA_TYPES, DOCKER_MEDIA_TYPES
 	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
+	_                = ImageMediaTypesEnum.AliasView("OCI", "OCIMediaTypes", enumView)
 	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
+	_                = ImageMediaTypesEnum.AliasView("DOCKER", "DockerMediaTypes", enumView)
 )
 
 func (proto ImageMediaTypes) Type() *ast.Type {
