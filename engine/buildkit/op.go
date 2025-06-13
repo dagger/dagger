@@ -122,7 +122,7 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
 	ctx = ctxWithBkSessionGroup(ctx, g)
 
-	server, err := op.server.DagqlServer(ctx)
+	server, err := op.server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
