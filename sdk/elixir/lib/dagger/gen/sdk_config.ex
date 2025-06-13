@@ -45,6 +45,13 @@ defimpl Jason.Encoder, for: Dagger.SDKConfig do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.SDKConfig do
+  def encode(sdk_config, _encoder) do
+    {:ok, id} = Dagger.SDKConfig.id(sdk_config)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.SDKConfig do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_sdk_config_from_id(Dagger.Global.dag(), id)}
