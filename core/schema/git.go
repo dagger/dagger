@@ -581,11 +581,6 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	}
 
 	if core.DagOpInContext[core.FSDagOp](ctx) {
-		query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-		if !ok {
-			return inst, fmt.Errorf("server root was %T", s.srv.Root())
-		}
-		ctx = core.ContextWithQuery(ctx, query.Self)
 		dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
 		if err != nil {
 			return inst, err
@@ -632,12 +627,6 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
 
-	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return "", fmt.Errorf("server root was %T", s.srv.Root())
-	}
-	ctx = core.ContextWithQuery(ctx, query.Self)
-
 	commit, _, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
@@ -649,12 +638,6 @@ func (s *gitSchema) fetchRef(ctx context.Context, parent dagql.Instance[*core.Gi
 	if !core.DagOpInContext[core.RawDagOp](ctx) {
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
-
-	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return "", fmt.Errorf("server root was %T", s.srv.Root())
-	}
-	ctx = core.ContextWithQuery(ctx, query.Self)
 
 	_, ref, err := parent.Self.Resolve(ctx)
 	if err != nil {

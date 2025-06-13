@@ -73,14 +73,8 @@ type ExecutionMetadata struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
-	// If true, scope the exec cache key to the current session ID. It will be cached in the context
-	// of the session but invalidated across different sessions.
-	CachePerSession bool
-
-	// If true, scope the exec cache key to the current dagql call digest. This is needed currently
-	// for module function calls specifically so that their cache key is based on their arguments and
-	// receiver object.
-	CacheByCall bool
+	// Arbitrary to mixin to the cache key for this operation.
+	CacheMixin digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
@@ -155,6 +149,20 @@ func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 	return llb.WithDescription(map[string]string{
 		executionMetadataKey: string(bs),
 	}), nil
+}
+
+type executionCtxKey struct{}
+
+func ContextWithExecutionMetadata(ctx context.Context, md *ExecutionMetadata) context.Context {
+	return context.WithValue(ctx, executionCtxKey{}, md)
+}
+
+func ExecutionMetadataFromContext(ctx context.Context) *ExecutionMetadata {
+	v := ctx.Value(executionCtxKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(*ExecutionMetadata)
 }
 
 func (w *Worker) Run(

@@ -533,9 +533,21 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
 	}
 
-	idArgs := newID.Args()
+	inputArgs, err := ExtractIDArgs(field.Spec.Args, newID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	doNotCache := field.CacheSpec.DoNotCache != ""
+	return r.call(ctx, s, newID, inputArgs, doNotCache)
+}
+
+func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
+	idArgs := id.Args()
+	view := View(id.View())
+
 	inputArgs := make(map[string]Input, len(idArgs))
-	for _, argSpec := range field.Spec.Args.Inputs(view) {
+	for _, argSpec := range specs.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
 		var inputLit call.Literal
@@ -550,7 +562,7 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 		case inputLit != nil:
 			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
 			if err != nil {
-				return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+				return nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 			}
 			inputArgs[argSpec.Name] = input
 
@@ -559,12 +571,11 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	return inputArgs, nil
 }
 
 func (r Instance[T]) call(
