@@ -29,24 +29,6 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
-type dagOpContextKey string
-
-func withDagOpContext(ctx context.Context, op buildkit.CustomOp) context.Context {
-	return context.WithValue(ctx, dagOpContextKey(op.Name()), op)
-}
-
-func DagOpFromContext[T buildkit.CustomOp](ctx context.Context) (t T, ok bool) {
-	if val := ctx.Value(dagOpContextKey(t.Name())); val != nil {
-		t, ok = val.(T)
-	}
-	return t, ok
-}
-
-func DagOpInContext[T buildkit.CustomOp](ctx context.Context) bool {
-	_, ok := DagOpFromContext[T](ctx)
-	return ok
-}
-
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -113,13 +95,8 @@ type FSDagOp struct {
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
 
-	// Data is any additional data that should be passed to the dagop. It does
-	// not contribute to the cache key.
-	Data any
-
-	// utility values set in the context of an Exec
-	g   bksession.Group
-	opt buildkit.OpOpts
+	// Data is any additional data that should be passed to the dagop.
+	Data string
 }
 
 func (op FSDagOp) Name() string {
@@ -141,6 +118,7 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 		string(opData),
 	}, "+")), nil
 }
+
 func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 	return digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
@@ -149,10 +127,7 @@ func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
-	op.g = g
-	op.opt = opt
-
-	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
+	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -194,10 +169,6 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
 	}
-}
-
-func (op FSDagOp) Group() bksession.Group {
-	return op.g
 }
 
 // NewRawDagOp takes a target ID for any JSON-serializable dagql type, and returns
@@ -261,7 +232,7 @@ func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) 
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	result, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
+	result, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +431,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	obj, err := loadDagOpID(ctx, withDagOpContext(ctx, op), opt.Server, op.ID)
+	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -717,29 +688,4 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
 	)
-}
-
-// loadDagOpID loads the target ID from the server.
-//
-// It takes two contexts, the first to load the receiver with, the second to
-// load the current call with. This *ensures* that we aren't accidentally
-// applying the dagop to multiple calls - only the most recent.
-func loadDagOpID(ctx context.Context, loadCtx context.Context, srv *dagql.Server, id *call.ID) (dagql.Typed, error) {
-	// no receiver, so we're the only call in the chain
-	if id.Receiver() == nil {
-		return srv.Load(loadCtx, id)
-	}
-
-	// load just the receiver
-	res, err := srv.Load(ctx, id.Receiver())
-	if err != nil {
-		return nil, err
-	}
-
-	// run the dagop on the receiver
-	tp, _, err := res.Call(loadCtx, srv, id)
-	if err != nil {
-		return nil, err
-	}
-	return tp, err
 }
