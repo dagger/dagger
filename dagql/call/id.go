@@ -289,6 +289,42 @@ func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 	)
 }
 
+// WithArgument returns a new ID that's the same as before except with the
+// given argument added to the ID's arguments. If an argument with the same
+// name already exists, it will be replaced with the new one. The digest will
+// reset to the default "recipe-based" value, so any custom one needs to be
+// set after this call via WithDigest.
+func (id *ID) WithArgument(arg *Argument) *ID {
+	if id == nil {
+		return nil
+	}
+
+	newArgs := make([]*Argument, len(id.args))
+	copy(newArgs, id.args)
+	var replaced bool
+	for i, existingArg := range newArgs {
+		if existingArg.pb.Name == arg.pb.Name {
+			// replace existing argument with the new one
+			newArgs[i] = arg
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		newArgs = append(newArgs, arg)
+	}
+
+	return id.receiver.Append(
+		id.pb.Type.ToAST(),
+		id.pb.Field,
+		id.pb.View,
+		id.module,
+		int(id.pb.Nth),
+		"", // reset to default digest
+		newArgs...,
+	)
+}
+
 func (id *ID) Encode() (string, error) {
 	dagPB, err := id.ToProto()
 	if err != nil {

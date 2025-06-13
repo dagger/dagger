@@ -8038,20 +8038,9 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
-// CacheVolumeOpts contains options for Client.CacheVolume
-type CacheVolumeOpts struct {
-	Namespace string
-}
-
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
+func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `namespace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Namespace) {
-			q = q.Arg("namespace", opts[i].Namespace)
-		}
-	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{

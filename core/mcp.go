@@ -531,6 +531,9 @@ func (m *MCP) toolCallToSelection(
 	remainingArgs := make(map[string]any)
 	maps.Copy(remainingArgs, argsMap)
 	for _, arg := range field.Args.Inputs(srv.View) {
+		if arg.Internal {
+			continue // skip internal args
+		}
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue

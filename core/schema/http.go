@@ -37,6 +37,8 @@ type httpArgs struct {
 	Permissions             *int
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
+
+	FSDagOpInternalArgs
 }
 
 func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (string, error) {
@@ -56,15 +58,15 @@ func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Q
 }
 
 func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
-	if op, ok := core.DagOpFromContext[core.FSDagOp](ctx); ok {
+	if args.InDagOp() {
 		cache := parent.Self.BuildkitCache()
-		snap, err := cache.Get(ctx, op.Data.(string), nil)
+		snap, err := cache.Get(ctx, args.DagOpData, nil)
 		if err != nil {
 			return inst, err
 		}
 		snap = snap.Clone()
 
-		f := core.NewFile(nil, op.Path, parent.Self.Platform(), nil)
+		f := core.NewFile(nil, args.DagOpPath, parent.Self.Platform(), nil)
 		f.Result = snap
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 	}

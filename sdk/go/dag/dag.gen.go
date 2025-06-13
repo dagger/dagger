@@ -47,9 +47,9 @@ func Close() error {
 }
 
 // Constructs a cache volume for a given cache key.
-func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
+func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
-	return client.CacheVolume(key, opts...)
+	return client.CacheVolume(key)
 }
 
 // Creates a scratch container, with no image or metadata.

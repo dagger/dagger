@@ -8240,11 +8240,6 @@ pub struct Query {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryCacheVolumeOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub namespace: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
     /// Platform to initialize the container with. Defaults to the native platform of the current engine
     #[builder(setter(into, strip_option), default)]
@@ -8339,32 +8334,9 @@ impl Query {
     /// # Arguments
     ///
     /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
-        CacheVolume {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Constructs a cache volume for a given cache key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn cache_volume_opts<'a>(
-        &self,
-        key: impl Into<String>,
-        opts: QueryCacheVolumeOpts<'a>,
-    ) -> CacheVolume {
-        let mut query = self.selection.select("cacheVolume");
-        query = query.arg("key", key.into());
-        if let Some(namespace) = opts.namespace {
-            query = query.arg("namespace", namespace);
-        }
         CacheVolume {
             proc: self.proc.clone(),
             selection: query,
