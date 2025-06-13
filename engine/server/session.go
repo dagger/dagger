@@ -685,29 +685,29 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
-	client, ok := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
+	client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+	if err != nil {
+		return nil, err
 	}
 	return client, nil
 }
 
-func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) {
+func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error) {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("session %q not found", sessID)
 	}
 
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 	client, ok := sess.clients[clientID]
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("client %q not found", clientID)
 	}
 
-	return client, true
+	return client, nil
 }
 
 // initialize session+client if needed, return:
@@ -1341,9 +1341,9 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	if err != nil {
 		return nil, err
 	}
-	mainClient, ok := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
-	if !ok {
-		return nil, fmt.Errorf("failed to retrieve session main client")
+	mainClient, err := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
 	}
 	return mainClient.clientMetadata, nil
 }
