@@ -22,13 +22,23 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
+	var opts []option.RequestOption
+
+	// Check if it's an OAuth token or regular API key
 	if endpoint.Key != "" {
-		opts = append(opts, option.WithAPIKey(endpoint.Key))
+		if strings.HasPrefix(endpoint.Key, "sk-ant-oat") {
+			// OAuth token - use WithAuthToken
+			opts = append(opts, option.WithAuthToken(endpoint.Key))
+		} else {
+			// Regular API key - use WithAPIKey
+			opts = append(opts, option.WithAPIKey(endpoint.Key))
+		}
 	}
+
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
