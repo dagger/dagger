@@ -70,7 +70,7 @@ type sessionHandler interface {
 }
 
 type dagqlServer interface {
-	DagqlServer(ctx context.Context) (*dagql.Server, error)
+	Server(ctx context.Context) (*dagql.Server, error)
 }
 
 type NewWorkerOpts struct {
