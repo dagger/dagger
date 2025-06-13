@@ -9,7 +9,7 @@ import (
 
 // ExecError is an error that occurred while executing an `Op_Exec`.
 type ExecError struct {
-	original error
+	Err      error
 	Origin   trace.SpanContext
 	Cmd      []string
 	ExitCode int
@@ -18,11 +18,11 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string {
-	return e.original.Error()
+	return e.Err.Error()
 }
 
 func (e *ExecError) Unwrap() error {
-	return e.original
+	return e.Err
 }
 
 func (e *ExecError) Extensions() map[string]any {

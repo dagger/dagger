@@ -1,0 +1,6 @@
+kind: Changed
+body: When a service fails to start, the API will now return a proper `ExecError` so you can see the stdout/stderr and exit code programmatically.
+time: 2025-06-13T17:30:12.400694353-04:00
+custom:
+    Author: vito
+    PR: "10585"
