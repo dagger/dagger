@@ -1185,10 +1185,6 @@ export type PortForward = {
  */
 export type PortID = string & { __PortID: never }
 
-export type ClientCacheVolumeOpts = {
-  namespace?: string
-}
-
 export type ClientContainerOpts = {
   /**
    * Platform to initialize the container with. Defaults to the native platform of the current engine
@@ -7660,8 +7656,8 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  cacheVolume = (key: string, opts?: ClientCacheVolumeOpts): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume", { key, ...opts })
+  cacheVolume = (key: string): CacheVolume => {
+    const ctx = this._ctx.select("cacheVolume", { key })
     return new CacheVolume(ctx)
   }
 

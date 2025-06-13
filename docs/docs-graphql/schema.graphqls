@@ -3212,8 +3212,6 @@ type Query {
     A string identifier to target this cache volume (e.g., "modules-cache").
     """
     key: String!
-
-    namespace: String = ""
   ): CacheVolume!
 
   """

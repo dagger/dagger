@@ -16,13 +16,10 @@ defmodule Dagger.Client do
   @doc """
   Constructs a cache volume for a given cache key.
   """
-  @spec cache_volume(t(), String.t(), [{:namespace, String.t() | nil}]) :: Dagger.CacheVolume.t()
-  def cache_volume(%__MODULE__{} = client, key, optional_args \\ []) do
+  @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
+  def cache_volume(%__MODULE__{} = client, key) do
     query_builder =
-      client.query_builder
-      |> QB.select("cacheVolume")
-      |> QB.put_arg("key", key)
-      |> QB.maybe_put_arg("namespace", optional_args[:namespace])
+      client.query_builder |> QB.select("cacheVolume") |> QB.put_arg("key", key)
 
     %Dagger.CacheVolume{
       query_builder: query_builder,
