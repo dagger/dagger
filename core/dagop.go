@@ -119,11 +119,12 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Path,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
@@ -228,11 +229,12 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
-	return digest.FromString(strings.Join([]string{
+func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
 		op.ID.Digest().String(),
 		op.Filename,
-	}, "+")), nil
+	}, "+"))
+	return cm, nil
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
@@ -425,9 +427,14 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	}, "+")), nil
 }
 
-func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
+func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	// TODO: we need proper cache map control here, to control content digesting
-	return op.Digest()
+	dgst, err := op.Digest()
+	if err != nil {
+		return nil, err
+	}
+	cm.Digest = dgst
+	return cm, nil
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
