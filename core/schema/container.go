@@ -897,9 +897,10 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 		if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
 			execMD = *md
 		}
-		if args.ExperimentalPrivilegedNesting {
-			execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
-		}
+
+		// HACK: we need to explicitly include this in the cache mixin as well,
+		// since the dagql ID digest *isn't* part of the container dagop cache
+		execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.BaseVersion(engine.Version))
 		ctx = buildkit.ContextWithExecutionMetadata(ctx, &execMD)
 
 		inst, err := DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
@@ -935,14 +936,21 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 }
 
 func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-	execMD := buildkit.ExecutionMetadata{}
+	inputs := []string{
+		cacheCfg.Digest.String(),
+	}
+
 	if md := buildkit.ExecutionMetadataFromContext(ctx); md != nil {
-		execMD = *md
+		inputs = append(inputs, string(md.CacheMixin))
 	}
-	if args.ExperimentalPrivilegedNesting {
-		execMD.CacheMixin = dagql.HashFrom(execMD.CacheMixin.String(), engine.Version)
-	}
-	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), execMD.CacheMixin.String())
+
+	// HACK: include the base engine version in *all* withExecs
+	// this is suboptimal, but, while our custom withExec behavior is new and
+	// unstable, we just need to avoid caching between versions (we're not
+	// aiming for buildkit-level compat)
+	inputs = append(inputs, engine.BaseVersion(engine.Version))
+
+	cacheCfg.Digest = dagql.HashFrom(inputs...)
 	return &cacheCfg, nil
 }
 
