@@ -725,6 +725,14 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 // load the current call with. This *ensures* that we aren't accidentally
 // applying the dagop to multiple calls - only the most recent.
 func loadDagOpID(ctx context.Context, loadCtx context.Context, srv *dagql.Server, id *call.ID) (dagql.Typed, error) {
+	// inject query object
+	query, ok := srv.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", srv.Root())
+	}
+	ctx = ContextWithQuery(ctx, query.Self)
+	loadCtx = ContextWithQuery(loadCtx, query.Self)
+
 	// no receiver, so we're the only call in the chain
 	if id.Receiver() == nil {
 		return srv.Load(loadCtx, id)
