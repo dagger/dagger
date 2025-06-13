@@ -724,7 +724,7 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
-func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	withPorts := c.Container().
@@ -842,7 +842,7 @@ func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	require.Nil(t, desc)
 }
 
-func (ContainerSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	withPorts := c.Container().
@@ -900,7 +900,7 @@ func (ContainerSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
 	require.ElementsMatch(t, []string{"8000/tcp", "5432/udp"}, ports)
 }
 
-func (ContainerSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv, url := httpService(ctx, t, c, "Hello, world!")
@@ -926,7 +926,7 @@ func (ContainerSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) 
 	require.Contains(t, stderr, "Host: "+hostname)
 }
 
-func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv := c.Container().
@@ -946,9 +946,44 @@ func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	_, err = client.Sync(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "start "+host+" (aliased as www): exit code:")
+
+	var execErr *dagger.ExecError
+	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+
+	// Verify the ExecError contains expected information
+	require.Equal(t, 42, execErr.ExitCode)
+	require.Equal(t, []string{"sh", "-c", "echo nope; exit 42"}, execErr.Cmd)
+	require.Contains(t, execErr.Stdout, "nope\n")
 }
 
-func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a service that will fail immediately with a non-zero exit code
+	// The service will start but fail during execution, triggering Service.Start error handling
+	failingService := c.Container().
+		From(alpineImage).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}).
+		AsService()
+
+	// Start the service directly, which should trigger Service.Start and fail
+	_, err := failingService.Start(ctx)
+
+	// Verify we get an ExecError
+	require.Error(t, err)
+
+	var execErr *dagger.ExecError
+	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+
+	// Verify the ExecError contains expected information
+	require.Equal(t, 42, execErr.ExitCode)
+	require.Equal(t, []string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}, execErr.Cmd)
+	require.Contains(t, execErr.Stdout, "stdout message")
+	require.Contains(t, execErr.Stderr, "stderr message")
+}
+
+func (ServiceSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv := c.Container().
@@ -974,7 +1009,7 @@ func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
 //go:embed testdata/udp-service.go
 var udpSrc string
 
-func (ContainerSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv := c.Container().
@@ -1006,7 +1041,7 @@ func (ContainerSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Hello, world!", stdout)
 }
 
-func (ContainerSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
@@ -1032,7 +1067,7 @@ func (ContainerSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
 //go:embed testdata/pipe.go
 var pipeSrc string
 
-func (ContainerSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv := c.Container().
@@ -1066,7 +1101,7 @@ func (ContainerSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T
 	require.NoError(t, eg.Wait())
 }
 
-func (ContainerSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	srv, _ := httpService(ctx, t, c, "0\n")
@@ -1102,7 +1137,7 @@ func (ContainerSuite) TestExecServicesChained(ctx context.Context, t *testctx.T)
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
-func (ContainerSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
@@ -1134,7 +1169,7 @@ func (ContainerSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
@@ -1169,7 +1204,7 @@ func (ContainerSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
@@ -1204,7 +1239,7 @@ func (ContainerSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestExportServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
@@ -1221,7 +1256,7 @@ func (ContainerSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 	require.Equal(t, filePath, actual)
 }
 
-func (ContainerSuite) TestMultiPlatformExportServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestMultiPlatformExportServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
@@ -1267,7 +1302,7 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 	require.Equal(t, fileContent, content)
 }
 
-func (ContainerSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
@@ -1286,7 +1321,7 @@ func (ContainerSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
@@ -1317,7 +1352,7 @@ func (ContainerSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) 
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
@@ -1360,7 +1395,7 @@ func (ContainerSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ContainerSuite) TestFileServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestFileServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := identity.NewID()
@@ -1377,7 +1412,7 @@ func (ContainerSuite) TestFileServices(ctx context.Context, t *testctx.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func (ContainerSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	response := identity.NewID()
@@ -1656,33 +1691,6 @@ func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	out, err = fetch()
 	require.Error(t, err)
 	require.Empty(t, out)
-}
-
-func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	// Create a service that will fail immediately with a non-zero exit code
-	// The service will start but fail during execution, triggering Service.Start error handling
-	failingService := c.Container().
-		From(alpineImage).
-		WithExposedPort(8080).
-		WithDefaultArgs([]string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}).
-		AsService()
-
-	// Start the service directly, which should trigger Service.Start and fail
-	_, err := failingService.Start(ctx)
-
-	// Verify we get an ExecError
-	require.Error(t, err)
-
-	var execErr *dagger.ExecError
-	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
-
-	// Verify the ExecError contains expected information
-	require.Equal(t, 42, execErr.ExitCode)
-	require.Equal(t, []string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}, execErr.Cmd)
-	require.Contains(t, execErr.Stdout, "stdout message")
-	require.Contains(t, execErr.Stderr, "stderr message")
 }
 
 // TestStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
