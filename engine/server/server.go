@@ -591,6 +591,10 @@ func (srv *Server) BuildkitCache() bkcache.Manager {
 	return srv.workerCache
 }
 
+func (srv *Server) BuildkitSession() *bksession.Manager {
+	return srv.bkSessionManager
+}
+
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{

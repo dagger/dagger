@@ -57,6 +57,12 @@ type ContainerAnnotation struct {
 	Value string
 }
 
+var _ HasRawDigest = (*ContainerAnnotation)(nil)
+
+func (mnt ContainerAnnotation) RawDigest() digest.Digest {
+	return dagql.HashFrom("containerAnnotation", mnt.Key, mnt.Value)
+}
+
 // Container is a content-addressed container.
 type Container struct {
 	// The container's root filesystem.
@@ -196,6 +202,58 @@ func (container *Container) OnRelease(ctx context.Context) error {
 	return nil
 }
 
+var _ HasRawDigest = (*Container)(nil)
+
+func (container *Container) RawDigest() digest.Digest {
+	inputs := []string{
+		"container",
+	}
+
+	cfgJSON, _ := json.Marshal(container.Config)
+	inputs = append(inputs, "config", string(cfgJSON))
+
+	inputs = append(inputs, "gpus")
+	inputs = append(inputs, container.EnabledGPUs...)
+
+	for _, mount := range container.Mounts {
+		inputs = append(inputs, mount.RawDigest().String())
+	}
+
+	inputs = append(inputs, "platform", container.Platform.Format())
+
+	for _, annotation := range container.Annotations {
+		inputs = append(inputs, annotation.RawDigest().String())
+	}
+	for _, secret := range container.Secrets {
+		inputs = append(inputs, secret.RawDigest().String())
+	}
+	for _, socket := range container.Sockets {
+		inputs = append(inputs, socket.RawDigest().String())
+	}
+
+	inputs = append(inputs, "imageref", container.ImageRef)
+
+	for _, port := range container.Ports {
+		inputs = append(inputs, port.RawDigest().String())
+	}
+
+	for _, svc := range container.Services {
+		inputs = append(inputs, "service", svc.Service.ID().Digest().String())
+	}
+
+	inputs = append(inputs, "terminal")
+	inputs = append(inputs, container.DefaultTerminalCmd.Args...)
+	inputs = append(inputs, strconv.FormatBool(bool(container.DefaultTerminalCmd.InsecureRootCapabilities.Value)))
+	inputs = append(inputs, strconv.FormatBool(bool(container.DefaultTerminalCmd.ExperimentalPrivilegedNesting.Value)))
+
+	inputs = append(inputs, "systemEnv")
+	inputs = append(inputs, container.SystemEnvNames...)
+
+	inputs = append(inputs, "defaultArgs", strconv.FormatBool(container.DefaultArgs))
+
+	return dagql.HashFrom(inputs...)
+}
+
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
 // provided via the API. It primarily exists to distinguish an unspecified
 // ownership from UID/GID 0 (root) ownership.
@@ -208,6 +266,15 @@ func (owner Ownership) Opt() llb.ChownOption {
 	return llb.WithUIDGID(owner.UID, owner.GID)
 }
 
+var _ HasRawDigest = (*Ownership)(nil)
+
+func (owner *Ownership) RawDigest() digest.Digest {
+	if owner == nil {
+		return ""
+	}
+	return dagql.HashFrom("ownership", fmt.Sprintf("%d:%d", owner.UID, owner.GID))
+}
+
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
@@ -218,12 +285,36 @@ type ContainerSecret struct {
 	Mode      fs.FileMode
 }
 
+var _ HasRawDigest = (*ContainerSecret)(nil)
+
+func (mnt ContainerSecret) RawDigest() digest.Digest {
+	return dagql.HashFrom(
+		"containerSecret",
+		mnt.Secret.ID().Digest().String(),
+		mnt.EnvName,
+		mnt.MountPath,
+		mnt.Owner.RawDigest().String(),
+		mnt.Mode.String(),
+	)
+}
+
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
 	Source        *Socket
 	ContainerPath string
 	Owner         *Ownership
+}
+
+var _ HasRawDigest = (*ContainerSocket)(nil)
+
+func (mnt ContainerSocket) RawDigest() digest.Digest {
+	return dagql.HashFrom(
+		"containerSocket",
+		mnt.Source.LLBID(),
+		mnt.ContainerPath,
+		mnt.Owner.RawDigest().String(),
+	)
 }
 
 // FSState returns the container's root filesystem mount state. If there is
@@ -286,6 +377,21 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	}
 
 	return defToState(mnt.Source)
+}
+
+var _ HasRawDigest = (*ContainerMount)(nil)
+
+func (mnt ContainerMount) RawDigest() digest.Digest {
+	return dagql.HashFrom(
+		"containerMount",
+		mnt.SourcePath,
+		mnt.Target,
+		mnt.CacheVolumeID,
+		string(mnt.CacheSharingMode),
+		strconv.FormatBool(mnt.Tmpfs),
+		strconv.Itoa(mnt.Size),
+		strconv.FormatBool(mnt.Readonly),
+	)
 }
 
 type ContainerMounts []ContainerMount
@@ -1767,21 +1873,17 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
+		Creator:                       trace.SpanContextFromContext(ctx),
+		Container:                     container,
+		Args:                          cmdargs,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NoInit:                        args.NoInit,
 	}, nil
 }
 
