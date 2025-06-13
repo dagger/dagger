@@ -25,7 +25,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -938,13 +937,5 @@ func validateFileName(file string) error {
 }
 
 func SupportsDirSlash(ctx context.Context) (bool, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return false, err
-	}
-	return engine.CheckVersionCompatibility(string(srv.View), "v0.17.0"), nil
+	return Supports(ctx, "v0.17.0")
 }

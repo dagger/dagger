@@ -20,6 +20,7 @@ import (
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -292,4 +293,9 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 		return err
 	}
 	return f(dir)
+}
+
+func Supports(ctx context.Context, minVersion string) (bool, error) {
+	id := dagql.CurrentID(ctx)
+	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
 }
