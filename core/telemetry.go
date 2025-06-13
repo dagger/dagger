@@ -18,6 +18,11 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+const (
+	// name of arg indicating whether the op should execute the "unlazy" dagop impl
+	IsDagOpArgName = "isDagOp"
+)
+
 func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
 	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
@@ -40,13 +45,10 @@ func AroundFunc(
 	context.Context,
 	func(res dagql.Typed, cached bool, rerr error),
 ) {
-	if isIntrospection(id) || isMeta(id) {
-		// very uninteresting spans
-		return ctx, dagql.NoopDone
-	}
-	if DagOpInContext[RawDagOp](ctx) || DagOpInContext[FSDagOp](ctx) || DagOpInContext[ContainerDagOp](ctx) {
+	if isIntrospection(id) || isMeta(id) || isDagOp(id) {
+		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
-		// FIXME: we lose telemetry.SpanStdio info from here
+		// FIXME: we lose telemetry.SpanStdio info in dagops from here
 		return ctx, dagql.NoopDone
 	}
 
@@ -242,6 +244,15 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
+}
+
+func isDagOp(id *call.ID) bool {
+	for _, arg := range id.Args() {
+		if arg.Name() == IsDagOpArgName {
+			return true
+		}
+	}
+	return false
 }
 
 // anyReturns returns true if the call or any of its ancestors return any of

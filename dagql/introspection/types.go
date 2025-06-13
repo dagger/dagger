@@ -176,7 +176,14 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			return self.Description(), nil
 		}).DoNotCache("simple field selection"),
 		dagql.Func("args", func(ctx context.Context, self *Field, _ struct{}) (dagql.Array[*InputValue], error) {
-			return self.Args, nil
+			args := make([]*InputValue, 0, len(self.Args))
+			for _, arg := range self.Args {
+				if arg.internal {
+					continue // skip internal args
+				}
+				args = append(args, arg)
+			}
+			return args, nil
 		}).DoNotCache("simple field selection"),
 		dagql.Func("type", func(ctx context.Context, self *Field, args struct{}) (*Type, error) {
 			return self.Type_, nil
@@ -339,6 +346,7 @@ func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
 			DefaultValue: defaultValue(arg.DefaultValue),
 			Type_:        WrapTypeFromType(s.schema, arg.Type),
 			deprecation:  arg.Directives.ForName("deprecated"),
+			internal:     arg.Directives.ForName("internal") != nil,
 		}
 	}
 
@@ -592,6 +600,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 				description:  arg.Description,
 				DefaultValue: defaultValue(arg.DefaultValue),
 				deprecation:  arg.Directives.ForName("deprecated"),
+				internal:     arg.Directives.ForName("internal") != nil,
 				directives:   arg.Directives,
 			})
 		}
@@ -622,6 +631,7 @@ func (t *Type) InputFields() []*InputValue {
 			DefaultValue: defaultValue(f.DefaultValue),
 			directives:   f.Directives,
 			deprecation:  f.Directives.ForName("deprecated"),
+			internal:     f.Directives.ForName("internal") != nil,
 		})
 	}
 	return res
@@ -754,6 +764,7 @@ type (
 		Type_        *Type
 		directives   []*ast.Directive
 		deprecation  *ast.Directive
+		internal     bool
 	}
 )
 

@@ -224,6 +224,10 @@ func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.F
 			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", class.TypeName(), field.Spec.Name, arg.Name)
 		}
 
+		if argSpec.Internal {
+			return Selector{}, nil, fmt.Errorf("cannot use internal argument %q in selector for %s.%s", arg.Name, class.TypeName(), field.Spec.Name)
+		}
+
 		val, err := arg.Value.Value(vars)
 		if err != nil {
 			return Selector{}, nil, err
@@ -932,6 +936,12 @@ type InputSpec struct {
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter ViewFilter
+
+	// Internal indicates that this input can only be set by internal server
+	// calls, never by external clients. It may appear in IDs sent to/from
+	// clients, but can't be set in new graphql queries.
+	// This argument will not be exposed in the introspection schema.
+	Internal bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -960,6 +970,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.ViewFilter != nil {
 		spec.ViewFilter = other.ViewFilter
 	}
+	if other.Internal {
+		spec.Internal = other.Internal
+	}
 }
 
 type Argument struct {
@@ -981,6 +994,11 @@ func (arg Argument) Doc(paras ...string) Argument {
 
 func (arg Argument) Sensitive() Argument {
 	arg.Spec.Sensitive = true
+	return arg
+}
+
+func (arg Argument) Internal() Argument {
+	arg.Spec.Internal = true
 	return arg
 }
 
@@ -1086,6 +1104,9 @@ func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition
 		}
 		if arg.ExperimentalReason != "" {
 			schemaArg.Directives = append(schemaArg.Directives, experimental(arg.ExperimentalReason))
+		}
+		if arg.Internal {
+			schemaArg.Directives = append(schemaArg.Directives, internal())
 		}
 		defs = append(defs, schemaArg)
 	}
@@ -1234,6 +1255,7 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 	}
 
 	newArgs := make([]InputSpec, 0, len(args))
+	patched := make(map[string]struct{}, len(args))
 	for _, patch := range args {
 		arg, ok := original[patch.Spec.Name]
 		if !ok {
@@ -1241,7 +1263,18 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 		}
 		arg.merge(&patch.Spec)
 		newArgs = append(newArgs, arg)
+		patched[patch.Spec.Name] = struct{}{}
 	}
+
+	// check if there were any original args not patched, if so include them
+	// at the end in a stable order
+	for _, origArg := range field.Spec.Args.raw {
+		if _, ok := patched[origArg.Name]; ok {
+			continue
+		}
+		newArgs = append(newArgs, origArg)
+	}
+
 	field.Spec.Args = InputSpecs{newArgs}
 	return field
 }
@@ -1333,6 +1366,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
+			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
 		if spec.Description == "" && spec.DeprecatedReason != "" {
 			spec.Description = deprecationDescription(spec.DeprecatedReason)
@@ -1381,7 +1415,7 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 			continue
 		}
 		name := fieldT.Tag.Get("name")
-		if name == "" && isField {
+		if name == "" {
 			name = strcase.ToLowerCamel(fieldT.Name)
 		}
 		if name == "" || name == "-" {

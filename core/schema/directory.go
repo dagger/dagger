@@ -583,6 +583,8 @@ func (s *directorySchema) asGit(
 type directoryWithSymlinkArgs struct {
 	Target   string
 	LinkName string
+
+	FSDagOpInternalArgs
 }
 
 func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Directory], _ error) {

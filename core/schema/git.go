@@ -570,6 +570,8 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
+
+	DagOpInternalArgs
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
@@ -580,7 +582,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
-	if core.DagOpInContext[core.FSDagOp](ctx) {
+	if args.IsDagOp {
 		query, ok := s.srv.Root().(dagql.Instance[*core.Query])
 		if !ok {
 			return inst, fmt.Errorf("server root was %T", s.srv.Root())
@@ -593,7 +595,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 	}
 
-	inst, err := DagOpDirectory(ctx, s.srv, parent, args, nil, s.tree, nil)
+	inst, err := DagOpDirectory(ctx, s.srv, parent, args, "", s.tree, nil)
 	if err != nil {
 		return inst, err
 	}
@@ -627,8 +629,12 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	return inst, nil
 }
 
-func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
+func (s *gitSchema) fetchCommit(
+	ctx context.Context,
+	parent dagql.Instance[*core.GitRef],
+	args RawDagOpInternalArgs,
+) (dagql.String, error) {
+	if !args.IsDagOp {
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
 
@@ -645,8 +651,12 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 	return dagql.NewString(commit), nil
 }
 
-func (s *gitSchema) fetchRef(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
+func (s *gitSchema) fetchRef(
+	ctx context.Context,
+	parent dagql.Instance[*core.GitRef],
+	args RawDagOpInternalArgs,
+) (dagql.String, error) {
+	if !args.IsDagOp {
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
 
