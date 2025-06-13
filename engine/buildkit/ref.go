@@ -395,7 +395,7 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 		spanCtx = trace.SpanContextFromContext(ctx)
 	}
 	return &ExecError{
-		original: baseErr,
+		Err:      baseErr,
 		Origin:   spanCtx,
 		Cmd:      execOp.Exec.Meta.Args,
 		ExitCode: exitCode,

@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -944,7 +945,7 @@ func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 
 	_, err = client.Sync(ctx)
 	require.Error(t, err)
-	requireErrOut(t, err, "start "+host+" (aliased as www): exited:")
+	requireErrOut(t, err, "start "+host+" (aliased as www): exit code:")
 }
 
 func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
@@ -1655,6 +1656,33 @@ func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	out, err = fetch()
 	require.Error(t, err)
 	require.Empty(t, out)
+}
+
+func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a service that will fail immediately with a non-zero exit code
+	// The service will start but fail during execution, triggering Service.Start error handling
+	failingService := c.Container().
+		From(alpineImage).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}).
+		AsService()
+
+	// Start the service directly, which should trigger Service.Start and fail
+	_, err := failingService.Start(ctx)
+
+	// Verify we get an ExecError
+	require.Error(t, err)
+
+	var execErr *dagger.ExecError
+	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+
+	// Verify the ExecError contains expected information
+	require.Equal(t, 42, execErr.ExitCode)
+	require.Equal(t, []string{"sh", "-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"}, execErr.Cmd)
+	require.Contains(t, execErr.Stdout, "stdout message")
+	require.Contains(t, execErr.Stderr, "stderr message")
 }
 
 // TestStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
