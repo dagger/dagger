@@ -210,10 +210,10 @@ func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
-) (_ *core.Container, rerr error) {
+) (inst dagql.Instance[*core.Container], rerr error) {
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	if err := sdk.dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
@@ -271,9 +271,9 @@ func (sdk *goSDK) Runtime(
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
+		return inst, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
-	return ctr.Self, nil
+	return ctr, nil
 }
 
 func (sdk *goSDK) baseWithCodegen(
