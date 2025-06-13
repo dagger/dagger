@@ -217,15 +217,6 @@ func (sdk *goSDK) Runtime(
 	}
 	if err := sdk.dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
-			Field: "withoutUnixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString("/tmp/dagger-ssh-sock"),
-				},
-			},
-		},
-		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{
@@ -392,9 +383,7 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	configSelectors := getSDKConfigSelectors(ctx, config)
-	if len(configSelectors) > 0 {
-		selectors = append(selectors, configSelectors...)
-	}
+	selectors = append(selectors, configSelectors...)
 
 	// fetch gitconfig selectors
 	bk, err := sdk.root.Buildkit(ctx)
@@ -406,22 +395,17 @@ func (sdk *goSDK) baseWithCodegen(
 	if err != nil {
 		return ctr, err
 	}
-
-	if len(gitConfigSelectors) > 0 {
-		selectors = append(selectors, gitConfigSelectors...)
-	}
+	selectors = append(selectors, gitConfigSelectors...)
 
 	// TODO(rajatjindal): verify with Erik as to why this
 	// cause failures if we also mount this in Runtime.
 	// Issue we run into is that when we try to run sdk checks
 	// using .dagger, it fails trying to find the socket
-	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
+	setSSHAuthSelectors, unsetSSHAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
 	if err != nil {
 		return ctr, err
 	}
-	if len(sshAuthSelectors) > 0 {
-		selectors = append(selectors, sshAuthSelectors...)
-	}
+	selectors = append(selectors, setSSHAuthSelectors...)
 
 	// now that we are done with gitconfig and injecting env
 	// variables, we can run the codegen command.
@@ -441,6 +425,8 @@ func (sdk *goSDK) baseWithCodegen(
 			},
 		},
 	)
+
+	selectors = append(selectors, unsetSSHAuthSelectors...)
 
 	if err := sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
@@ -640,14 +626,14 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 	return selectors, nil
 }
 
-func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, error) {
+func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, []dagql.Selector, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+		return nil, nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
 	if clientMetadata.SSHAuthSocketPath == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var sockInst dagql.Instance[*core.Socket]
@@ -665,20 +651,21 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to select internal socket: %w", err)
+		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)
 	}
 
 	if sockInst.Self == nil {
-		return nil, fmt.Errorf("sockInst.Self is NIL")
+		return nil, nil, fmt.Errorf("sockInst.Self is NIL")
 	}
 
-	return []dagql.Selector{
+	sshSockPath := "/tmp/dagger-ssh-sock"
+	set := []dagql.Selector{
 		{
 			Field: "withUnixSocket",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String("/tmp/dagger-ssh-sock"),
+					Value: dagql.String(sshSockPath),
 				},
 				{
 					Name:  "source",
@@ -686,7 +673,41 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 				},
 			},
 		},
-	}, nil
+		{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("SSH_AUTH_SOCK"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.String(sshSockPath),
+				},
+			},
+		},
+	}
+	unset := []dagql.Selector{
+		{
+			Field: "withoutUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(sshSockPath),
+				},
+			},
+		},
+		{
+			Field: "withoutEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("SSH_AUTH_SOCK"),
+				},
+			},
+		},
+	}
+	return set, unset, nil
 }
 
 func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Selector {
