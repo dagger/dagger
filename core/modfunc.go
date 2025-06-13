@@ -35,7 +35,7 @@ import (
 type ModuleFunction struct {
 	mod     *Module
 	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
-	runtime *Container
+	runtime dagql.Instance[*Container]
 
 	metadata   *Function
 	returnType ModType
@@ -51,7 +51,7 @@ func NewModFunction(
 	ctx context.Context,
 	mod *Module,
 	objDef *ObjectTypeDef,
-	runtime *Container,
+	runtime dagql.Instance[*Container],
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	returnType, ok, _, err := mod.ModTypeFor(ctx, metadata.ReturnType, true)
@@ -348,7 +348,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
-	ctr := fn.runtime
+	ctr := fn.runtime.Self
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {

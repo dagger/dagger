@@ -34,7 +34,7 @@ type Module struct {
 	Deps *ModDeps
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	Runtime dagql.Instance[*Container] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 
@@ -669,8 +669,8 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if mod.Runtime != nil {
-		dirDefs, err := mod.Runtime.PBDefinitions(ctx)
+	if mod.Runtime.Self != nil {
+		dirDefs, err := mod.Runtime.Self.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -694,8 +694,8 @@ func (mod Module) Clone() *Module {
 		cp.Deps = mod.Deps.Clone()
 	}
 
-	if mod.Runtime != nil {
-		cp.Runtime = mod.Runtime.Clone()
+	if mod.Runtime.Self != nil {
+		cp.Runtime.Self = mod.Runtime.Self.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))
