@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -17,11 +16,6 @@ func DagOpWrapper[T dagql.Typed, A DagOpInternalArgsIface, R dagql.Typed](
 ) dagql.NodeFuncHandler[T, A, R] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
 		if args.InDagOp() {
-			query, ok := srv.Root().(dagql.Instance[*core.Query])
-			if !ok {
-				return inst, fmt.Errorf("server root was %T", srv.Root())
-			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOp(ctx, srv, self, args, fn)
@@ -62,11 +56,6 @@ func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if args.InDagOp() {
-			query, ok := srv.Root().(dagql.Instance[*core.Query])
-			if !ok {
-				return inst, fmt.Errorf("server root was %T", srv.Root())
-			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOpFile(ctx, srv, self, args, "", fn, pfn)
@@ -124,11 +113,6 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if args.InDagOp() {
-			query, ok := srv.Root().(dagql.Instance[*core.Query])
-			if !ok {
-				return inst, fmt.Errorf("server root was %T", srv.Root())
-			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOpDirectory(ctx, srv, self, args, "", fn, pfn)
@@ -179,11 +163,6 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
 	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
 		if args.InDagOp() {
-			query, ok := srv.Root().(dagql.Instance[*core.Query])
-			if !ok {
-				return inst, fmt.Errorf("server root was %T", srv.Root())
-			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
 		return DagOpContainer(ctx, srv, self, args, nil, fn)
