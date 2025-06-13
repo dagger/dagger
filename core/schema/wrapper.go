@@ -57,7 +57,7 @@ type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance
 func DagOpFileWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
@@ -68,7 +68,7 @@ func DagOpFileWrapper[T dagql.Typed, A any](
 			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
-		return DagOpFile(ctx, srv, self, args, nil, fn, pfn)
+		return DagOpFile(ctx, srv, self, args, nil, fn, opts...)
 	}
 }
 
@@ -84,22 +84,20 @@ func DagOpFile[T dagql.Typed, A any](
 	args A,
 	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
+	o := getOpts(opts...)
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
-	filename := "file"
-	if pfn != nil {
-		// NOTE: if set, the path function must be *somewhat* stable -
-		// since it becomes part of the op, then any changes to this
-		// invalidate the cache
-		filename, err = pfn(ctx, self, args)
-		if err != nil {
-			return inst, err
-		}
+	// NOTE: the path function must be *somewhat* stable -
+	// since it becomes part of the op, then any changes to this
+	// invalidate the cache
+	filename, err := o.pfn(ctx, self, args)
+	if err != nil {
+		return inst, err
 	}
 
 	file, err := core.NewFileDagOp(ctx, srv, &core.FSDagOp{
@@ -118,7 +116,7 @@ func DagOpFile[T dagql.Typed, A any](
 func DagOpDirectoryWrapper[T dagql.Typed, A any](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if core.DagOpInContext[core.FSDagOp](ctx) {
@@ -129,8 +127,42 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](
 			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
-		return DagOpDirectory(ctx, srv, self, args, nil, fn, pfn)
+		return DagOpDirectory(ctx, srv, self, args, nil, fn, opts...)
 	}
+}
+
+type DagOpOpts[T dagql.Typed, A any] struct {
+	pfn PathFunc[T, A]
+}
+
+type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])
+
+func WithPathFn[T dagql.Typed, A any](pfn PathFunc[T, A]) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.pfn = pfn
+	}
+}
+
+func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
+	var o DagOpOpts[T, A]
+	for _, optFn := range opts {
+		optFn(&o)
+	}
+	if o.pfn == nil {
+		o.pfn = func(ctx context.Context, val dagql.Instance[T], _ A) (string, error) {
+			switch v := val.Unwrap().(type) {
+			case *core.Directory:
+				return v.Dir, nil
+			case *core.File:
+				return v.File, nil
+			case *core.GitRef:
+				return "/", nil // or should we raise an error saying anything based on a GitRef must use the WithPathFn option?
+			default:
+				return "", fmt.Errorf("unhandled type %T while trying to set path", v)
+			}
+		}
+	}
+	return &o
 }
 
 // NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
@@ -143,19 +175,18 @@ func DagOpDirectory[T dagql.Typed, A any](
 	args A,
 	data any,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
+	o := getOpts(opts...)
+
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
-	filename := "/"
-	if pfn != nil {
-		filename, err = pfn(ctx, self, args)
-		if err != nil {
-			return inst, err
-		}
+	filename, err := o.pfn(ctx, self, args)
+	if err != nil {
+		return inst, err
 	}
 
 	dir, err := core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
