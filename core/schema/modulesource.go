@@ -130,10 +130,11 @@ func (s *moduleSourceSchema) Install() {
 				dagql.Arg("version").Doc(`The engine version to upgrade to.`),
 			),
 
-		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
+		dagql.NodeFunc("withDependencies", s.moduleSourceWithDependencies).
 			Doc(`Append the provided dependencies to the module source's dependency list.`).
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to append.`),
+				dagql.Arg("inline").Doc(`Make the dependencies inline (executed in the parent's context)`),
 			),
 
 		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
@@ -480,7 +481,16 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	localSrc.Digest = localSrc.CalcDigest().String()
 
-	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
+	if err != nil {
+		return inst, err
+	}
+	for i, depCfg := range localSrc.ConfigDependencies {
+		if depCfg.Inline {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
+	}
+	return inst, nil
 }
 
 func (s *moduleSourceSchema) gitModuleSource(
@@ -644,6 +654,11 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
+	for i, depCfg := range gitSrc.ConfigDependencies {
+		if depCfg.Inline {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
+	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -766,6 +781,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, contextDir, dirSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	for i, depCfg := range dirSrc.ConfigDependencies {
+		if depCfg.Inline {
+			inst.Self.Dependencies[i].Self.ContextModule = inst
+		}
 	}
 
 	dirSrc.Digest = dirSrc.CalcDigest().String()
@@ -1223,21 +1243,31 @@ func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Contex
 
 func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	ctx context.Context,
-	parentSrc *core.ModuleSource,
+	parent dagql.Instance[*core.ModuleSource],
 	args struct {
 		Dependencies []core.ModuleSourceID
+		Inline       dagql.Optional[dagql.Boolean]
 	},
-) (*core.ModuleSource, error) {
-	parentSrc = parentSrc.Clone()
+) (inst dagql.Instance[*core.ModuleSource], _ error) {
+	parentSrc := parent.Self.Clone()
 
 	newDeps, err := collectIDInstances(ctx, s.dag, args.Dependencies)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
+		return inst, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
-
+	// We instantiate early, for the purposes of inline dependencies
+	// We will re-instantiate later in this function before returning the result
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, parent, parentSrc)
+	if err != nil {
+		return inst, err
+	}
 	// do some sanity checks on the provided deps
 	var allDeps []dagql.Instance[*core.ModuleSource]
 	for _, newDep := range newDeps {
+		if args.Inline.Valid && args.Inline.Value.Bool() {
+			// Set ContextModule to a non-null value, to trigger serializing 'inline:true' in the config
+			newDep.Self.ContextModule = inst
+		}
 		switch parentSrc.Kind {
 		case core.ModuleSourceKindLocal:
 			switch newDep.Self.Kind {
@@ -1251,10 +1281,10 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 					newDep.Self.Local.ContextDirectoryPath,
 				)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path from parent context to dep context: %w", err)
+					return inst, fmt.Errorf("failed to get relative path from parent context to dep context: %w", err)
 				}
 				if !filepath.IsLocal(contextRelPath) {
-					return nil, fmt.Errorf("local module dependency context directory %q is not in parent context directory %q",
+					return inst, fmt.Errorf("local module dependency context directory %q is not in parent context directory %q",
 						newDep.Self.Local.ContextDirectoryPath, parentSrc.Local.ContextDirectoryPath)
 				}
 				allDeps = append(allDeps, newDep)
@@ -1264,7 +1294,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 				allDeps = append(allDeps, newDep)
 
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+				return inst, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
 			}
 
 		case core.ModuleSourceKindGit:
@@ -1272,18 +1302,18 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 			case core.ModuleSourceKindLocal:
 				// parent=git, dep=local
 				// cannot add a module source that's local to the caller as a dependency of a git module source
-				return nil, fmt.Errorf("cannot add local module source as dependency of git module source")
+				return inst, fmt.Errorf("cannot add local module source as dependency of git module source")
 
 			case core.ModuleSourceKindGit:
 				// parent=git, dep=git
 				allDeps = append(allDeps, newDep)
 
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+				return inst, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
 			}
 
 		default:
-			return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+			return inst, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
 		}
 	}
 
@@ -1316,7 +1346,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 		// duplicate names are not allowed
 		_, isDuplicateName := depNames[dep.Self.ModuleName]
 		if isDuplicateName {
-			return nil, fmt.Errorf("duplicate dependency name %q", dep.Self.ModuleName)
+			return inst, fmt.Errorf("duplicate dependency name %q", dep.Self.ModuleName)
 		}
 		depNames[dep.Self.ModuleName] = dep
 	}
@@ -1332,7 +1362,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	parentSrc.Dependencies = finalDeps
 
 	parentSrc.Digest = parentSrc.CalcDigest().String()
-	return parentSrc, nil
+	return dagql.NewInstanceForCurrentID(ctx, s.dag, parent, parentSrc)
 }
 
 func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
@@ -1625,6 +1655,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	for i, depSrc := range src.Dependencies {
 		depCfg := &modules.ModuleConfigDependency{
 			Name: depSrc.Self.ModuleName,
+			// This is a hack.
+			// 'platform' is a dependency annotation, but there is no core type for a dependency: ModuleSource.Dependencies is an array of ModuleSource.
+			// So, we use ContextModule as a shadow boolean flag, since it is exclusively used to implement the platform flag anyway
+			// To clean this up, create a new Dependency type and make ModuleSource.Dependencies an array of that type. A dependency would have 2 fields: the modulesource of the dep, and the platform annotation.
+			Inline: (depSrc.Self.ContextModule.Self != nil),
 		}
 		modCfg.Dependencies[i] = depCfg
 

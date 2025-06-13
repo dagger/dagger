@@ -190,6 +190,9 @@ type ModuleConfigDependency struct {
 
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
+
+	// Inline dependency (executed in the caller's context)
+	Inline bool `json:"inline,omitempty"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
