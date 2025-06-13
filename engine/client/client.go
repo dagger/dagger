@@ -54,6 +54,7 @@ import (
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
@@ -1118,6 +1119,11 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		clientVersion = engine.Version
 	}
 
+	var cloudOrg string
+	if o, _ := auth.CurrentOrg(); o != nil {
+		cloudOrg = o.Name
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
@@ -1128,7 +1134,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 		UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
 		Labels:                    c.labels,
-		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
+		CloudOrg:                  cloudOrg,
 		DoNotTrack:                analytics.DoNotTrack(),
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,

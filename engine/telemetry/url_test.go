@@ -26,7 +26,7 @@ func TestParseDaggerToken(t *testing.T) {
 
 	for _, tc := range tc {
 		t.Run(tc.src, func(t *testing.T) {
-			res, ok := parseDaggerToken(tc.src)
+			res, ok := ParseDaggerToken(tc.src)
 			assert.Equal(t, tc.ok, ok)
 			assert.Equal(t, tc.expected, res)
 		})
