@@ -127,7 +127,11 @@ func (op FSDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
-	obj, err := opt.Server.LoadType(ctx, op.ID)
+	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +236,11 @@ func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) 
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	result, err := opt.Server.LoadType(ctx, op.ID)
+	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -240,10 +248,6 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 		result = wrapped.Unwrap()
 	}
 
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
-	if !ok {
-		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
-	}
 	ref, err := query.Self.BuildkitCache().New(ctx, nil, g,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(client.UsageRecordTypeRegular),
@@ -431,15 +435,15 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	op.opt = opt
 	op.inputs = inputs
 
-	obj, err := opt.Server.LoadType(ctx, op.ID)
-	if err != nil {
-		return nil, err
-	}
-
 	query, ok := opt.Server.Root().(dagql.Instance[*Query])
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
+	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	bk, err := query.Self.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
