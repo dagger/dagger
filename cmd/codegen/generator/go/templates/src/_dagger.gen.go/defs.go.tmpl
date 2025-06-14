@@ -21,15 +21,8 @@ import (
 	"{{.PackageImport}}/internal/telemetry"
 {{ end }}
 
-{{ if IsDevMode }}
-	"{{.PackageImport}}/internal/querybuilder"
-	"{{.PackageImport}}/internal/engineconn"
-{{ end }}
-
 {{- if IsStandaloneClient }}
-	{{ if not IsDevMode }}
 	"dagger.io/dagger/querybuilder"
-	{{ end }}
 	"dagger.io/dagger"
 {{ end }}
 )

@@ -245,11 +245,6 @@ type ModuleConfigClient struct {
 
 	// The directory the client is generated in.
 	Directory string `field:"true" name:"directory" json:"directory" doc:"The directory the client is generated in."`
-
-	// Whether the client is generated in Dev mode or not.
-	// If set using an official SDK like Go or Typescript, the client will use the local SDK library
-	// instead of the published one.
-	Dev *bool `field:"true" name:"dev" json:"dev,omitempty" doc:"If true, generate the client in developer mode."`
 }
 
 func (*ModuleConfigClient) Type() *ast.Type {

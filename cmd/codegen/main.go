@@ -29,7 +29,6 @@ var (
 
 	clientOnly bool
 
-	dev    bool
 	isInit bool
 
 	bundle bool
@@ -65,7 +64,6 @@ func init() {
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
-	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
 	rootCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
 	rootCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module source to generate code for")
 
@@ -83,7 +81,6 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		Merge:      merge,
 		IsInit:     isInit,
 		ClientOnly: clientOnly,
-		Dev:        dev,
 		Bundle:     bundle,
 	}
 

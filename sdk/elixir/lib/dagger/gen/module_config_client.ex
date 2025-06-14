@@ -16,17 +16,6 @@ defmodule Dagger.ModuleConfigClient do
   @type t() :: %__MODULE__{}
 
   @doc """
-  If true, generate the client in developer mode.
-  """
-  @spec dev(t()) :: {:ok, boolean() | nil} | {:error, term()}
-  def dev(%__MODULE__{} = module_config_client) do
-    query_builder =
-      module_config_client.query_builder |> QB.select("dev")
-
-    Client.execute(module_config_client.client, query_builder)
-  end
-
-  @doc """
   The directory the client is generated in.
   """
   @spec directory(t()) :: {:ok, String.t()} | {:error, term()}

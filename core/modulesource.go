@@ -280,9 +280,6 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 
 	for _, client := range src.ConfigClients {
 		inputs = append(inputs, client.Generator, client.Directory)
-		if client.Dev != nil {
-			inputs = append(inputs, fmt.Sprintf("%t", *client.Dev))
-		}
 	}
 
 	return dagql.HashFrom(inputs...)

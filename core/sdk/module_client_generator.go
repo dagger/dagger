@@ -40,14 +40,13 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
-	fct, ok := sdk.funcs["generateClient"]
+	_, ok := sdk.funcs["generateClient"]
 	if !ok {
 		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
 	}
@@ -65,14 +64,6 @@ func (sdk *clientGeneratorModule) GenerateClient(
 			Name:  "outputDir",
 			Value: dagql.String(outputDir),
 		},
-	}
-
-	_, devFlagExist := fct.LookupArg("dev")
-	if devFlagExist {
-		generateClientsArgs = append(generateClientsArgs, dagql.NamedInput{
-			Name:  "dev",
-			Value: dagql.NewBoolean(dev),
-		})
 	}
 
 	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
