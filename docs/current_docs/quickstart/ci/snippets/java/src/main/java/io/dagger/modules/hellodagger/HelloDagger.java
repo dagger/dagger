@@ -3,7 +3,7 @@ package io.dagger.modules.hellodagger;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
 import io.dagger.module.annotation.DefaultPath;

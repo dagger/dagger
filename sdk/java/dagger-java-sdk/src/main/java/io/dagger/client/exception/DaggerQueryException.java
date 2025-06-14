@@ -1,4 +1,4 @@
-package io.dagger.client;
+package io.dagger.client.exception;
 
 import io.smallrye.graphql.client.GraphQLError;
 import java.util.Arrays;
@@ -10,7 +10,6 @@ public class DaggerQueryException extends Exception {
 
   public DaggerQueryException() {
     super("An unexpected error occurred with no error details");
-    this.errors = new GraphQLError[0];
   }
 
   public DaggerQueryException(GraphQLError... errors) {
@@ -20,5 +19,17 @@ public class DaggerQueryException extends Exception {
 
   public GraphQLError[] getErrors() {
     return errors;
+  }
+
+  public String toSimpleMessage() {
+    return DaggerExceptionUtils.toSimpleMessage(errors);
+  }
+
+  public String toEnhancedMessage() {
+    return DaggerExceptionUtils.toEnhancedMessage(errors);
+  }
+
+  public String toFullMessage() {
+    return DaggerExceptionUtils.toFullMessage(errors);
   }
 }

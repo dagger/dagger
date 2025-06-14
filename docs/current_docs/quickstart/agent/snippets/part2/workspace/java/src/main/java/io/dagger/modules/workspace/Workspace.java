@@ -3,7 +3,7 @@ package io.dagger.modules.workspace;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
 import io.dagger.client.File;
@@ -31,7 +31,7 @@ public class Workspace {
    */
   @Function
   public String readFile(String path)
-    throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return source.file(path).contents();
   }
 
@@ -52,13 +52,8 @@ public class Workspace {
    */
   @Function
   public String listFiles() throws ExecutionException, DaggerQueryException, InterruptedException {
-    return dag()
-      .container()
-      .from("alpine:3")
-      .withDirectory("/src", source)
-      .withWorkdir("/src")
-      .withExec(List.of("tree", "/src"))
-      .stdout();
+    return dag().container().from("alpine:3").withDirectory("/src", source).withWorkdir("/src")
+        .withExec(List.of("tree", "/src")).stdout();
   }
 
   /** Return the result of running unit tests */
@@ -66,13 +61,9 @@ public class Workspace {
   public String test()
       throws InterruptedException, ExecutionException, DaggerQueryException {
     CacheVolume nodeCache = dag().cacheVolume("node");
-    return dag().container()
-        .from("node:21-slim")
-        .withDirectory("/src", source)
-        .withMountedCache("/root/.npm", nodeCache)
-        .withWorkdir("/src")
-        .withExec(List.of("npm", "install"))
-        .withExec(List.of("npm", "run", "test:unit", "run"))
+    return dag().container().from("node:21-slim").withDirectory("/src", source)
+        .withMountedCache("/root/.npm", nodeCache).withWorkdir("/src")
+        .withExec(List.of("npm", "install")).withExec(List.of("npm", "run", "test:unit", "run"))
         .stdout();
   }
 
