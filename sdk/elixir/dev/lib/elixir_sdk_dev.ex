@@ -173,4 +173,32 @@ defmodule ElixirSdkDev do
       error -> error
     end
   end
+
+  use Dagger.Telemetry.Tracing
+  defn customSpan() :: String.t() do
+    # clone the source code repository
+    source =
+      dag()
+      |> Dagger.Client.git("https://github.com/dagger/hello-dagger")
+      |> Dagger.GitRepository.branch("main")
+      |> Dagger.GitRef.tree()
+
+    # list versions to test agains
+    versions = ["20", "22", "23"]
+
+    Task.async_stream(versions, fn version ->
+    Tracer.with_span "running unit tests with node #{versions |> hd()}" do
+          dag()
+          |> Dagger.Client.container()
+          |> Dagger.Container.from("node:#{version}")
+          |> Dagger.Container.with_directory("/src", source)
+          |> Dagger.Container.with_workdir("/src")
+          |> Dagger.Container.with_exec(~w"npm install")
+          |> Dagger.Container.with_exec(~w"npm run test:unit run")
+          |> Dagger.Container.sync()
+        end
+      end)
+      |> Enum.all?()
+    end
+  end
 end
