@@ -31,7 +31,10 @@ defmodule Dagger.MixProject do
       {:nestru, "~> 1.0"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:req, "~> 0.5", optional: true}
+      {:req, "~> 0.5", optional: true},
+      {:opentelemetry_exporter, github: "open-telemetry/opentelemetry-erlang", sparse: "apps/opentelemetry_exporter", override: true}, 
+      {:opentelemetry_api, github: "open-telemetry/opentelemetry-erlang", sparse: "apps/opentelemetry_api", override: true},
+      {:opentelemetry, github: "open-telemetry/opentelemetry-erlang", sparse: "apps/opentelemetry", override: true},
     ]
   end
 
