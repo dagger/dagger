@@ -197,18 +197,18 @@ func (w *Workspace) Evaluate(
 			evalErr := eval.Check(ctx, prompt)
 			if evalErr == nil {
 				succeeded = true
+				atomic.AddInt32(&successCount, 1)
 			}
 
-			atomic.AddInt32(&successCount, 1)
 			reportMD := new(strings.Builder)
 			fmt.Fprintf(reportMD, "## Attempt %d\n", attempt+1)
 			fmt.Fprintln(reportMD)
 
 			fmt.Fprintln(reportMD, "### Message Log")
 			fmt.Fprintln(reportMD)
-			history, evalErr := prompt.History(ctx)
-			if evalErr != nil {
-				fmt.Fprintln(reportMD, "Failed to get history:", evalErr)
+			history, err := prompt.History(ctx)
+			if err != nil {
+				fmt.Fprintln(reportMD, "Failed to get history:", err)
 			} else {
 				numLines := len(history)
 				// Calculate the width needed for the largest line number
