@@ -593,7 +593,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 	}
 
-	inst, err := DagOpDirectory(ctx, s.srv, parent, args, nil, s.tree, nil)
+	inst, err := DagOpDirectory(ctx, s.srv, parent, args, nil, s.tree)
 	if err != nil {
 		return inst, err
 	}
