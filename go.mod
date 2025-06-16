@@ -15,7 +15,7 @@ replace (
 )
 
 require (
-	github.com/1password/onepassword-sdk-go v0.3.0
+	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.74
 	github.com/Khan/genqlient v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -55,12 +55,12 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.20.5
+	github.com/google/go-containerregistry v0.20.6
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/googleapis/gax-go/v2 v2.14.2
-	github.com/goproxy/goproxy v0.20.3
+	github.com/goproxy/goproxy v0.21.0
 	github.com/hashicorp/vault/api v1.20.0
 	github.com/hashicorp/vault/api/auth/approle v0.10.0
 	github.com/iancoleman/strcase v0.3.0
@@ -73,7 +73,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.1.2
 	github.com/mackerelio/go-osstat v0.2.6
-	github.com/mark3labs/mcp-go v0.31.0
+	github.com/mark3labs/mcp-go v0.32.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -86,7 +86,7 @@ require (
 	github.com/moby/sys/userns v0.1.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.3.0
+	github.com/openai/openai-go v1.5.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.2.1
@@ -105,16 +105,16 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
-	github.com/urfave/cli v1.22.16
-	github.com/vektah/gqlparser/v2 v2.5.27
+	github.com/urfave/cli v1.22.17
+	github.com/vektah/gqlparser/v2 v2.5.28
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2
-	go.etcd.io/bbolt v1.4.0
+	go.etcd.io/bbolt v1.4.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0
 	go.opentelemetry.io/otel v1.36.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.12.2
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.32.0
@@ -136,12 +136,12 @@ require (
 	golang.org/x/term v0.32.0
 	golang.org/x/text v0.26.0
 	golang.org/x/tools v0.34.0
-	google.golang.org/genai v1.10.0
+	google.golang.org/genai v1.11.1
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
-	modernc.org/sqlite v1.37.1
+	modernc.org/sqlite v1.38.0
 	mvdan.cc/sh/v3 v3.11.0
 	resenje.org/singleflight v0.4.3
 )
@@ -149,7 +149,7 @@ require (
 require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.16.1 // indirect
-	cloud.google.com/go/compute/metadata v0.6.0 // indirect
+	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
@@ -229,7 +229,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
@@ -340,7 +340,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250519155744-55703ea1f237 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	modernc.org/libc v1.65.7 // indirect
+	modernc.org/libc v1.65.10 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
