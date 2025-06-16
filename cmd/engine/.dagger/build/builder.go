@@ -129,6 +129,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			Alpine(dagger.AlpineOpts{
 				Branch: consts.AlpineVersion,
 				Packages: []string{
+					"ca-certificates",
 					// for Buildkit
 					"git", "openssh-client", "pigz", "xz",
 					// for CNI

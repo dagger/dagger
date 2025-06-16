@@ -21,7 +21,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	customCACertTests(ctx, t, c,
 		caCertsTest{"alpine basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
-				WithExec([]string{"apk", "add", "curl"})
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -57,7 +57,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"alpine non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
-				WithExec([]string{"apk", "add", "curl"})
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -80,7 +80,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"alpine install ca-certificates and curl at once", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(alpineImage).
-				WithExec([]string{"sh", "-c", "apk add curl && curl https://server"}).
+				WithExec([]string{"sh", "-c", "apk add ca-certificates curl && curl https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
 
@@ -97,6 +97,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"alpine ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(golangImage).
+				WithExec([]string{"apk", "update"}).
 				WithExec([]string{"apk", "del", "ca-certificates"})
 
 			// verify no system CAs are leftover
@@ -153,7 +154,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"wolfi basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(wolfiImage).
-				WithExec([]string{"apk", "add", "curl"})
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -163,8 +164,9 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 
 			// verify no system CAs are leftover
-			_, err = ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
-			requireErrOut(t, err, "no such file or directory")
+			ents, err := ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
+			require.NoError(t, err)
+			require.Empty(t, ents)
 
 			bundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
