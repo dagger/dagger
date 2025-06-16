@@ -349,7 +349,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 		ctr = dag.
 			Alpine(dagger.AlpineOpts{
 				Branch:   consts.AlpineVersion,
-				Packages: []string{"build-base", "go", "git"},
+				Packages: []string{"build-base", "go~" + consts.GolangVersion, "git"},
 			}).
 			Container()
 	case "ubuntu":
@@ -363,7 +363,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 		ctr = dag.
 			Wolfi().
 			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"build-base", "go", "git",
+				"build-base", "go~" + consts.GolangVersion, "git",
 			}})
 	}
 
