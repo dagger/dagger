@@ -3,36 +3,35 @@ package io.dagger.gen.entrypoint;
 
     import static io.dagger.client.Dagger.dag;
 
-import io.dagger.client.Container;
-import io.dagger.client.Directory;
-import io.dagger.client.Function;
-import io.dagger.client.FunctionCall;
-import io.dagger.client.FunctionCallArgValue;
-import io.dagger.client.JSON;
-import io.dagger.client.JsonConverter;
-import io.dagger.client.Module;
-import io.dagger.client.ModuleID;
-import io.dagger.client.Platform;
-import io.dagger.client.TypeDef;
-import io.dagger.client.TypeDefKind;
-import io.dagger.client.exception.DaggerExecException;
-import io.dagger.client.exception.DaggerQueryException;
-import io.dagger.java.module.DaggerJava;
-import java.lang.Class;
-import java.lang.Error;
-import java.lang.Exception;
-import java.lang.Integer;
-import java.lang.InterruptedException;
-import java.lang.String;
-import java.lang.reflect.InvocationTargetException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import org.apache.commons.lang3.StringUtils;
+    import io.dagger.client.Container;
+    import io.dagger.client.Directory;
+    import io.dagger.client.Function;
+    import io.dagger.client.FunctionCall;
+    import io.dagger.client.FunctionCallArgValue;
+    import io.dagger.client.JSON;
+    import io.dagger.client.JsonConverter;
+    import io.dagger.client.Module;
+    import io.dagger.client.ModuleID;
+    import io.dagger.client.Platform;
+    import io.dagger.client.TypeDef;
+    import io.dagger.client.TypeDefKind;
+    import io.dagger.client.exception.DaggerExecException;
+    import io.dagger.client.exception.DaggerQueryException;
+    import io.dagger.java.module.DaggerJava;
+    import java.lang.Class;
+    import java.lang.Error;
+    import java.lang.Exception;
+    import java.lang.Integer;
+    import java.lang.InterruptedException;
+    import java.lang.String;
+    import java.lang.reflect.InvocationTargetException;
+    import java.util.Arrays;
+    import java.util.HashMap;
+    import java.util.List;
+    import java.util.Map;
+    import java.util.Objects;
+    import java.util.Optional;
+    import java.util.concurrent.ExecutionException;
 
 public class Entrypoint {
   Entrypoint() {}
@@ -69,7 +68,7 @@ public class Entrypoint {
       fnCall.returnError(dag().error(e.getTargetException().getMessage()));
       throw e;
     } catch (DaggerExecException e) {
-      fnCall.returnError(dag().error(e.getMessage()).withValue("exitCode", JSON.from(StringUtils.join(e.getExitCode()))).withValue("path", JSON.from(StringUtils.join(e.getPath()))).withValue("cmd", JSON.from(StringUtils.join(e.getCmd()))).withValue("stderr", JSON.from(e.getStdErr())));
+      fnCall.returnError(dag().error(e.getMessage()).withValue("exitCode", JsonConverter.toJSON(e.getExitCode())).withValue("path", JsonConverter.toJSON(e.getPath())).withValue("cmd", JsonConverter.toJSON(e.getCmd())).withValue("stderr", JsonConverter.toJSON(e.getStdErr())));
       throw e;
     } catch (Exception e) {
       fnCall.returnError(dag().error(e.getMessage()));
