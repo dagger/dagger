@@ -26,7 +26,7 @@ func (s *cloudSchema) Install() {
 	dagql.Fields[*core.Cloud]{
 		dagql.Func("traceURL", s.traceURL).
 			DoNotCache("This value changes every single run").
-			Doc("The URL for the Dagger Cloud instance associated with the current trace"),
+			Doc("The trace URL for the current session"),
 	}.Install(s.srv)
 }
 
