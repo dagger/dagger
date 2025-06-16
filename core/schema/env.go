@@ -16,7 +16,8 @@ var _ SchemaResolvers = &environmentSchema{}
 
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.Func("env", s.environment).
+		dagql.FuncWithCacheKey("env", s.environment,
+			dagql.CachePerClientSchema[*core.Query, environmentArgs](s.srv)).
 			Doc(`Initialize a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
@@ -68,11 +69,13 @@ func (s environmentSchema) Install() {
 	s.srv.AddInstallHook(hook)
 }
 
-func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct {
+type environmentArgs struct {
 	Privileged bool `default:"false"`
 	Writable   bool `default:"false"`
-}) (*core.Env, error) {
-	env := core.NewEnv()
+}
+
+func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
+	env := core.NewEnv(s.srv)
 	if args.Privileged {
 		env = env.Privileged()
 	}

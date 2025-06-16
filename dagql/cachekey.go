@@ -115,6 +115,54 @@ func CachePerCall[P Typed, A any](
 	return &cacheCfg, nil
 }
 
+// CachePerSchema is a CacheKeyFunc that scopes the cache key to the schema of
+// the provided server.
+//
+// This should be used only in scenarios where literally the schema is all that
+// determines the result, irrespective of what client is making the call.
+func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+	return func(
+		ctx context.Context,
+		_ Instance[P],
+		_ A,
+		cfg CacheConfig,
+	) (*CacheConfig, error) {
+		cfg.Digest = HashFrom(
+			cfg.Digest.String(),
+			srv.SchemaDigest().String(),
+		)
+		return &cfg, nil
+	}
+}
+
+// CachePerClientSchema is a CacheKeyFunc that scopes the cache key to both the
+// client and the current schema of the provided server.
+//
+// This should be used by anything that should invalidate when the schema
+// changes, but also has an element of per-client dynamism.
+func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+	return func(
+		ctx context.Context,
+		_ Instance[P],
+		_ A,
+		cfg CacheConfig,
+	) (*CacheConfig, error) {
+		clientMD, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		if clientMD.ClientID == "" {
+			return nil, fmt.Errorf("client ID not found in context")
+		}
+		cfg.Digest = HashFrom(
+			cfg.Digest.String(),
+			srv.SchemaDigest().String(),
+			clientMD.ClientID,
+		)
+		return &cfg, nil
+	}
+}
+
 func HashFrom(ins ...string) digest.Digest {
 	h := xxh3.New()
 	for _, in := range ins {

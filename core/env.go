@@ -15,6 +15,8 @@ import (
 )
 
 type Env struct {
+	// The server providing the environment's types + schema
+	srv *dagql.Server
 	// Input values
 	inputsByName map[string]*Binding
 	// Output values
@@ -38,8 +40,9 @@ func (*Env) Type() *ast.Type {
 	}
 }
 
-func NewEnv() *Env {
+func NewEnv(srv *dagql.Server) *Env {
 	return &Env{
+		srv:           srv,
 		inputsByName:  map[string]*Binding{},
 		outputsByName: map[string]*Binding{},
 		objsByID:      map[string]*Binding{},

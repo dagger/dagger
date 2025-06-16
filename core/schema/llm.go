@@ -104,7 +104,7 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
-	if err := llm.Sync(ctx, s.srv); err != nil {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	return llm.Env(), nil
@@ -127,7 +127,7 @@ func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) 
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{}) (dagql.String, error) {
-	reply, err := llm.LastReply(ctx, s.srv)
+	reply, err := llm.LastReply(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -167,7 +167,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm, llm.Sync(ctx, s.srv)
+	return llm, llm.Sync(ctx)
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
@@ -190,19 +190,19 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLLM(ctx, model, maxAPICalls)
+	return core.NewLLM(ctx, model, maxAPICalls, s.srv)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
-	return llm.History(ctx, s.srv)
+	return llm.History(ctx)
 }
 
 func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {
-	return llm.HistoryJSON(ctx, s.srv)
+	return llm.HistoryJSON(ctx)
 }
 
 func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	js, err := llm.HistoryJSON(ctx, s.srv)
+	js, err := llm.HistoryJSON(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -210,7 +210,7 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.ToolsDoc(s.srv)
+	return llm.ToolsDoc()
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {

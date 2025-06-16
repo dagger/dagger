@@ -80,10 +80,6 @@ type LLM struct {
 
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
-
-	// Keep track of the last-used server state, so we know where to introspect
-	// types from in case the LLM gets passed around.
-	lastSrv *dagql.Server
 }
 
 type LLMEndpoint struct {
@@ -448,11 +444,11 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func NewLLM(ctx context.Context, model string, maxAPICalls int, srv *dagql.Server) (*LLM, error) {
 	return &LLM{
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(),
+		mcp:         NewEnv(srv).MCP(),
 		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
@@ -520,14 +516,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *LLM) ToolsDoc(currentSrv *dagql.Server) (string, error) {
-	dag := currentSrv
-	if llm.lastSrv != nil {
-		// use the last-used server if present; only fall back to currentSrv when
-		// the LLM hasn't run yet
-		dag = llm.lastSrv
-	}
-	tools, err := llm.mcp.Tools(dag)
+func (llm *LLM) ToolsDoc() (string, error) {
+	tools, err := llm.mcp.Tools()
 	if err != nil {
 		return "", err
 	}
@@ -600,8 +590,8 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 }
 
 // Return the last message sent by the agent
-func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) LastReply(ctx context.Context) (string, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return "", err
 	}
 	var reply string = "(no reply)"
@@ -646,12 +636,12 @@ func (err *ModelFinishedError) Error() string {
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) Sync(ctx context.Context) error {
 	if err := llm.allowed(ctx); err != nil {
 		return err
 	}
 	llm.once.Do(func() {
-		llm.err = llm.loop(ctx, dag)
+		llm.err = llm.loop(ctx)
 	})
 	return llm.err
 }
@@ -730,7 +720,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) loop(ctx context.Context) error {
 	var hasUserMessage bool
 	for _, message := range llm.messages {
 		if message.Role == "user" {
@@ -744,9 +734,6 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		return nil
 	}
 
-	// keep track of the last used server
-	llm.lastSrv = dag
-
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
 	b.InitialInterval = 1 * time.Second
@@ -759,7 +746,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools(dag)
+		tools, err := llm.mcp.Tools()
 		if err != nil {
 			return err
 		}
@@ -915,8 +902,8 @@ func squash(str string) string {
 	return strings.ReplaceAll(str, "\n", `\n`)
 }
 
-func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) History(ctx context.Context) ([]string, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	var history []string
@@ -964,8 +951,8 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
@@ -1006,7 +993,7 @@ func (v *LLMVariable) Type() *ast.Type {
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx, dag); err != nil {
+	if err := llm.Sync(ctx); err != nil {
 		return res, err
 	}
 	if llm.mcp.LastResult() == nil {
@@ -1023,7 +1010,7 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	var res LLMTokenUsage

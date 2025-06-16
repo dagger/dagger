@@ -104,12 +104,12 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) Tools() ([]LLMTool, error) {
 	allTools := map[string]LLMTool{}
-	if err := m.allTypeTools(srv, allTools); err != nil {
+	if err := m.allTypeTools(m.env.srv, allTools); err != nil {
 		return nil, err
 	}
-	return m.Builtins(srv, allTools)
+	return m.Builtins(m.env.srv, allTools)
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
