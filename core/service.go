@@ -15,6 +15,7 @@ import (
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/sourcegraph/conc/pool"
@@ -446,16 +447,34 @@ func (svc *Service) startContainer(
 
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
+
+	// capture stdout/stderr while the service is starting so we can include it in
+	// the exec error
+	stdoutBuf := new(strings.Builder)
+	stderrBuf := new(strings.Builder)
+
 	if forwardStdin != nil {
 		stdinCtr, stdinClient = io.Pipe()
 	}
 
+	// buffer stdout/stderr so we can return a nice error
+	outBufWC := discardOnClose(stdoutBuf)
+	errBufWC := discardOnClose(stderrBuf)
+	// stop buffering service logs once it's started
+	defer outBufWC.Close()
+	defer errBufWC.Close()
+
+	stdoutWriters := multiWriteCloser{outBufWC}
+	stderrWriters := multiWriteCloser{errBufWC}
+
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
+		stdoutWriters = append(stdoutWriters, stdoutCtr)
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
+		stderrWriters = append(stderrWriters, stderrCtr)
 	}
 
 	svcProc, err := gc.Start(execCtx, bkgw.StartRequest{
@@ -466,8 +485,8 @@ func (svc *Service) startContainer(
 		SecretEnv:    execOp.Secretenv,
 		Tty:          interactive,
 		Stdin:        stdinCtr,
-		Stdout:       stdoutCtr,
-		Stderr:       stderrCtr,
+		Stdout:       stdoutWriters,
+		Stderr:       stderrWriters,
 		SecurityMode: execOp.Security,
 	})
 	if err != nil {
@@ -569,10 +588,70 @@ func (svc *Service) startContainer(
 		}, nil
 	case <-exited:
 		if exitErr != nil {
-			return nil, fmt.Errorf("exited: %w", exitErr)
+			var gwErr *gwpb.ExitError
+			if errors.As(exitErr, &gwErr) {
+				// Create ExecError with available service information
+				return nil, &buildkit.ExecError{
+					Err:      gwErr,
+					Origin:   svc.Creator,
+					Cmd:      execOp.Meta.Args,
+					ExitCode: int(gwErr.ExitCode),
+					Stdout:   stdoutBuf.String(),
+					Stderr:   stderrBuf.String(),
+				}
+			}
+			return nil, exitErr
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
+}
+
+func discardOnClose(w io.Writer) io.WriteCloser {
+	return &discardWriteCloser{w: w}
+}
+
+type discardWriteCloser struct {
+	w      io.Writer
+	closed bool
+}
+
+func (d *discardWriteCloser) Write(p []byte) (n int, err error) {
+	if d.closed {
+		return 0, nil
+	}
+	return d.w.Write(p)
+}
+
+func (d *discardWriteCloser) Close() error {
+	if d.closed {
+		return nil
+	}
+	d.closed = true
+	return nil
+}
+
+type multiWriteCloser []io.WriteCloser
+
+func (mwc multiWriteCloser) Write(p []byte) (int, error) {
+	var errs error
+	for _, wc := range mwc {
+		_, err := wc.Write(p)
+		if err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+	if errs != nil {
+		return 0, errs
+	}
+	return len(p), nil
+}
+
+func (mwc multiWriteCloser) Close() error {
+	var errs error
+	for _, wc := range mwc {
+		errs = errors.Join(errs, wc.Close())
+	}
+	return errs
 }
 
 func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {
