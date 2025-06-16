@@ -11,7 +11,7 @@ import java.util.concurrent.ExecutionException;
 @Object
 public class MyModule {
   @Function
-  public String foo() throws ExecutionException, DaggeQueryException, InterruptedException {
+  public String foo() throws ExecutionException, DaggerQueryException, InterruptedException {
     return dag().container()
         .from("alpine:latest")
         .withExec(List.of("sh", "-c", "echo hello world > /foo"))
