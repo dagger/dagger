@@ -7,7 +7,6 @@ import (
 	"maps"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
@@ -125,14 +124,14 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		if comment == "" {
 			comment = strings.TrimSpace(lineComment)
 		}
-		pragmas := make(map[string]string)
+		pragmas := make(map[string]any)
 		maps.Copy(pragmas, docPragmas)
 		maps.Copy(pragmas, linePragmas)
 		if v, ok := pragmas["private"]; ok {
-			if v == "" {
+			if v == nil {
 				fieldSpec.isPrivate = true
 			} else {
-				fieldSpec.isPrivate, _ = strconv.ParseBool(v)
+				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
 

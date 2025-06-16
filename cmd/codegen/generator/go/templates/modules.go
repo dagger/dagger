@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -1170,24 +1171,54 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:=(.+?))?(?:\r?\n|$)`)
+var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:(=[ \t]*)|(?:\r?\n|$))`)
 
 // parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
-func parsePragmaComment(comment string) (data map[string]string, rest string) {
-	data = map[string]string{}
+func parsePragmaComment(comment string) (data map[string]any, rest string) {
+	data = map[string]any{}
 	lastEnd := 0
 	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
-		var key, value string
+		var key string
 		if v[2] != -1 {
 			key = comment[v[2]:v[3]]
 		}
-		if v[4] != -1 {
-			value = comment[v[4]:v[5]]
-		}
-		data[key] = value
 
+		var value any
+		end := v[1]
+		if v[4] != -1 {
+			dec := json.NewDecoder(strings.NewReader(comment[v[5]:]))
+			if err := dec.Decode(&value); err == nil {
+				// attempt to parse as json (this can span multiple-lines)
+				end = v[5] + int(dec.InputOffset())
+				idx := strings.IndexAny(comment[end:], "\n")
+				if idx == -1 {
+					end = len(comment)
+				} else {
+					end += idx + 1
+				}
+			} else {
+				// otherwise, just read till the end of the line
+				idx := strings.IndexAny(comment[v[5]:], "\n")
+				var valueStr string
+				if idx == -1 {
+					valueStr = comment[v[5]:]
+					end = len(comment)
+				} else {
+					idx += v[5]
+					valueStr = strings.TrimSuffix(comment[v[5]:idx], "\r")
+					end = idx + 1
+				}
+				if len(valueStr) == 0 {
+					value = nil
+				} else {
+					value = valueStr
+				}
+			}
+		}
+
+		data[key] = value
 		rest += comment[lastEnd:v[0]]
-		lastEnd = v[1]
+		lastEnd = end
 	}
 	rest += comment[lastEnd:]
 
