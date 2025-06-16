@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/dagger/dagger/modules/golangci/internal/dagger"
+	"github.com/dagger/dagger/modules/golangci/internal/telemetry"
 )
 
 const (
@@ -70,22 +70,20 @@ func (run LintRun) Assert(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var (
-		errCount  int
-		summaries []string
-	)
+	var errCount int
+
+	stdio := telemetry.SpanStdio(ctx, "")
+	defer stdio.Close()
+
 	for _, iss := range issues {
 		if !iss.IsError() {
 			continue
 		}
 		errCount += 1
-		summaries = append(summaries, iss.Summary())
+		fmt.Fprintln(stdio.Stderr, iss.Summary())
 	}
 	if errCount > 0 {
-		return fmt.Errorf("linting failed with %d issues:\n%s",
-			errCount,
-			strings.Join(summaries, "\n"),
-		)
+		return fmt.Errorf("linting failed with %d issues", errCount)
 	}
 	return nil
 }
