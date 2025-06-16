@@ -191,8 +191,21 @@ func (dev *DaggerDev) Test() *Test {
 }
 
 // Run the Dagger evals across the major model providers.
-func (dev *DaggerDev) Evals(ctx context.Context) error {
-	return dev.evaluator().EvalsAcrossModels().Check(ctx)
+func (dev *DaggerDev) Evals(
+	ctx context.Context,
+	// Run particular evals, or all evals if unspecified.
+	// +optional
+	evals []string,
+	// Run particular models, or all models if unspecified.
+	// +optional
+	models []string,
+) error {
+	return dev.evaluator().
+		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
+			Evals:  evals,
+			Models: models,
+		}).
+		Check(ctx)
 }
 
 func (dev *DaggerDev) evaluator() *dagger.Evaluator {

@@ -11,14 +11,8 @@ import (
 
 // Test that the model is conscious of a "current state" without needing
 // explicit prompting.
-func (m *Evals) ModuleDependencies(ctx context.Context) (*ModuleDependencies, error) {
-	err := dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender").AsModule().Serve(ctx, dagger.ModuleServeOpts{
-		IncludeDependencies: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &ModuleDependencies{}, nil
+func (m *Evals) ModuleDependencies() *ModuleDependencies {
+	return &ModuleDependencies{}
 }
 
 type ModuleDependencies struct{}
@@ -27,11 +21,17 @@ func (e *ModuleDependencies) Name() string {
 	return "ModuleDependencies"
 }
 
-func (e *ModuleDependencies) Prompt(base *dagger.LLM) *dagger.LLM {
+func (e *ModuleDependencies) Prompt(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error) {
+	err := dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender").AsModule().Serve(ctx, dagger.ModuleServeOpts{
+		IncludeDependencies: true,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return base.
 		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 			WithStringOutput("methods", "The list of methods that you can see.")).
-		WithPrompt("List all of the methods that you can see.")
+		WithPrompt("List all of the methods that you can see."), nil
 }
 
 func (e *ModuleDependencies) Check(ctx context.Context, prompt *dagger.LLM) error {
