@@ -7,7 +7,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.27
-	github.com/vito/runt v0.0.0-20250610184720-a202b5b41b87
+	github.com/vito/runt v0.0.0-20250616031206-26a1ab40732a
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0

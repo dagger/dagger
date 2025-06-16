@@ -21,6 +21,9 @@ type Workspace struct {
 	// The current system prompt.
 	SystemPrompt string
 
+	// Whether to disable Dagger's built-in system prompt.
+	DisableDefaultSystemPrompt bool
+
 	// Evaluations to perform.
 	Evals []Eval
 
@@ -42,6 +45,12 @@ var testedModels = []string{
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
 	"claude-sonnet-4-0",
+}
+
+// Set the system prompt for future evaluations.
+func (w *Workspace) WithoutDefaultSystemPrompt() *Workspace {
+	w.DisableDefaultSystemPrompt = true
+	return w
 }
 
 // Set the system prompt for future evaluations.
@@ -304,6 +313,9 @@ func (w *Workspace) Evaluate(
 func (w *Workspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
 	if base == nil {
 		base = dag.LLM()
+	}
+	if w.DisableDefaultSystemPrompt {
+		base = base.WithoutDefaultSystemPrompt()
 	}
 	if modelOverride == "" {
 		modelOverride = w.Model
