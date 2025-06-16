@@ -99,3 +99,9 @@ func experimental(reason string) *ast.Directive {
 		},
 	}
 }
+
+func internal() *ast.Directive {
+	return &ast.Directive{
+		Name: "internal",
+	}
+}

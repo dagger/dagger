@@ -1,0 +1,9 @@
+kind: Breaking
+body: |
+  Remove `namespace` arg from `CacheVolume`.
+
+  This arg was only ever meant for internal usage within the API's implementation, but previously couldn't be hidden from the public API. Now it is properly internal-only and thus not accessible to external clients. Any use of the arg should just be removed.
+time: 2025-06-16T09:56:22.158221655-07:00
+custom:
+  Author: sipsma
+  PR: "10586"
