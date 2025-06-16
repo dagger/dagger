@@ -24,7 +24,7 @@ func (s jsonvalueSchema) Install() {
 
 	// Expose methods for JSONValue manipulation
 	dagql.Fields[*core.JSONValue]{
-		dagql.Func("get", s.unset).Doc("Return the JSON-encoded value, or a sub-value at the given path").Args(
+		dagql.Func("get", s.get).Doc("Return the JSON-encoded value, or a sub-value at the given path").Args(
 			dagql.Arg("path").Doc("The JSON path (dot-separated)"),
 		),
 		dagql.Func("unset", s.unset).Doc("Removes the value at the specified path. Empty path resets to null.").Args(
@@ -63,7 +63,19 @@ func (s jsonvalueSchema) Install() {
 }
 
 func (s jsonvalueSchema) newJSONValue(ctx context.Context, q *core.Query, args struct{}) (*core.JSONValue, error) {
-	return &core.JSONValue{}, nil
+	return core.NewJSONValue(nil)
+}
+
+func (s jsonvalueSchema) get(ctx context.Context, obj *core.JSONValue, args struct{ Path dagql.String }) (core.JSON, error) {
+	v, err := obj.Get(args.Path.String())
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	return core.JSON(data), nil
 }
 
 func (s jsonvalueSchema) unset(ctx context.Context, obj *core.JSONValue, args struct{ Path dagql.String }) (*core.JSONValue, error) {
