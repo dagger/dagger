@@ -138,13 +138,13 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
-func (g *GoGenerator) isDaggerPackageReplaced() (string, bool, error) {
+func (g *GoGenerator) daggerPackageReplacement() (string, bool, error) {
 	goModFile, err := os.ReadFile("go.mod")
 	if err != nil {
 		return "", false, fmt.Errorf("failed to read go.mod: %w", err)
 	}
 
-	goMod, err := modfile.Parse("go.mod", goModFile, nil)
+	goMod, err := modfile.ParseLax("go.mod", goModFile, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to parse go.mod: %w", err)
 	}
@@ -158,8 +158,8 @@ func (g *GoGenerator) isDaggerPackageReplaced() (string, bool, error) {
 			// of the client output directory.
 			replacedPath := replace.New.Path
 
-			if strings.HasPrefix(replacedPath, "/") {
-				return "", false, fmt.Errorf("invalid go replace path %s ; path must have as parent the output directory %s", replacedPath, g.Config.OutputDir)
+			if filepath.IsAbs(replacedPath) {
+				return "", false, fmt.Errorf("invalid go replace path %q not under %q", replacedPath, g.Config.OutputDir)
 			}
 
 			// Remove the output dir from the replace path and trim the leading slash to obtain
@@ -188,9 +188,9 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	layers := []fs.FS{mfs}
 
-	replacedPath, replaced, err := g.isDaggerPackageReplaced()
+	replacedPath, replaced, err := g.daggerPackageReplacement()
 	if err != nil {
-		return nil, fmt.Errorf("failed to check if dagger package is replaced: %w", err)
+		return nil, fmt.Errorf("failed to check if dagger.io/dagger package is replaced: %w", err)
 	}
 
 	// If dagger.io/dagger package is replaced, we need to add the SDK locally
