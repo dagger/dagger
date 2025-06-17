@@ -47,6 +47,10 @@ type extendedError interface {
 	Extensions() map[string]any
 }
 
+func (e gqlExtendedError) Unwrap() error {
+	return e.inner
+}
+
 var _ extendedError = gqlExtendedError{}
 
 func (e gqlExtendedError) Error() string {

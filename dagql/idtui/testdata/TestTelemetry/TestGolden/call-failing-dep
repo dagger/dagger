@@ -15,7 +15,6 @@ Expected stderr:
 
 ● viztest: Viztest! X.Xs
 ▼ .callFailingDep: Void X.Xs ERROR
-! this function always fails
 ├─● dep: Dep! X.Xs
 ╰─✘ .failingFunction: Void X.Xs ERROR
   ! this function always fails
