@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
-		oteltest.WithTracing[*testing.T](
+		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
 				StartOptions: testutil.SpanOpts[*testing.T],
 			},
@@ -136,6 +136,10 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true},
 		// test that a module with a broken dependency surfaces the error
 		{Module: "./viztest/broken-dep", Function: "use-broken", Fail: true},
+
+		// test that module function call errors are properly stamped with their origin
+		{Function: "call-failing-dep", Fail: true},
+		{Function: "call-bubbling-dep", Fail: true},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
 		// engine. spent a day investigating, don't have a good explanation. it
