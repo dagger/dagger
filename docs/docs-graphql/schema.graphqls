@@ -118,9 +118,7 @@ type Cloud {
   """A unique identifier for this Cloud."""
   id: CloudID!
 
-  """
-  The trace URL for the current session
-  """
+  """The trace URL for the current session"""
   traceURL: String!
 }
 

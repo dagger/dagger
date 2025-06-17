@@ -666,7 +666,7 @@ func (r *Cloud) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The URL for the Dagger Cloud instance associated with the current trace
+// The trace URL for the current session
 func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 	if r.traceURL != nil {
 		return *r.traceURL, nil

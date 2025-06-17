@@ -1827,7 +1827,7 @@
 			"t": "M",
 			"n": "Dagger\\Cloud::traceURL",
 			"p": "Dagger/Cloud.html#method_traceURL",
-			"d": "<p>The URL for the Dagger Cloud instance associated with the current trace</p>"
+			"d": "<p>The trace URL for the current session</p>"
 		},
 		{
 			"t": "M",

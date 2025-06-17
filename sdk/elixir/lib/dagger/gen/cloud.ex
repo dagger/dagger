@@ -27,7 +27,7 @@ defmodule Dagger.Cloud do
   end
 
   @doc """
-  The URL for the Dagger Cloud instance associated with the current trace
+  The trace URL for the current session
   """
   @spec trace_url(t()) :: {:ok, String.t()} | {:error, term()}
   def trace_url(%__MODULE__{} = cloud) do

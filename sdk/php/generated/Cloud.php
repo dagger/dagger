@@ -23,7 +23,7 @@ class Cloud extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The URL for the Dagger Cloud instance associated with the current trace
+     * The trace URL for the current session
      */
     public function traceURL(): string
     {

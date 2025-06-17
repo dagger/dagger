@@ -1813,7 +1813,7 @@ impl Cloud {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The URL for the Dagger Cloud instance associated with the current trace
+    /// The trace URL for the current session
     pub async fn trace_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("traceURL");
         query.execute(self.graphql_client.clone()).await

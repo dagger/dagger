@@ -684,8 +684,7 @@ class Cloud(Type):
         return await _ctx.execute(CloudID)
 
     async def trace_url(self) -> str:
-        """The URL for the Dagger Cloud instance associated with the current
-        trace
+        """The trace URL for the current session
 
         Returns
         -------

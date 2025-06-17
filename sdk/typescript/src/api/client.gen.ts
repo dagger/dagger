@@ -1846,7 +1846,7 @@ export class Cloud extends BaseClient {
   }
 
   /**
-   * The URL for the Dagger Cloud instance associated with the current trace
+   * The trace URL for the current session
    */
   traceURL = async (): Promise<string> => {
     if (this._traceURL) {
