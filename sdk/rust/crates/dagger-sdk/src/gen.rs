@@ -7852,11 +7852,6 @@ pub struct ModuleConfigClient {
     pub graphql_client: DynGraphQLClient,
 }
 impl ModuleConfigClient {
-    /// If true, generate the client in developer mode.
-    pub async fn dev(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("dev");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The directory the client is generated in.
     pub async fn directory(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("directory");
@@ -7878,12 +7873,6 @@ pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceWithClientOpts {
-    /// Generate in developer mode
-    #[builder(setter(into, strip_option), default)]
-    pub dev: Option<bool>,
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -8060,7 +8049,6 @@ impl ModuleSource {
     ///
     /// * `generator` - The generator to use
     /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_client(
         &self,
         generator: impl Into<String>,
@@ -8069,31 +8057,6 @@ impl ModuleSource {
         let mut query = self.selection.select("withClient");
         query = query.arg("generator", generator.into());
         query = query.arg("outputDir", output_dir.into());
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Update the module source with a new client to generate.
-    ///
-    /// # Arguments
-    ///
-    /// * `generator` - The generator to use
-    /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_client_opts(
-        &self,
-        generator: impl Into<String>,
-        output_dir: impl Into<String>,
-        opts: ModuleSourceWithClientOpts,
-    ) -> ModuleSource {
-        let mut query = self.selection.select("withClient");
-        query = query.arg("generator", generator.into());
-        query = query.arg("outputDir", output_dir.into());
-        if let Some(dev) = opts.dev {
-            query = query.arg("dev", dev);
-        }
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

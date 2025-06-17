@@ -2918,9 +2918,6 @@ type Module {
 
 """The client generated for the module."""
 type ModuleConfigClient {
-  """If true, generate the client in developer mode."""
-  dev: Boolean
-
   """The directory the client is generated in."""
   directory: String!
 
@@ -3070,9 +3067,6 @@ type ModuleSource {
 
     """The output directory for the generated client."""
     outputDir: String!
-
-    """Generate in developer mode"""
-    dev: Boolean
   ): ModuleSource!
 
   """

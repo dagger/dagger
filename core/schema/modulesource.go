@@ -197,7 +197,6 @@ func (s *moduleSourceSchema) Install() {
 			Args(
 				dagql.Arg("generator").Doc(`The generator to use`),
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
-				dagql.Arg("dev").Doc(`Generate in developer mode`),
 			),
 
 		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
@@ -1907,17 +1906,11 @@ func (s *moduleSourceSchema) runClientGenerator(
 		}
 	}
 
-	dev := dagql.Boolean(false)
-	if clientGeneratorConfig.Dev != nil {
-		dev = dagql.Boolean(*clientGeneratorConfig.Dev)
-	}
-
 	generatedClientDir, err := clientGeneratorImpl.GenerateClient(
 		ctx,
 		source,
 		deps,
 		clientGeneratorConfig.Directory,
-		dev.Bool(),
 	)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
@@ -2260,7 +2253,6 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	args struct {
 		Generator dagql.String
 		OutputDir dagql.String
-		Dev       dagql.Optional[dagql.Boolean]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
@@ -2274,9 +2266,10 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		Directory: args.OutputDir.String(),
 	}
 
-	if args.Dev.Valid {
-		value := args.Dev.Value.Bool()
-		moduleConfigClient.Dev = &value
+	for _, client := range src.ConfigClients {
+		if filepath.Clean(client.Directory) == filepath.Clean(moduleConfigClient.Directory) {
+			return nil, fmt.Errorf("a client is already generated in the %s directory", client.Directory)
+		}
 	}
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)

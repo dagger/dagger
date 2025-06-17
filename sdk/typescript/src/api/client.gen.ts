@@ -1117,13 +1117,6 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceWithClientOpts = {
-  /**
-   * Generate in developer mode
-   */
-  dev?: boolean
-}
-
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -6829,7 +6822,6 @@ export class Module_ extends BaseClient {
  */
 export class ModuleConfigClient extends BaseClient {
   private readonly _id?: ModuleConfigClientID = undefined
-  private readonly _dev?: boolean = undefined
   private readonly _directory?: string = undefined
   private readonly _generator?: string = undefined
 
@@ -6839,14 +6831,12 @@ export class ModuleConfigClient extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ModuleConfigClientID,
-    _dev?: boolean,
     _directory?: string,
     _generator?: string,
   ) {
     super(ctx)
 
     this._id = _id
-    this._dev = _dev
     this._directory = _directory
     this._generator = _generator
   }
@@ -6862,21 +6852,6 @@ export class ModuleConfigClient extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleConfigClientID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * If true, generate the client in developer mode.
-   */
-  dev = async (): Promise<boolean> => {
-    if (this._dev) {
-      return this._dev
-    }
-
-    const ctx = this._ctx.select("dev")
-
-    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -7362,18 +7337,9 @@ export class ModuleSource extends BaseClient {
    * Update the module source with a new client to generate.
    * @param generator The generator to use
    * @param outputDir The output directory for the generated client.
-   * @param opts.dev Generate in developer mode
    */
-  withClient = (
-    generator: string,
-    outputDir: string,
-    opts?: ModuleSourceWithClientOpts,
-  ): ModuleSource => {
-    const ctx = this._ctx.select("withClient", {
-      generator,
-      outputDir,
-      ...opts,
-    })
+  withClient = (generator: string, outputDir: string): ModuleSource => {
+    const ctx = this._ctx.select("withClient", { generator, outputDir })
     return new ModuleSource(ctx)
   }
 

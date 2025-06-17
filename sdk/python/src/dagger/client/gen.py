@@ -7235,25 +7235,6 @@ class Module(Type):
 class ModuleConfigClient(Type):
     """The client generated for the module."""
 
-    async def dev(self) -> bool | None:
-        """If true, generate the client in developer mode.
-
-        Returns
-        -------
-        bool | None
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("dev", _args)
-        return await _ctx.execute(bool | None)
-
     async def directory(self) -> str:
         """The directory the client is generated in.
 
@@ -7810,13 +7791,7 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
-    def with_client(
-        self,
-        generator: str,
-        output_dir: str,
-        *,
-        dev: bool | None = None,
-    ) -> Self:
+    def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
 
         Parameters
@@ -7825,13 +7800,10 @@ class ModuleSource(Type):
             The generator to use
         output_dir:
             The output directory for the generated client.
-        dev:
-            Generate in developer mode
         """
         _args = [
             Arg("generator", generator),
             Arg("outputDir", output_dir),
-            Arg("dev", dev, None),
         ]
         _ctx = self._select("withClient", _args)
         return ModuleSource(_ctx)

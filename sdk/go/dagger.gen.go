@@ -7203,7 +7203,6 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 type ModuleConfigClient struct {
 	query *querybuilder.Selection
 
-	dev       *bool
 	directory *string
 	generator *string
 	id        *ModuleConfigClientID
@@ -7213,19 +7212,6 @@ func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *Module
 	return &ModuleConfigClient{
 		query: q,
 	}
-}
-
-// If true, generate the client in developer mode.
-func (r *ModuleConfigClient) Dev(ctx context.Context) (bool, error) {
-	if r.dev != nil {
-		return *r.dev, nil
-	}
-	q := r.query.Select("dev")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // The directory the client is generated in.
@@ -7733,21 +7719,9 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// ModuleSourceWithClientOpts contains options for ModuleSource.WithClient
-type ModuleSourceWithClientOpts struct {
-	// Generate in developer mode
-	Dev bool
-}
-
 // Update the module source with a new client to generate.
-func (r *ModuleSource) WithClient(generator string, outputDir string, opts ...ModuleSourceWithClientOpts) *ModuleSource {
+func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSource {
 	q := r.query.Select("withClient")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dev` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dev) {
-			q = q.Arg("dev", opts[i].Dev)
-		}
-	}
 	q = q.Arg("generator", generator)
 	q = q.Arg("outputDir", outputDir)
 
