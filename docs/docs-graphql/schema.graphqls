@@ -13,6 +13,9 @@ type Binding {
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
+  """Retrieve the binding value, as type Cloud"""
+  asCloud: Cloud!
+
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
 
@@ -109,6 +112,20 @@ type CacheVolume {
 The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 """
 scalar CacheVolumeID
+
+"""Dagger Cloud configuration and state"""
+type Cloud {
+  """A unique identifier for this Cloud."""
+  id: CloudID!
+
+  """The trace URL for the current session"""
+  traceURL: String!
+}
+
+"""
+The `CloudID` scalar type represents an identifier for an object of type Cloud.
+"""
+scalar CloudID
 
 """An OCI-compatible container, also known as a Docker container."""
 type Container {
@@ -1762,6 +1779,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type Cloud in the environment"""
+  withCloudInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Cloud value to assign to the binding"""
+    value: CloudID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Cloud output to be assigned in the environment"""
+  withCloudOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Container in the environment"""
   withContainerInput(
     """The name of the binding"""
@@ -3214,6 +3252,9 @@ type Query {
     key: String!
   ): CacheVolume!
 
+  """Dagger Cloud configuration and state"""
+  cloud: Cloud!
+
   """
   Creates a scratch container, with no image or metadata.
   
@@ -3364,6 +3405,9 @@ type Query {
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Cloud from its ID."""
+  loadCloudFromID(id: CloudID!): Cloud!
 
   """Load a Container from its ID."""
   loadContainerFromID(id: ContainerID!): Container!

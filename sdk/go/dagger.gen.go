@@ -130,6 +130,9 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
+// The `CloudID` scalar type represents an identifier for an object of type Cloud.
+type CloudID string
+
 // The `ContainerID` scalar type represents an identifier for an object of type Container.
 type ContainerID string
 
@@ -321,6 +324,15 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	q := r.query.Select("asCacheVolume")
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Cloud
+func (r *Binding) AsCloud() *Cloud {
+	q := r.query.Select("asCloud")
+
+	return &Cloud{
 		query: q,
 	}
 }
@@ -598,6 +610,73 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Dagger Cloud configuration and state
+type Cloud struct {
+	query *querybuilder.Selection
+
+	id       *CloudID
+	traceURL *string
+}
+
+func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
+	return &Cloud{
+		query: q,
+	}
+}
+
+// A unique identifier for this Cloud.
+func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response CloudID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Cloud) XXX_GraphQLType() string {
+	return "Cloud"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Cloud) XXX_GraphQLIDType() string {
+	return "CloudID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Cloud) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Cloud) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The trace URL for the current session
+func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
+	if r.traceURL != nil {
+		return *r.traceURL, nil
+	}
+	q := r.query.Select("traceURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // An OCI-compatible container, also known as a Docker container.
@@ -3903,6 +3982,30 @@ func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description 
 // Declare a desired CacheVolume output to be assigned in the environment
 func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Cloud in the environment
+func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCloudInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Cloud output to be assigned in the environment
+func (r *Env) WithCloudOutput(name string, description string) *Env {
+	q := r.query.Select("withCloudOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8048,6 +8151,15 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
+// Dagger Cloud configuration and state
+func (r *Client) Cloud() *Cloud {
+	q := r.query.Select("cloud")
+
+	return &Cloud{
+		query: q,
+	}
+}
+
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
 	// Platform to initialize the container with. Defaults to the native platform of the current engine
@@ -8387,6 +8499,16 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Cloud from its ID.
+func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
+	q := r.query.Select("loadCloudFromID")
+	q = q.Arg("id", id)
+
+	return &Cloud{
 		query: q,
 	}
 }

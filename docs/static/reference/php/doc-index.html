@@ -110,7 +110,9 @@
         <dl id="indexA"><dt><a href="Dagger/Attribute/Argument.html"><abbr title="Dagger\Attribute\Argument">Argument</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_asCacheVolume">
 <abbr title="Dagger\Binding">Binding</abbr>::asCacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type CacheVolume</p></dd><dt><a href="Dagger/Binding.html#method_asContainer">
+                    <dd><p>Retrieve the binding value, as type CacheVolume</p></dd><dt><a href="Dagger/Binding.html#method_asCloud">
+<abbr title="Dagger\Binding">Binding</abbr>::asCloud</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type Cloud</p></dd><dt><a href="Dagger/Binding.html#method_asContainer">
 <abbr title="Dagger\Binding">Binding</abbr>::asContainer</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Container</p></dd><dt><a href="Dagger/Binding.html#method_asDirectory">
 <abbr title="Dagger\Binding">Binding</abbr>::asDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -193,7 +195,9 @@
                     <dd><p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p></dd><dt><a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The root of the DAG.</p></dd><dt><a href="Dagger/Client.html#method_cacheVolume">
 <abbr title="Dagger\Client">Client</abbr>::cacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Constructs a cache volume for a given cache key.</p></dd><dt><a href="Dagger/Client.html#method_container">
+                    <dd><p>Constructs a cache volume for a given cache key.</p></dd><dt><a href="Dagger/Client.html#method_cloud">
+<abbr title="Dagger\Client">Client</abbr>::cloud</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Dagger Cloud configuration and state</p></dd><dt><a href="Dagger/Client.html#method_container">
 <abbr title="Dagger\Client">Client</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Creates a scratch container, with no image or metadata.</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
 <abbr title="Dagger\Client">Client</abbr>::currentFunctionCall</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -203,7 +207,9 @@
 <abbr title="Dagger\Client">Client</abbr>::currentTypeDefs</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The TypeDef representations of the objects currently being served in the session.</p></dd><dt>$<a href="Dagger/Client/AbstractClient.html#property_client">
 <abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr>#client</a> &mdash; <em>Property in class <a href="Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/Cloud.html"><abbr title="Dagger\Cloud">Cloud</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Dagger Cloud configuration and state</p></dd><dt><a href="Dagger/CloudId.html"><abbr title="Dagger\CloudId">CloudId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>CloudID</code> scalar type represents an identifier for an object of type Cloud.</p></dd><dt><a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt>$<a href="Dagger/Connection.html#property_client">
 <abbr title="Dagger\Connection">Connection</abbr>#client</a> &mdash; <em>Property in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Connection.html#method_createGraphQlClient">
@@ -483,7 +489,9 @@
                     <dd><p>A unique identifier for this CacheVolume.</p></dd><dt><a href="Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client/IdAble.html#method_id">
 <abbr title="Dagger\Client\IdAble">IdAble</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Container.html#method_id">
+                    <dd></dd><dt><a href="Dagger/Cloud.html#method_id">
+<abbr title="Dagger\Cloud">Cloud</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Cloud.html"><abbr title="Dagger\Cloud">Cloud</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this Cloud.</p></dd><dt><a href="Dagger/Container.html#method_id">
 <abbr title="Dagger\Container">Container</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Container.</p></dd><dt><a href="Dagger/Container.html#method_imageRef">
 <abbr title="Dagger\Container">Container</abbr>::imageRef</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -604,7 +612,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadBindingFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Binding from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadCacheVolumeFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadCacheVolumeFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a CacheVolume from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadContainerFromID">
+                    <dd><p>Load a CacheVolume from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadCloudFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadCloudFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a Cloud from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadContainerFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadContainerFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Container from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadCurrentModuleFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadCurrentModuleFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -949,7 +959,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::typeName</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>The binding type</p></dd><dt><a href="Dagger/Client.html#method_typeDef">
 <abbr title="Dagger\Client">Client</abbr>::typeDef</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Create a new TypeDef.</p></dd><dt><a href="Dagger/Container.html#method_terminal">
+                    <dd><p>Create a new TypeDef.</p></dd><dt><a href="Dagger/Cloud.html#method_traceURL">
+<abbr title="Dagger\Cloud">Cloud</abbr>::traceURL</a>() &mdash; <em>Method in class <a href="Dagger/Cloud.html"><abbr title="Dagger\Cloud">Cloud</abbr></a></em></dt>
+                    <dd><p>The trace URL for the current session</p></dd><dt><a href="Dagger/Container.html#method_terminal">
 <abbr title="Dagger\Container">Container</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).</p></dd><dt><a href="Dagger/Directory.html#method_terminal">
 <abbr title="Dagger\Directory">Directory</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -1120,7 +1132,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type CacheVolume in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeOutput">
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired CacheVolume output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withContainerInput">
+                    <dd><p>Declare a desired CacheVolume output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCloudInput">
+<abbr title="Dagger\Env">Env</abbr>::withCloudInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type Cloud in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCloudOutput">
+<abbr title="Dagger\Env">Env</abbr>::withCloudOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired Cloud output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withContainerInput">
 <abbr title="Dagger\Env">Env</abbr>::withContainerInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Container in the environment</p></dd><dt><a href="Dagger/Env.html#method_withContainerOutput">
 <abbr title="Dagger\Env">Env</abbr>::withContainerOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

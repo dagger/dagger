@@ -218,6 +218,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Cloud",
+			"p": "Dagger/Cloud.html",
+			"d": "<p>Dagger Cloud configuration and state</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CloudId",
+			"p": "Dagger/CloudId.html",
+			"d": "<p>The <code>CloudID</code> scalar type represents an identifier for an object of type Cloud.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Connection",
 			"p": "Dagger/Connection.html",
 			"d": null,
@@ -1175,6 +1195,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asCloud",
+			"p": "Dagger/Binding.html#method_asCloud",
+			"d": "<p>Retrieve the binding value, as type Cloud</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asContainer",
 			"p": "Dagger/Binding.html#method_asContainer",
 			"d": "<p>Retrieve the binding value, as type Container</p>"
@@ -1307,6 +1333,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::cloud",
+			"p": "Dagger/Client.html#method_cloud",
+			"d": "<p>Dagger Cloud configuration and state</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
@@ -1412,6 +1444,12 @@
 			"n": "Dagger\\Client::loadCacheVolumeFromID",
 			"p": "Dagger/Client.html#method_loadCacheVolumeFromID",
 			"d": "<p>Load a CacheVolume from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadCloudFromID",
+			"p": "Dagger/Client.html#method_loadCloudFromID",
+			"d": "<p>Load a Cloud from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1778,6 +1816,18 @@
 			"n": "Dagger\\Client\\QueryBuilder::setArgument",
 			"p": "Dagger/Client/QueryBuilder.html#method_setArgument",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Cloud::id",
+			"p": "Dagger/Cloud.html#method_id",
+			"d": "<p>A unique identifier for this Cloud.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Cloud::traceURL",
+			"p": "Dagger/Cloud.html#method_traceURL",
+			"d": "<p>The trace URL for the current session</p>"
 		},
 		{
 			"t": "M",
@@ -2660,6 +2710,18 @@
 			"n": "Dagger\\Env::withCacheVolumeOutput",
 			"p": "Dagger/Env.html#method_withCacheVolumeOutput",
 			"d": "<p>Declare a desired CacheVolume output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCloudInput",
+			"p": "Dagger/Env.html#method_withCloudInput",
+			"d": "<p>Create or update a binding of type Cloud in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCloudOutput",
+			"p": "Dagger/Env.html#method_withCloudOutput",
+			"d": "<p>Declare a desired Cloud output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

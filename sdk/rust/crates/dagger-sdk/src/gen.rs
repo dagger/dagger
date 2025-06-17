@@ -78,6 +78,39 @@ impl CacheVolumeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct CloudId(pub String);
+impl From<&str> for CloudId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for CloudId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<CloudId> for Cloud {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CloudId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CloudId> for CloudId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CloudId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<CloudId, DaggerError>(self) })
+    }
+}
+impl CloudId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(pub String);
 impl From<&str> for ContainerId {
     fn from(value: &str) -> Self {
@@ -1598,6 +1631,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Cloud
+    pub fn as_cloud(&self) -> Cloud {
+        let query = self.selection.select("asCloud");
+        Cloud {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Container
     pub fn as_container(&self) -> Container {
         let query = self.selection.select("asContainer");
@@ -1756,6 +1798,24 @@ impl CacheVolume {
     /// A unique identifier for this CacheVolume.
     pub async fn id(&self) -> Result<CacheVolumeId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Cloud {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Cloud {
+    /// A unique identifier for this Cloud.
+    pub async fn id(&self) -> Result<CloudId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The trace URL for the current session
+    pub async fn trace_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("traceURL");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -5432,6 +5492,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type Cloud in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Cloud value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_cloud_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CloudId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCloudInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Cloud output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_cloud_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCloudOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Container in the environment
     ///
     /// # Arguments
@@ -8343,6 +8452,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Dagger Cloud configuration and state
+    pub fn cloud(&self) -> Cloud {
+        let query = self.selection.select("cloud");
+        Cloud {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a scratch container, with no image or metadata.
     /// To pull an image, follow up with the "from" function.
     ///
@@ -8721,6 +8839,22 @@ impl Query {
             }),
         );
         CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Cloud from its ID.
+    pub fn load_cloud_from_id(&self, id: impl IntoID<CloudId>) -> Cloud {
+        let mut query = self.selection.select("loadCloudFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Cloud {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

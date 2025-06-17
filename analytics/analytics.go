@@ -80,18 +80,12 @@ func DoNotTrack() bool {
 type Config struct {
 	DoNotTrack bool
 	Labels     telemetry.Labels
-	CloudToken string
 }
 
 func DefaultConfig(labels telemetry.Labels) Config {
 	cfg := Config{
 		DoNotTrack: DoNotTrack(),
-		CloudToken: os.Getenv("DAGGER_CLOUD_TOKEN"),
 		Labels:     labels,
-	}
-	// Backward compatibility with the old environment variable.
-	if cfg.CloudToken == "" {
-		cfg.CloudToken = os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN")
 	}
 	return cfg
 }
@@ -202,9 +196,6 @@ func (t *CloudTracker) send() {
 	if err != nil {
 		slog.Debug("analytics: new request failed", "error", err)
 		return
-	}
-	if t.cfg.CloudToken != "" {
-		req.SetBasicAuth(t.cfg.CloudToken, "")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

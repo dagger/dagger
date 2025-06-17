@@ -135,6 +135,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type Cloud in the environment
+  """
+  @spec with_cloud_input(t(), String.t(), Dagger.Cloud.t(), String.t()) :: Dagger.Env.t()
+  def with_cloud_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCloudInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Cloud output to be assigned in the environment
+  """
+  @spec with_cloud_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_cloud_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCloudOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Container in the environment
   """
   @spec with_container_input(t(), String.t(), Dagger.Container.t(), String.t()) :: Dagger.Env.t()
