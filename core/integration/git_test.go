@@ -549,6 +549,70 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestGitHTTPAuthUsername(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Test with custom username support
+	gitDaemonCustom, repoURLCustom := gitServiceHTTPWithUsernameAuth(ctx, t, c,
+		c.Directory().WithNewFile("README.md", "Hello, custom user!"),
+		"main",
+		"customuser",
+		c.SetSecret("custom-pass", "secretpass"))
+
+	t.Run("custom username with token", func(ctx context.Context, t *testctx.T) {
+		// Test with a non-interactive git command to avoid credential prompts
+		git := c.Git(repoURLCustom, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemonCustom,
+			HTTPAuthToken:           c.SetSecret("custom-token", "secretpass"),
+			HTTPAuthUsername:        "customuser",
+		})
+
+		// Force non-interactive mode
+		dt, err := git.
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, custom user!", dt)
+	})
+
+	t.Run("wrong username with correct token", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git(repoURLCustom, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemonCustom,
+			HTTPAuthToken:           c.SetSecret("wrong-token", "secretpass"),
+			HTTPAuthUsername:        "wronguser",
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "Authentication failed")
+	})
+
+	// Test default username behavior
+	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c,
+		c.Directory().WithNewFile("README.md", "Hello, default user!"),
+		"main",
+		c.SetSecret("default-pass", "foobar"))
+
+	t.Run("default username (x-access-token)", func(ctx context.Context, t *testctx.T) {
+		dt, err := c.Git(repoURLDefault, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemonDefault,
+			HTTPAuthToken:           c.SetSecret("default-token", "foobar"),
+			// No HTTPAuthUsername specified - should use default
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, default user!", dt)
+	})
+
+}
+
 func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
 	// these were deprecated in dagger/dagger#10248
 
