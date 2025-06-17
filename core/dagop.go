@@ -310,6 +310,7 @@ func NewContainerDagOp(
 	id *call.ID,
 	ctr *Container,
 	extraInputs []llb.State,
+	skipMeta bool,
 ) (*Container, error) {
 	mounts, inputs, outputCount, err := getAllContainerMounts(ctr)
 	if err != nil {
@@ -338,7 +339,7 @@ func NewContainerDagOp(
 	}
 
 	ctr = ctr.Clone()
-	err = dagop.setAllContainerMounts(ctx, ctr, sts)
+	err = dagop.setAllContainerMounts(ctx, ctr, sts, skipMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +599,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 
 // setAllContainerMounts is the reverse of getAllContainerMounts, and rewrites
 // the container mounts to the given states.
-func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *Container, outputs []llb.State) error {
+func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *Container, outputs []llb.State, skipMeta bool) error {
 	for mountIdx, mount := range op.Mounts {
 		if mount.Output == pb.SkipOutput {
 			continue
@@ -613,7 +614,9 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 		case 0:
 			container.FS = def.ToPB()
 		case 1:
-			container.Meta = def.ToPB()
+			if !skipMeta {
+				container.Meta = def.ToPB()
+			}
 		default:
 			container.Mounts[mountIdx-2].Source = def.ToPB()
 		}

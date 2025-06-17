@@ -330,7 +330,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withFile", DagOpContainerWrapper(s.srv, s.withFile)).
+		dagql.NodeFunc("withFile", DagOpContainerWrapper(s.srv, s.withFile, true)).
 			Doc(`Return a container snapshot with a file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "/path/to/new-file.txt"`),
@@ -463,7 +463,7 @@ func (s *containerSchema) Install() {
 				),
 			),
 
-		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
+		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink, true)).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
