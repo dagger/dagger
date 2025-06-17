@@ -144,7 +144,7 @@ func (g *GoGenerator) daggerPackageReplacement() (string, bool, error) {
 		return "", false, fmt.Errorf("failed to read go.mod: %w", err)
 	}
 
-	goMod, err := modfile.ParseLax("go.mod", goModFile, nil)
+	goMod, err := modfile.Parse("go.mod", goModFile, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to parse go.mod: %w", err)
 	}
