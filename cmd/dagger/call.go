@@ -25,11 +25,6 @@ func isPrintTraceLinkEnabled(annotations map[string]string) bool {
 	return false
 }
 
-var funcCmds = []*FuncCommand{
-	callModCmd,
-	callCoreCmd,
-}
-
 var callCoreCmd = &FuncCommand{
 	Name:              "core [options]",
 	Short:             "Call a core function",
