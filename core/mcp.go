@@ -467,7 +467,13 @@ func (m *MCP) selectionToToolResult(
 
 	// Make the DagQL call.
 	var val dagql.Typed
-	if err := srv.Select(ctx, target, &val, sels...); err != nil {
+	if err := srv.Select(
+		// reveal cache hits, even if we've already seen them within the session
+		dagql.WithRepeatedTelemetry(ctx),
+		target,
+		&val,
+		sels...,
+	); err != nil {
 		return "", fmt.Errorf("failed to sync: %w", err)
 	}
 
