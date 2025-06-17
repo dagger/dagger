@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/dagger/dagger/modules/golangci/internal/dagger"
+	"github.com/dagger/dagger/modules/golangci/internal/telemetry"
 )
 
 const (
@@ -30,12 +30,16 @@ func (gl Golangci) Lint(
 	// A cache volume to use for go build
 	// +optional
 	goBuildCache *dagger.CacheVolume,
+	// A cache volume to use for golangci-lint
+	// +optional
+	goLintCache *dagger.CacheVolume,
 ) LintRun {
 	return LintRun{
 		Source:       source,
 		Path:         path,
 		GoModCache:   goModCache,
 		GoBuildCache: goBuildCache,
+		GoLintCache:  goLintCache,
 	}
 }
 
@@ -49,6 +53,8 @@ type LintRun struct {
 	GoModCache *dagger.CacheVolume
 	// +private
 	GoBuildCache *dagger.CacheVolume
+	// +private
+	GoLintCache *dagger.CacheVolume
 }
 
 func (run LintRun) Issues(ctx context.Context) ([]*Issue, error) {
@@ -64,22 +70,20 @@ func (run LintRun) Assert(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var (
-		errCount  int
-		summaries []string
-	)
+	var errCount int
+
+	stdio := telemetry.SpanStdio(ctx, "")
+	defer stdio.Close()
+
 	for _, iss := range issues {
 		if !iss.IsError() {
 			continue
 		}
 		errCount += 1
-		summaries = append(summaries, iss.Summary())
+		fmt.Fprintln(stdio.Stderr, iss.Summary())
 	}
 	if errCount > 0 {
-		return fmt.Errorf("linting failed with %d issues:\n%s",
-			errCount,
-			strings.Join(summaries, "\n"),
-		)
+		return fmt.Errorf("linting failed with %d issues", errCount)
 	}
 	return nil
 }
@@ -139,6 +143,10 @@ func (run LintRun) Report() *dagger.File {
 	if goBuildCache == nil {
 		goBuildCache = dag.CacheVolume("go-build")
 	}
+	goLintCache := run.GoLintCache
+	if goLintCache == nil {
+		goLintCache = dag.CacheVolume("golangci-lint")
+	}
 
 	return dag.
 		Container().
@@ -147,6 +155,7 @@ func (run LintRun) Report() *dagger.File {
 		WithMountedDirectory("/src", run.Source).
 		WithMountedCache("/go/pkg/mod", goModCache).
 		WithMountedCache("/root/.cache/go-build", goBuildCache).
+		WithMountedCache("/root/.cache/golangci-lint", goLintCache).
 		WithWorkdir(path.Join("/src", run.Path)).
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
