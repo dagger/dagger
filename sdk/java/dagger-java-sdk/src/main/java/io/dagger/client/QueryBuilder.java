@@ -107,10 +107,10 @@ class QueryBuilder {
     String errorType = (String) error.getExtensions().getOrDefault(TYPE_KEY, null);
 
     if (TYPE_EXEC_ERROR_VALUE.equalsIgnoreCase(errorType)) {
-      throw new DaggerExecException(response.getErrors().toArray(new GraphQLError[0]));
+      throw new DaggerExecException(response.getErrors().get(0));
     }
 
-    throw new DaggerQueryException(response.getErrors().toArray(new GraphQLError[0]));
+    throw new DaggerQueryException(response.getErrors().get(0));
   }
 
   Document buildDocument() throws ExecutionException, InterruptedException, DaggerQueryException {

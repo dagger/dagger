@@ -13,6 +13,7 @@ import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonValue;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
@@ -28,17 +29,14 @@ public class DaggerExceptionUtils {
     return error.getExtensions().getOrDefault(key, null);
   }
 
-  public static String getPath(GraphQLError error) {
-    return StringUtils.join(error.getPath(), ".");
+  public static List<String> getPath(GraphQLError error) {
+    return Arrays.stream(error.getPath()).map(Object::toString).toList();
   }
 
-  public static String getCmd(GraphQLError error) {
+  public static List<String> getCmd(GraphQLError error) {
     Object cmdList = getExtensionValueByKey(error, CMD_KEY);
     if (cmdList != null && cmdList instanceof JsonArray array) {
-      return array.stream()
-          .map(JsonValue::toString)
-          .collect(Collectors.joining(" "))
-          .replace("\"", "");
+      return array.stream().map(JsonValue::toString).toList();
     }
     return null;
   }
@@ -47,8 +45,8 @@ public class DaggerExceptionUtils {
     return String.valueOf(getExtensionValueByKey(error, TYPE_KEY));
   }
 
-  public static String getExitCode(GraphQLError error) {
-    return String.valueOf(getExtensionValueByKey(error, EXIT_CODE_KEY));
+  public static Integer getExitCode(GraphQLError error) {
+    return Integer.valueOf(String.valueOf(getExtensionValueByKey(error, EXIT_CODE_KEY)));
   }
 
   public static String getStdOut(GraphQLError error) {
@@ -61,7 +59,10 @@ public class DaggerExceptionUtils {
 
   public static String toSimpleMessage(GraphQLError... errors) {
     return Arrays.stream(errors)
-        .map(e -> String.format(SIMPLE_MESSAGE, e.getMessage(), getPath(e), getType(e)))
+        .map(
+            e ->
+                String.format(
+                    SIMPLE_MESSAGE, e.getMessage(), StringUtils.join(getPath(e), "."), getType(e)))
         .collect(Collectors.joining("\n"));
   }
 
@@ -72,10 +73,10 @@ public class DaggerExceptionUtils {
                 String.format(
                     ENHANCED_MESSAGE,
                     e.getMessage(),
-                    getPath(e),
+                    StringUtils.join(getPath(e), "."),
                     getType(e),
                     getExitCode(e),
-                    getCmd(e)))
+                    StringUtils.join(getCmd(e), ",")))
         .collect(Collectors.joining("\n"));
   }
 
@@ -86,10 +87,10 @@ public class DaggerExceptionUtils {
                 String.format(
                     FULL_MESSAGE,
                     e.getMessage(),
-                    getPath(e),
+                    StringUtils.join(getPath(e), "."),
                     getType(e),
                     getExitCode(e),
-                    getCmd(e),
+                    StringUtils.join(getCmd(e), ","),
                     getExtensionValueByKey(e, STDERR_KEY)))
         .collect(Collectors.joining("\n"));
   }

@@ -555,10 +555,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .nextControlFlow("catch ($T e)", DaggerExecException.class)
                               .addStatement(
                                   "fnCall.returnError($T.dag().error(e.getMessage())"
-                                      + ".withValue(\"exitCode\", $T.toJSON(e.getExitCode()))"
-                                      + ".withValue(\"path\", $T.toJSON(e.getPath()))"
+                                      + ".withValue(\"stdout\", $T.toJSON(e.getStdout()))"
+                                      + ".withValue(\"stderr\", $T.toJSON(e.getStdErr()))"
                                       + ".withValue(\"cmd\", $T.toJSON(e.getCmd()))"
-                                      + ".withValue(\"stderr\", $T.toJSON(e.getStdErr())))",
+                                      + ".withValue(\"exitCode\", $T.toJSON(e.getExitCode()))"
+                                      + ".withValue(\"path\", $T.toJSON(e.getPath())))",
                                   Dagger.class,
                                   JsonConverter.class,
                                   JsonConverter.class,

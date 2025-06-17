@@ -68,7 +68,7 @@ public class Entrypoint {
       fnCall.returnError(dag().error(e.getTargetException().getMessage()));
       throw e;
     } catch (DaggerExecException e) {
-      fnCall.returnError(dag().error(e.getMessage()).withValue("exitCode", JsonConverter.toJSON(e.getExitCode())).withValue("path", JsonConverter.toJSON(e.getPath())).withValue("cmd", JsonConverter.toJSON(e.getCmd())).withValue("stderr", JsonConverter.toJSON(e.getStdErr())));
+      fnCall.returnError(dag().error(e.getMessage()).withValue("stderr", JsonConverter.toJSON(e.getStdOut())).withValue("stderr", JsonConverter.toJSON(e.getStdErr())).withValue("cmd", JsonConverter.toJSON(e.getGetCmd())).withValue("exitCode", JsonConverter.toJSON(e.getExitCode())).withValue("path", JsonConverter.toJSON(e.getPath())));
       throw e;
     } catch (Exception e) {
       fnCall.returnError(dag().error(e.getMessage()));

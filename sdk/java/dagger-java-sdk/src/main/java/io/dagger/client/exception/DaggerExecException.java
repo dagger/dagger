@@ -1,10 +1,7 @@
 package io.dagger.client.exception;
 
 import io.smallrye.graphql.client.GraphQLError;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class DaggerExecException extends DaggerQueryException {
 
@@ -12,42 +9,27 @@ public class DaggerExecException extends DaggerQueryException {
     super();
   }
 
-  public DaggerExecException(GraphQLError... errors) {
-    super(errors);
+  public DaggerExecException(GraphQLError error) {
+    super(error);
   }
 
-  public List<String> getExitCode() {
-    return Arrays.asList(getErrors()).stream()
-        .map(DaggerExceptionUtils::getExitCode)
-        .filter(Objects::nonNull)
-        .toList();
+  public Integer getExitCode() {
+    return DaggerExceptionUtils.getExitCode(getError());
   }
 
   public List<String> getPath() {
-    return Arrays.asList(getErrors()).stream()
-        .map(DaggerExceptionUtils::getPath)
-        .filter(Objects::nonNull)
-        .toList();
+    return DaggerExceptionUtils.getPath(getError());
   }
 
   public List<String> getCmd() {
-    return Arrays.asList(getErrors()).stream()
-        .map(DaggerExceptionUtils::getCmd)
-        .filter(Objects::nonNull)
-        .toList();
+    return DaggerExceptionUtils.getCmd(getError());
   }
 
   public String getStdOut() {
-    return Arrays.asList(getErrors()).stream()
-        .map(DaggerExceptionUtils::getStdOut)
-        .collect(Collectors.joining(" "))
-        .replace("\"", "");
+    return DaggerExceptionUtils.getStdOut(getError());
   }
 
   public String getStdErr() {
-    return Arrays.asList(getErrors()).stream()
-        .map(DaggerExceptionUtils::getStdErr)
-        .collect(Collectors.joining(" "))
-        .replace("\"", "");
+    return DaggerExceptionUtils.getStdErr(getError());
   }
 }
