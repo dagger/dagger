@@ -4,7 +4,9 @@ import inspect
 import json
 import logging
 import os
+import sys
 import textwrap
+import traceback
 import typing
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
@@ -25,6 +27,7 @@ from dagger.mod._exceptions import (
     FunctionError,
     InvalidInputError,
     InvalidResultError,
+    ModuleError,
     ObjectNotFoundError,
     RegistrationError,
     transform_error,
@@ -67,6 +70,9 @@ class Module:
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
+        # Escape hatch if there's too much noise from showing stack traces
+        # from exceptions raised in functions by default. Not documented
+        # intentionally for now.
         self.log_exceptions = True
 
     @property
@@ -362,17 +368,35 @@ class Module:
     async def call(self, func: Func[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         """Call a function and return its result."""
         try:
-            result = await await_maybe(func(*args, **kwargs))
+            # TODO: check from signature if it's an async function warn user if
+            # returning a corouting from a sync function.
+            return await await_maybe(func(*args, **kwargs))
+        except FunctionError:
+            # Escape hatch to fully control logging from user code.
+            raise
+        except dagger.QueryError as e:
+            # Don't show full stack trace for API errors because it's too noisy.
+            # Just return an error for the exception so it shows which part of
+            # user code triggered it.
+            # Just pass through `dag.error()` so they're properly propagated.
+            tb = e.__traceback__
+            f = None
+            if tb:
+                tb = tb.tb_next
+            traceback.print_exception(
+                type(e),
+                value=e,
+                tb=tb,
+                limit=-2,
+                file=sys.stderr,
+            )
+            raise FunctionError(exc=e).with_log() from None
         except Exception as e:
+            # Escape hatch if too noisy.
             if self.log_exceptions:
+                # Logging the exception will show the full stack trace on stderr.
                 logger.exception("Unhandled exception while executing function")
             raise FunctionError(exc=e) from e
-
-        if inspect.iscoroutine(result):
-            msg = "Function returned a coroutine. Did you forget to add async/await?"
-            raise BadUsageError(msg)
-
-        return result
 
     async def structure(self, obj: Any, cl: type[T]) -> T:
         """Convert a primitive value to the expected type."""

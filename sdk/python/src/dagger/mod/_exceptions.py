@@ -29,7 +29,7 @@ class ModuleError(DaggerError):
         notes: tuple[str, ...] = (),
     ):
         if exc is not None and msg == "":
-            msg = f"{type(exc).__name__}: {exc}"
+            msg = str(exc)
         super().__init__(msg)
         self.original = exc
         self.extra = extra
@@ -109,6 +109,15 @@ def transform_error(
     return msg
 
 
+def _safe_json_dumps(value: typing.Any) -> str:
+    """Safely serialize value to JSON, falling back to repr() if not serializable."""
+    try:
+        return json.dumps(value)
+    except (TypeError, ValueError):
+        # Fall back to string representation for non-serializable values
+        return json.dumps(repr(value))
+
+
 async def handle_error(exc: Exception):
     """Convert a Python exception into a `dagger.Error`."""
     attributes: dict[str, typing.Any] = _exception_attributes(exc)
@@ -125,7 +134,7 @@ async def handle_error(exc: Exception):
 
     dag_err = dag.error(str(exc))
     for key, value in attributes.items():
-        dag_err.with_value(key, dagger.JSON(json.dumps(value)))
+        dag_err.with_value(key, dagger.JSON(_safe_json_dumps(value)))
 
     await dag.current_function_call().return_error(dag_err)
 
