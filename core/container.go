@@ -669,7 +669,7 @@ func (container *Container) WithFile(ctx context.Context, srv *dagql.Server, des
 			return nil, err
 		}
 
-		return dir.WithFileDagOp(ctx, srv, file, src, permissions, ownership)
+		return dir.WithFile(ctx, srv, file, src, permissions, ownership)
 	})
 }
 
@@ -688,7 +688,7 @@ func (container *Container) WithoutPaths(ctx context.Context, destPaths ...strin
 	return container, nil
 }
 
-func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
+func (container *Container) WithFiles(ctx context.Context, srv *dagql.Server, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(filepath.Clean(destDir))
@@ -698,7 +698,7 @@ func (container *Container) WithFiles(ctx context.Context, destDir string, src [
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, file, src, permissions, ownership)
+		return dir.WithFiles(ctx, srv, file, src, permissions, ownership)
 	})
 }
 

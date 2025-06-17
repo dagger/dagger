@@ -359,7 +359,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withFiles", s.withFiles).
+		dagql.NodeFunc("withFiles", DagOpContainerWrapper(s.srv, s.withFiles, true)).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
@@ -1636,24 +1636,30 @@ type containerWithFilesArgs struct {
 	WithFilesArgs
 	Owner  string `default:""`
 	Expand bool   `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withFiles(ctx context.Context, parent *core.Container, args containerWithFilesArgs) (*core.Container, error) {
+func (s *containerSchema) withFiles(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithFilesArgs) (inst dagql.Instance[*core.Container], err error) {
 	files := []*core.File{}
 	for _, id := range args.Sources {
 		file, err := id.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		files = append(files, file.Self)
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFiles(ctx, path, files, args.Permissions, args.Owner)
+	ctr, err := parent.Self.WithFiles(ctx, s.srv, path, files, args.Permissions, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithoutDirectoryArgs struct {

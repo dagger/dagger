@@ -531,43 +531,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 	return dir, nil
 }
 
-func (dir *Directory) WithFile(
-	ctx context.Context,
-	destPath string,
-	src *File,
-	permissions *int,
-	owner *Ownership,
-) (*Directory, error) {
-	dir = dir.Clone()
-
-	destSt, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	srcSt, err := src.State()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:         destSt,
-		DestDir:      path.Join(dir.Dir, path.Dir(destPath)),
-		DestFileName: path.Base(destPath),
-		Src:          srcSt,
-		SrcDir:       path.Dir(src.File),
-		SrcFileName:  path.Base(src.File),
-		Permissions:  permissions,
-		Owner:        owner,
-	})); err != nil {
-		return nil, err
-	}
-
-	dir.Services.Merge(src.Services)
-
-	return dir, nil
-}
-
 func copyFile(srcPath, dstPath string) (err error) {
 	srcStat, err := os.Stat(srcPath)
 	if err != nil {
@@ -619,8 +582,29 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
-// TODO delete old WithFile and use this instead
-func (dir *Directory) WithFileDagOp(
+type hack interface {
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
+
+func getRefOrEvaluate(ctx context.Context, ref bkcache.ImmutableRef, t hack) (bkcache.ImmutableRef, error) {
+	if ref != nil {
+		return ref, nil
+	}
+	res, err := t.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cacheRef, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	if cacheRef == nil {
+		return nil, nil
+	}
+	return cacheRef.CacheRef(ctx)
+}
+
+func (dir *Directory) WithFile(
 	ctx context.Context,
 	srv *dagql.Server,
 	destPath string,
@@ -630,40 +614,14 @@ func (dir *Directory) WithFileDagOp(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
-	srcRes, err := src.Evaluate(ctx)
+	srcCacheRef, err := getRefOrEvaluate(ctx, src.Result, src)
 	if err != nil {
 		return nil, err
 	}
 
-	dirRes, err := dir.Evaluate(ctx)
+	dirCacheRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
-	}
-
-	srcRef, err := srcRes.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	dirRef, err := dirRes.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var srcCacheRef bkcache.ImmutableRef
-	if srcRef != nil {
-		srcCacheRef, err = srcRef.CacheRef(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var dirCacheRef bkcache.ImmutableRef
-	if dirRef != nil {
-		dirCacheRef, err = dirRef.CacheRef(ctx)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -731,6 +689,7 @@ func (dir *Directory) WithFileDagOp(
 // TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
 func (dir *Directory) WithFiles(
 	ctx context.Context,
+	srv *dagql.Server,
 	destDir string,
 	src []*File,
 	permissions *int,
@@ -742,6 +701,7 @@ func (dir *Directory) WithFiles(
 	for _, file := range src {
 		dir, err = dir.WithFile(
 			ctx,
+			srv,
 			path.Join(destDir, path.Base(file.File)),
 			file,
 			permissions,
@@ -994,22 +954,9 @@ func (dir *Directory) Root() (*Directory, error) {
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
 	dir = dir.Clone()
 
-	res, err := dir.Evaluate(ctx)
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var parentRef bkcache.ImmutableRef
-	if ref != nil {
-		parentRef, err = ref.CacheRef(ctx)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	query, err := CurrentQuery(ctx)
