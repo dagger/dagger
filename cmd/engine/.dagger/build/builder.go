@@ -129,6 +129,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			Alpine(dagger.AlpineOpts{
 				Branch: consts.AlpineVersion,
 				Packages: []string{
+					"ca-certificates",
 					// for Buildkit
 					"git", "openssh-client", "pigz", "xz",
 					// for CNI
@@ -139,15 +140,15 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				Arch: build.platformSpec.Architecture,
 			}).
 			Container().
-			WithExec([]string{"sh", "-c", `
-				set -e
-				ln -s /sbin/iptables-legacy /usr/sbin/iptables
-				ln -s /sbin/iptables-legacy-save /usr/sbin/iptables-save
-				ln -s /sbin/iptables-legacy-restore /usr/sbin/iptables-restore
-				ln -s /sbin/ip6tables-legacy /usr/sbin/ip6tables
-				ln -s /sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save
-				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
-			`})
+			WithExec([]string{"sh", "-c", strings.Join([]string{
+				"mkdir -p /usr/local/sbin",
+				"ln -s /usr/sbin/iptables-legacy /usr/local/sbin/iptables",
+				"ln -s /usr/sbin/iptables-legacy-save /usr/local/sbin/iptables-save",
+				"ln -s /usr/sbin/iptables-legacy-restore /usr/local/sbin/iptables-restore",
+				"ln -s /usr/sbin/ip6tables-legacy /usr/local/sbin/ip6tables",
+				"ln -s /usr/sbin/ip6tables-legacy-save /usr/local/sbin/ip6tables-save",
+				"ln -s /usr/sbin/ip6tables-legacy-restore /usr/local/sbin/ip6tables-restore",
+			}, " && ")})
 	case "ubuntu":
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From("ubuntu:"+consts.UbuntuVersion).
@@ -348,7 +349,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 		ctr = dag.
 			Alpine(dagger.AlpineOpts{
 				Branch:   consts.AlpineVersion,
-				Packages: []string{"build-base", "go", "git"},
+				Packages: []string{"build-base", "go~" + consts.GolangVersion, "git"},
 			}).
 			Container()
 	case "ubuntu":
@@ -362,7 +363,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 		ctr = dag.
 			Wolfi().
 			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"build-base", "go", "git",
+				"build-base", "go~" + consts.GolangVersion, "git",
 			}})
 	}
 

@@ -14,15 +14,6 @@ namespace Dagger;
 class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * If true, generate the client in developer mode.
-     */
-    public function dev(): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dev');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'dev');
-    }
-
-    /**
      * The directory the client is generated in.
      */
     public function directory(): string

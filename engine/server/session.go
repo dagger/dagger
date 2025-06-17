@@ -266,7 +266,6 @@ func (srv *Server) initializeDaggerSession(
 				runtime.GOARCH,
 				srv.SolverCache.ID() != cachemanager.LocalCacheID,
 			),
-		CloudToken: clientMetadata.CloudToken,
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
 

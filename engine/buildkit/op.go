@@ -107,8 +107,20 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 	return cm, ok, err
 }
 
+type bkSessionGroupContextKey struct{}
+
+func ctxWithBkSessionGroup(ctx context.Context, g bksession.Group) context.Context {
+	return context.WithValue(ctx, bkSessionGroupContextKey{}, g)
+}
+
+func CurrentBuildkitSessionGroup(ctx context.Context) (bksession.Group, bool) {
+	g, ok := ctx.Value(bkSessionGroupContextKey{}).(bksession.Group)
+	return g, ok
+}
+
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
 	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
+	ctx = ctxWithBkSessionGroup(ctx, g)
 
 	server, err := op.server.DagqlServer(ctx)
 	if err != nil {

@@ -905,6 +905,8 @@ type containerWithSymlinkArgs struct {
 	Target   string
 	LinkName string
 	Expand   bool `default:"false"`
+
+	ContainerDagOpInternalArgs
 }
 
 func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
@@ -1816,6 +1818,8 @@ type containerAsTarballArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
+
+	FSDagOpInternalArgs
 }
 
 func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container], _ containerAsTarballArgs) (string, error) {
@@ -1907,20 +1911,24 @@ func (s *containerSchema) asTarball(
 		return inst, errors.New("no containers to export")
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return inst, fmt.Errorf("no buildkit session group found")
+	}
+
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
 		return inst, err
 	}
 	defer detach()
 
-	op, ok := core.DagOpFromContext[core.FSDagOp](ctx)
-	if !ok {
-		return inst, fmt.Errorf("no dagop")
-	}
-	bkref, err := query.BuildkitCache().New(ctx, nil, op.Group(),
+	filePath := args.DagOpPath
+
+	bkref, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(op.Name()))
+		bkcache.WithDescription("dagop.fs container.asTarball "+filePath),
+	)
 	if err != nil {
 		return inst, err
 	}
@@ -1929,8 +1937,8 @@ func (s *containerSchema) asTarball(
 			bkref.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	err = core.MountRef(ctx, bkref, op.Group(), func(out string) error {
-		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
+	err = core.MountRef(ctx, bkref, bkSessionGroup, func(out string) error {
+		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, filePath), inputByPlatform, opts)
 		if err != nil {
 			return fmt.Errorf("container image to tarball file conversion failed: %w", err)
 		}
@@ -1940,7 +1948,7 @@ func (s *containerSchema) asTarball(
 		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
 
-	f := core.NewFile(nil, op.Path, query.Platform(), nil)
+	f := core.NewFile(nil, filePath, query.Platform(), nil)
 	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return inst, err

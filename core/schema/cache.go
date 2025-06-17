@@ -24,7 +24,6 @@ func (s *cacheSchema) Install() {
 			Doc("Constructs a cache volume for a given cache key.").
 			Args(
 				dagql.Arg("key").Doc(`A string identifier to target this cache volume (e.g., "modules-cache").`),
-				dagql.Arg("namespace"),
 			),
 	}.Install(s.srv)
 
@@ -37,7 +36,7 @@ func (s *cacheSchema) Dependencies() []SchemaResolvers {
 
 type cacheArgs struct {
 	Key       string
-	Namespace string `default:""`
+	Namespace string `internal:"true" default:""`
 }
 
 func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {

@@ -47,9 +47,15 @@ func Close() error {
 }
 
 // Constructs a cache volume for a given cache key.
-func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
+func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
-	return client.CacheVolume(key, opts...)
+	return client.CacheVolume(key)
+}
+
+// Dagger Cloud configuration and state
+func Cloud() *dagger.Cloud {
+	client := initClient()
+	return client.Cloud()
 }
 
 // Creates a scratch container, with no image or metadata.
@@ -166,6 +172,12 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Cloud from its ID.
+func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
+	client := initClient()
+	return client.LoadCloudFromID(id)
 }
 
 // Load a Container from its ID.

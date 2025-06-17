@@ -21,6 +21,11 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
+class CloudID(Scalar):
+    """The `CloudID` scalar type represents an identifier for an object of
+    type Cloud."""
+
+
 class ContainerID(Scalar):
     """The `ContainerID` scalar type represents an identifier for an
     object of type Container."""
@@ -409,6 +414,12 @@ class Binding(Type):
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
 
+    def as_cloud(self) -> "Cloud":
+        """Retrieve the binding value, as type Cloud"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCloud", _args)
+        return Cloud(_ctx)
+
     def as_container(self) -> "Container":
         """Retrieve the binding value, as type Container"""
         _args: list[Arg] = []
@@ -642,6 +653,56 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
+
+
+@typecheck
+class Cloud(Type):
+    """Dagger Cloud configuration and state"""
+
+    async def id(self) -> CloudID:
+        """A unique identifier for this Cloud.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        CloudID
+            The `CloudID` scalar type represents an identifier for an object
+            of type Cloud.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(CloudID)
+
+    async def trace_url(self) -> str:
+        """The trace URL for the current session
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("traceURL", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -3983,6 +4044,48 @@ class Env(Type):
         _ctx = self._select("withCacheVolumeOutput", _args)
         return Env(_ctx)
 
+    def with_cloud_input(
+        self,
+        name: str,
+        value: Cloud,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Cloud in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Cloud value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCloudInput", _args)
+        return Env(_ctx)
+
+    def with_cloud_output(self, name: str, description: str) -> Self:
+        """Declare a desired Cloud output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCloudOutput", _args)
+        return Env(_ctx)
+
     def with_container_input(
         self,
         name: str,
@@ -7132,25 +7235,6 @@ class Module(Type):
 class ModuleConfigClient(Type):
     """The client generated for the module."""
 
-    async def dev(self) -> bool | None:
-        """If true, generate the client in developer mode.
-
-        Returns
-        -------
-        bool | None
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("dev", _args)
-        return await _ctx.execute(bool | None)
-
     async def directory(self) -> str:
         """The directory the client is generated in.
 
@@ -7707,13 +7791,7 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
-    def with_client(
-        self,
-        generator: str,
-        output_dir: str,
-        *,
-        dev: bool | None = None,
-    ) -> Self:
+    def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
 
         Parameters
@@ -7722,13 +7800,10 @@ class ModuleSource(Type):
             The generator to use
         output_dir:
             The output directory for the generated client.
-        dev:
-            Generate in developer mode
         """
         _args = [
             Arg("generator", generator),
             Arg("outputDir", output_dir),
-            Arg("dev", dev, None),
         ]
         _ctx = self._select("withClient", _args)
         return ModuleSource(_ctx)
@@ -8101,12 +8176,7 @@ class Port(Type):
 class Client(Root):
     """The root of the DAG."""
 
-    def cache_volume(
-        self,
-        key: str,
-        *,
-        namespace: str | None = "",
-    ) -> CacheVolume:
+    def cache_volume(self, key: str) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
         Parameters
@@ -8114,14 +8184,18 @@ class Client(Root):
         key:
             A string identifier to target this cache volume (e.g., "modules-
             cache").
-        namespace:
         """
         _args = [
             Arg("key", key),
-            Arg("namespace", namespace, ""),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
+
+    def cloud(self) -> Cloud:
+        """Dagger Cloud configuration and state"""
+        _args: list[Arg] = []
+        _ctx = self._select("cloud", _args)
+        return Cloud(_ctx)
 
     def container(
         self,
@@ -8423,6 +8497,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
+
+    def load_cloud_from_id(self, id: CloudID) -> Cloud:
+        """Load a Cloud from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCloudFromID", _args)
+        return Cloud(_ctx)
 
     def load_container_from_id(self, id: ContainerID) -> Container:
         """Load a Container from its ID."""
@@ -9860,6 +9942,8 @@ __all__ = [
     "CacheVolume",
     "CacheVolumeID",
     "Client",
+    "Cloud",
+    "CloudID",
     "Container",
     "ContainerID",
     "CurrentModule",

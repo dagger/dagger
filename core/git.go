@@ -22,6 +22,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/mount"
@@ -396,7 +397,7 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 	return nil
 }
 
-func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp, fn func(string) error) (retErr error) {
+func (repo *RemoteGitRepository) mountRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -428,7 +429,7 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 
 	initializeRepo := false
 	if remoteRef == nil {
-		remoteRef, err = cache.New(ctx, nil, dagop.Group(),
+		remoteRef, err = cache.New(ctx, nil, g,
 			bkcache.CachePolicyRetain,
 			bkcache.WithDescription(fmt.Sprintf("shared git repo for %s", repo.URL.Remote())))
 		if err != nil {
@@ -443,7 +444,7 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, dagop FSDagOp,
 		}
 	}()
 
-	mount, err := remoteRef.Mount(ctx, false, dagop.g)
+	mount, err := remoteRef.Mount(ctx, false, g)
 	if err != nil {
 		return err
 	}
@@ -499,10 +500,6 @@ func (ref *RemoteGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
-	op, ok := DagOpFromContext[FSDagOp](ctx)
-	if !ok {
-		return nil, fmt.Errorf("no dagop")
-	}
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
 
 	query, err := CurrentQuery(ctx)
@@ -535,7 +532,11 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 	}()
 
-	err = ref.Repo.mountRemote(ctx, op, func(remote string) error {
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+	err = ref.Repo.mountRemote(ctx, bkSessionGroup, func(remote string) error {
 		git, cleanup, err := ref.Repo.setup(ctx)
 		if err != nil {
 			return err
@@ -566,7 +567,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 		}
 
-		checkoutRef, err = cache.New(ctx, nil, op.Group(),
+		checkoutRef, err = cache.New(ctx, nil, bkSessionGroup,
 			bkcache.CachePolicyRetain,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.Repo.URL.Remote(), ref.FullRef, ref.Commit)))
@@ -574,7 +575,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return err
 		}
 
-		err = MountRef(ctx, checkoutRef, op.Group(), func(checkoutDir string) error {
+		err = MountRef(ctx, checkoutRef, bkSessionGroup, func(checkoutDir string) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err
@@ -912,22 +913,22 @@ func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, er
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
-	op, ok := DagOpFromContext[FSDagOp](ctx)
-	if !ok {
-		return nil, fmt.Errorf("no dagop")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cache := query.BuildkitCache()
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
 	commit, fullref, err := ref.Resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bkref, err := cache.New(ctx, nil, op.Group(),
+	bkref, err := cache.New(ctx, nil, bkSessionGroup,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("git local checkout (%s %s)", fullref, commit)))
@@ -947,7 +948,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			return fmt.Errorf("could not find git dir: %w", err)
 		}
 
-		return MountRef(ctx, bkref, op.Group(), func(checkoutDir string) error {
+		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string) error {
 			checkoutDirGit := filepath.Join(checkoutDir, ".git")
 			if err := os.MkdirAll(checkoutDir, 0711); err != nil {
 				return err

@@ -15,18 +15,12 @@ import (
 )
 
 var (
-	generator string
-	dev       bool
-
+	generator      string
 	listJSONOutput bool
 )
 
 func init() {
 	clientInstallCmd.Flags().StringVar(&generator, "generator", "", "Generator to use to generate the client")
-	clientInstallCmd.Flags().BoolVar(&dev, "dev", false, "Generate in developer mode")
-
-	// Hide `dev` flag since it's only for maintainers.
-	_ = clientInstallCmd.Flags().MarkHidden("dev")
 
 	clientListCmd.Flags().BoolVar(&listJSONOutput, "json", false, "Output the list of available clients in JSON format")
 
@@ -88,9 +82,7 @@ var clientInstallCmd = &cobra.Command{
 			}
 
 			_, err = mod.Source.
-				WithClient(generator, outputPath, dagger.ModuleSourceWithClientOpts{
-					Dev: dev,
-				}).
+				WithClient(generator, outputPath).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
