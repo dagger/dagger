@@ -19,14 +19,9 @@ public class DaggerExecExceptionTest {
             "ERROR",
             new Object[] {"container", "from", "withExec", "stdout"},
             Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
-    GraphQLError error2 =
-        buildError(
-            "ERROR2",
-            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
 
-    String result = new DaggerExecException(error, error2).getMessage();
-    String expected = "ERROR\nERROR2";
+    String result = new DaggerExecException(error).getMessage();
+    String expected = "ERROR";
     assertThat(result).isEqualTo(expected);
   }
 

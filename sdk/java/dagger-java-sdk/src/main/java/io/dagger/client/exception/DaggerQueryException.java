@@ -1,35 +1,33 @@
 package io.dagger.client.exception;
 
 import io.smallrye.graphql.client.GraphQLError;
-import java.util.Arrays;
-import java.util.stream.Collectors;
 
 public class DaggerQueryException extends Exception {
 
-  private GraphQLError[] errors;
+  private GraphQLError error;
 
   public DaggerQueryException() {
     super("An unexpected error occurred with no error details");
   }
 
-  public DaggerQueryException(GraphQLError... errors) {
-    super(Arrays.stream(errors).map(GraphQLError::getMessage).collect(Collectors.joining("\n")));
-    this.errors = errors;
+  public DaggerQueryException(GraphQLError error) {
+    super(error.getMessage());
+    this.error = error;
   }
 
-  public GraphQLError[] getErrors() {
-    return errors;
+  public GraphQLError getError() {
+    return error;
   }
 
   public String toSimpleMessage() {
-    return DaggerExceptionUtils.toSimpleMessage(errors);
+    return DaggerExceptionUtils.toSimpleMessage(error);
   }
 
   public String toEnhancedMessage() {
-    return DaggerExceptionUtils.toEnhancedMessage(errors);
+    return DaggerExceptionUtils.toEnhancedMessage(error);
   }
 
   public String toFullMessage() {
-    return DaggerExceptionUtils.toFullMessage(errors);
+    return DaggerExceptionUtils.toFullMessage(error);
   }
 }

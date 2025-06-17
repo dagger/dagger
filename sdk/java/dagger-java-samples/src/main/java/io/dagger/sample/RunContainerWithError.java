@@ -26,10 +26,11 @@ public class RunContainerWithError {
           "Test pipeline failure full message: "
               + dag()
                   .error(dqe.getMessage())
+                  .withValue("stdout", JSON.from(dqe.getStdOut()))
+                  .withValue("stderr", JSON.from(dqe.getStdErr()))
+                  .withValue("cmd", JSON.from(StringUtils.join(dqe.getCmd())))
                   .withValue("exitCode", JSON.from(StringUtils.join(dqe.getExitCode())))
                   .withValue("path", JSON.from(StringUtils.join(dqe.getPath())))
-                  .withValue("cmd", JSON.from(StringUtils.join(dqe.getCmd())))
-                  .withValue("stderr", JSON.from(dqe.getStdErr()))
                   .toString());
     }
   }

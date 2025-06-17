@@ -23,14 +23,9 @@ public class DaggerQueryExceptionTest {
             "ERROR",
             new Object[] {"container", "from", "withExec", "stdout"},
             Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
-    GraphQLError error2 =
-        buildError(
-            "ERROR2",
-            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(TYPE_KEY, TYPE_EXEC_ERROR_VALUE));
 
-    String result = new DaggerQueryException(error, error2).getMessage();
-    String expected = "ERROR\nERROR2";
+    String result = new DaggerQueryException(error).getMessage();
+    String expected = "ERROR";
     assertThat(result).isEqualTo(expected);
   }
 
@@ -47,21 +42,10 @@ public class DaggerQueryExceptionTest {
                 "1",
                 CMD_KEY,
                 Json.createArrayBuilder().add("cat").add("WRONG").build()));
-    GraphQLError error2 =
-        buildError(
-            "ERROR2",
-            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(
-                TYPE_KEY,
-                TYPE_EXEC_ERROR_VALUE,
-                EXIT_CODE_KEY,
-                "2",
-                CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG2").build()));
 
-    String result = new DaggerQueryException(error, error2).toEnhancedMessage();
+    String result = new DaggerQueryException(error).toEnhancedMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [\"cat\",\"WRONG\"]\n";
     assertThat(result).isEqualTo(expected);
   }
 
@@ -80,23 +64,10 @@ public class DaggerQueryExceptionTest {
                 Json.createArrayBuilder().add("cat").add("WRONG").build(),
                 STDERR_KEY,
                 "DEEP ERROR DETAILS"));
-    GraphQLError error2 =
-        buildError(
-            "ERROR2",
-            new Object[] {"container", "from", "withExec", "withExec", "stdout"},
-            Map.of(
-                TYPE_KEY,
-                TYPE_EXEC_ERROR_VALUE,
-                EXIT_CODE_KEY,
-                "2",
-                CMD_KEY,
-                Json.createArrayBuilder().add("cat").add("WRONG2").build(),
-                STDERR_KEY,
-                "DEEP ERROR DETAILS2"));
 
-    String result = new DaggerQueryException(error, error2).toFullMessage();
+    String result = new DaggerQueryException(error).toFullMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat WRONG]\nSTDERR: [DEEP ERROR DETAILS]\n\nMessage: [ERROR2]\nPath: [container.from.withExec.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [2]\nCmd: [cat WRONG2]\nSTDERR: [DEEP ERROR DETAILS2]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [\"cat\",\"WRONG\"]\nSTDERR: [DEEP ERROR DETAILS]\n";
     assertThat(result).isEqualTo(expected);
   }
 
