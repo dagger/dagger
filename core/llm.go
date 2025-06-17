@@ -34,7 +34,7 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = string(anthropic.ModelClaude3_5SonnetLatest)
+	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_0)
 	modelDefaultGoogle    = "gemini-2.0-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
@@ -61,8 +61,6 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
-	Query *Query
-
 	maxAPICalls int
 	apiCalls    int
 
@@ -446,9 +444,8 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*LLM, error) {
+func NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
 	return &LLM{
-		Query:       query,
 		model:       model,
 		maxAPICalls: maxAPICalls,
 		mcp:         NewEnv().MCP(),
@@ -497,7 +494,11 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		return llm.endpoint, nil
 	}
 
-	router, err := loadLLMRouter(ctx, llm.Query)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	router, err := loadLLMRouter(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -659,7 +660,11 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 }
 
 func (llm *LLM) Interject(ctx context.Context) error {
-	bk, err := llm.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return err
 	}
@@ -711,7 +716,11 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 		// we either didn't expect a return value, or got one - done!
 		return false, nil
 	}
-	bk, err := llm.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -843,7 +852,11 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
-	module, err := llm.Query.CurrentModule(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	module, err := query.CurrentModule(ctx)
 	if err != nil {
 		// allow non-module calls
 		if errors.Is(err, ErrNoCurrentModule) {
@@ -867,7 +880,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 	}
 
-	bk, err := llm.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}

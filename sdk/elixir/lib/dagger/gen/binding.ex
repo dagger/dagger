@@ -4,6 +4,8 @@ defmodule Dagger.Binding do
   Dagger.Binding
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Binding"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -22,6 +24,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asCacheVolume")
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Cloud
+  """
+  @spec as_cloud(t()) :: Dagger.Cloud.t()
+  def as_cloud(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCloud")
+
+    %Dagger.Cloud{
       query_builder: query_builder,
       client: binding.client
     }

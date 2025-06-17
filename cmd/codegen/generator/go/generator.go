@@ -138,6 +138,48 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
+func (g *GoGenerator) daggerPackageReplacement() (string, bool, error) {
+	goModFile, err := os.ReadFile("go.mod")
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read go.mod: %w", err)
+	}
+
+	goMod, err := modfile.Parse("go.mod", goModFile, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to parse go.mod: %w", err)
+	}
+
+	for _, replace := range goMod.Replace {
+		if replace.Old.Path == "dagger.io/dagger" {
+			// We need to exclude the first parent directory of the replaced path since it's the
+			// root of the generated directory (c.Config.OutputDir) and the overlays root is that
+			// path.
+			// FIXME(TomChv): This will disapear once I fix the overlays root to the module root instead
+			// of the client output directory.
+			replacedPath := replace.New.Path
+
+			if filepath.IsAbs(replacedPath) {
+				return "", false, fmt.Errorf("invalid go replace path %q not under %q", replacedPath, g.Config.OutputDir)
+			}
+
+			// Remove the output dir from the replace path and trim the leading slash to obtain
+			// a local path usable on overlay
+			// Example:
+			// - ./dagger/sdk generated in dagger -> sdk)
+			// - ./sdk generated in . -> sdk)
+			// - ./dagger/foo/bar generated in dagger -> foo/bar)
+			replacedPath = strings.TrimPrefix(
+				strings.TrimPrefix(filepath.Clean(replacedPath), filepath.Clean(g.Config.OutputDir)),
+				"/",
+			)
+
+			return replacedPath, true, nil
+		}
+	}
+
+	return "", false, nil
+}
+
 func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
@@ -146,12 +188,16 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	layers := []fs.FS{mfs}
 
-	// If dev is set, we need to add local files to the overlay and change the package import
-	if g.Config.Dev {
+	replacedPath, replaced, err := g.daggerPackageReplacement()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if dagger.io/dagger package is replaced: %w", err)
+	}
+
+	// If dagger.io/dagger package is replaced, we need to add the SDK locally
+	if replaced {
 		layers = append(
 			layers,
-			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
-			&MountedFS{FS: dagger.EngineConn, Name: "internal"},
+			&MountedFS{FS: dagger.GoSDK, Name: replacedPath},
 		)
 	}
 

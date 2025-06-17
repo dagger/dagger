@@ -4,6 +4,8 @@ defmodule Dagger.Label do
   A simple key value object that represents a label.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Label"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

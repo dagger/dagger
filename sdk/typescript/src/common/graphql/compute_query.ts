@@ -223,6 +223,7 @@ export async function compute<T>(
           exitCode: (ext.exitCode as number) ?? -1,
           stdout: (ext.stdout as string) ?? "",
           stderr: (ext.stderr as string) ?? "",
+          extensions: ext,
         })
       }
 

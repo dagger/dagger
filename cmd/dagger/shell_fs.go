@@ -264,7 +264,7 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 		return nil, nil, nil
 	}
 	def, err := h.getOrInitDef(cfg.Digest, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, cfg.Source)
+		return initializeModule(ctx, h.dag, cfg.Ref, cfg.Source)
 	})
 
 	return def, cfg, err
@@ -329,7 +329,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 			shellDebug(ctx, "getModuleConfig", ref, rcfg)
 		}()
 	}
-	ctx, span := Tracer().Start(ctx, "looking for module", telemetry.Internal())
+	ctx, span := Tracer().Start(ctx, "detect module: "+ref)
 	defer telemetry.End(span, func() error { return rerr })
 
 	src := h.dag.ModuleSource(ref)
@@ -433,7 +433,7 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 			return nil, fmt.Errorf("%q is not a directory", root)
 		}
 
-		if !shellNoLoadModule {
+		if !moduleNoURL {
 			// ask API where the context dir is (.git)
 			ctx, span := Tracer().Start(ctx, "looking for context directory", telemetry.Internal())
 			defer telemetry.End(span, func() error { return rerr })

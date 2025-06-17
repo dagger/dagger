@@ -297,6 +297,17 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a snapshot with a symlink
+     */
+    public function withSymlink(string $target, string $linkName): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSymlink');
+        $innerQueryBuilder->setArgument('target', $target);
+        $innerQueryBuilder->setArgument('linkName', $linkName);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this directory with all file/dir timestamps set to the given time.
      */
     public function withTimestamps(int $timestamp): Directory

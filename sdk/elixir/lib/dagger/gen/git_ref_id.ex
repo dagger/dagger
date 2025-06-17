@@ -4,5 +4,7 @@ defmodule Dagger.GitRefID do
   The `GitRefID` scalar type represents an identifier for an object of type GitRef.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "GitRefID"
+
   @type t() :: String.t()
 end

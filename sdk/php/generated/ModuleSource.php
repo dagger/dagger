@@ -260,14 +260,11 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Update the module source with a new client to generate.
      */
-    public function withClient(string $generator, string $outputDir, ?bool $dev = null): ModuleSource
+    public function withClient(string $generator, string $outputDir): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
         $innerQueryBuilder->setArgument('generator', $generator);
         $innerQueryBuilder->setArgument('outputDir', $outputDir);
-        if (null !== $dev) {
-        $innerQueryBuilder->setArgument('dev', $dev);
-        }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

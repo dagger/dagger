@@ -62,7 +62,6 @@ func (sdk *goSDK) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
@@ -85,7 +84,6 @@ func (sdk *goSDK) GenerateClient(
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
 	}
@@ -203,6 +201,7 @@ func (sdk *goSDK) Codegen(
 			"internal/dagger",
 			"internal/querybuilder",
 			"internal/telemetry",
+			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
 	}, nil
 }
@@ -212,8 +211,6 @@ func (sdk *goSDK) Runtime(
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (_ *core.Container, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -400,7 +397,7 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	// fetch gitconfig selectors
-	bk, err := src.Self.Query.Buildkit(ctx)
+	bk, err := sdk.root.Buildkit(ctx)
 	if err != nil {
 		return ctr, err
 	}

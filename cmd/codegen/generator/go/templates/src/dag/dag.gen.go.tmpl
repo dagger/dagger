@@ -11,14 +11,13 @@ import (
 	
 	dagger "{{.PackageImport}}"
 
-	{{- /*  The standalone client in not dev mode uses the published package library for dagger connection option */ -}}
-	{{- if and (IsStandaloneClient) (not IsDevMode) }}
+	{{- if IsStandaloneClient }}
 	dagClient "dagger.io/dagger"
 	{{ end -}}
 )
 
 {{- $daggerClientImportPkg := "" -}}
-{{- if and (IsStandaloneClient) (not IsDevMode) -}}
+{{- if IsStandaloneClient -}}
 	{{- $daggerClientImportPkg = "dagClient" -}}
 {{- else -}}
 	{{- $daggerClientImportPkg = "dagger" -}}

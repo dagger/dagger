@@ -251,6 +251,8 @@ func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error 
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
+		// flag that the span has received logs
+		db.initSpan(spanID).HasLogs = true
 	}
 	return nil
 }
@@ -391,11 +393,21 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.StartTime = span.StartTime()
 	spanData.EndTime = span.EndTime()
 	spanData.Status = span.Status()
-	spanData.Links = make([]SpanContext, len(span.Links()))
+	spanData.Links = make([]SpanLink, len(span.Links()))
 	for i, link := range span.Links() {
-		spanData.Links[i] = SpanContext{
-			TraceID: TraceID{link.SpanContext.TraceID()},
-			SpanID:  SpanID{link.SpanContext.SpanID()},
+		var purpose string
+		for _, linkAttr := range link.Attributes {
+			if linkAttr.Key == telemetry.LinkPurposeAttr {
+				purpose = linkAttr.Value.AsString()
+				break
+			}
+		}
+		spanData.Links[i] = SpanLink{
+			SpanContext: SpanContext{
+				TraceID: TraceID{link.SpanContext.TraceID()},
+				SpanID:  SpanID{link.SpanContext.SpanID()},
+			},
+			Purpose: purpose,
 		}
 	}
 
@@ -438,7 +450,9 @@ func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 			lastIval = &ival
 			if !activity.EarliestRunning.IsZero() &&
 				activity.EarliestRunning.Before(ival.Start) {
-				yield(Interval{Start: activity.EarliestRunning, End: now})
+				if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
+					return
+				}
 				break
 			}
 			if !yield(ival) {
@@ -447,7 +461,9 @@ func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 		}
 		if !activity.EarliestRunning.IsZero() &&
 			(lastIval == nil || activity.EarliestRunning.After(lastIval.End)) {
-			yield(Interval{Start: activity.EarliestRunning, End: now})
+			if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
+				return
+			}
 		}
 	}
 }
@@ -598,23 +614,42 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.End = span.EndTime
 	}
 
-	// associate the span to its parents and links
-	if span.ParentID.IsValid() &&
-		// If a span has links, don't bother associating it to its
-		// parent. We might want to use that info someday (the
-		// "unlazying" point), but no use case right now.
-		len(span.Links) == 0 {
+	// associate the span to its parent
+	if span.ParentID.IsValid() {
 		span.ParentSpan = db.initSpan(span.ParentID)
 		if span.ParentSpan.ChildSpans.Add(span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
 	}
-	for _, linkedCtx := range span.Links {
-		linked := db.initSpan(linkedCtx.SpanID)
-		linked.ChildSpans.Add(span)
-		linked.effectsViaLinks.Add(span)
-		span.causesViaLinks.Add(linked)
+
+	// associate the span to its links
+	for _, linked := range span.Links {
+		linkedCtx := linked.SpanContext
+		switch linked.Purpose {
+		case telemetry.LinkPurposeCause,
+			// By default, links imply a causal relationship.
+			//
+			// Two reasons:
+			// 1. Backward compatibility - this is how links are already interpreted.
+			// 2. Span links are almost always representing a causal relationship
+			// where the target of the link completed before the linking span.
+			// (Otherwise the linking span could just be a child span.)
+			"":
+			linked := db.initSpan(linkedCtx.SpanID)
+			linked.ChildSpans.Add(span)
+			linked.effectsViaLinks.Add(span)
+			span.causesViaLinks.Add(linked)
+		case telemetry.LinkPurposeErrorOrigin:
+			if linkedCtx.SpanID == span.ID {
+				// defense in depth; it's technically possible to link to yourself, and
+				// we don't want to double-init the span since that'll leave a zombie
+				// span
+				continue
+			}
+			linked := db.initSpan(linkedCtx.SpanID)
+			span.ErrorOrigin = linked
+		}
 	}
 
 	// keep track of intervals seen for a digest

@@ -344,6 +344,29 @@ var Propagator = propagation.NewCompositeTextMapPropagator(
 	propagation.TraceContext{},
 )
 
+// AnyMapCarrier is a utility for propagating via a map[string]any instead of a
+// map[string]string.
+type AnyMapCarrier map[string]any
+
+var _ propagation.TextMapCarrier = AnyMapCarrier{}
+
+func (c AnyMapCarrier) Get(key string) string {
+	str, _ := c[key].(string)
+	return str
+}
+
+func (c AnyMapCarrier) Set(key, value string) {
+	c[key] = value
+}
+
+func (c AnyMapCarrier) Keys() []string {
+	var keys []string
+	for key := range c {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 // closeCtx holds on to the initial context returned by Init. Close will
 // extract its providers and close them.
 var closeCtx context.Context

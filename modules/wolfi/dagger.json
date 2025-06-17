@@ -1,6 +1,6 @@
 {
   "name": "wolfi",
-  "engineVersion": "v0.18.9",
+  "engineVersion": "v0.18.10",
   "sdk": {
     "source": "go"
   },

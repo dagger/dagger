@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,14 +87,15 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	fps        float64 // frames per second
-	profile    termenv.Profile
-	window     tea.WindowSizeMsg // set by BubbleTea
-	view       *strings.Builder  // rendered async
-	viewOut    *termenv.Output
-	browserBuf *strings.Builder // logs if browser fails
-	stdin      io.Reader        // used by backgroundMsg for running terminal
-	writer     io.Writer
+	fps         float64 // frames per second
+	profile     termenv.Profile
+	window      tea.WindowSizeMsg // set by BubbleTea
+	view        *strings.Builder  // rendered async
+	viewOut     *termenv.Output
+	browserBuf  *strings.Builder // logs if browser fails
+	finalRender bool             // whether we're doing the final render
+	stdin       io.Reader        // used by backgroundMsg for running terminal
+	writer      io.Writer
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -249,12 +251,6 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
-func (fe *frontendPretty) SetCustomExit(fn func()) {
-	fe.mu.Lock()
-	fe.Opts().CustomExit = fn
-	fe.mu.Unlock()
-}
-
 func (fe *frontendPretty) SetVerbosity(n int) {
 	fe.mu.Lock()
 	fe.Opts().Verbosity = n
@@ -355,10 +351,17 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
+			row := &dagui.TraceRow{
+				Span:     tree.Span,
+				Chained:  tree.Chained,
+				Expanded: true,
+			}
 			fmt.Fprintln(out)
-			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
-			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
-			fe.renderStepError(out, r, tree.Span, 0, "")
+			fe.renderStep(out, r, row, "")
+			logs.SetHeight(logs.UsedHeight())
+			logs.SetPrefix("")
+			fmt.Fprint(out, logs.View())
+			fe.renderStepError(out, r, row, "")
 		}
 		return dagui.WalkContinue
 	})
@@ -370,6 +373,10 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+
+	// Hint for future rendering that this is the final, non-interactive render
+	// (so don't show key hints etc.)
+	fe.finalRender = true
 
 	// Print the scrollback.
 	fmt.Fprint(w, fe.scrollback.String())
@@ -384,12 +391,12 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, r, true, fe.window.Height, "")
+		fe.renderProgress(out, r, fe.window.Height, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
@@ -528,26 +535,27 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
 var KeymapStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
 
+const keypressDuration = 500 * time.Millisecond
+
 func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
 	w := new(strings.Builder)
 	var showedKey bool
 	// Blank line prior to keymap
 	for _, key := range fe.keys(out) {
-		if !key.Enabled() {
+		mainKey := key.Keys()[0]
+		var pressed bool
+		if time.Since(fe.pressedKeyAt) < keypressDuration {
+			pressed = slices.Contains(key.Keys(), fe.pressedKey)
+		}
+		if !key.Enabled() && !pressed {
 			continue
 		}
-		mainKey := key.Keys()[0]
+		keyStyle := style
+		if pressed {
+			keyStyle = keyStyle.Foreground(nil)
+		}
 		if showedKey {
 			fmt.Fprint(w, style.Render(" · "))
-		}
-		keyStyle := style
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
-			for _, k := range key.Keys() {
-				if k == fe.pressedKey {
-					keyStyle = keyStyle.Foreground(nil)
-					// Reverse(true)
-				}
-			}
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
@@ -572,10 +580,24 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	var quitMsg string
 	if fe.interrupted {
 		quitMsg = "quit!"
+	} else if fe.shell != nil {
+		quitMsg = "interrupt"
 	} else {
 		quitMsg = "quit"
 	}
 
+	noExitHelp := "no exit"
+	if fe.NoExit {
+		color := termenv.ANSIYellow
+		if fe.done || fe.interrupted {
+			color = termenv.ANSIRed
+		}
+		noExitHelp = out.String(noExitHelp).Foreground(color).String()
+	}
+	var focused *dagui.Span
+	if fe.FocusedSpan.IsValid() {
+		focused = fe.db.Spans.Map[fe.FocusedSpan]
+	}
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("i", "tab"),
 			key.WithHelp("i", "input mode"),
@@ -590,12 +612,19 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("end", " "),
 			key.WithHelp("end", "last")),
 		key.NewBinding(key.WithKeys("enter"),
-			key.WithHelp("enter", "zoom"),
-			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+			key.WithHelp("enter", "zoom")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
+		key.NewBinding(key.WithKeys("E"),
+			key.WithHelp("E", noExitHelp)),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
+		key.NewBinding(key.WithKeys("esc"),
+			key.WithHelp("esc", "unzoom"),
+			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+		key.NewBinding(key.WithKeys("r"),
+			key.WithHelp("r", "go to error"),
+			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
 	}
 }
 
@@ -612,11 +641,14 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		progHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		fe.renderStep(out, r, fe.rowsView.Zoomed, false, 0, "")
+		fe.renderStep(out, r, &dagui.TraceRow{
+			Span:     fe.rowsView.Zoomed,
+			Expanded: true,
+		}, "")
 		progHeight -= 1
 		progPrefix = "  "
 	}
@@ -640,13 +672,15 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
+		logs.SetHeight(fe.window.Height / 3)
+		logs.SetPrefix(progPrefix)
+		fmt.Fprint(below, logs.View())
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
 
-	if fe.renderProgress(out, r, false, progHeight, progPrefix) {
+	if fe.renderProgress(out, r, progHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
@@ -758,14 +792,14 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
+func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
 
 	rows := fe.rows
 
-	if full {
+	if fe.finalRender {
 		for _, row := range rows.Order {
 			if fe.renderRow(out, r, row, "") {
 				rendered = true
@@ -1262,6 +1296,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.program.ReleaseTerminal()
 		sigquit()
 		return nil
+	case "E":
+		fe.NoExit = !fe.NoExit
+		return nil
 	case "down", "j":
 		fe.goDown()
 		return nil
@@ -1269,10 +1306,10 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.goUp()
 		return nil
 	case "left", "h":
-		fe.goOut()
+		fe.closeOrGoOut()
 		return nil
 	case "right", "l":
-		fe.goIn()
+		fe.openOrGoIn()
 		return nil
 	case "home":
 		fe.goStart()
@@ -1281,6 +1318,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		fe.goEnd()
 		fe.pressedKey = "end"
 		fe.pressedKeyAt = time.Now()
+		return nil
+	case "r":
+		fe.goErrorOrigin()
 		return nil
 	case "esc":
 		fe.ZoomedSpan = fe.db.PrimarySpan
@@ -1387,7 +1427,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 
 	// Create buffer for flushing
 	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
-	r := newRenderer(fe.db, 100, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
@@ -1485,11 +1525,6 @@ func (fe *frontendPretty) updatePrompt() tea.Cmd {
 }
 
 func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
-	if fe.CustomExit != nil {
-		fe.CustomExit()
-		return nil
-	}
-
 	if fe.done && fe.eof {
 		fe.quitting = true
 		// must have configured NoExit, and now they want
@@ -1543,22 +1578,15 @@ func (fe *frontendPretty) goDown() {
 
 func (fe *frontendPretty) goOut() {
 	fe.autoFocus = false
-	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	focused := fe.rows.BySpan[fe.FocusedSpan]
 	if focused == nil {
 		return
 	}
-	parent := focused.VisibleParent(fe.FrontendOpts)
+	parent := focused.Parent
 	if parent == nil {
 		return
 	}
-	fe.FocusedSpan = parent.ID
-	// targeted the zoomed span; zoom on its parent instead
-	if fe.FocusedSpan == fe.ZoomedSpan {
-		zoomedParent := parent.VisibleParent(fe.FrontendOpts)
-		if zoomedParent != nil {
-			fe.ZoomedSpan = zoomedParent.ID
-		}
-	}
+	fe.FocusedSpan = parent.Span.ID
 	fe.recalculateViewLocked()
 }
 
@@ -1578,6 +1606,67 @@ func (fe *frontendPretty) goIn() {
 	fe.focus(next)
 }
 
+func (fe *frontendPretty) closeOrGoOut() {
+	// Only toggle if we have a valid focused span
+	if fe.FocusedSpan.IsValid() {
+		// Get the either explicitly set or defaulted value
+		var isExpanded bool
+		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
+			isExpanded = row.Expanded
+		}
+		if !isExpanded {
+			// already closed; move up
+			fe.goOut()
+			return
+		}
+		// Toggle the expanded state for the focused span
+		fe.setExpanded(fe.FocusedSpan, !isExpanded)
+		// Recalculate view to reflect changes
+		fe.recalculateViewLocked()
+	}
+}
+
+func (fe *frontendPretty) openOrGoIn() {
+	// Only toggle if we have a valid focused span
+	if fe.FocusedSpan.IsValid() {
+		// Get the either explicitly set or defaulted value
+		var isExpanded bool
+		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
+			isExpanded = row.Expanded
+		}
+		if isExpanded {
+			// already expanded; go in
+			fe.goIn()
+			return
+		}
+		// Toggle the expanded state for the focused span
+		fe.setExpanded(fe.FocusedSpan, true)
+		// Recalculate view to reflect changes
+		fe.recalculateViewLocked()
+	}
+}
+
+func (fe *frontendPretty) goErrorOrigin() {
+	fe.autoFocus = false
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
+		return
+	}
+	if focused.ErrorOrigin == nil {
+		return
+	}
+	fe.FocusedSpan = focused.ErrorOrigin.ID
+	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
+	if focusedRow == nil {
+		return
+	}
+	for cur := focusedRow.Parent; cur != nil; cur = cur.Parent {
+		// expand parents of target span
+		fe.setExpanded(cur.Span.ID, true)
+	}
+	fe.recalculateViewLocked()
+}
+
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
@@ -1592,29 +1681,36 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	}
 }
 
+func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
+	if fe.SpanExpanded == nil {
+		fe.SpanExpanded = make(map[dagui.SpanID]bool)
+	}
+	fe.SpanExpanded[id] = expanded
+	fe.recalculateViewLocked()
+}
+
 func (fe *frontendPretty) renderLocked() {
 	fe.view.Reset()
 	fe.Render(fe.viewOut)
 }
 
-//nolint:gocyclo
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
-	focused := row.Span.ID == fe.FocusedSpan && !fe.editlineFocused
 	if fe.shell != nil {
-		if row.IsLastChild() {
+		if row.NextVisual == nil {
 			defer func() {
 				root := row.Root()
 				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-					logDepth := 0
 					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-						logDepth = -1
+						cp := *row
+						cp.Depth = -1
+						row = &cp
 					}
-					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
+					fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix)
 				}
-				fe.renderStepError(out, r, root.Span, 0, prefix)
+				fe.renderStepError(out, r, root, prefix)
 			}()
 		}
 		if row.Depth == 0 {
@@ -1623,57 +1719,35 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
 				fmt.Fprintln(out, out.String(prefix))
 			}
-			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+			fe.renderStep(out, r, row, prefix)
 			fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 			return true
 		}
 	}
-	if row.Previous != nil &&
-		row.Previous.Depth >= row.Depth &&
+	if row.PreviousVisual != nil &&
+		row.PreviousVisual.Depth >= row.Depth &&
 		!row.Chained &&
 		( // ensure gaps after last nested child
-		row.Previous.Depth > row.Depth ||
+		row.PreviousVisual.Depth > row.Depth ||
 			// ensure gaps before unchained calls
 			row.Span.Call() != nil ||
 			// ensure gaps between calls and non-calls
-			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
+			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			// ensure gaps between messages
-			(row.Previous.Span.Message != "" && row.Span.Message != "") ||
+			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
 			// ensure gaps going from tool calls to messages
-			(row.Previous.Span.Message == "" && row.Span.Message != "")) {
+			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
 		fmt.Fprint(out, prefix)
-		r.indent(out, row.Depth)
-		fmt.Fprintln(out)
+		r.fancyIndent(out, row.PreviousVisual, false, false)
+		fmt.Fprintln(out, "")
 	}
 	span := row.Span
-	if span.Message != "" {
-		// when a span represents a message, we don't need to print its name
-		//
-		// NOTE: arguably this should be opt-in, but it's not clear how the
-		// span name relates to the message in all cases; is it the
-		// subject? or author? better to be explicit with attributes.
-		r.indent(out, row.Depth)
-		r.renderStatus(out, span, focused, row.Chained)
-		if fe.renderStepLogs(out, r, row, prefix) {
-			r.indent(out, row.Depth)
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
-		} else {
-			// no logs were printed, so snug the duration up against the emoji
-			fmt.Fprint(out, "\b")
-		}
-		r.renderDuration(out, span)
-		r.renderMetrics(out, span)
-		fmt.Fprintln(out)
-	} else {
-		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if row.IsRunningOrChildRunning ||
-			row.Span.IsFailedOrCausedFailure() ||
-			row.Span.IsCanceled() ||
-			fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-			fe.renderStepLogs(out, r, row, prefix)
-		}
+	fe.renderStep(out, r, row, prefix)
+	if span.Message == "" && // messages are displayed in renderStep
+		row.Expanded {
+		fe.renderStepLogs(out, r, row, prefix)
 	}
-	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 	return true
 }
@@ -1712,18 +1786,18 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		return fe.renderLogs(out, r,
-			logs,
-			row.Depth,
-			fe.window.Height/3,
-			prefix,
-		)
+		return fe.renderLogs(out, r, row, logs, fe.window.Height/3, prefix)
 	}
 	return false
 }
 
-func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
-	for _, span := range span.Errors().Order {
+func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	if row.Span.ErrorOrigin != nil {
+		// span's error originated elsewhere; don't repeat the message, the ERROR status
+		// links to its origin instead
+		return
+	}
+	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
 		if errText == "" {
 			continue
@@ -1731,49 +1805,144 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dag
 
 		// Calculate available width for text
 		prefixWidth := lipgloss.Width(prefix)
-		indentWidth := depth * 2 // Assuming indent is 2 spaces per depth level
-		markerWidth := 2         // "! " prefix
+		indentWidth := row.Depth * 2 // Assuming indent is 2 spaces per depth level
+		markerWidth := 2             // "! " prefix
 		availableWidth := fe.window.Width - prefixWidth - indentWidth - markerWidth
 		if availableWidth > 0 {
 			errText = cellbuf.Wrap(errText, availableWidth, "")
 		}
 
 		// Print each wrapped line with proper indentation
-		for line := range strings.SplitSeq(errText, "\n") {
-			if line == "" {
-				continue
-			}
-
+		first := true
+		for line := range strings.SplitSeq(strings.TrimSpace(errText), "\n") {
 			fmt.Fprint(out, prefix)
-			r.indent(out, depth)
+			r.fancyIndent(out, row, false, false)
+			var symbol string
+			if first {
+				symbol = "!"
+			} else {
+				symbol = " "
+			}
 			fmt.Fprintf(out,
-				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+				out.String("%s %s").Foreground(termenv.ANSIRed).String(),
+				symbol,
 				line,
 			)
 			fmt.Fprintln(out)
+			first = false
 		}
 	}
 }
 
-func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
+func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) error {
+	span := row.Span
+	chained := row.Chained
+	depth := row.Depth
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
-	if call := span.Call(); call != nil {
-		if err := r.renderCall(out, span, call, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
+	fmt.Fprint(out, prefix)
+	r.fancyIndent(out, row, false, true)
+
+	var toggler termenv.Style
+	if row.HasChildren || row.Span.HasLogs {
+		if row.Expanded {
+			toggler = out.String(CaretDownFilled)
+		} else {
+			toggler = out.String(CaretRightFilled)
+		}
+	} else if span.IsRunningOrEffectsRunning() {
+		toggler = out.String(DotHalf)
+	} else if span.IsCached() {
+		toggler = out.String(IconCached)
+	} else if span.IsCanceled() {
+		toggler = out.String(IconSkipped)
+	} else if span.IsFailedOrCausedFailure() {
+		toggler = out.String(IconFailure)
+	} else if span.IsPending() {
+		toggler = out.String(DotEmpty)
+	} else {
+		toggler = out.String(DotFilled)
+	}
+	if span.ActorEmoji != "" && span.Message != "" {
+		toggler = out.String(span.ActorEmoji)
+	}
+	toggler = toggler.Foreground(statusColor(span))
+	if isFocused {
+		// TODO: light/dark
+		toggler = toggler.Foreground(termenv.ANSIWhite).Reverse()
+	}
+
+	if span.ActorEmoji != "" && span.Message != "" {
+		// make room for the emoji, since they're 2 cells wide
+		fmt.Fprint(out, "\b")
+	}
+
+	fmt.Fprint(out, toggler.String()+" ")
+
+	if r.Debug {
+		fmt.Fprintf(out, out.String(" %s").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
+	}
+
+	if span.Message != "" {
+		// when a span represents a message, we don't need to print its name
+		//
+		// NOTE: arguably this should be opt-in, but it's not clear how the
+		// span name relates to the message in all cases; is it the
+		// subject? or author? better to be explicit with attributes.
+		if fe.renderStepLogs(out, r, row, prefix) {
+			r.fancyIndent(out, row, false, false)
+			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
+		} else {
+			// no logs were printed, so snug the duration up against the emoji
+			fmt.Fprint(out, "\b")
+		}
+	} else if call := span.Call(); call != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused, chained); err != nil {
+		if err := r.renderSpan(out, span, span.Name); err != nil {
 			return err
 		}
 	}
+
+	if span != nil {
+		// TODO: when a span has child spans that have progress, do 2-d progress
+		// fe.renderVertexTasks(out, span, depth)
+		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
+		fe.renderStatus(out, span)
+	}
+
 	fmt.Fprintln(out)
 
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string) bool {
-	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
+	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("ERROR").Foreground(termenv.ANSIRed))
+		if span.ErrorOrigin != nil && !fe.reportOnly && !fe.finalRender {
+			color := termenv.ANSIBrightBlack
+			if time.Since(fe.pressedKeyAt) < keypressDuration && fe.FocusedSpan == span.ErrorOrigin.ID {
+				color = termenv.ANSIWhite
+			}
+			fmt.Fprintf(out, " %s %s",
+				out.String("r").Foreground(color).Bold(),
+				out.String("jump ↴").Foreground(color),
+			)
+		}
+	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
+	}
+}
+
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string) bool {
+	span := row.Span
+	depth := row.Depth
+	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
 	if depth == -1 {
 		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
@@ -1781,7 +1950,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		buf := new(strings.Builder)
 		fmt.Fprint(buf, prefix)
 		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
-		r.indent(indentOut, depth)
+		r.fancyIndent(indentOut, row, false, false)
 		fmt.Fprint(indentOut, pipe)
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(buf.String())

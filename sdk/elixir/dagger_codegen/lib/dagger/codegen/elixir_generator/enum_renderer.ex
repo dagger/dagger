@@ -15,6 +15,11 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
 
   def render_module_body(type) do
     [
+      """
+      use Dagger.Core.Base, kind: :enum, name: "#{type.name}"
+      """,
+      ?\n,
+      ?\n,
       "@type t() :: ",
       type.enum_values
       |> Enum.map(&Renderer.render_atom(&1.name))

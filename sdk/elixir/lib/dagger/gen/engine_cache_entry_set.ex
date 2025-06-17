@@ -4,6 +4,8 @@ defmodule Dagger.EngineCacheEntrySet do
   A set of cache entries returned by a query to a cache
   """
 
+  use Dagger.Core.Base, kind: :object, name: "EngineCacheEntrySet"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

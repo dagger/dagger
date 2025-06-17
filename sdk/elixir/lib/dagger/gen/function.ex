@@ -6,6 +6,8 @@ defmodule Dagger.Function do
   A function always evaluates against a parent object and is given a set of named arguments.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Function"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

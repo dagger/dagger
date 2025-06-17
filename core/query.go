@@ -99,8 +99,9 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune everything that is releasable in the local cache. No support for filtering yet.
-	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+	// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
+	// otherwise prune the whole cache of any releasable entries.
+	PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
@@ -114,6 +115,20 @@ type Server interface {
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+}
+
+type queryKey struct{}
+
+func ContextWithQuery(ctx context.Context, q *Query) context.Context {
+	return context.WithValue(ctx, queryKey{}, q)
+}
+
+func CurrentQuery(ctx context.Context) (*Query, error) {
+	q, ok := ctx.Value(queryKey{}).(*Query)
+	if !ok {
+		return nil, fmt.Errorf("no query in context")
+	}
+	return q, nil
 }
 
 func NewRoot(srv Server) *Query {
@@ -141,21 +156,16 @@ func (q *Query) WithPipeline(name, desc string) *Query {
 
 func (q *Query) NewContainer(platform Platform) *Container {
 	return &Container{
-		Query:    q,
 		Platform: platform,
 	}
 }
 
 func (q *Query) NewHost() *Host {
-	return &Host{
-		Query: q,
-	}
+	return &Host{}
 }
 
 func (q *Query) NewModule() *Module {
-	return &Module{
-		Query: q,
-	}
+	return &Module{}
 }
 
 // IDDeps loads the module dependencies of a given ID.

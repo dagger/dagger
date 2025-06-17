@@ -176,8 +176,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, err
 		}
 		gitServices = append(gitServices, core.ServiceBinding{
-			ID:       svc.ID(),
-			Service:  svc.Self,
+			Service:  svc,
 			Hostname: host,
 		})
 	}
@@ -293,7 +292,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				}
 				defer detach()
 
-				dnsConfig, err = core.DNSConfig(ctx, parent.Self)
+				dnsConfig, err = core.DNSConfig(ctx)
 				if err != nil {
 					return inst, err
 				}
@@ -377,9 +376,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, &core.GitRepository{
-		Query: parent.Self,
 		Backend: &core.RemoteGitRepository{
-			Query:         parent.Self,
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
 			SSHAuthSocket: sshAuthSock.Self,
@@ -525,10 +522,6 @@ type branchesArgs struct {
 }
 
 func (s *gitSchema) branches(ctx context.Context, parent dagql.Instance[*core.GitRepository], args branchesArgs) (dagql.Array[dagql.String], error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
-		return DagOp(ctx, s.srv, parent, args, s.branches)
-	}
-
 	var patterns []string
 	if args.Patterns.Valid {
 		for _, pattern := range args.Patterns.Value {
@@ -577,6 +570,8 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
+
+	DagOpInternalArgs
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
@@ -587,7 +582,12 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
-	if core.DagOpInContext[core.FSDagOp](ctx) {
+	if args.IsDagOp {
+		query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+		if !ok {
+			return inst, fmt.Errorf("server root was %T", s.srv.Root())
+		}
+		ctx = core.ContextWithQuery(ctx, query.Self)
 		dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
 		if err != nil {
 			return inst, err
@@ -595,16 +595,16 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 	}
 
-	inst, err := DagOpDirectory(ctx, s.srv, parent, args, nil, s.tree, nil)
+	inst, err := DagOpDirectory(ctx, s.srv, parent, args, "", s.tree, nil)
 	if err != nil {
 		return inst, err
 	}
 
-	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
-	if !ok {
-		return inst, fmt.Errorf("failed to get root query")
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
 	}
-	bk, err := query.Self.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -629,10 +629,20 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	return inst, nil
 }
 
-func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
+func (s *gitSchema) fetchCommit(
+	ctx context.Context,
+	parent dagql.Instance[*core.GitRef],
+	args RawDagOpInternalArgs,
+) (dagql.String, error) {
+	if !args.IsDagOp {
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
+
+	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+	if !ok {
+		return "", fmt.Errorf("server root was %T", s.srv.Root())
+	}
+	ctx = core.ContextWithQuery(ctx, query.Self)
 
 	commit, _, err := parent.Self.Resolve(ctx)
 	if err != nil {
@@ -641,10 +651,20 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 	return dagql.NewString(commit), nil
 }
 
-func (s *gitSchema) fetchRef(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
-	if !core.DagOpInContext[core.RawDagOp](ctx) {
+func (s *gitSchema) fetchRef(
+	ctx context.Context,
+	parent dagql.Instance[*core.GitRef],
+	args RawDagOpInternalArgs,
+) (dagql.String, error) {
+	if !args.IsDagOp {
 		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
 	}
+
+	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+	if !ok {
+		return "", fmt.Errorf("server root was %T", s.srv.Root())
+	}
+	ctx = core.ContextWithQuery(ctx, query.Self)
 
 	_, ref, err := parent.Self.Resolve(ctx)
 	if err != nil {

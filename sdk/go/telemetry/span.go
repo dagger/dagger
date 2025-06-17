@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -53,6 +54,12 @@ func Tracer(ctx context.Context, lib string) trace.Tracer {
 	return trace.SpanFromContext(ctx).TracerProvider().Tracer(lib)
 }
 
+// ExtendedError is an error that can provide extra data in an error response.
+type ExtendedError interface {
+	error
+	Extensions() map[string]any
+}
+
 // End is a helper to end a span with an error if the function returns an error.
 //
 // It is optimized for use as a defer one-liner with a function that has a
@@ -61,6 +68,24 @@ func Tracer(ctx context.Context, lib string) trace.Tracer {
 //	defer telemetry.End(span, func() error { return rerr })
 func End(span trace.Span, fn func() error) {
 	if err := fn(); err != nil {
+		var extErr ExtendedError
+		if errors.As(err, &extErr) {
+			// Look for an error origin embedded in error extensions, and link to it.
+			originCtx := trace.SpanContextFromContext(
+				Propagator.Extract(
+					context.Background(),
+					AnyMapCarrier(extErr.Extensions()),
+				),
+			)
+			if originCtx.IsValid() && originCtx.SpanID() != span.SpanContext().SpanID() {
+				span.AddLink(trace.Link{
+					SpanContext: originCtx,
+					Attributes: []attribute.KeyValue{
+						attribute.String(LinkPurposeAttr, LinkPurposeErrorOrigin),
+					},
+				})
+			}
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	}

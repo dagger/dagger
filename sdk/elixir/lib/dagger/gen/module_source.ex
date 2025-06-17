@@ -4,6 +4,8 @@ defmodule Dagger.ModuleSource do
   The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ModuleSource"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -362,15 +364,13 @@ defmodule Dagger.ModuleSource do
   @doc """
   Update the module source with a new client to generate.
   """
-  @spec with_client(t(), String.t(), String.t(), [{:dev, boolean() | nil}]) ::
-          Dagger.ModuleSource.t()
-  def with_client(%__MODULE__{} = module_source, generator, output_dir, optional_args \\ []) do
+  @spec with_client(t(), String.t(), String.t()) :: Dagger.ModuleSource.t()
+  def with_client(%__MODULE__{} = module_source, generator, output_dir) do
     query_builder =
       module_source.query_builder
       |> QB.select("withClient")
       |> QB.put_arg("generator", generator)
       |> QB.put_arg("outputDir", output_dir)
-      |> QB.maybe_put_arg("dev", optional_args[:dev])
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

@@ -36,10 +36,30 @@ func assertNotNil(argName string, value any) {
 
 type DaggerObject = querybuilder.GraphQLMarshaller
 
+type gqlExtendedError struct {
+	inner *gqlerror.Error
+}
+
+// Same as telemetry.ExtendedError, but without the dependency, to simplify
+// client generation.
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+var _ extendedError = gqlExtendedError{}
+
+func (e gqlExtendedError) Error() string {
+	return e.inner.Message
+}
+
+func (e gqlExtendedError) Extensions() map[string]any {
+	return e.inner.Extensions
+}
+
 // getCustomError parses a GraphQL error into a more specific error type.
 func getCustomError(err error) error {
 	var gqlErr *gqlerror.Error
-
 	if !errors.As(err, &gqlErr) {
 		return nil
 	}
@@ -48,12 +68,12 @@ func getCustomError(err error) error {
 
 	typ, ok := ext["_type"].(string)
 	if !ok {
-		return nil
+		return gqlExtendedError{gqlErr}
 	}
 
 	if typ == "EXEC_ERROR" {
 		e := &ExecError{
-			original: err,
+			original: gqlErr,
 		}
 		if code, ok := ext["exitCode"].(float64); ok {
 			e.ExitCode = int(code)
@@ -74,20 +94,26 @@ func getCustomError(err error) error {
 		return e
 	}
 
-	return nil
+	return gqlExtendedError{gqlErr}
 }
 
 // ExecError is an API error from an exec operation.
 type ExecError struct {
-	original error
+	original *gqlerror.Error
 	Cmd      []string
 	ExitCode int
 	Stdout   string
 	Stderr   string
 }
 
+var _ extendedError = (*ExecError)(nil)
+
 func (e *ExecError) Error() string {
 	return e.Message()
+}
+
+func (e *ExecError) Extensions() map[string]any {
+	return e.original.Extensions
 }
 
 func (e *ExecError) Message() string {
@@ -103,6 +129,9 @@ type BindingID string
 
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
+
+// The `CloudID` scalar type represents an identifier for an object of type Cloud.
+type CloudID string
 
 // The `ContainerID` scalar type represents an identifier for an object of type Container.
 type ContainerID string
@@ -295,6 +324,15 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	q := r.query.Select("asCacheVolume")
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Cloud
+func (r *Binding) AsCloud() *Cloud {
+	q := r.query.Select("asCloud")
+
+	return &Cloud{
 		query: q,
 	}
 }
@@ -572,6 +610,73 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Dagger Cloud configuration and state
+type Cloud struct {
+	query *querybuilder.Selection
+
+	id       *CloudID
+	traceURL *string
+}
+
+func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
+	return &Cloud{
+		query: q,
+	}
+}
+
+// A unique identifier for this Cloud.
+func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response CloudID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Cloud) XXX_GraphQLType() string {
+	return "Cloud"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Cloud) XXX_GraphQLIDType() string {
+	return "CloudID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Cloud) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Cloud) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The trace URL for the current session
+func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
+	if r.traceURL != nil {
+		return *r.traceURL, nil
+	}
+	q := r.query.Select("traceURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // An OCI-compatible container, also known as a Docker container.
@@ -2016,6 +2121,29 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	}
 }
 
+// ContainerWithSymlinkOpts contains options for Container.WithSymlink
+type ContainerWithSymlinkOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	Expand bool
+}
+
+// Return a snapshot with a symlink
+func (r *Container) WithSymlink(target string, linkName string, opts ...ContainerWithSymlinkOpts) *Container {
+	q := r.query.Select("withSymlink")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("target", target)
+	q = q.Arg("linkName", linkName)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithUnixSocketOpts contains options for Container.WithUnixSocket
 type ContainerWithUnixSocketOpts struct {
 	// A user:group to set for the mounted socket.
@@ -2947,6 +3075,17 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
+// Return a snapshot with a symlink
+func (r *Directory) WithSymlink(target string, linkName string) *Directory {
+	q := r.query.Select("withSymlink")
+	q = q.Arg("target", target)
+	q = q.Arg("linkName", linkName)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.query.Select("withTimestamps")
@@ -3169,12 +3308,24 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCachePruneOpts contains options for EngineCache.Prune
+type EngineCachePruneOpts struct {
+	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	UseDefaultPolicy bool
+}
+
 // Prune the cache of releaseable entries
-func (r *EngineCache) Prune(ctx context.Context) error {
+func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) error {
 	if r.prune != nil {
 		return nil
 	}
 	q := r.query.Select("prune")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `useDefaultPolicy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseDefaultPolicy) {
+			q = q.Arg("useDefaultPolicy", opts[i].UseDefaultPolicy)
+		}
+	}
 
 	return q.Execute(ctx)
 }
@@ -3831,6 +3982,30 @@ func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description 
 // Declare a desired CacheVolume output to be assigned in the environment
 func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Cloud in the environment
+func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCloudInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Cloud output to be assigned in the environment
+func (r *Env) WithCloudOutput(name string, description string) *Env {
+	q := r.query.Select("withCloudOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -7028,7 +7203,6 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 type ModuleConfigClient struct {
 	query *querybuilder.Selection
 
-	dev       *bool
 	directory *string
 	generator *string
 	id        *ModuleConfigClientID
@@ -7038,19 +7212,6 @@ func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *Module
 	return &ModuleConfigClient{
 		query: q,
 	}
-}
-
-// If true, generate the client in developer mode.
-func (r *ModuleConfigClient) Dev(ctx context.Context) (bool, error) {
-	if r.dev != nil {
-		return *r.dev, nil
-	}
-	q := r.query.Select("dev")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // The directory the client is generated in.
@@ -7558,21 +7719,9 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// ModuleSourceWithClientOpts contains options for ModuleSource.WithClient
-type ModuleSourceWithClientOpts struct {
-	// Generate in developer mode
-	Dev bool
-}
-
 // Update the module source with a new client to generate.
-func (r *ModuleSource) WithClient(generator string, outputDir string, opts ...ModuleSourceWithClientOpts) *ModuleSource {
+func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSource {
 	q := r.query.Select("withClient")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dev` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dev) {
-			q = q.Arg("dev", opts[i].Dev)
-		}
-	}
 	q = q.Arg("generator", generator)
 	q = q.Arg("outputDir", outputDir)
 
@@ -7966,23 +8115,21 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
-// CacheVolumeOpts contains options for Client.CacheVolume
-type CacheVolumeOpts struct {
-	Namespace string
-}
-
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
+func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `namespace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Namespace) {
-			q = q.Arg("namespace", opts[i].Namespace)
-		}
-	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Dagger Cloud configuration and state
+func (r *Client) Cloud() *Cloud {
+	q := r.query.Select("cloud")
+
+	return &Cloud{
 		query: q,
 	}
 }
@@ -8326,6 +8473,16 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Cloud from its ID.
+func (r *Client) LoadCloudFromID(id CloudID) *Cloud {
+	q := r.query.Select("loadCloudFromID")
+	q = q.Arg("id", id)
+
+	return &Cloud{
 		query: q,
 	}
 }

@@ -2286,6 +2286,70 @@ type Test struct {}
 	})
 }
 
+// TestUnbundleSDK verifies that you can implement a SDK without
+// having to implements the full interface but only the ones you want.
+// cc: https://github.com/dagger/dagger/issues/7707
+func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
+	t.Run("only codegen", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-codegen")).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+
+		t.Run("can run dagger develop", func(ctx context.Context, t *testctx.T) {
+			generatedFile, err := ctr.With(daggerExec("develop")).File("/work/hello.txt").Contents(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "Hello, world!", generatedFile)
+		})
+
+		t.Run("explicit error on dagger call", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerExec("call", "foo")).Sync(ctx)
+
+			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
+		})
+
+		t.Run("explicit error on dagger functions", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerFunctions()).Sync(ctx)
+
+			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
+		})
+	})
+
+	t.Run("only runtime", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-runtime")).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+
+		t.Run("can run dagger develop without failing", func(ctx context.Context, t *testctx.T) {
+			_, err := ctr.With(daggerExec("develop")).Sync(ctx)
+
+			require.NoError(t, err)
+		})
+
+		t.Run("can run dagger functions", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerFunctions()).Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "hello-world")
+		})
+
+		t.Run("can run dagger call", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("hello-world")).Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "Hello world")
+		})
+	})
+}
+
 // TestHostError verifies the host api is not exposed to modules
 func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -5729,11 +5793,11 @@ func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerClientInstall(generator string) dagger.WithContainerFunc {
-	return daggerExec("client", "install", "--dev", generator)
+	return daggerExec("client", "install", generator)
 }
 
 func daggerClientInstallAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerExec("client", "install", "--dev", generator, outputDirPath)
+	return daggerExec("client", "install", generator, outputDirPath)
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {

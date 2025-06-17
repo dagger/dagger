@@ -7,12 +7,12 @@ func (m *HelloDagger) Develop(
         source *dagger.Directory,
 ) (*dagger.Directory, error) {
         // Environment with agent inputs and outputs
-        environment := dag.Env(dagger.EnvOpts{Privileged: true}).
+        environment := dag.Env().
                 WithStringInput("assignment", assignment, "the assignment to complete").
                 WithWorkspaceInput(
                         "workspace",
                         dag.Workspace(source),
-                        "the workspace with tools to edit code").
+                        "the workspace with tools to edit and test code").
                 WithWorkspaceOutput(
                         "completed",
                         "the workspace with the completed assignment")
@@ -30,7 +30,7 @@ func (m *HelloDagger) Develop(
                 Env().
                 Output("completed").
                 AsWorkspace()
-        completedDirectory := completed.GetSource().WithoutDirectory("node_modules")
+        completedDirectory := completed.Source().WithoutDirectory("node_modules")
 
         // Make sure the tests really pass
         _, err := m.Test(ctx, completedDirectory)

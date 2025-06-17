@@ -1,13 +1,13 @@
 package core
 
 import (
+	"encoding/json"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Error struct {
-	Query *Query
-
 	Message string        `field:"true" doc:"A description of the error."`
 	Values  []*ErrorValue `field:"true" doc:"The extensions of the error."`
 }
@@ -36,7 +36,9 @@ var _ dagql.ExtendedError = (*Error)(nil)
 func (e *Error) Extensions() map[string]any {
 	ext := map[string]any{}
 	for _, v := range e.Values {
-		ext[v.Name] = v.Value
+		var val any
+		json.Unmarshal(v.Value, &val)
+		ext[v.Name] = val
 	}
 	return ext
 }

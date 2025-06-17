@@ -16,14 +16,20 @@ class Client extends Client\AbstractClient
     /**
      * Constructs a cache volume for a given cache key.
      */
-    public function cacheVolume(string $key, ?string $namespace = ''): CacheVolume
+    public function cacheVolume(string $key): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
-        if (null !== $namespace) {
-        $innerQueryBuilder->setArgument('namespace', $namespace);
-        }
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Dagger Cloud configuration and state
+     */
+    public function cloud(): Cloud
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cloud');
+        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -260,6 +266,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCacheVolumeFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Cloud from its ID.
+     */
+    public function loadCloudFromID(CloudId|Cloud $id): Cloud
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCloudFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

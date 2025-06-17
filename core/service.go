@@ -15,6 +15,7 @@ import (
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/sourcegraph/conc/pool"
@@ -38,8 +39,6 @@ type Service struct {
 	// The span that created the service, which future runs of the service will
 	// link to.
 	Creator trace.SpanContext
-
-	Query *Query
 
 	// A custom hostname set by the user.
 	CustomHostname string
@@ -92,9 +91,15 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	if svc.CustomHostname != "" {
 		return svc.CustomHostname, nil
 	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -113,9 +118,14 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 }
 
 func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	switch {
 	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +144,12 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 
 func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
 	var host string
-	var err error
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	switch {
 	case svc.Container != nil:
 		host, err = svc.Hostname(ctx, id)
@@ -150,7 +165,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = svc.Container.Ports[0].Port
 		}
 	case svc.TunnelUpstream != nil:
-		svcs, err := svc.Query.Services(ctx)
+		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -175,7 +190,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 		}
 
 		if port == 0 {
-			socketStore, err := svc.Query.Sockets(ctx)
+			socketStore, err := query.Sockets(ctx)
 			if err != nil {
 				return "", fmt.Errorf("failed to get socket store: %w", err)
 			}
@@ -198,7 +213,11 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 }
 
 func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return err
 	}
@@ -207,7 +226,11 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 }
 
 func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return err
 	}
@@ -289,7 +312,11 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +332,7 @@ func (svc *Service) startContainer(
 	}()
 
 	var domain string
-	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
+	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
@@ -320,7 +347,7 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + domain
 
-	bk, err := svc.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -420,16 +447,34 @@ func (svc *Service) startContainer(
 
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
+
+	// capture stdout/stderr while the service is starting so we can include it in
+	// the exec error
+	stdoutBuf := new(strings.Builder)
+	stderrBuf := new(strings.Builder)
+
 	if forwardStdin != nil {
 		stdinCtr, stdinClient = io.Pipe()
 	}
 
+	// buffer stdout/stderr so we can return a nice error
+	outBufWC := discardOnClose(stdoutBuf)
+	errBufWC := discardOnClose(stderrBuf)
+	// stop buffering service logs once it's started
+	defer outBufWC.Close()
+	defer errBufWC.Close()
+
+	stdoutWriters := multiWriteCloser{outBufWC}
+	stderrWriters := multiWriteCloser{errBufWC}
+
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
+		stdoutWriters = append(stdoutWriters, stdoutCtr)
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
+		stderrWriters = append(stderrWriters, stderrCtr)
 	}
 
 	svcProc, err := gc.Start(execCtx, bkgw.StartRequest{
@@ -440,8 +485,8 @@ func (svc *Service) startContainer(
 		SecretEnv:    execOp.Secretenv,
 		Tty:          interactive,
 		Stdin:        stdinCtr,
-		Stdout:       stdoutCtr,
-		Stderr:       stderrCtr,
+		Stdout:       stdoutWriters,
+		Stderr:       stderrWriters,
 		SecurityMode: execOp.Security,
 	})
 	if err != nil {
@@ -543,10 +588,70 @@ func (svc *Service) startContainer(
 		}, nil
 	case <-exited:
 		if exitErr != nil {
-			return nil, fmt.Errorf("exited: %w", exitErr)
+			var gwErr *gwpb.ExitError
+			if errors.As(exitErr, &gwErr) {
+				// Create ExecError with available service information
+				return nil, &buildkit.ExecError{
+					Err:      gwErr,
+					Origin:   svc.Creator,
+					Cmd:      execOp.Meta.Args,
+					ExitCode: int(gwErr.ExitCode),
+					Stdout:   stdoutBuf.String(),
+					Stderr:   stderrBuf.String(),
+				}
+			}
+			return nil, exitErr
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
+}
+
+func discardOnClose(w io.Writer) io.WriteCloser {
+	return &discardWriteCloser{w: w}
+}
+
+type discardWriteCloser struct {
+	w      io.Writer
+	closed bool
+}
+
+func (d *discardWriteCloser) Write(p []byte) (n int, err error) {
+	if d.closed {
+		return 0, nil
+	}
+	return d.w.Write(p)
+}
+
+func (d *discardWriteCloser) Close() error {
+	if d.closed {
+		return nil
+	}
+	d.closed = true
+	return nil
+}
+
+type multiWriteCloser []io.WriteCloser
+
+func (mwc multiWriteCloser) Write(p []byte) (int, error) {
+	var errs error
+	for _, wc := range mwc {
+		_, err := wc.Write(p)
+		if err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+	if errs != nil {
+		return 0, errs
+	}
+	return len(p), nil
+}
+
+func (mwc multiWriteCloser) Close() error {
+	var errs error
+	for _, wc := range mwc {
+		errs = errors.Join(errs, wc.Close())
+	}
+	return errs
 }
 
 func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {
@@ -563,11 +668,15 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
-	svcs, err := svc.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := svc.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -651,12 +760,16 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	fullHost := host + "." + network.SessionDomain(clientMetadata.SessionID)
 
-	bk, err := svc.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	sockStore, err := svc.Query.Sockets(ctx)
+	sockStore, err := query.Sockets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get socket store: %w", err)
 	}
@@ -756,8 +869,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	ID       *call.ID
-	Service  *Service
+	Service  dagql.Instance[*Service]
 	Hostname string
 	Aliases  AliasSet
 }

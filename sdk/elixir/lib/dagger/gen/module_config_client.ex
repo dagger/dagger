@@ -4,6 +4,8 @@ defmodule Dagger.ModuleConfigClient do
   The client generated for the module.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "ModuleConfigClient"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -12,17 +14,6 @@ defmodule Dagger.ModuleConfigClient do
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
-
-  @doc """
-  If true, generate the client in developer mode.
-  """
-  @spec dev(t()) :: {:ok, boolean() | nil} | {:error, term()}
-  def dev(%__MODULE__{} = module_config_client) do
-    query_builder =
-      module_config_client.query_builder |> QB.select("dev")
-
-    Client.execute(module_config_client.client, query_builder)
-  end
 
   @doc """
   The directory the client is generated in.

@@ -129,6 +129,8 @@ func (ShellSuite) TestModuleLookup(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	setup := modInit(t, c, "go", `// Main module
+//
+// Multiline module description.
 
 package main
 
@@ -136,6 +138,7 @@ import (
 	"dagger/test/internal/dagger"
 )
 
+// Constructor description.
 func New(
 	// +defaultPath=.
 	source *dagger.Directory,
@@ -144,6 +147,8 @@ func New(
 }
 
 // Test main object
+//
+// Multiline object description.
 type Test struct{
 	Source *dagger.Directory
 }
@@ -156,7 +161,7 @@ func (Test) Version() string {
 // Encouragement
 func (Test) Go() string {
 	return "Let's go!"
-} 
+}
 `,
 	).
 		With(withModInitAt("modules/dep", "go", `// Dependency module
@@ -165,7 +170,7 @@ package main
 
 func New() *Dep {
 	return &Dep{
-		Version: "dep function",  
+		Version: "dep function",
 	}
 }
 
@@ -200,10 +205,9 @@ func (Go) Version() string {
 }
 `,
 		)).
-		With(withModInitAt("other", "go", `// A local module
+		With(withModInitAt("other", "go", ` package main
 
-package main
-
+// A local module
 type Other struct{}
 
 func (Other) Version() string {
@@ -215,15 +219,49 @@ func (Other) Version() string {
 		With(daggerExec("install", "./modules/git")).
 		With(daggerExec("install", "./modules/go"))
 
+	t.Run("general help", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".help")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Main module")
+		require.NotContains(t, out, "Multiline module description.")
+		require.Regexp(t, `version\s+Test version`, out)
+		require.Regexp(t, `go\s+Encouragement`, out)
+		require.Regexp(t, `dep\s+Dependency module`, out)
+		require.Regexp(t, `git\s+A git helper`, out)
+		require.NotContains(t, out, "A go helper")
+	})
+
 	t.Run("current module doc", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
 			With(daggerShell(".help .")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "Test main object")
+		require.Contains(t, out, "Main module")
+		require.Contains(t, out, "Multiline module description.")
 		require.Contains(t, out, "ENTRYPOINT")
+		require.Contains(t, out, "Constructor description.")
 		require.Contains(t, out, "Usage: . [options]")
+		// functions
+		require.Contains(t, out, "Test version")
+		require.Contains(t, out, "Encouragement")
+		// object description is only used as fallback
+		require.NotContains(t, out, "Test main object.")
+	})
+
+	t.Run("current main object doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(". | .help")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OBJECT")
+		require.Contains(t, out, "Test main object")
+		require.Contains(t, out, "Multiline object description")
+		// functions
+		require.Contains(t, out, "Test version")
+		require.Contains(t, out, "Encouragement")
 	})
 
 	t.Run("current module function takes precedence over dependency", func(ctx context.Context, t *testctx.T) {
@@ -324,7 +362,7 @@ func (Other) Version() string {
 			With(daggerShell(".help other")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "A local module")
+		require.Contains(t, out, "A local module") // main object description fallback
 		require.NotContains(t, out, "ENTRYPOINT")
 		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
@@ -1023,5 +1061,48 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 			With(daggerShell(`_container`)).
 			Sync(ctx)
 		requireErrOut(t, err, "does not exist")
+	})
+}
+
+func (ShellSuite) TestPrintenvCommand(ctx context.Context, t *testctx.T) {
+	t.Run("printenv all", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "GOPATH=/go")
+		require.Contains(t, out, "HOME=/root")
+		require.Contains(t, out, "PWD=/work")
+	})
+
+	t.Run("printenv specific", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv PATH`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "/usr/local/bin")
+	})
+
+	t.Run("printenv non-existing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`.printenv NON_EXISTING_VAR`)).
+			Sync(ctx)
+		requireErrOut(t, err, `environment variable "NON_EXISTING_VAR" not set`)
+	})
+
+	t.Run("printenv shows set envs", func(ctx context.Context, t *testctx.T) {
+		script := `
+ctr=$(container)
+.printenv ctr
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Container@xxh3:")
 	})
 }

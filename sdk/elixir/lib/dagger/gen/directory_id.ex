@@ -4,5 +4,7 @@ defmodule Dagger.DirectoryID do
   The `DirectoryID` scalar type represents an identifier for an object of type Directory.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "DirectoryID"
+
   @type t() :: String.t()
 end

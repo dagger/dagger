@@ -13,6 +13,9 @@ type Binding {
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
+  """Retrieve the binding value, as type Cloud"""
+  asCloud: Cloud!
+
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
 
@@ -109,6 +112,20 @@ type CacheVolume {
 The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 """
 scalar CacheVolumeID
+
+"""Dagger Cloud configuration and state"""
+type Cloud {
+  """A unique identifier for this Cloud."""
+  id: CloudID!
+
+  """The trace URL for the current session"""
+  traceURL: String!
+}
+
+"""
+The `CloudID` scalar type represents an identifier for an object of type Cloud.
+"""
+scalar CloudID
 
 """An OCI-compatible container, also known as a Docker container."""
 type Container {
@@ -1028,6 +1045,23 @@ type Container {
     service: ServiceID!
   ): Container!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+  ): Container!
+
   """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
   """
@@ -1510,6 +1544,17 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
+  """Return a snapshot with a symlink"""
+  withSymlink(
+    """Location of the file or directory to link to (e.g., "/existing/file")."""
+    target: String!
+
+    """
+    Location where the symbolic link will be created (e.g., "/new-file-link").
+    """
+    linkName: String!
+  ): Directory!
+
   """
   Retrieves this directory with all file/dir timestamps set to the given time.
   """
@@ -1579,7 +1624,12 @@ type EngineCache {
   minFreeSpace: Int!
 
   """Prune the cache of releaseable entries"""
-  prune: Void
+  prune(
+    """
+    Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    """
+    useDefaultPolicy: Boolean = false
+  ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
   reservedSpace: Int!
@@ -1722,6 +1772,27 @@ type Env {
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Cloud in the environment"""
+  withCloudInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Cloud value to assign to the binding"""
+    value: CloudID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Cloud output to be assigned in the environment"""
+  withCloudOutput(
     """The name of the binding"""
     name: String!
 
@@ -2847,9 +2918,6 @@ type Module {
 
 """The client generated for the module."""
 type ModuleConfigClient {
-  """If true, generate the client in developer mode."""
-  dev: Boolean
-
   """The directory the client is generated in."""
   directory: String!
 
@@ -2999,9 +3067,6 @@ type ModuleSource {
 
     """The output directory for the generated client."""
     outputDir: String!
-
-    """Generate in developer mode"""
-    dev: Boolean
   ): ModuleSource!
 
   """
@@ -3179,9 +3244,10 @@ type Query {
     A string identifier to target this cache volume (e.g., "modules-cache").
     """
     key: String!
-
-    namespace: String = ""
   ): CacheVolume!
+
+  """Dagger Cloud configuration and state"""
+  cloud: Cloud!
 
   """
   Creates a scratch container, with no image or metadata.
@@ -3333,6 +3399,9 @@ type Query {
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Cloud from its ID."""
+  loadCloudFromID(id: CloudID!): Cloud!
 
   """Load a Container from its ID."""
   loadContainerFromID(id: ContainerID!): Container!

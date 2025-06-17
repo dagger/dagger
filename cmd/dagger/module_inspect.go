@@ -37,11 +37,14 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // By default, looks for a module in the current directory, or above.
 // Returns an error if the module is not found or invalid.
 func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	if moduleNoURL {
+		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+	}
 	modRef, _ := getExplicitModuleSourceRef()
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, dag.ModuleSource(modRef))
+	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
 }
 
 // initializeModule loads the module at the given source ref
@@ -50,9 +53,10 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
+	modRef string,
 	modSrc *dagger.ModuleSource,
 ) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module")
+	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
@@ -93,7 +97,7 @@ func initializeClientGeneratorModule(
 	srcRef string,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (gdef *clientGeneratorModuleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module")
+	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
 	defer telemetry.End(span, func() error {
 		// To not confuse the user, we don't want to show the error if the config
 		// doesn't exist here. It should be handled in an upper function.

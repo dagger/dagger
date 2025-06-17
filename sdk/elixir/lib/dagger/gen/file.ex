@@ -4,6 +4,8 @@ defmodule Dagger.File do
   A file.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "File"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

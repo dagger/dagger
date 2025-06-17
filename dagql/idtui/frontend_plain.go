@@ -222,12 +222,6 @@ func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
-func (fe *frontendPlain) SetCustomExit(fn func()) {
-	fe.mu.Lock()
-	fe.Opts().CustomExit = fn
-	fe.mu.Unlock()
-}
-
 func (fe *frontendPlain) SetVerbosity(n int) {
 	fe.mu.Lock()
 	fe.Opts().Verbosity = n
@@ -520,6 +514,8 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
+	fmt.Fprint(fe.output, prefix)
+	r.indent(fe.output, depth)
 	if spanCall := span.Call(); spanCall != nil {
 		call := &callpbv1.Call{
 			Field:          spanCall.Field,
@@ -531,13 +527,13 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 			call.Args = nil
 			call.Type = nil
 		}
-		r.renderCall(fe.output, nil, call, prefix, false, depth, false, span.Internal, false)
+		r.renderCall(fe.output, nil, call, prefix, false, depth-1, span.Internal, nil)
 	} else {
-		r.renderSpan(fe.output, nil, span.Name, prefix, depth, false, false)
+		r.renderSpan(fe.output, nil, span.Name)
 	}
 	if done {
 		if span.IsFailedOrCausedFailure() {
-			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIYellow))
+			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIRed))
 		} else if span.IsCached() {
 			fmt.Fprint(fe.output, fe.output.String(" CACHED").Foreground(termenv.ANSIBlue))
 		} else {

@@ -78,6 +78,39 @@ impl CacheVolumeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct CloudId(pub String);
+impl From<&str> for CloudId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for CloudId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<CloudId> for Cloud {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CloudId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CloudId> for CloudId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CloudId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<CloudId, DaggerError>(self) })
+    }
+}
+impl CloudId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(pub String);
 impl From<&str> for ContainerId {
     fn from(value: &str) -> Self {
@@ -1598,6 +1631,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Cloud
+    pub fn as_cloud(&self) -> Cloud {
+        let query = self.selection.select("asCloud");
+        Cloud {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Container
     pub fn as_container(&self) -> Container {
         let query = self.selection.select("asContainer");
@@ -1756,6 +1798,24 @@ impl CacheVolume {
     /// A unique identifier for this CacheVolume.
     pub async fn id(&self) -> Result<CacheVolumeId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Cloud {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Cloud {
+    /// A unique identifier for this Cloud.
+    pub async fn id(&self) -> Result<CloudId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The trace URL for the current session
+    pub async fn trace_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("traceURL");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -2104,6 +2164,12 @@ pub struct ContainerWithNewFileOpts<'a> {
     /// Permissions of the new file. Example: 0600
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithSymlinkOpts {
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithUnixSocketOpts<'a> {
@@ -3700,6 +3766,52 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_symlink(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+    ) -> Container {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_symlink_opts(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+        opts: ContainerWithSymlinkOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
     /// # Arguments
@@ -4930,6 +5042,26 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a snapshot with a symlink
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
+    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    pub fn with_symlink(
+        &self,
+        target: impl Into<String>,
+        link_name: impl Into<String>,
+    ) -> Directory {
+        let mut query = self.selection.select("withSymlink");
+        query = query.arg("target", target.into());
+        query = query.arg("linkName", link_name.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
     /// # Arguments
@@ -5025,6 +5157,12 @@ pub struct EngineCacheEntrySetOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EngineCachePruneOpts {
+    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    #[builder(setter(into, strip_option), default)]
+    pub use_default_policy: Option<bool>,
+}
 impl EngineCache {
     /// The current set of entries in the cache
     ///
@@ -5076,8 +5214,24 @@ impl EngineCache {
         query.execute(self.graphql_client.clone()).await
     }
     /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn prune(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("prune");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Prune the cache of releaseable entries
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn prune_opts(&self, opts: EngineCachePruneOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("prune");
+        if let Some(use_default_policy) = opts.use_default_policy {
+            query = query.arg("useDefaultPolicy", use_default_policy);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The minimum amount of disk space this policy is guaranteed to retain.
@@ -5330,6 +5484,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withCacheVolumeOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Cloud in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Cloud value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_cloud_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CloudId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCloudInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Cloud output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_cloud_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCloudOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -7649,11 +7852,6 @@ pub struct ModuleConfigClient {
     pub graphql_client: DynGraphQLClient,
 }
 impl ModuleConfigClient {
-    /// If true, generate the client in developer mode.
-    pub async fn dev(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("dev");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The directory the client is generated in.
     pub async fn directory(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("directory");
@@ -7675,12 +7873,6 @@ pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceWithClientOpts {
-    /// Generate in developer mode
-    #[builder(setter(into, strip_option), default)]
-    pub dev: Option<bool>,
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -7857,7 +8049,6 @@ impl ModuleSource {
     ///
     /// * `generator` - The generator to use
     /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_client(
         &self,
         generator: impl Into<String>,
@@ -7866,31 +8057,6 @@ impl ModuleSource {
         let mut query = self.selection.select("withClient");
         query = query.arg("generator", generator.into());
         query = query.arg("outputDir", output_dir.into());
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Update the module source with a new client to generate.
-    ///
-    /// # Arguments
-    ///
-    /// * `generator` - The generator to use
-    /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_client_opts(
-        &self,
-        generator: impl Into<String>,
-        output_dir: impl Into<String>,
-        opts: ModuleSourceWithClientOpts,
-    ) -> ModuleSource {
-        let mut query = self.selection.select("withClient");
-        query = query.arg("generator", generator.into());
-        query = query.arg("outputDir", output_dir.into());
-        if let Some(dev) = opts.dev {
-            query = query.arg("dev", dev);
-        }
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -8146,11 +8312,6 @@ pub struct Query {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryCacheVolumeOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub namespace: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
     /// Platform to initialize the container with. Defaults to the native platform of the current engine
     #[builder(setter(into, strip_option), default)]
@@ -8245,7 +8406,6 @@ impl Query {
     /// # Arguments
     ///
     /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
@@ -8255,23 +8415,10 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Constructs a cache volume for a given cache key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn cache_volume_opts<'a>(
-        &self,
-        key: impl Into<String>,
-        opts: QueryCacheVolumeOpts<'a>,
-    ) -> CacheVolume {
-        let mut query = self.selection.select("cacheVolume");
-        query = query.arg("key", key.into());
-        if let Some(namespace) = opts.namespace {
-            query = query.arg("namespace", namespace);
-        }
-        CacheVolume {
+    /// Dagger Cloud configuration and state
+    pub fn cloud(&self) -> Cloud {
+        let query = self.selection.select("cloud");
+        Cloud {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8655,6 +8802,22 @@ impl Query {
             }),
         );
         CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Cloud from its ID.
+    pub fn load_cloud_from_id(&self, id: impl IntoID<CloudId>) -> Cloud {
+        let mut query = self.selection.select("loadCloudFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Cloud {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

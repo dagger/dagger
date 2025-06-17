@@ -5,7 +5,6 @@ import (
 )
 
 type Host struct {
-	Query *Query
 }
 
 func (*Host) Type() *ast.Type {

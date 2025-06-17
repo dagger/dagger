@@ -12,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/koron-go/prefixw"
@@ -73,6 +74,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "pending", Fail: true},
 		{Function: "list", Args: []string{"--dir", "."}},
 		{Function: "object-lists"},
+		{Function: "nested-calls"},
+		{Function: "path-args", Args: []string{"--file", "golden_test.go", "--dir", "."}},
 		{
 			Function: "custom-span",
 			Env: []string{
@@ -148,6 +151,9 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		// TypeScript SDK tests
 		{Module: "./viztest/typescript", Function: "pending", Fail: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
+		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
+		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
+		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {
@@ -486,9 +492,13 @@ type otlpReceiver struct {
 	t      *testctx.T
 	traces sdktrace.SpanExporter
 	logs   sdklog.Exporter
+	mu     sync.Mutex
 }
 
 func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -521,6 +531,9 @@ func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)

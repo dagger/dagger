@@ -4,6 +4,8 @@ defmodule Dagger.PortForward do
   Port forwarding rules for tunneling network traffic.
   """
 
+  use Dagger.Core.Base, kind: :input, name: "PortForward"
+
   @type t() :: %__MODULE__{
           backend: integer(),
           frontend: integer() | nil,

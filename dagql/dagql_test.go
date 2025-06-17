@@ -2601,7 +2601,7 @@ func (NestedObject) Type() *ast.Type {
 // InstallTestTypes installs the test types on the server
 func InstallTestTypes(srv *dagql.Server) {
 	// Install TestObject
-	testObjClass := dagql.NewClass(dagql.ClassOpts[*TestObject]{
+	testObjClass := dagql.NewClass(srv, dagql.ClassOpts[*TestObject]{
 		Typed: &TestObject{},
 	})
 
@@ -2640,7 +2640,7 @@ func InstallTestTypes(srv *dagql.Server) {
 	srv.InstallObject(testObjClass)
 
 	// Install NestedObject
-	nestedObjClass := dagql.NewClass(dagql.ClassOpts[*NestedObject]{
+	nestedObjClass := dagql.NewClass(srv, dagql.ClassOpts[*NestedObject]{
 		Typed: &NestedObject{},
 	})
 

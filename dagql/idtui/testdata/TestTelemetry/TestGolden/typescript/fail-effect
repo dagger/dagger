@@ -1,0 +1,30 @@
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: ./viztest/typescript X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● typescript: Typescript! X.Xs
+▼ .failEffect: Container! X.Xs ERROR
+! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+├─$ Container.from(address: "alpine"): Container! X.Xs CACHED
+╰─▼ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs ERROR
+  ┃ this is a failing effect
+  ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+
+Error logs:
+
+▼ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs ERROR
+this is a failing effect
+! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

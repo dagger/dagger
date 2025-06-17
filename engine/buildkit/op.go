@@ -69,13 +69,9 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 	}
 
 	// pre-populate a reasonable underlying representation that has some inputs
-	var a *llb.FileAction = llb.Rm("/" + id.Encoded())
+	a := llb.Rm("/" + id.Encoded())
 	for _, input := range inputs {
-		if a == nil {
-			a = llb.Copy(input, "/", "/")
-		} else {
-			a = a.Copy(input, "/", "/")
-		}
+		a = a.Copy(input, "/", "/")
 	}
 	st := llb.Scratch().File(a)
 	customOpOpt, err := opWrapped.AsConstraintsOpt()
@@ -111,8 +107,20 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 	return cm, ok, err
 }
 
+type bkSessionGroupContextKey struct{}
+
+func ctxWithBkSessionGroup(ctx context.Context, g bksession.Group) context.Context {
+	return context.WithValue(ctx, bkSessionGroupContextKey{}, g)
+}
+
+func CurrentBuildkitSessionGroup(ctx context.Context) (bksession.Group, bool) {
+	g, ok := ctx.Value(bkSessionGroupContextKey{}).(bksession.Group)
+	return g, ok
+}
+
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
 	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
+	ctx = ctxWithBkSessionGroup(ctx, g)
 
 	server, err := op.server.DagqlServer(ctx)
 	if err != nil {

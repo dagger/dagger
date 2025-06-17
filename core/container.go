@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -39,6 +40,8 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
+var ErrMountNotExist = errors.New("mount does not exist")
+
 type DefaultTerminalCmdOpts struct {
 	Args []string
 
@@ -56,10 +59,9 @@ type ContainerAnnotation struct {
 
 // Container is a content-addressed container.
 type Container struct {
-	Query *Query
-
 	// The container's root filesystem.
-	FS *pb.Definition
+	FS       *pb.Definition
+	FSResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig
@@ -71,7 +73,8 @@ type Container struct {
 	Mounts ContainerMounts
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *pb.Definition
+	Meta       *pb.Definition
+	MetaResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -129,7 +132,7 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		}
 	}
 	for _, bnd := range container.Services {
-		ctr := bnd.Service.Container
+		ctr := bnd.Service.Self.Container
 		if ctr == nil {
 			continue
 		}
@@ -142,12 +145,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 	return defs, nil
 }
 
-func NewContainer(root *Query, platform Platform) (*Container, error) {
-	if root == nil {
-		panic("query must be non-nil")
-	}
+func NewContainer(platform Platform) (*Container, error) {
 	return &Container{
-		Query:    root,
 		Platform: platform,
 	}, nil
 }
@@ -169,6 +168,32 @@ func (container *Container) Clone() *Container {
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
+}
+
+var _ dagql.OnReleaser = (*Container)(nil)
+
+func (container *Container) OnRelease(ctx context.Context) error {
+	if container.FSResult != nil {
+		err := container.FSResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if container.MetaResult != nil {
+		err := container.MetaResult.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, mount := range container.Mounts {
+		if mount.Result != nil {
+			err := mount.Result.Release(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -230,6 +255,7 @@ func (container *Container) MetaState() (*llb.State, error) {
 type ContainerMount struct {
 	// The source of the mount.
 	Source *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string
@@ -284,8 +310,29 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
+func (mnts ContainerMounts) Replace(newMnt ContainerMount) (ContainerMounts, error) {
+	mntsCp := make(ContainerMounts, 0, len(mnts))
+	found := false
+	for _, mnt := range mnts {
+		if mnt.Target == newMnt.Target {
+			mntsCp = append(mntsCp, newMnt)
+			found = true
+		} else {
+			mntsCp = append(mntsCp, mnt)
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("failed to replace %s: %w", newMnt.Target, ErrMountNotExist)
+	}
+	return mntsCp, nil
+}
+
 func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -328,7 +375,11 @@ func (container *Container) FromCanonicalRef(
 ) (*Container, error) {
 	container = container.Clone()
 
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -414,11 +465,15 @@ func (container *Container) Build(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -557,7 +612,6 @@ func (container *Container) Build(
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	return &Directory{
-		Query:    container.Query,
 		LLB:      container.FS,
 		Dir:      "/",
 		Platform: container.Platform,
@@ -568,17 +622,21 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Container, error) {
 	container = container.Clone()
 
-	dirSt, err := dir.StateWithSourcePath()
-	if err != nil {
-		return nil, err
-	}
+	if dir.Result != nil {
+		container.FSResult = dir.Result
+	} else {
+		dirSt, err := dir.StateWithSourcePath()
+		if err != nil {
+			return nil, err
+		}
 
-	def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
+		def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
 
-	container.FS = def.ToPB()
+		container.FS = def.ToPB()
+	}
 
 	container.Services.Merge(dir.Services)
 
@@ -658,16 +716,23 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 	})
 }
 
+func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
+	dir, linkName := filepath.Split(filepath.Clean(linkName))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
+		return dir.WithSymlink(ctx, srv, target, linkName)
+	})
+}
+
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, dir.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, file.Services, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -889,11 +954,15 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return nil, err
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -935,7 +1004,7 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
-	init func(*Query, *pb.Definition, string, Platform, ServiceBindings) T,
+	init func(*pb.Definition, string, Platform, ServiceBindings) T,
 ) (T, *ContainerMount, error) {
 	containerPath = absPath(container.Config.WorkingDir, containerPath)
 
@@ -962,7 +1031,6 @@ func locatePath[T *File | *Directory](
 			}
 
 			return init(
-				container.Query,
 				mnt.Source,
 				sub,
 				container.Platform,
@@ -973,7 +1041,6 @@ func locatePath[T *File | *Directory](
 
 	// Not found in a mount
 	return init(
-		container.Query,
 		container.FS,
 		containerPath,
 		container.Platform,
@@ -985,6 +1052,7 @@ func (container *Container) withMounted(
 	ctx context.Context,
 	target string,
 	srcDef *pb.Definition,
+	result bkcache.ImmutableRef,
 	srcPath string,
 	svcs ServiceBindings,
 	owner string,
@@ -1005,7 +1073,47 @@ func (container *Container) withMounted(
 		SourcePath: srcPath,
 		Target:     target,
 		Readonly:   readonly,
+		Result:     result,
 	})
+
+	container.Services.Merge(svcs)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+func (container *Container) replaceMount(
+	ctx context.Context,
+	target string,
+	srcDef *pb.Definition,
+	result bkcache.ImmutableRef,
+	srcPath string,
+	svcs ServiceBindings,
+	owner string,
+	readonly bool,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+
+	var err error
+	if owner != "" {
+		srcDef, srcPath, err = container.chown(ctx, srcDef, srcPath, owner, llb.Platform(container.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	container.Mounts, err = container.Mounts.Replace(ContainerMount{
+		Source:     srcDef,
+		SourcePath: srcPath,
+		Target:     target,
+		Readonly:   readonly,
+		Result:     result,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	container.Services.Merge(svcs)
 
@@ -1050,7 +1158,11 @@ func (container *Container) chown(
 			return nil, "", err
 		}
 
-		bk, err := container.Query.Buildkit(ctx)
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		bk, err := query.Buildkit(ctx)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get buildkit client: %w", err)
 		}
@@ -1118,7 +1230,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
+	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1128,12 +1240,6 @@ func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig,
 func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(specs.ImageConfig) specs.ImageConfig) (*Container, error) {
 	container = container.Clone()
 	container.Config = updateFn(container.Config)
-	return container, nil
-}
-
-func (container *Container) WithPipeline(ctx context.Context, name, description string) (*Container, error) {
-	container = container.Clone()
-	container.Query = container.Query.WithPipeline(name, description)
 	return container, nil
 }
 
@@ -1152,7 +1258,11 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, nil
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -1172,7 +1282,7 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, err
 	}
 
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1285,11 +1395,15 @@ func (container *Container) Publish(
 		return "", errors.New("no containers to export")
 	}
 
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1335,11 +1449,15 @@ func (container *Container) Export(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	svcs, err := container.Query.Services(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := container.Query.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -1425,12 +1543,16 @@ func (container *Container) Import(
 	source *File,
 	tag string,
 ) (*Container, error) {
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	store := container.Query.OCIStore()
-	lm := container.Query.LeaseManager()
+	store := query.OCIStore()
+	lm := query.LeaseManager()
 
 	container = container.Clone()
 
@@ -1571,10 +1693,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, id *call.ID, svc *Service, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Hostname(ctx, id)
+	host, err := svc.Self.Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
 	}
@@ -1586,7 +1708,6 @@ func (container *Container) WithServiceBinding(ctx context.Context, id *call.ID,
 
 	container.Services.Merge(ServiceBindings{
 		{
-			ID:       id,
 			Service:  svc,
 			Hostname: host,
 			Aliases:  aliases,
@@ -1638,7 +1759,6 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 	}
 	return &Service{
 		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
 		Container: container,
 	}, nil
 }
@@ -1677,7 +1797,6 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 
 	return &Service{
 		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     container.Query,
 		Container: container,
 	}, nil
 }
@@ -1693,7 +1812,11 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 		return nil, err
 	}
 
-	bk, err := container.Query.Buildkit(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}

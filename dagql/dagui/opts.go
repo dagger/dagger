@@ -27,9 +27,6 @@ type FrontendOpts struct {
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
-	// Run a custom function on exit.
-	CustomExit func()
-
 	// DotOutputFilePath is the path to write the DOT output to after execution, if any
 	DotOutputFilePath string
 
@@ -48,6 +45,9 @@ type FrontendOpts struct {
 
 	// SpanVerbosity tracks per-span verbosity.
 	SpanVerbosity map[SpanID]int
+
+	// Whether the span has been expanded by the user.
+	SpanExpanded map[SpanID]bool
 
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision

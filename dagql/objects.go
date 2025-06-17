@@ -28,6 +28,8 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
+
+	invalidateSchemaCache func()
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -44,7 +46,7 @@ type ClassOpts[T Typed] struct {
 }
 
 // NewClass returns a new empty class for a given type.
-func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
+func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	var opts ClassOpts[T]
 	if len(opts_) > 0 {
 		opts = opts_[0]
@@ -53,6 +55,8 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 		inner:   opts.Typed,
 		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
+
+		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
 		class.Install(
@@ -146,17 +150,20 @@ func (class Class[T]) Install(fields ...Field[T]) {
 
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
 }
 
 var _ ObjectType = Class[Typed]{}
 
-func (cls Class[T]) TypeName() string {
-	return cls.inner.Type().Name()
+func (class Class[T]) TypeName() string {
+	return class.inner.Type().Name()
 }
 
-func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
-	cls.fieldsL.Lock()
-	defer cls.fieldsL.Unlock()
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
 	f := &Field[T]{
 		Spec: &spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
@@ -164,7 +171,10 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 		},
 	}
 	f.CacheSpec = cacheSpec
-	cls.fields[spec.Name] = append(cls.fields[spec.Name], f)
+	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
 }
 
 // TypeDefinition returns the schema definition of the class.
@@ -173,24 +183,24 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
-	cls.fieldsL.Lock()
-	defer cls.fieldsL.Unlock()
-	var val any = cls.inner
+func (class Class[T]) TypeDefinition(view View) *ast.Definition {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	var val any = class.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.TypeDefinition(view)
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
-			Name: cls.inner.Type().Name(),
+			Name: class.inner.Type().Name(),
 		}
 	}
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	for name := range cls.fields {
-		if field, ok := cls.fieldLocked(name, view); ok {
+	for name := range class.fields {
+		if field, ok := class.fieldLocked(name, view); ok {
 			def.Fields = append(def.Fields, field.FieldDefinition(view))
 		}
 	}
@@ -202,16 +212,20 @@ func (cls Class[T]) TypeDefinition(view View) *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
-	field, ok := cls.Field(astField.Name, view)
+func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+	field, ok := class.Field(astField.Name, view)
 	if !ok {
-		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
+		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", class.TypeName(), astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Input(arg.Name, view)
 		if !ok {
-			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", cls.TypeName(), field.Spec.Name, arg.Name)
+			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", class.TypeName(), field.Spec.Name, arg.Name)
+		}
+
+		if argSpec.Internal {
+			return Selector{}, nil, fmt.Errorf("cannot use internal argument %q in selector for %s.%s", arg.Name, class.TypeName(), field.Spec.Name)
 		}
 
 		val, err := arg.Value.Value(vars)
@@ -240,30 +254,30 @@ func (cls Class[T]) ParseField(ctx context.Context, view View, astField *ast.Fie
 }
 
 // New returns a new instance of the class.
-func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
+func (class Class[T]) New(id *call.ID, val Typed) (Object, error) {
 	self, ok := val.(T)
 	if !ok {
 		// NB: Nullable values should already be unwrapped by now.
-		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
+		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 	}
 	return Instance[T]{
 		Constructor: id,
 		Self:        self,
-		Class:       cls,
+		Class:       class,
 	}, nil
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(
+func (class Class[T]) Call(
 	ctx context.Context,
 	node Instance[T],
 	fieldName string,
 	view View,
 	args map[string]Input,
 ) (*CacheValWithCallbacks, error) {
-	field, ok := cls.Field(fieldName, view)
+	field, ok := class.Field(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", class.inner.Type().Name(), fieldName)
 	}
 
 	val, err := field.Func(ctx, node, args, view)
@@ -384,6 +398,20 @@ type preselectResult struct {
 	doNotCache bool
 }
 
+// sortArgsToSchema sorts the arguments to match the schema definition order.
+func (r Instance[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []*call.Argument) {
+	inputs := fieldSpec.Args.Inputs(view)
+	sort.Slice(idArgs, func(i, j int) bool {
+		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[i].Name()
+		})
+		jIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
+			return input.Name == idArgs[j].Name()
+		})
+		return iIdx < jIdx
+	})
+}
+
 func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
@@ -426,10 +454,8 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
+
+	r.sortArgsToSchema(field.Spec, view, idArgs)
 
 	astType := field.Spec.Type.Type()
 	if sel.Nth != 0 {
@@ -478,6 +504,7 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 					))
 				}
 			}
+			r.sortArgsToSchema(field.Spec, view, idArgs)
 			newID = r.Constructor.Append(
 				astType,
 				sel.Field,
@@ -909,6 +936,12 @@ type InputSpec struct {
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter ViewFilter
+
+	// Internal indicates that this input can only be set by internal server
+	// calls, never by external clients. It may appear in IDs sent to/from
+	// clients, but can't be set in new graphql queries.
+	// This argument will not be exposed in the introspection schema.
+	Internal bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -937,6 +970,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.ViewFilter != nil {
 		spec.ViewFilter = other.ViewFilter
 	}
+	if other.Internal {
+		spec.Internal = other.Internal
+	}
 }
 
 type Argument struct {
@@ -958,6 +994,11 @@ func (arg Argument) Doc(paras ...string) Argument {
 
 func (arg Argument) Sensitive() Argument {
 	arg.Spec.Sensitive = true
+	return arg
+}
+
+func (arg Argument) Internal() Argument {
+	arg.Spec.Internal = true
 	return arg
 }
 
@@ -1064,6 +1105,9 @@ func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition
 		if arg.ExperimentalReason != "" {
 			schemaArg.Directives = append(schemaArg.Directives, experimental(arg.ExperimentalReason))
 		}
+		if arg.Internal {
+			schemaArg.Directives = append(schemaArg.Directives, internal())
+		}
 		defs = append(defs, schemaArg)
 	}
 	return defs
@@ -1106,7 +1150,7 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	class := server.InstallObject(NewClass[T]()).(Class[T])
+	class := server.InstallObject(NewClass[T](server)).(Class[T])
 
 	var t T
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
@@ -1211,6 +1255,7 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 	}
 
 	newArgs := make([]InputSpec, 0, len(args))
+	patched := make(map[string]struct{}, len(args))
 	for _, patch := range args {
 		arg, ok := original[patch.Spec.Name]
 		if !ok {
@@ -1218,7 +1263,18 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 		}
 		arg.merge(&patch.Spec)
 		newArgs = append(newArgs, arg)
+		patched[patch.Spec.Name] = struct{}{}
 	}
+
+	// check if there were any original args not patched, if so include them
+	// at the end in a stable order
+	for _, origArg := range field.Spec.Args.raw {
+		if _, ok := patched[origArg.Name]; ok {
+			continue
+		}
+		newArgs = append(newArgs, origArg)
+	}
+
 	field.Spec.Args = InputSpecs{newArgs}
 	return field
 }
@@ -1310,6 +1366,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
+			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
 		if spec.Description == "" && spec.DeprecatedReason != "" {
 			spec.Description = deprecationDescription(spec.DeprecatedReason)
@@ -1358,7 +1415,7 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 			continue
 		}
 		name := fieldT.Tag.Get("name")
-		if name == "" && isField {
+		if name == "" {
 			name = strcase.ToLowerCamel(fieldT.Name)
 		}
 		if name == "" || name == "-" {

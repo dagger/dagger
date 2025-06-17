@@ -60,11 +60,16 @@ type ContainerExecOpts struct {
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+
 	cfg := container.Config
 	mounts := container.Mounts
 	platform := container.Platform
 	if platform.OS == "" {
-		platform = container.Query.Platform()
+		platform = query.Platform()
 	}
 
 	args, err := container.command(opts)
@@ -107,7 +112,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
 	}
 
-	mod, err := container.Query.CurrentModule(ctx)
+	mod, err := query.CurrentModule(ctx)
 	if err == nil {
 		if mod.InstanceID == nil {
 			return nil, fmt.Errorf("current module has no instance ID")
@@ -382,7 +387,6 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	}
 
 	file := NewFile(
-		container.Query,
 		container.Meta,
 		path.Join(buildkit.MetaMountDestPath, filePath),
 		container.Platform,

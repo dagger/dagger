@@ -4833,6 +4833,19 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
 	})
+
+	t.Run("env variable is expanded in WithSymlink", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("a", "alpha").
+			WithEnvVariable("b", "bravo").
+			WithNewFile("bravo.txt", "phonetic data").
+			WithSymlink("${b}.txt", "${a}.txt", dagger.ContainerWithSymlinkOpts{Expand: true}).
+			File("alpha.txt").Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "phonetic data", output)
+	})
 }
 
 func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
@@ -4996,4 +5009,167 @@ func main() {
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-override-args", output)
 	})
+}
+
+func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("symlink can be created", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithWorkdir("/test").
+			WithNewFile("f", "data").
+			WithSymlink("f", "my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/test/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("symlink can be created above working dir", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("f", "data").
+			WithWorkdir("/test").
+			WithSymlink("../f", "my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/test/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("symlink can be created to root", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("f", "data").
+			WithSymlink("/", "/sub/my-symlink")
+
+		content, err := ctr.File("/sub/my-symlink/f").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink can be created to directory above working dir", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("other-dir/sub/f", "data").
+			WithWorkdir("/test").
+			WithSymlink("../other-dir/sub/", "my-symlink")
+
+		content, err := ctr.File("/test/my-symlink/f").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink can be used to read data", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithWorkdir("/test").
+			WithNewFile("f", "data").
+			WithSymlink("f", "my-symlink")
+
+		content, err := ctr.File("my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink work with mounted directory", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().WithNewFile("f", "data")
+		d2 := c.Directory().WithNewFile("f", "otherdata")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", d).
+			WithMountedDirectory("/mnt-to-other-dir", d2).
+			WithSymlink("f", "/mnt/my-symlink")
+
+		_, err := ctr.WithExec([]string{"test", "-L", "/mnt/my-symlink"}).Stdout(ctx)
+		require.NoError(t, err)
+
+		// make sure the other mount wasn't changed
+		_, err = ctr.File("/mnt-to-other-dir/my-symlink").Sync(ctx)
+		require.ErrorContains(t, err, "no such file or directory")
+
+		content, err := ctr.File("/mnt/my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink work with mounted directory with workdir set", func(ctx context.Context, t *testctx.T) {
+		d := c.Directory().WithNewFile("sub/submarine/f", "data")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", d).
+			WithWorkdir("/mnt/sub").
+			WithSymlink("f", "submarine/my-symlink")
+
+		content, err := ctr.File("/mnt/sub/submarine/my-symlink").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", content)
+	})
+
+	t.Run("symlink cant escape root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithNewFile("some-file", "data").
+			WithSymlink("some-file", "../../../../../../../../../../../../../../../this-should-be-in-the-root-fs")
+
+		entries, err := ctr.Rootfs().Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "this-should-be-in-the-root-fs")
+
+		s, err := ctr.File("this-should-be-in-the-root-fs").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink cant target above root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithSymlink("../../../../../../../../../../../../../../..", "escape").
+			WithNewFile("escape/some-file", "data")
+
+		s, err := ctr.File("some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink cant follow other symlink above root fs", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithSymlink("/root", "escape").
+			WithSymlink("_", "escape/foo/bar")
+
+		entries, err := ctr.Directory("root/foo").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "bar")
+	})
+}
+
+func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out1, err := c.Container().
+		From(alpineImage).
+		WithSymlink("bar", "foo").
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, out1, 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
+
+	out2, err := c.Container().
+		From(alpineImage).
+		WithSymlink("bar", "foo").
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out1, out2)
+
+	out3, err := c.Container().
+		From(alpineImage).
+		WithSymlink("barf", "oo"). // Note the args here are different, and should bust the cache
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, out1, out3) // make sure the call to read from /dev/random was re-run
+	require.Len(t, out3, 132)
 }

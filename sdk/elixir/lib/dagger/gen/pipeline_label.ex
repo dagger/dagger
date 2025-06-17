@@ -4,6 +4,8 @@ defmodule Dagger.PipelineLabel do
   Key value object that represents a pipeline label.
   """
 
+  use Dagger.Core.Base, kind: :input, name: "PipelineLabel"
+
   @type t() :: %__MODULE__{name: String.t(), value: String.t()}
 
   defstruct [:name, :value]

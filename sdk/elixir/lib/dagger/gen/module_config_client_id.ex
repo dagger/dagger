@@ -4,5 +4,7 @@ defmodule Dagger.ModuleConfigClientID do
   The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "ModuleConfigClientID"
+
   @type t() :: String.t()
 end

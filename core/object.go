@@ -64,7 +64,11 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case DynamicID:
-		deps, err := t.mod.Query.IDDeps(ctx, x.ID())
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current query: %w", err)
+		}
+		deps, err := query.IDDeps(ctx, x.ID())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
 		}
@@ -193,7 +197,6 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
 		return NewModFunction(
 			ctx,
-			mod.Query,
 			mod,
 			t.typeDef,
 			mod.Runtime,
@@ -270,7 +273,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 
-	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
+	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
 		Typed: obj,
 	})
 	objDef := obj.TypeDef
@@ -336,7 +339,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := NewModFunction(ctx, mod.Query, mod, objDef, mod.Runtime, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -434,7 +437,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	var f dagql.Field[*ModuleObject]
 	modFun, err := NewModFunction(
 		ctx,
-		mod.Query,
 		mod,
 		objDef,
 		mod.Runtime,

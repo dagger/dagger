@@ -67,7 +67,6 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
-		"IsDevMode":                 funcs.isDevMode,
 		"Dependencies":              funcs.Dependencies,
 		"HasLocalDependencies":      funcs.HasLocalDependencies,
 		"IsBundle":                  funcs.isBundle,
@@ -336,10 +335,6 @@ func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {
 	return funcs.cfg.ClientOnly
-}
-
-func (funcs typescriptTemplateFuncs) isDevMode() bool {
-	return funcs.cfg.Dev
 }
 
 func (funcs typescriptTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {

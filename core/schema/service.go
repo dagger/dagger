@@ -209,7 +209,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*cor
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  s.srv.View,
+			View:  dagql.View(dagql.CurrentID(ctx).View()),
 			Args:  inputs,
 		},
 	)
@@ -227,7 +227,7 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.Instanc
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  s.srv.View,
+			View:  dagql.View(dagql.CurrentID(ctx).View()),
 		},
 	)
 	if err != nil {
@@ -323,7 +323,11 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to select host service: %w", err)
 	}
 
-	svcs, err := hostSvc.Self.Query.Services(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return void, err
+	}
+	svcs, err := query.Services(ctx)
 	if err != nil {
 		return void, fmt.Errorf("failed to get host services: %w", err)
 	}

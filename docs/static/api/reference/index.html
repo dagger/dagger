@@ -29,6 +29,7 @@
             <h4 class="nav-group-title">Queries</h4>
             <ul class="nav-group-items">
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
+              <li><a href="#query-cloud">cloud</a></li>
               <li><a href="#query-container">container</a></li>
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
@@ -47,6 +48,7 @@
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
+              <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
               <li><a href="#query-loadDirectoryFromID">loadDirectoryFromID</a></li>
@@ -108,6 +110,8 @@
               <li><a href="#definition-CacheSharingMode">CacheSharingMode</a></li>
               <li><a href="#definition-CacheVolume">CacheVolume</a></li>
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
+              <li><a href="#definition-Cloud">Cloud</a></li>
+              <li><a href="#definition-CloudID">CloudID</a></li>
               <li><a href="#definition-Container">Container</a></li>
               <li><a href="#definition-ContainerID">ContainerID</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
@@ -257,12 +261,6 @@
                         </td>
                         <td> A string identifier to target this cache volume (e.g., "modules-cache"). </td>
                       </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>namespace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> Default = <code>""</code> </td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -278,6 +276,39 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-cloud" class="operation operation-query" data-traverse-target="query-cloud">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>cloud</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Dagger Cloud configuration and state</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Cloud"><code>Cloud!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -1247,6 +1278,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadCloudFromID" class="operation operation-query" data-traverse-target="query-loadCloudFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadCloudFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Cloud from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Cloud"><code>Cloud!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CloudID"><code>CloudID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3876,6 +3960,10 @@
                         <td> Retrieve the binding value, as type CacheVolume </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asCloud" href="#Binding-asCloud"><code>asCloud</code></a> - <span class="property-type"><a href="#definition-Cloud"><code>Cloud!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Cloud </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asContainer" href="#Binding-asContainer"><code>asContainer</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Container </td>
                       </tr>
@@ -4025,15 +4113,11 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
+                  <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
   <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -4084,12 +4168,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"SHARED"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"SHARED"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -4135,6 +4215,55 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Cloud" class="definition definition-object" data-traverse-target="definition-Cloud">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Cloud</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Dagger Cloud configuration and state</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Cloud-id" href="#Cloud-id"><code>id</code></a> - <span class="property-type"><a href="#definition-CloudID"><code>CloudID!</code></a></span> </td>
+                        <td> A unique identifier for this Cloud. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Cloud-traceURL" href="#Cloud-traceURL"><code>traceURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The trace URL for the current session </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CloudID" class="definition definition-scalar" data-traverse-target="definition-CloudID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CloudID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>CloudID</code> scalar type represents an identifier for an object of type Cloud.</p>
                 </div>
               </div>
             </div>
@@ -5270,6 +5399,31 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withSymlink" href="#Container-withSymlink"><code>withSymlink</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Return a snapshot with a symlink </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the file or directory to link to (e.g., &quot;/existing/file&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>linkName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location where the symbolic link will be created (e.g., &quot;/new-file-link&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withUnixSocket" href="#Container-withUnixSocket"><code>withUnixSocket</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieves this container plus a socket forwarded to the given Unix socket path. </td>
                       </tr>
@@ -6102,6 +6256,27 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-withSymlink" href="#Directory-withSymlink"><code>withSymlink</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Return a snapshot with a symlink </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the file or directory to link to (e.g., &quot;/existing/file&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>linkName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location where the symbolic link will be created (e.g., &quot;/new-file-link&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withTimestamps" href="#Directory-withTimestamps"><code>withTimestamps</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieves this directory with all file/dir timestamps set to the given time. </td>
                       </tr>
@@ -6279,9 +6454,22 @@
                         <td data-property-name=""><a class="property-name" id="EngineCache-minFreeSpace" href="#EngineCache-minFreeSpace"><code>minFreeSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td> The target amount of free disk space the garbage collector will attempt to leave. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="EngineCache-prune" href="#EngineCache-prune"><code>prune</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td> Prune the cache of releaseable entries </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>useDefaultPolicy</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCache-reservedSpace" href="#EngineCache-reservedSpace"><code>reservedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
@@ -6658,6 +6846,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeOutput" href="#Env-withCacheVolumeOutput"><code>withCacheVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired CacheVolume output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCloudInput" href="#Env-withCloudInput"><code>withCloudInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Cloud in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CloudID"><code>CloudID!</code></a></span></h6>
+                                <p>The Cloud value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCloudOutput" href="#Env-withCloudOutput"><code>withCloudOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Cloud output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8666,12 +8900,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"Gzip"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"Gzip"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -8718,12 +8948,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"OCIMediaTypes"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"OCIMediaTypes"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -9425,10 +9651,6 @@
                     </thead>
                     <tbody>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-dev" href="#ModuleConfigClient-dev"><code>dev</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span> </td>
-                        <td> If true, generate the client in developer mode. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleConfigClient-directory" href="#ModuleConfigClient-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The directory the client is generated in. </td>
                       </tr>
@@ -9632,10 +9854,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>outputDir</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The output directory for the generated client.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dev</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Generate in developer mode</p>
                               </div>
                             </div>
                           </div>
@@ -9863,12 +10081,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"LOCAL_SOURCE"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"LOCAL_SOURCE"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -9915,12 +10129,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"TCP"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"TCP"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -10038,15 +10248,11 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
+                  <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
   <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -10159,12 +10365,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+                  <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -10229,12 +10431,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"SUCCESS"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"SUCCESS"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -11129,12 +11327,8 @@
               <div class="doc-examples">
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
-                  <html>
-                    <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"STRING_KIND"</span>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"STRING_KIND"</span>
 </code></pre>
-                    </body>
-                  </html>
                 </div>
               </div>
             </div>

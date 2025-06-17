@@ -104,14 +104,10 @@ defmodule Dagger.Mod.Object do
   end
 
   defmacro __before_compile__(env) do
-    required_fields = Module.get_attribute(env.module, :required_fields) || []
-    optional_fields = Module.get_attribute(env.module, :optional_fields) || []
-    fields = required_fields ++ optional_fields
-
-    if fields == [] do
-      quote do
-      end
-    else
+    if Module.get_attribute(env.module, :struct_declared) do
+      required_fields = Module.get_attribute(env.module, :required_fields) || []
+      optional_fields = Module.get_attribute(env.module, :optional_fields) || []
+      fields = required_fields ++ optional_fields
       fields = Macro.escape(fields)
 
       quote do
@@ -121,6 +117,9 @@ defmodule Dagger.Mod.Object do
           end
         end
       end
+    else
+      quote do
+      end
     end
   end
 
@@ -128,6 +127,8 @@ defmodule Dagger.Mod.Object do
     name = opts[:name]
 
     quote do
+      use Dagger.Core.Base, kind: :object, name: unquote(name)
+
       import Dagger.Mod.Object, only: [defn: 2, field: 2, field: 3, object: 1]
       import Dagger.Global, only: [dag: 0]
 
@@ -201,6 +202,8 @@ defmodule Dagger.Mod.Object do
       @derive Jason.Encoder
       @enforce_keys Keyword.keys(required_fields)
       defstruct fields |> Keyword.keys() |> Enum.sort()
+
+      @struct_declared true
     end
   end
 
@@ -291,6 +294,38 @@ defmodule Dagger.Mod.Object do
   defp compile_typespec!({:float, _, []}), do: :float
   defp compile_typespec!({:boolean, _, []}), do: :boolean
 
+  ## List
+
+  defp compile_typespec!({:list, _, [type]}) do
+    {:list, compile_typespec!(type)}
+  end
+
+  defp compile_typespec!([type]) do
+    {:list, compile_typespec!(type)}
+  end
+
+  ## Optional
+
+  defp compile_typespec!(
+         {{{:., _,
+            [
+              {:__aliases__, _, [_type]},
+              :t
+            ]}, _, []} = type, [default: _default_value]}
+       ) do
+    {:optional, compile_typespec!(type)}
+  end
+
+  defp compile_typespec!({:|, _, [type, nil]}) do
+    {:optional, compile_typespec!(type)}
+  end
+
+  ## Type with options
+
+  defp compile_typespec!({type, _}) do
+    compile_typespec!(type)
+  end
+
   ## String
 
   defp compile_typespec!({:binary, _, []}), do: :string
@@ -307,28 +342,6 @@ defmodule Dagger.Mod.Object do
 
   defp compile_typespec!({{:., _, [{:__aliases__, _, module}, :t]}, _, []}) do
     Module.concat(module)
-  end
-
-  ## List
-
-  defp compile_typespec!({:list, _, [type]}) do
-    {:list, compile_typespec!(type)}
-  end
-
-  defp compile_typespec!([type]) do
-    {:list, compile_typespec!(type)}
-  end
-
-  ## Optional
-
-  defp compile_typespec!({:|, _, [type, nil]}) do
-    {:optional, compile_typespec!(type)}
-  end
-
-  ## Type with options
-
-  defp compile_typespec!({type, _}) do
-    compile_typespec!(type)
   end
 
   defp compile_typespec!(unsupported_type) do

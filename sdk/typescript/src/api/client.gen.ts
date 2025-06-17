@@ -58,6 +58,11 @@ export enum CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+/**
+ * The `CloudID` scalar type represents an identifier for an object of type Cloud.
+ */
+export type CloudID = string & { __CloudID: never }
+
 export type ContainerAsServiceOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
@@ -565,6 +570,13 @@ export type ContainerWithNewFileOpts = {
   expand?: boolean
 }
 
+export type ContainerWithSymlinkOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithUnixSocketOpts = {
   /**
    * A user:group to set for the mounted socket.
@@ -808,6 +820,13 @@ export type DirectoryID = string & { __DirectoryID: never }
 
 export type EngineCacheEntrySetOpts = {
   key?: string
+}
+
+export type EngineCachePruneOpts = {
+  /**
+   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   */
+  useDefaultPolicy?: boolean
 }
 
 /**
@@ -1098,13 +1117,6 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceWithClientOpts = {
-  /**
-   * Generate in developer mode
-   */
-  dev?: boolean
-}
-
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -1170,10 +1182,6 @@ export type PortForward = {
  * The `PortID` scalar type represents an identifier for an object of type Port.
  */
 export type PortID = string & { __PortID: never }
-
-export type ClientCacheVolumeOpts = {
-  namespace?: string
-}
 
 export type ClientContainerOpts = {
   /**
@@ -1580,6 +1588,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Cloud
+   */
+  asCloud = (): Cloud => {
+    const ctx = this._ctx.select("asCloud")
+    return new Cloud(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Container
    */
   asContainer = (): Container => {
@@ -1785,6 +1801,54 @@ export class CacheVolume extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<CacheVolumeID> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * Dagger Cloud configuration and state
+ */
+export class Cloud extends BaseClient {
+  private readonly _id?: CloudID = undefined
+  private readonly _traceURL?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: CloudID, _traceURL?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._traceURL = _traceURL
+  }
+
+  /**
+   * A unique identifier for this Cloud.
+   */
+  id = async (): Promise<CloudID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<CloudID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The trace URL for the current session
+   */
+  traceURL = async (): Promise<string> => {
+    if (this._traceURL) {
+      return this._traceURL
+    }
+
+    const ctx = this._ctx.select("traceURL")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -2734,6 +2798,21 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  withSymlink = (
+    target: string,
+    linkName: string,
+    opts?: ContainerWithSymlinkOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
    * @param source Identifier of the socket to forward.
@@ -3342,6 +3421,16 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a snapshot with a symlink
+   * @param target Location of the file or directory to link to (e.g., "/existing/file").
+   * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   */
+  withSymlink = (target: string, linkName: string): Directory => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName })
+    return new Directory(ctx)
+  }
+
+  /**
    * Retrieves this directory with all file/dir timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *
@@ -3535,13 +3624,14 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
+   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
    */
-  prune = async (): Promise<void> => {
+  prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {
       return
     }
 
-    const ctx = this._ctx.select("prune")
+    const ctx = this._ctx.select("prune", { ...opts })
 
     await ctx.execute()
   }
@@ -4078,6 +4168,27 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Cloud in the environment
+   * @param name The name of the binding
+   * @param value The Cloud value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCloudInput = (name: string, value: Cloud, description: string): Env => {
+    const ctx = this._ctx.select("withCloudInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Cloud output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCloudOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCloudOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -6711,7 +6822,6 @@ export class Module_ extends BaseClient {
  */
 export class ModuleConfigClient extends BaseClient {
   private readonly _id?: ModuleConfigClientID = undefined
-  private readonly _dev?: boolean = undefined
   private readonly _directory?: string = undefined
   private readonly _generator?: string = undefined
 
@@ -6721,14 +6831,12 @@ export class ModuleConfigClient extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ModuleConfigClientID,
-    _dev?: boolean,
     _directory?: string,
     _generator?: string,
   ) {
     super(ctx)
 
     this._id = _id
-    this._dev = _dev
     this._directory = _directory
     this._generator = _generator
   }
@@ -6744,21 +6852,6 @@ export class ModuleConfigClient extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleConfigClientID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * If true, generate the client in developer mode.
-   */
-  dev = async (): Promise<boolean> => {
-    if (this._dev) {
-      return this._dev
-    }
-
-    const ctx = this._ctx.select("dev")
-
-    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -7244,18 +7337,9 @@ export class ModuleSource extends BaseClient {
    * Update the module source with a new client to generate.
    * @param generator The generator to use
    * @param outputDir The output directory for the generated client.
-   * @param opts.dev Generate in developer mode
    */
-  withClient = (
-    generator: string,
-    outputDir: string,
-    opts?: ModuleSourceWithClientOpts,
-  ): ModuleSource => {
-    const ctx = this._ctx.select("withClient", {
-      generator,
-      outputDir,
-      ...opts,
-    })
+  withClient = (generator: string, outputDir: string): ModuleSource => {
+    const ctx = this._ctx.select("withClient", { generator, outputDir })
     return new ModuleSource(ctx)
   }
 
@@ -7620,9 +7704,17 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  cacheVolume = (key: string, opts?: ClientCacheVolumeOpts): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume", { key, ...opts })
+  cacheVolume = (key: string): CacheVolume => {
+    const ctx = this._ctx.select("cacheVolume", { key })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Dagger Cloud configuration and state
+   */
+  cloud = (): Cloud => {
+    const ctx = this._ctx.select("cloud")
+    return new Cloud(ctx)
   }
 
   /**
@@ -7810,6 +7902,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Cloud from its ID.
+   */
+  loadCloudFromID = (id: CloudID): Cloud => {
+    const ctx = this._ctx.select("loadCloudFromID", { id })
+    return new Cloud(ctx)
   }
 
   /**

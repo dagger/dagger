@@ -4,6 +4,8 @@ defmodule Dagger.Socket do
   A Unix or TCP/IP socket that can be mounted into a container.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Socket"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

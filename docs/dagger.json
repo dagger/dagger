@@ -1,6 +1,6 @@
 {
   "name": "docs",
-  "engineVersion": "v0.18.9",
+  "engineVersion": "v0.18.10",
   "sdk": {
     "source": "go"
   },
@@ -15,8 +15,8 @@
     },
     {
       "name": "docusaurus",
-      "source": "github.com/levlaz/daggerverse/docusaurus",
-      "pin": "4d146a7a5cf5027ca653ebb79bac49a434bda4a4"
+      "source": "github.com/levlaz/daggerverse/docusaurus@docusaurus/v0.10.0",
+      "pin": "929a29a0d03c66dc10c6d4ec7484e7bd897c38fe"
     },
     {
       "name": "go",

@@ -29,6 +29,30 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type ErrSDKRuntimeNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKRuntimeNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support defining and executing functions", err.SDK)
+}
+
+type ErrSDKCodegenNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKCodegenNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support module generation", err.SDK)
+}
+
+type ErrSDKClientGeneratorNotImplemented struct {
+	SDK string
+}
+
+func (err ErrSDKClientGeneratorNotImplemented) Error() string {
+	return fmt.Sprintf("%q SDK does not support client generation", err.SDK)
+}
+
 type moduleSourceSchema struct {
 	dag *dagql.Server
 }
@@ -173,7 +197,6 @@ func (s *moduleSourceSchema) Install() {
 			Args(
 				dagql.Arg("generator").Doc(`The generator to use`),
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
-				dagql.Arg("dev").Doc(`Generate in developer mode`),
 			),
 
 		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
@@ -381,7 +404,6 @@ func (s *moduleSourceSchema) localModuleSource(
 	}
 
 	localSrc := &core.ModuleSource{
-		Query:             query.Self,
 		ConfigExists:      daggerCfgFound,
 		SourceRootSubpath: sourceRootRelPath,
 		OriginalSubpath:   originalRelPath,
@@ -478,7 +500,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	gitSrc := &core.ModuleSource{
-		Query:        query.Self,
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
 		Kind:         core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
@@ -671,7 +692,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	dirSrc := &core.ModuleSource{
-		Query:             contextDir.Self.Query,
 		ConfigExists:      true, // we can't load uninitialized dir modules, we'll error out later if it's not there
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
@@ -700,7 +720,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	// load this module source's deps in parallel
-	bk, err := contextDir.Self.Query.Buildkit(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -714,7 +738,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			}
 
 			var err error
-			dirSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+			dirSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, dirSrc.SDK, dirSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
 			}
@@ -1029,8 +1053,11 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	src.SDK.Source = args.Source
 
 	// reload the sdk implementation too
-	var err error
-	src.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, src.Query, src.SDK, src)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	src.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
@@ -1708,7 +1735,7 @@ func (s *moduleSourceSchema) runCodegen(
 
 	generatedCodeImpl, ok := srcInst.Self.SDKImpl.AsCodeGenerator()
 	if !ok {
-		return genDirInst, fmt.Errorf("sdk implementation does not implement CodeGenerator interface")
+		return genDirInst, ErrSDKCodegenNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	// run codegen to get the generated context directory
@@ -1816,9 +1843,13 @@ func (s *moduleSourceSchema) runClientGenerator(
 ) (dagql.Instance[*core.Directory], error) {
 	src := srcInst.Self
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return genDirInst, err
+	}
 	sdk, err := sdk.NewLoader(s.dag).SDKForModule(
 		ctx,
-		src.Query,
+		query,
 		&core.SDKConfig{
 			Source: clientGeneratorConfig.Generator,
 		},
@@ -1830,7 +1861,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
-		return genDirInst, fmt.Errorf("sdk implementation does not implement ClientGenerator interface")
+		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self.SDK.Source}
 	}
 
 	requiredClientGenerationFiles, err := clientGeneratorImpl.RequiredClientGenerationFiles(ctx)
@@ -1858,23 +1889,21 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
 
-	// If the current module source has sources, we can transform it into a module
-	// to generate self bindings.
+	// If the current module source has sources and its SDK implements the `Runtime` interface,
+	// we can transform it into a module to generate self bindings.
 	if srcInst.Self.SDK != nil {
-		var mod dagql.Instance[*core.Module]
-		err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
-			Field: "asModule",
-		})
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
+		if _, ok := srcInst.Self.SDKImpl.AsRuntime(); ok {
+			var mod dagql.Instance[*core.Module]
+			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
+
+			deps = mod.Self.Deps.Append(mod.Self)
 		}
-
-		deps = mod.Self.Deps.Append(mod.Self)
-	}
-
-	dev := dagql.Boolean(false)
-	if clientGeneratorConfig.Dev != nil {
-		dev = dagql.Boolean(*clientGeneratorConfig.Dev)
 	}
 
 	generatedClientDir, err := clientGeneratorImpl.GenerateClient(
@@ -1882,7 +1911,6 @@ func (s *moduleSourceSchema) runClientGenerator(
 		source,
 		deps,
 		clientGeneratorConfig.Directory,
-		dev.Bool(),
 	)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
@@ -1924,7 +1952,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	genDirInst = srcInst.Self.ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
 		genDirInst, err = s.runCodegen(ctx, srcInst, genDirInst)
-		if err != nil {
+
+		var missingImplErr ErrSDKCodegenNotImplemented
+		if err != nil && !errors.As(err, &missingImplErr) {
 			return genDirInst, fmt.Errorf("failed to run codegen: %w", err)
 		}
 	}
@@ -1933,7 +1963,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	for _, client := range modCfg.Clients {
 		genDirInst, err = s.runClientGenerator(ctx, srcInst, genDirInst, client)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to run client generator %s: %w", client.Generator, err)
+			return genDirInst, fmt.Errorf("failed to generate client %s: %w", client.Generator, err)
 		}
 	}
 
@@ -1977,7 +2007,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.Instance[*core.ModuleSource], mod *core.Module) (*core.Module, error) {
 	runtimeImpl, ok := src.Self.SDKImpl.AsRuntime()
 	if !ok {
-		return nil, fmt.Errorf("sdk implementation does not implement Runtime interface")
+		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self.SDK.Source}
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
@@ -2016,7 +2046,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		defer telemetry.End(span, func() error { return rerr })
 		getModDefFn, err := core.NewModFunction(
 			ctx,
-			src.Self.Query,
 			mod,
 			nil,
 			mod.Runtime,
@@ -2107,8 +2136,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	mod := &core.Module{
-		Query: src.Self.Query,
-
 		Source: src,
 
 		NameField:    src.Self.ModuleName,
@@ -2194,11 +2221,15 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	defaultDeps, err := src.Query.DefaultDeps(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defaultDeps, err := query.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
 	}
-	deps := core.NewModDeps(src.Query, defaultDeps.Mods)
+	deps := core.NewModDeps(query, defaultDeps.Mods)
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self)
 	}
@@ -2222,7 +2253,6 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	args struct {
 		Generator dagql.String
 		OutputDir dagql.String
-		Dev       dagql.Optional[dagql.Boolean]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
@@ -2236,9 +2266,10 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		Directory: args.OutputDir.String(),
 	}
 
-	if args.Dev.Valid {
-		value := args.Dev.Value.Bool()
-		moduleConfigClient.Dev = &value
+	for _, client := range src.ConfigClients {
+		if filepath.Clean(client.Directory) == filepath.Clean(moduleConfigClient.Directory) {
+			return nil, fmt.Errorf("a client is already generated in the %s directory", client.Directory)
+		}
 	}
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)

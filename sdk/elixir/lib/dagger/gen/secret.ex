@@ -4,6 +4,8 @@ defmodule Dagger.Secret do
   A reference to a secret value, which can be handled more safely than the value itself.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Secret"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

@@ -35,10 +35,6 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 	return funcs.cfg.ClientOnly
 }
 
-func (funcs goTemplateFuncs) isDevMode() bool {
-	return funcs.cfg.Dev
-}
-
 func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
 	return funcs.cfg.ModuleDependencies
 }

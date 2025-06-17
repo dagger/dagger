@@ -4,5 +4,7 @@ defmodule Dagger.SDKConfigID do
   The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
   """
 
+  use Dagger.Core.Base, kind: :scalar, name: "SDKConfigID"
+
   @type t() :: String.t()
 end

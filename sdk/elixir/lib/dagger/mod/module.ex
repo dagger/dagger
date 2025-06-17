@@ -3,6 +3,7 @@ defmodule Dagger.Mod.Module do
 
   alias Dagger.Mod.Helper
   alias Dagger.Mod.Object
+  alias Dagger.Mod.Registry
   alias Dagger.Mod.Object.FieldDef
   alias Dagger.Mod.Object.FunctionDef
 
@@ -11,9 +12,13 @@ defmodule Dagger.Mod.Module do
   """
   @spec define(Dagger.Client.t(), module()) :: Dagger.Module.t()
   def define(dag, module) when is_struct(dag, Dagger.Client) and is_atom(module) do
-    dag
-    |> Dagger.Client.module()
-    |> Dagger.Module.with_object(define_object(dag, module))
+    module
+    |> Registry.register()
+    |> Registry.all_modules()
+    |> Enum.reduce(Dagger.Client.module(dag), fn module, dag_module ->
+      dag_module
+      |> Dagger.Module.with_object(define_object(dag, module))
+    end)
     |> maybe_with_description(Object.get_module_doc(module))
   end
 
@@ -28,6 +33,20 @@ defmodule Dagger.Mod.Module do
     |> Dagger.TypeDef.with_object(Helper.camelize(mod_name))
     |> then(&define_fields(&1, dag, module))
     |> then(&define_functions(&1, dag, module))
+    |> then(&define_constructor(&1, dag, module))
+  end
+
+  defp define_constructor(type_def, dag, module) do
+    case Enum.find(module.__object__(:functions), &init?/1) do
+      nil ->
+        type_def
+
+      {name, fun_def} ->
+        type_def
+        |> Dagger.TypeDef.with_constructor(
+          FunctionDef.to_dag_function(fun_def, name, module, dag)
+        )
+    end
   end
 
   defp define_fields(type_def, dag, module) do
@@ -39,8 +58,12 @@ defmodule Dagger.Mod.Module do
 
   defp define_functions(type_def, dag, module) do
     module.__object__(:functions)
+    |> Enum.reject(&init?/1)
     |> Enum.reduce(type_def, fn {name, fun_def}, type_def ->
       FunctionDef.define(fun_def, name, module, type_def, dag)
     end)
   end
+
+  defp init?({:init, _}), do: true
+  defp init?({_, _}), do: false
 end

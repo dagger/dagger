@@ -9,6 +9,13 @@ defmodule Dagger.Codegen.ElixirGenerator.ScalarRenderer do
   Render scalar type into module. 
   """
   def render(type) do
-    Renderer.render_module(type, "@type t() :: String.t()")
+    Renderer.render_module(type, [
+      """
+      use Dagger.Core.Base, kind: :scalar, name: "#{type.name}"
+      """,
+      ?\n,
+      ?\n,
+      "@type t() :: String.t()"
+    ])
   end
 end

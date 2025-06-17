@@ -309,13 +309,13 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 	})
 }
 
-type SpansPubSub struct {
+type clientSpans struct {
 	*PubSub
 	client *daggerClient
 }
 
 func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
-	return SpansPubSub{
+	return clientSpans{
 		PubSub: ps,
 		client: client,
 	}
@@ -329,7 +329,7 @@ func spanNames(spans []sdktrace.ReadOnlySpan) []string {
 	return names
 }
 
-func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
 	tx, err := ps.client.db.Begin()
@@ -424,22 +424,28 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	return nil
 }
 
-func (ps SpansPubSub) ForceFlush(ctx context.Context) error { return nil }
-func (ps SpansPubSub) Shutdown(context.Context) error       { return nil }
+func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
+func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
 func (ps *PubSub) Logs(client *daggerClient) sdklog.Exporter {
-	return LogsPubSub{
-		PubSub: ps,
+	return clientLogs{
 		client: client,
 	}
 }
 
-type LogsPubSub struct {
-	*PubSub
+type clientLogs struct {
 	client *daggerClient
 }
 
-func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
+var _ sdklog.Processor = clientLogs{}
+
+func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
+	return insertLogRecord(ctx, clientdb.New(ps.client.db), rec)
+}
+
+var _ sdklog.Exporter = clientLogs{}
+
+func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
 
 	tx, err := ps.client.db.Begin()
@@ -451,67 +457,9 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	queries := clientdb.New(tx)
 
 	for _, rec := range logs {
-		traceID := rec.TraceID().String()
-		spanID := rec.SpanID().String()
-		timestamp := rec.Timestamp().UnixNano()
-		severity := int64(rec.Severity())
-
-		var body []byte
-		if !rec.Body().Empty() {
-			body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
-			if err != nil {
-				slog.Warn("failed to marshal log record body", "error", err)
-				continue
-			}
-		}
-
-		attrs := []*otlpcommonv1.KeyValue{}
-		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			attrs = append(attrs, &otlpcommonv1.KeyValue{
-				Key:   kv.Key,
-				Value: telemetry.LogValueToPB(kv.Value),
-			})
-			return true
-		})
-		attributes, err := clientdb.MarshalProtoJSONs(attrs)
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
+		if err := insertLogRecord(ctx, queries, &rec); err != nil {
+			slog.Warn("failed to insert log record", "error", err)
 			continue
-		}
-
-		scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
-			continue
-		}
-
-		res := rec.Resource()
-		resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
-			continue
-		}
-
-		_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
-			TraceID: sql.NullString{
-				String: traceID,
-				Valid:  rec.TraceID().IsValid(),
-			},
-			SpanID: sql.NullString{
-				String: spanID,
-				Valid:  rec.SpanID().IsValid(),
-			},
-			Timestamp:            timestamp,
-			SeverityNumber:       severity,
-			SeverityText:         rec.SeverityText(),
-			Body:                 body,
-			Attributes:           attributes,
-			InstrumentationScope: scope,
-			Resource:             resource,
-			ResourceSchemaUrl:    res.SchemaURL(),
-		})
-		if err != nil {
-			return fmt.Errorf("insert log: %w", err)
 		}
 	}
 
@@ -522,22 +470,85 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
-func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
+func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
+func (ps clientLogs) Shutdown(context.Context) error       { return nil }
+
+func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog.Record) error {
+	traceID := rec.TraceID().String()
+	spanID := rec.SpanID().String()
+	timestamp := rec.Timestamp().UnixNano()
+	severity := int64(rec.Severity())
+
+	var body []byte
+	if !rec.Body().Empty() {
+		var err error
+		body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
+		if err != nil {
+			return fmt.Errorf("marshal log record body: %w", err)
+		}
+	}
+
+	attrs := []*otlpcommonv1.KeyValue{}
+	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		attrs = append(attrs, &otlpcommonv1.KeyValue{
+			Key:   kv.Key,
+			Value: telemetry.LogValueToPB(kv.Value),
+		})
+		return true
+	})
+	attributes, err := clientdb.MarshalProtoJSONs(attrs)
+	if err != nil {
+		return fmt.Errorf("marshal log record attributes: %w", err)
+	}
+
+	scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
+	if err != nil {
+		return fmt.Errorf("marshal log record instrumentation scope: %w", err)
+	}
+
+	res := rec.Resource()
+	resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
+	if err != nil {
+		return fmt.Errorf("marshal log record resource: %w", err)
+	}
+
+	_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
+		TraceID: sql.NullString{
+			String: traceID,
+			Valid:  rec.TraceID().IsValid(),
+		},
+		SpanID: sql.NullString{
+			String: spanID,
+			Valid:  rec.SpanID().IsValid(),
+		},
+		Timestamp:            timestamp,
+		SeverityNumber:       severity,
+		SeverityText:         rec.SeverityText(),
+		Body:                 body,
+		Attributes:           attributes,
+		InstrumentationScope: scope,
+		Resource:             resource,
+		ResourceSchemaUrl:    res.SchemaURL(),
+	})
+	if err != nil {
+		return fmt.Errorf("insert log: %w", err)
+	}
+	return nil
+}
 
 func (ps *PubSub) Metrics(client *daggerClient) sdkmetric.Exporter {
-	return MetricsPubSub{
+	return clientMetrics{
 		PubSub: ps,
 		client: client,
 	}
 }
 
-type MetricsPubSub struct {
+type clientMetrics struct {
 	*PubSub
 	client *daggerClient
 }
 
-func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 	if len(metrics.ScopeMetrics) == 0 {
 		return nil
@@ -573,16 +584,16 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 	return nil
 }
 
-func (ps MetricsPubSub) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+func (ps clientMetrics) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
 	return metricdata.DeltaTemporality
 }
 
-func (ps MetricsPubSub) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
 	return sdkmetric.AggregationDefault{}
 }
 
-func (ps MetricsPubSub) ForceFlush(ctx context.Context) error { return nil }
-func (ps MetricsPubSub) Shutdown(context.Context) error       { return nil }
+func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
+func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
 type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
 

@@ -41,7 +41,7 @@ func newModuleSDK(
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
 
-	defaultDeps, err := sdkModMeta.Self.Query.DefaultDeps(ctx)
+	defaultDeps, err := root.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
@@ -128,7 +128,7 @@ func (sdk *module) withConfig(
 
 		// override if the argument with same name exists in dagger.json -> sdk.config
 		val, ok := rawConfig[input.Name]
-		if ok {
+		if ok && !input.Internal {
 			valInput, err = input.Type.Decoder().DecodeInput(val)
 			if err != nil {
 				return nil, fmt.Errorf("parsing value for arg %q: %w", input.Name, err)

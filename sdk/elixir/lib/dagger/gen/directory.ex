@@ -4,6 +4,8 @@ defmodule Dagger.Directory do
   A directory.
   """
 
+  use Dagger.Core.Base, kind: :object, name: "Directory"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 
@@ -361,6 +363,23 @@ defmodule Dagger.Directory do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Return a snapshot with a symlink
+  """
+  @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Directory.t()
+  def with_symlink(%__MODULE__{} = directory, target, link_name) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withSymlink")
+      |> QB.put_arg("target", target)
+      |> QB.put_arg("linkName", link_name)
 
     %Dagger.Directory{
       query_builder: query_builder,

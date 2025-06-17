@@ -4,6 +4,8 @@ defmodule Dagger.LLM do
   Dagger.LLM
   """
 
+  use Dagger.Core.Base, kind: :object, name: "LLM"
+
   alias Dagger.Core.Client
   alias Dagger.Core.QueryBuilder, as: QB
 

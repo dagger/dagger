@@ -1,4 +1,7 @@
-import { dag } from "../../api/client.gen.js"
+import { dag, Error as DaggerError } from "../../api/client.gen.js"
+import type { JSON } from "../../api/client.gen.js"
+import { ExecError } from "../../common/errors/ExecError.js"
+import { GraphQLRequestError } from "../../common/errors/GraphQLRequestError.js"
 import { connection } from "../../connect.js"
 import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
@@ -45,15 +48,8 @@ export async function entrypoint(files: string[]) {
             parentArgs,
             fnArgs: args,
           })
-        } catch (e) {
-          if (e instanceof Error) {
-            if (e.cause) {
-              console.error(`${e.cause}`)
-            }
-            console.error(`Error: ${e.message}`)
-          } else {
-            console.error(e)
-          }
+        } catch (e: unknown) {
+          await fnCall.returnError(formatError(e))
           process.exit(1)
         }
       }
@@ -70,4 +66,36 @@ export async function entrypoint(files: string[]) {
     },
     { LogOutput: process.stdout },
   )
+}
+
+/**
+ * Take the error thrown by the user module and stringify it so it can
+ * be returned to Dagger.
+ *
+ * If the error is an instance of Error, we stringify the message.
+ * If the error is an instance of ExecError, we stringify the message and add the
+ * extensions fields in the error object.
+ */
+function formatError(e: unknown): DaggerError {
+  if (e instanceof Error) {
+    let error = dag.error(e.message)
+
+    // If the error is an instance of GraphQLError or a inherit type of it,
+    // we can add the extensions fields in the error object.
+    if (e instanceof ExecError || e instanceof GraphQLRequestError) {
+      Object.entries(e.extensions ?? []).forEach(([key, value]) => {
+        if (value !== "" && value !== undefined && value !== null) {
+          error = error.withValue(key, JSON.stringify(value) as JSON)
+        }
+      })
+    }
+
+    return error
+  }
+
+  try {
+    return dag.error(JSON.stringify(e))
+  } catch {
+    return dag.error(String(e))
+  }
 }
