@@ -31,25 +31,6 @@ const (
 	shellInterpBuiltinPrefix = "_"
 )
 
-func isInterpBuiltin(name string) bool {
-	// See https://github.com/mvdan/sh/blob/v3.11.0/interp/builtin.go#L27
-	// Allow the following:
-	//  - invalid function/module names: "[", ":"
-	//  - unlikely to conflict: "true", "false"
-	switch name {
-	case "exit", "set", "shift", "unset",
-		"echo", "printf", "break", "continue", "pwd", "cd",
-		"wait", "builtin", "trap", "type", "source", ".", "command",
-		"dirs", "pushd", "popd", "alias", "unalias",
-		"getopts", "eval", "test", "exec",
-		"return", "read", "mapfile", "readarray", "shopt",
-		//  not implemented
-		"umask", "fg", "bg":
-		return true
-	}
-	return false
-}
-
 // HandlerError attatches an exit code to an error returned by the handler.
 //
 // Could be replaced with `errors.Join(err, interp.ExitStatus(exit))` but
@@ -131,7 +112,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// with an interpreter builtin, the Dagger function is favored.
 	// To force the builtin to execute instead, prefix the command
 	// with "_". For example: "container | from $(_echo alpine)".
-	if after, found := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); found && isInterpBuiltin(after) {
+	if after, found := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); found && interp.IsBuiltin(after) {
 		args[0] = after
 		return args, nil
 	}
@@ -140,7 +121,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 	// builtins, but there's no way to directly call the interpreter
 	// command from there so we use ShellCommand just for the documentation
 	// (.help) but strip the builtin prefix here ('.') when executing.
-	if after, ok := strings.CutPrefix(args[0], "."); ok && isInterpBuiltin(after) {
+	if after, ok := strings.CutPrefix(args[0], "."); ok && interp.IsBuiltin(after) {
 		if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
 			args[0] = after
 			return args, nil
@@ -149,7 +130,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 
 	// If the command is an interpreter builtin, bypass the interpreter
 	// builtins to ensure the exec handler is executed.
-	if isInterpBuiltin(args[0]) {
+	if interp.IsBuiltin(args[0]) {
 		return append([]string{shellInternalCmd}, args...), nil
 	}
 

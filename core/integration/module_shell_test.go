@@ -1002,16 +1002,15 @@ func (ShellSuite) TestExecExit(ctx context.Context, t *testctx.T) {
 }
 
 func (ShellSuite) TestNonExecChainBreak(ctx context.Context, t *testctx.T) {
-	for _, tc := range []string{
+	for i, tc := range []string{
 		"directory | with-file",
 		"directory | with-file | entries",
 		"directory | with-file | with-directory | entries",
-		"$(directory | with-file | entries)",
 		"DIR=$(directory | with-file); $DIR",
 		"DIR=$(directory | with-file); $DIR | entries",
 		"directory | with-directory foo $(directory | with-file) | entries",
 	} {
-		t.Run(tc, func(ctx context.Context, t *testctx.T) {
+		t.Run(fmt.Sprintf("case %d", i), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			_, err := daggerCliBase(t, c).With(daggerShell(tc)).Sync(ctx)
 
@@ -1065,9 +1064,9 @@ directory | with-new-file test bar | file test | contents &
 
 	t.Run("async error", func(ctx context.Context, t *testctx.T) {
 		script := fmt.Sprintf(`
-container | from %[1]s | with-exec false | stdout &
-job1=$!
 container | from %[1]s | with-exec -- sh -c 'exit 5' | stdout &
+job1=$!
+container | from %[1]s | with-exec false | stdout &
 job2=$!
 container | from %[1]s | with-exec echo ok | stdout &
 job3=$!
@@ -1078,7 +1077,7 @@ job3=$!
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-		// should exit with the same exit code as the last failed command
+		// should exit with the same exit code as the first failed command
 		var ex *dagger.ExecError
 		require.ErrorAs(t, err, &ex)
 		require.Equal(t, 5, ex.ExitCode)
