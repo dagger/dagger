@@ -71,6 +71,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-effect", Fail: true},
 		{Function: "fail-log-native", Fail: true},
 		{Function: "encapsulate"},
+		{Function: "fail-encapsulated", Fail: true},
 		{Function: "pending", Fail: true},
 		{Function: "list", Args: []string{"--dir", "."}},
 		{Function: "object-lists"},

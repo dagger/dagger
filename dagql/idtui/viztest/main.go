@@ -39,6 +39,50 @@ func (v *Viztest) Encapsulate(ctx context.Context) error {
 	return nil // no error, that's the point
 }
 
+// Demonstrate that error logs are not hoisted as long as their enclosing span
+// did not fail, and how UNSET spans interact with the hoisting logic.
+func (*Viztest) FailEncapsulated(ctx context.Context) error {
+	// Scenario 1: UNSET span under ERROR span - should hoist
+	(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "failing outer span")
+		defer telemetry.End(span, func() error { return rerr })
+		(func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "unset middle span")
+			defer telemetry.End(span, func() error { return rerr }) // stays UNSET
+			(func() (rerr error) {
+				ctx, span := Tracer().Start(ctx, "failing inner span")
+				defer telemetry.End(span, func() error { return rerr })
+				stdio := telemetry.SpanStdio(ctx, "")
+				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
+				return errors.New("inner failure")
+			})()
+			return nil // middle span stays UNSET
+		})()
+		return errors.New("outer failure")
+	})()
+
+	// Scenario 2: UNSET span under OK span - should NOT hoist
+	(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "succeeding outer span")
+		defer telemetry.End(span, func() error { return rerr })
+		(func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "unset middle span")
+			defer telemetry.End(span, func() error { return rerr }) // stays UNSET
+			(func() (rerr error) {
+				ctx, span := Tracer().Start(ctx, "failing inner span")
+				defer telemetry.End(span, func() error { return rerr })
+				stdio := telemetry.SpanStdio(ctx, "")
+				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
+				return errors.New("inner failure")
+			})()
+			return nil // middle span stays UNSET
+		})()
+		return nil // outer span succeeds
+	})()
+
+	return errors.New("i failed on the outside")
+}
+
 // FailEffect returns a function whose effects will fail when it runs.
 func (*Viztest) FailEffect() *dagger.Container {
 	return dag.Container().
