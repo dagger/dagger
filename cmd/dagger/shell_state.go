@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"iter"
 	"maps"
@@ -277,6 +278,11 @@ func (st ShellState) IsError() bool {
 	return st.Error != nil
 }
 
+func (st ShellState) IsHandlerError() bool {
+	var err *HandlerError
+	return errors.As(st.Error, &err)
+}
+
 // IsEmpty returns true if there's no function calls in the chain
 func (st ShellState) IsEmpty() bool {
 	return len(st.Calls) == 0
@@ -326,6 +332,8 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 		slog.Debug("saving state", spreadDebugArgs(&st, "newKey", nkey)...)
 	}
 
+	// Writing a state to the handler's stdout will resolve the state if it's
+	// the last one in the chain, so this could return an API error, for example.
 	_, err := w.Write([]byte(newStateToken(nkey)))
 	return err
 }

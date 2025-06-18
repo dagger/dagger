@@ -188,8 +188,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 							// Only the pretty frontend prints the stderr of
 							// the exec error in the final render
 							if !tty && ex.Stdout != "" {
-								c.Println("Stdout:")
-								c.Println(ex.Stdout)
+								c.PrintErrln("Stdout:")
+								c.PrintErrln(ex.Stdout)
 							}
 							if !tty && ex.Stderr != "" {
 								c.PrintErrln("Stderr:")
