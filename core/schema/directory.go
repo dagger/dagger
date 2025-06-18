@@ -86,12 +86,12 @@ func (s *directorySchema) Install() {
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-		dagql.Func("withoutFile", s.withoutFile).
+		dagql.NodeFunc("withoutFile", DagOpDirectoryWrapper(s.srv, s.withoutFile, keepParentDir)).
 			Doc(`Return a snapshot with a file removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the file to remove (e.g., "/file.txt").`),
 			),
-		dagql.Func("withoutFiles", s.withoutFiles).
+		dagql.NodeFunc("withoutFiles", DagOpDirectoryWrapper(s.srv, s.withoutFiles, keepParentDir)).
 			Doc(`Return a snapshot with files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
@@ -121,7 +121,7 @@ func (s *directorySchema) Install() {
 				dagql.Arg("path").Doc(`Location of the directory created (e.g., "/logs").`),
 				dagql.Arg("permissions").Doc(`Permission granted to the created directory (e.g., 0777).`),
 			),
-		dagql.Func("withoutDirectory", s.withoutDirectory).
+		dagql.NodeFunc("withoutDirectory", DagOpDirectoryWrapper(s.srv, s.withoutDirectory, keepParentDir)).
 			Doc(`Return a snapshot with a subdirectory removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
@@ -372,26 +372,44 @@ func (s *directorySchema) withFiles(ctx context.Context, parent dagql.Instance[*
 
 type withoutDirectoryArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutDirectory(ctx context.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Instance[*core.Directory], args withoutDirectoryArgs) (inst dagql.Instance[*core.Directory], err error) {
+	dir, err := parent.Self.Without(ctx, s.srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
 type withoutFileArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutFile(ctx context.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.Instance[*core.Directory], args withoutFileArgs) (inst dagql.Instance[*core.Directory], err error) {
+	dir, err := parent.Self.Without(ctx, s.srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
 type withoutFilesArgs struct {
 	Paths []string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutFiles(ctx context.Context, parent *core.Directory, args withoutFilesArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Paths...)
+func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.Instance[*core.Directory], args withoutFilesArgs) (inst dagql.Instance[*core.Directory], err error) {
+	dir, err := parent.Self.Without(ctx, s.srv, args.Paths...)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
 type diffArgs struct {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -874,28 +875,57 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 
-	st, err := dir.State()
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var action *llb.FileAction
-	for _, path := range paths {
-		path = filepath.Join(dir.Dir, path)
-		if action == nil {
-			action = llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
-		} else {
-			action = action.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("without TODO")))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(root string) error {
+		for _, p := range paths {
+			p = path.Join(dir.Dir, p)
+			var matches []string
+			if strings.Contains(p, "*") {
+				matches, err = fscopy.ResolveWildcards(root, p, true)
+				if err != nil {
+					return err
+				}
+			} else {
+				matches = []string{p}
+			}
+			for _, m := range matches {
+				fullPath, err := containerdfs.RootPath(root, m)
+				if err != nil {
+					return err
+				}
+				err = os.RemoveAll(fullPath)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	}
-	err = dir.SetState(ctx, st.File(action))
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
