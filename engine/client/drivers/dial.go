@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	connhKube "github.com/moby/buildkit/client/connhelper/kubepod"
 	connhPodman "github.com/moby/buildkit/client/connhelper/podmancontainer"
 	connhSSH "github.com/moby/buildkit/client/connhelper/ssh"
-	"github.com/pkg/errors"
 )
 
 func init() {
@@ -52,7 +52,7 @@ func (d dialConnector) Connect(ctx context.Context) (_ net.Conn, rerr error) {
 func defaultDialer(ctx context.Context, address string) (net.Conn, error) {
 	addrParts := strings.SplitN(address, "://", 2)
 	if len(addrParts) != 2 {
-		return nil, errors.Errorf("invalid address %s", address)
+		return nil, fmt.Errorf("invalid address %s", address)
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, addrParts[0], addrParts[1])
