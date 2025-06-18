@@ -1,10 +1,9 @@
-package io.dagger.client;
+package io.dagger.client.exception;
 
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_EXEC_ERROR_VALUE;
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.dagger.client.exception.DaggerExecException;
 import io.smallrye.graphql.client.GraphQLError;
 import java.util.List;
 import java.util.Map;

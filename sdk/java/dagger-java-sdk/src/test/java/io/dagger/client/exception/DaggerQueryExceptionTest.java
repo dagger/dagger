@@ -1,4 +1,4 @@
-package io.dagger.client;
+package io.dagger.client.exception;
 
 import static io.dagger.client.exception.DaggerExceptionConstants.CMD_KEY;
 import static io.dagger.client.exception.DaggerExceptionConstants.EXIT_CODE_KEY;
@@ -7,7 +7,6 @@ import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_EXEC_ERRO
 import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.dagger.client.exception.DaggerQueryException;
 import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.Json;
 import java.util.List;
@@ -45,7 +44,7 @@ public class DaggerQueryExceptionTest {
 
     String result = new DaggerQueryException(error).toEnhancedMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [\"cat\",\"WRONG\"]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat,WRONG]\n";
     assertThat(result).isEqualTo(expected);
   }
 
@@ -67,7 +66,7 @@ public class DaggerQueryExceptionTest {
 
     String result = new DaggerQueryException(error).toFullMessage();
     String expected =
-        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [\"cat\",\"WRONG\"]\nSTDERR: [DEEP ERROR DETAILS]\n";
+        "Message: [ERROR]\nPath: [container.from.withExec.stdout]\nType Code: [EXEC_ERROR]\nExit Code: [1]\nCmd: [cat,WRONG]\nSTDERR: [DEEP ERROR DETAILS]\n";
     assertThat(result).isEqualTo(expected);
   }
 
