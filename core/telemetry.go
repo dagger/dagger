@@ -76,6 +76,7 @@ func AroundFunc(
 		cm, _ := q.MainClientCallerMetadata(ctx)
 		fc, _ := q.CurrentFunctionCall(ctx)
 		m, _ := q.CurrentModule(ctx)
+		sd, _ := q.CurrentServedDeps(ctx)
 
 		if cm != nil {
 			if r, ok := cm.Labels[telemetry.GitRefAttr]; ok {
@@ -89,21 +90,28 @@ func AroundFunc(
 			}
 		}
 
+		var ms *ModuleSource
 		if m != nil {
-			if m.GetSource().Git != nil {
+			ms = m.GetSource()
+		} else if m, ok := sd.LookupDep(id.Call().Module.Name); ok {
+			ms = m.GetSource()
+		}
+
+		if ms != nil {
+			if ms.Git != nil {
 				attrs = append(attrs,
-					attribute.String(telemetry.ModuleHTMLRepoURLAttr, m.GetSource().Git.HTMLRepoURL),
-					attribute.String(telemetry.ModuleVersionAttr, m.GetSource().Git.Commit),
+					attribute.String(telemetry.ModuleHTMLRepoURLAttr, ms.Git.HTMLRepoURL),
+					attribute.String(telemetry.ModuleVersionAttr, ms.Git.Commit),
 				)
 			}
 			attrs = append(attrs,
-				attribute.String(telemetry.ModuleSubpathAttr, m.GetSource().SourceRootSubpath),
-				attribute.String(telemetry.ModuleNameAttr, m.Name()),
+				attribute.String(telemetry.ModuleSubpathAttr, ms.SourceRootSubpath),
+				attribute.String(telemetry.ModuleNameAttr, ms.ModuleName),
 			)
 
-			if m.GetSource().Local != nil {
+			if ms.Local != nil {
 				attrs = append(attrs,
-					attribute.String(telemetry.ModuleContextDirAttr, m.GetSource().Local.ContextDirectoryPath),
+					attribute.String(telemetry.ModuleContextDirAttr, ms.Local.ContextDirectoryPath),
 				)
 			}
 		}
