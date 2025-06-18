@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"slices"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -16,6 +17,21 @@ func NewError(message string) *Error {
 	return &Error{
 		Message: message,
 	}
+}
+
+func (e *Error) Clone() *Error {
+	cp := *e
+	cp.Values = slices.Clone(e.Values)
+	return &cp
+}
+
+func (e *Error) WithValue(name string, value JSON) *Error {
+	cp := e.Clone()
+	cp.Values = append(cp.Values, &ErrorValue{
+		Name:  name,
+		Value: value,
+	})
+	return cp
 }
 
 func (e *Error) Type() *ast.Type {

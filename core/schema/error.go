@@ -48,9 +48,5 @@ func (s *errorSchema) withValue(ctx context.Context, self *core.Error, args stru
 	Name  string    `doc:"The name of the value."`
 	Value core.JSON `doc:"The value to store on the error."`
 }) (*core.Error, error) {
-	self.Values = append(self.Values, &core.ErrorValue{
-		Name:  args.Name,
-		Value: args.Value,
-	})
-	return self, nil
+	return self.WithValue(args.Name, args.Value), nil
 }

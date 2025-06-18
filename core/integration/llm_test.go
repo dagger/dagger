@@ -268,7 +268,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("prompt calls", func(ctx context.Context, t *testctx.T) {
-		consoleDagger := func(args ...string) (*exec.Cmd, *tuiConsole) {
+		consoleDagger := func(ctx context.Context, t *testctx.T, args ...string) (*exec.Cmd, *tuiConsole) {
 			t.Helper()
 			console, err := newTUIConsole(t, 60*time.Second)
 			require.NoError(t, err)
@@ -334,6 +334,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 					progressFlag = "--progress=plain"
 				}
 				cmd, console := consoleDagger(
+					ctx, t,
 					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", fmt.Sprintf("greet me %d", i),
 				)
 				defer console.Close()
