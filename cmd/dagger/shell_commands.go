@@ -480,8 +480,8 @@ If no name is provided, all environment variables are printed. If a name is prov
 			Description: `Wait for background processes to complete
 
 'id' is the process or job ID. If no ID is specified, .wait always returns 0 (zero).
-Otherwise, it returns the exit status of the last failed command waited for. 
-When multiple processes are given, the command waits for all processes to complete.
+Otherwise, it returns the exit status of the first command that failed. When multiple 
+processes are given, the command waits for all processes to complete.
 
 Example:
 	
@@ -490,6 +490,23 @@ Example:
   .echo "job id: $job1"
   .wait $job1
 `,
+			State: NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
+
+				if len(args) == 0 {
+					return hc.Builtin(ctx, []string{"wait"})
+				}
+
+				for _, job := range args {
+					err := hc.Builtin(ctx, []string{"wait", job})
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			},
 		},
 		&ShellCommand{
 			Use: ".cd [path | url]",
