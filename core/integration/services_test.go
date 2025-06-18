@@ -2171,6 +2171,10 @@ func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, conten
 	return httpServiceDirAuth(ctx, t, c, c.Directory().WithNewFile("index.html", content), token)
 }
 func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory, token *dagger.Secret) (*dagger.Service, string) {
+	return httpServiceDirAuthWithUsername(ctx, t, c, dir, "x-access-token", token)
+}
+
+func httpServiceDirAuthWithUsername(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
 	t.Helper()
 
 	var tokenPlaintext string
@@ -2208,7 +2212,8 @@ server {
 		From("nginx").
 		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
 		WithMountedDirectory("/usr/share/nginx/html", dir).
-		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd", "x-access-token:{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
+		WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%s-%d", username, time.Now().UnixNano())).
+		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
 			Owner: "nginx",
 		}).
 		WithExposedPort(80).
@@ -2249,6 +2254,14 @@ func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Clien
 	t.Helper()
 
 	gitDaemon, repoURL := httpServiceDirAuth(ctx, t, c, makeGitDir(c, content, branchName), token)
+	repoURL += "/repo.git"
+	return gitDaemon, repoURL
+}
+
+func gitServiceHTTPWithUsernameAuth(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string, username string, token *dagger.Secret) (*dagger.Service, string) {
+	t.Helper()
+
+	gitDaemon, repoURL := httpServiceDirAuthWithUsername(ctx, t, c, makeGitDir(c, content, branchName), username, token)
 	repoURL += "/repo.git"
 	return gitDaemon, repoURL
 }

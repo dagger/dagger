@@ -1,0 +1,6 @@
+kind: Added
+body: Add `Git.httpAuthUsername` field for HTTP basic auth with usernames from the git credential helper
+time: 2025-06-18T14:28:12.03461+02:00
+custom:
+    Author: grouville
+    PR: "10605"

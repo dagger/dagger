@@ -243,6 +243,7 @@ defmodule Dagger.Client do
           {:keep_git_dir, boolean() | nil},
           {:ssh_known_hosts, String.t() | nil},
           {:ssh_auth_socket, Dagger.SocketID.t() | nil},
+          {:http_auth_username, String.t() | nil},
           {:http_auth_token, Dagger.SecretID.t() | nil},
           {:http_auth_header, Dagger.SecretID.t() | nil},
           {:experimental_service_host, Dagger.ServiceID.t() | nil}
@@ -255,6 +256,7 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("keepGitDir", optional_args[:keep_git_dir])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
       |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      |> QB.maybe_put_arg("httpAuthUsername", optional_args[:http_auth_username])
       |> QB.maybe_put_arg("httpAuthToken", optional_args[:http_auth_token])
       |> QB.maybe_put_arg("httpAuthHeader", optional_args[:http_auth_header])
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])

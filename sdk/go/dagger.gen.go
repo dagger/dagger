@@ -8339,6 +8339,8 @@ type GitOpts struct {
 	SSHKnownHosts string
 	// Set SSH auth socket
 	SSHAuthSocket *Socket
+	// Username used to populate the password during basic HTTP Authorization
+	HTTPAuthUsername string
 	// Secret used to populate the password during basic HTTP Authorization
 	HTTPAuthToken *Secret
 	// Secret used to populate the Authorization HTTP header
@@ -8362,6 +8364,10 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `sshAuthSocket` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
 			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+		}
+		// `httpAuthUsername` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HTTPAuthUsername) {
+			q = q.Arg("httpAuthUsername", opts[i].HTTPAuthUsername)
 		}
 		// `httpAuthToken` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HTTPAuthToken) {

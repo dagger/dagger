@@ -1226,6 +1226,11 @@ export type ClientGitOpts = {
   sshAuthSocket?: Socket
 
   /**
+   * Username used to populate the password during basic HTTP Authorization
+   */
+  httpAuthUsername?: string
+
+  /**
    * Secret used to populate the password during basic HTTP Authorization
    */
   httpAuthToken?: Secret
@@ -7847,6 +7852,7 @@ export class Client extends BaseClient {
    * @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
    * @param opts.sshKnownHosts Set SSH known hosts
    * @param opts.sshAuthSocket Set SSH auth socket
+   * @param opts.httpAuthUsername Username used to populate the password during basic HTTP Authorization
    * @param opts.httpAuthToken Secret used to populate the password during basic HTTP Authorization
    * @param opts.httpAuthHeader Secret used to populate the Authorization HTTP header
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
