@@ -209,8 +209,26 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		if err != nil {
 			return fmt.Errorf("get module source subpath: %w", err)
 		}
+		if p == "" {
+			r, err := m.ModSource.SourceRootSubpath(gctx)
+			if err != nil {
+				return fmt.Errorf("get module source root subpath: %w", err)
+			}
+			p = r
+		}
 		d.mu.Lock()
 		m.SubPath = p
+		d.mu.Unlock()
+		return nil
+	})
+
+	eg.Go(func() error {
+		p, err := m.ModSource.SourceRootSubpath(gctx)
+		if err != nil {
+			return fmt.Errorf("get module root subpath: %w", err)
+		}
+		d.mu.Lock()
+		m.RootSubPath = p
 		d.mu.Unlock()
 		return nil
 	})

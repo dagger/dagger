@@ -149,7 +149,7 @@ func (sdk *goSDK) GenerateClient(
 		},
 	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to run  module client generation: %w", err)
+		return inst, fmt.Errorf("failed to run module client generation: %w", err)
 	}
 
 	var modifiedSrcDir dagql.ObjectResult[*core.Directory]

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/juju/ansiterm/tabwriter"
@@ -41,7 +42,12 @@ var clientInstallCmd = &cobra.Command{
 	Aliases: []string{"use"},
 	Short:   "Generate a new Dagger client from the Dagger module",
 	Example: "dagger client install go ./dagger",
+	Args:    cobra.MaximumNArgs(2),
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			// default the output to the current working directory if it doesn't exist yet
 			cwd, err := pathutil.Getwd()
@@ -69,17 +75,17 @@ var clientInstallCmd = &cobra.Command{
 
 			dag := engineClient.Dagger()
 
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
+			modSrc, err := initializeClientGeneratorModule(ctx, dag, ".")
 			if err != nil {
 				return fmt.Errorf("failed to initialize client generator module: %w", err)
 			}
 
-			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
-			_, err = mod.Source.
+			_, err = modSrc.
 				WithClient(generator, outputPath).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
@@ -92,9 +98,6 @@ var clientInstallCmd = &cobra.Command{
 
 			return nil
 		})
-	},
-	Annotations: map[string]string{
-		"experimental": "true",
 	},
 }
 
@@ -124,17 +127,17 @@ var clientUninstallCmd = &cobra.Command{
 
 			dag := engineClient.Dagger()
 
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
+			modSrc, err := initializeClientGeneratorModule(ctx, dag, ".")
 			if err != nil {
 				return fmt.Errorf("failed to initialize client generator module: %w", err)
 			}
 
-			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
-			_, err = mod.Source.
+			_, err = modSrc.
 				WithoutClient(path).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
@@ -164,12 +167,12 @@ var clientListCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
+			modSrc, err := initializeClientGeneratorModule(ctx, dag, ".")
 			if err != nil {
 				return fmt.Errorf("failed to initialize client generator module: %w", err)
 			}
 
-			moduleSourceID, err := mod.Source.ID(ctx)
+			moduleSourceID, err := modSrc.ID(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to list clients: failed to get module source id: %w", err)
 			}
@@ -191,7 +194,6 @@ var clientListCmd = &cobra.Command{
 			}, &dagger.Response{
 				Data: &res,
 			})
-
 			if err != nil {
 				return fmt.Errorf("failed to list clients: failed to get module source config clients: %w", err)
 			}

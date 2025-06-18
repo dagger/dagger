@@ -123,10 +123,13 @@ type PythonSdk struct {
 	// can get very real conflicts in the uv cache.
 	ContextDirPath string
 
-	// Relative path from the context directory to the source directory
+	// Path to the root direcotry, relative to the context directory
+	RootSubPath string
+
+	// Path to the source directory, relative to the context directory
 	SubPath string
 
-	// Relative path to vendor client library into
+	// Path to vendor client library, relative to source sub path
 	VendorPath string
 
 	// True if the module is new and we need to create files from the template
@@ -215,7 +218,7 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 	m.ContextDir = modSource.ContextDirectory()
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
-		return nil, fmt.Errorf("runtime module load: %w", err)
+		return nil, fmt.Errorf("target module discovery: %w", err)
 	}
 
 	return m, nil
@@ -494,4 +497,21 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		WithExec(check)
 
 	return m
+}
+
+func (m *PythonSdk) GenerateClient(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputDir string,
+) (*dagger.Directory, error) {
+	_, err := m.Load(ctx, modSource)
+	if err != nil {
+		return nil, err
+	}
+	_, err = m.WithBase()
+	if err != nil {
+		return nil, err
+	}
+	return m.WithSDK(introspectionJSON).ContextDir, nil
 }
