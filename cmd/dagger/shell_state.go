@@ -235,6 +235,9 @@ func spreadDebugArgs(args ...any) []any {
 			if t.Error != nil {
 				a = append(a, "error", t.Error)
 			}
+			if t.SpanContext.IsValid() {
+				a = append(a, "span", t.SpanContext.SpanID().String())
+			}
 		default:
 			a = append(a, arg)
 		}
@@ -273,6 +276,9 @@ type ShellState struct {
 
 	// Error is non-nil if the previous command failed
 	Error error `json:"error,omitempty"`
+
+	// SpanContext attaches the span that saves this state into the store
+	SpanContext trace.SpanContext
 }
 
 func (st ShellState) IsError() bool {
@@ -325,6 +331,8 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 		// when it's saved in a var.
 		defer h.state.Delete(ctx, st.Key)
 	}
+
+	st.SpanContext = trace.SpanContextFromContext(ctx)
 	nkey := h.state.Store(st)
 	w := interp.HandlerCtx(ctx).Stdout
 

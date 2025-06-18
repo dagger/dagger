@@ -73,6 +73,9 @@ func shellDebugFormat(data any) string {
 		if t.Cmd != "" {
 			r += fmt.Sprintf(" [namespace=%s]", t.Cmd)
 		}
+		if t.SpanContext.IsValid() {
+			r += fmt.Sprintf(" [span=%s]", t.SpanContext.SpanID().String())
+		}
 		if len(t.Calls) > 0 {
 			r += ":\n" + shellDebugFormat(t.Calls)
 		}

@@ -165,12 +165,20 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		// pipeline failed.
 		var cascadingErr bool
 
+		// Link to span from previous handler in a pipeline.
+		var links []trace.Link
+
 		// Read stdin. If not nil this will block until the previous handler
 		// has finished. If state is nil here it means it's the first command
 		// in a pipeline (foo | bar).
 		st, err := h.loadInput(ctx, args)
 		if st != nil {
 			cascadingErr = st.IsHandlerError()
+
+			// TODO: fix status propagating through links
+			// if st.SpanContext.IsValid() {
+			// 	links = append(links, trace.Link{SpanContext: st.SpanContext})
+			// }
 		}
 
 		// Having a span for each handler makes it much easier to debug what
@@ -179,6 +187,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			// Don't show span by default unless there's an error or we're debugging.
 			telemetry.Passthrough(),
 			trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)),
+			trace.WithLinks(links...),
 		)
 		defer telemetry.End(span, func() error {
 			if cascadingErr {
@@ -841,6 +850,14 @@ func (r *Result) IsVoid() bool {
 func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Result, error) {
 	if st == nil {
 		return nil, nil
+	}
+
+	// In the last handler of a pipeline the state is resolved from the global
+	// state resolver attached to the root context, so ensure that it's
+	// resolved from the context of its handler.
+	span := trace.SpanFromContext(ctx)
+	if st.SpanContext.IsValid() && !span.SpanContext().Equal(st.SpanContext) {
+		ctx = trace.ContextWithSpanContext(ctx, st.SpanContext)
 	}
 
 	if st.IsCommandRoot() {
