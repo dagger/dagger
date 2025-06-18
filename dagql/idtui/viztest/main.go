@@ -46,9 +46,9 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "failing outer span")
 		defer telemetry.End(span, func() error { return rerr })
-		(func() (rerr error) {
+		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
-			defer telemetry.End(span, func() error { return rerr }) // stays UNSET
+			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
 				defer telemetry.End(span, func() error { return rerr })
@@ -56,7 +56,6 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
 				return errors.New("inner failure")
 			})()
-			return nil // middle span stays UNSET
 		})()
 		return errors.New("outer failure")
 	})()
@@ -65,9 +64,9 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "succeeding outer span")
 		defer telemetry.End(span, func() error { return rerr })
-		(func() (rerr error) {
+		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
-			defer telemetry.End(span, func() error { return rerr }) // stays UNSET
+			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
 				defer telemetry.End(span, func() error { return rerr })
@@ -75,7 +74,6 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
 				return errors.New("inner failure")
 			})()
-			return nil // middle span stays UNSET
 		})()
 		return nil // outer span succeeds
 	})()

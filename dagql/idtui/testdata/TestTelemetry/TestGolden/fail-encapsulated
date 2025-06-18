@@ -35,8 +35,4 @@ Error logs:
 this should be hoisted - ancestor failed
 ! inner failure
 
-▼ failing inner span X.Xs ERROR
-this should NOT be hoisted - ancestor succeeded
-! inner failure
-
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
