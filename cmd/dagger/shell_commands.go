@@ -509,6 +509,13 @@ Example:
 			},
 		},
 		&ShellCommand{
+			Use: ".exit [code]",
+			Description: `Exit the shell with an optional status code
+
+Without arguments, uses the exit status of the last command that executed. 
+`,
+		},
+		&ShellCommand{
 			Use: ".cd [path | url]",
 			Description: `Change the current working directory
 
