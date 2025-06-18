@@ -743,6 +743,7 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.Container], args containerFromArgs) (inst dagql.Instance[*core.Container], _ error) {
+	fmt.Printf("ACB from %v\n", args)
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -1670,6 +1671,7 @@ type containerWithoutDirectoryArgs struct {
 }
 
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.Instance[*core.Container], err error) {
+	fmt.Printf("ACB withoutDirectory here2\n")
 	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
 		return inst, err

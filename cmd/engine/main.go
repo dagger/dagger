@@ -324,6 +324,9 @@ func main() { //nolint:gocyclo
 				logLevel = config.LevelDebug
 			}
 		}
+		fmt.Printf("ACB setting trace log\n")
+		logLevel = config.LevelExtraDebug
+
 		if logLevel != "" {
 			slogLevel, err := logLevel.ToSlogLevel()
 			if err != nil {

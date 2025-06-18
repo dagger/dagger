@@ -267,6 +267,8 @@ func (svc *Service) startContainer(
 	forwardStderr func(io.Reader),
 ) (running *RunningService, rerr error) {
 	dig := id.Digest()
+	fmt.Printf("ACB startContainer start\n")
+	defer fmt.Printf("ACB startContainer end\n")
 
 	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
 

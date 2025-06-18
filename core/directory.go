@@ -388,6 +388,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 
 func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	dir = dir.Clone()
+	fmt.Printf("ACB WithNewFile %v\n", dest)
 
 	err := validateFileName(dest)
 	if err != nil {

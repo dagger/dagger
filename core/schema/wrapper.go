@@ -180,6 +180,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
 	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
 		if args.InDagOp() {
+			fmt.Printf("ACB innie %v\n", fn)
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
@@ -187,6 +188,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
+		fmt.Printf("ACB outie %v\n", fn)
 		return DagOpContainer(ctx, srv, self, args, nil, fn, skipMeta)
 	}
 }

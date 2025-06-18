@@ -675,6 +675,7 @@ func (container *Container) WithFile(ctx context.Context, srv *dagql.Server, des
 
 func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
 	container = container.Clone()
+	fmt.Printf("ACB WithoutPaths %v\n", destPaths)
 
 	for _, destPath := range destPaths {
 		var err error
@@ -1701,6 +1702,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
 	container = container.Clone()
+	fmt.Printf("ACB WithServiceBinding\n")
 
 	host, err := svc.Self.Hostname(ctx, svc.ID())
 	if err != nil {
@@ -1720,6 +1722,7 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.In
 		},
 	})
 
+	fmt.Printf("ACB WithServiceBinding returning\n")
 	return container, nil
 }
 

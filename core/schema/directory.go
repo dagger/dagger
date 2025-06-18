@@ -377,6 +377,7 @@ type withoutDirectoryArgs struct {
 }
 
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Instance[*core.Directory], args withoutDirectoryArgs) (inst dagql.Instance[*core.Directory], err error) {
+	fmt.Printf("ACB withoutDirectory here1\n")
 	dir, err := parent.Self.Without(ctx, s.srv, args.Path)
 	if err != nil {
 		return inst, err
