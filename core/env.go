@@ -507,13 +507,11 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
 	// FIXME: in principle LLM should be able to refer to these types, so this should
 	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
 	// hidden, don't codegen the field.
-	for _, hiddenType := range append(TypesHiddenFromModuleSDKs, &Host{}) {
-		if hiddenType.Type().Name() == typename {
-			return
-		}
-	}
-	// skip hardcoded core types that aren't useful as input/output env extensions
-	for _, hiddenType := range TypesHiddenFromEnvExtensions {
+	hiddenTypes := make([]dagql.Typed, 0, len(TypesHiddenFromModuleSDKs)+len(TypesHiddenFromEnvExtensions)+1)
+	hiddenTypes = append(hiddenTypes, TypesHiddenFromModuleSDKs...)
+	hiddenTypes = append(hiddenTypes, TypesHiddenFromEnvExtensions...)
+	hiddenTypes = append(hiddenTypes, &Host{})
+	for _, hiddenType := range hiddenTypes {
 		if hiddenType.Type().Name() == typename {
 			return
 		}

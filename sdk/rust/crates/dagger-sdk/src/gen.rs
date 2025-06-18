@@ -8343,6 +8343,9 @@ pub struct QueryGitOpts<'a> {
     /// Secret used to populate the password during basic HTTP Authorization
     #[builder(setter(into, strip_option), default)]
     pub http_auth_token: Option<SecretId>,
+    /// Username used to populate the password during basic HTTP Authorization
+    #[builder(setter(into, strip_option), default)]
+    pub http_auth_username: Option<&'a str>,
     /// DEPRECATED: Set to true to keep .git directory.
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
@@ -8676,6 +8679,9 @@ impl Query {
         }
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        if let Some(http_auth_username) = opts.http_auth_username {
+            query = query.arg("httpAuthUsername", http_auth_username);
         }
         if let Some(http_auth_token) = opts.http_auth_token {
             query = query.arg("httpAuthToken", http_auth_token);

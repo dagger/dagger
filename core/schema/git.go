@@ -61,6 +61,7 @@ func (s *gitSchema) Install() {
 					Doc(`Set to true to keep .git directory.`).Deprecated(),
 				dagql.Arg("sshKnownHosts").Doc(`Set SSH known hosts`),
 				dagql.Arg("sshAuthSocket").Doc(`Set SSH auth socket`),
+				dagql.Arg("httpAuthUsername").Doc(`Username used to populate the password during basic HTTP Authorization`),
 				dagql.Arg("httpAuthToken").Doc(`Secret used to populate the password during basic HTTP Authorization`),
 				dagql.Arg("httpAuthHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the repo is fetched.`),
@@ -146,8 +147,9 @@ type gitArgs struct {
 	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 
-	HTTPAuthToken  dagql.Optional[core.SecretID] `name:"httpAuthToken"`
-	HTTPAuthHeader dagql.Optional[core.SecretID] `name:"httpAuthHeader"`
+	HTTPAuthUsername string                        `name:"httpAuthUsername" default:""`
+	HTTPAuthToken    dagql.Optional[core.SecretID] `name:"httpAuthToken"`
+	HTTPAuthHeader   dagql.Optional[core.SecretID] `name:"httpAuthHeader"`
 }
 
 //nolint:gocyclo
@@ -182,9 +184,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	var (
-		sshAuthSock    dagql.Instance[*core.Socket]
-		httpAuthToken  dagql.Instance[*core.Secret]
-		httpAuthHeader dagql.Instance[*core.Secret]
+		sshAuthSock      dagql.Instance[*core.Socket]
+		httpAuthUsername string
+		httpAuthToken    dagql.Instance[*core.Secret]
+		httpAuthHeader   dagql.Instance[*core.Secret]
 	)
 
 	switch remote.Scheme {
@@ -256,6 +259,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
+		if args.HTTPAuthUsername != "" {
+			httpAuthUsername = args.HTTPAuthUsername
+		}
+
 		if args.HTTPAuthToken.Valid {
 			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, s.srv)
 			if err != nil {
@@ -352,6 +359,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 					Value: dagql.Opt(dagql.NewID[*core.Secret](authToken.ID())),
 				},
 			}
+			// Omit blank username; adding it would change the selector hash and kill cache hits.
+			if httpAuthUsername != "" {
+				selectArgs = append(selectArgs, dagql.NamedInput{
+					Name:  "httpAuthUsername",
+					Value: dagql.Opt(dagql.NewString(httpAuthUsername)),
+				})
+			}
 			if args.KeepGitDir.Valid {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "keepGitDir",
@@ -380,6 +394,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
 			SSHAuthSocket: sshAuthSock.Self,
+			AuthUsername:  httpAuthUsername,
 			AuthToken:     httpAuthToken,
 			AuthHeader:    httpAuthHeader,
 			Services:      gitServices,

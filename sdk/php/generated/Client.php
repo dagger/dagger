@@ -170,6 +170,7 @@ class Client extends Client\AbstractClient
         ?bool $keepGitDir = true,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
+        ?string $httpAuthUsername = '',
         SecretId|Secret|null $httpAuthToken = null,
         SecretId|Secret|null $httpAuthHeader = null,
         ServiceId|Service|null $experimentalServiceHost = null,
@@ -184,6 +185,9 @@ class Client extends Client\AbstractClient
         }
         if (null !== $sshAuthSocket) {
         $innerQueryBuilder->setArgument('sshAuthSocket', $sshAuthSocket);
+        }
+        if (null !== $httpAuthUsername) {
+        $innerQueryBuilder->setArgument('httpAuthUsername', $httpAuthUsername);
         }
         if (null !== $httpAuthToken) {
         $innerQueryBuilder->setArgument('httpAuthToken', $httpAuthToken);

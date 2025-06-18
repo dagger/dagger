@@ -1,7 +1,7 @@
 Expected stdout:
 
-level-1
-level-2
+level-1/
+level-2/
 
 
 Expected stderr:

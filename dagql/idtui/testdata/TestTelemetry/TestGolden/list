@@ -1,7 +1,7 @@
 Expected stdout:
 
 debug.go
-demos
+demos/
 frontend.go
 frontend_plain.go
 frontend_pretty.go
@@ -10,8 +10,8 @@ output.go
 symbols.go
 sys_unix.go
 sys_windows.go
-testdata
-viztest
+testdata/
+viztest/
 vterm.go
 vterm_lite.go
 vterm_lite_test.go
@@ -36,7 +36,7 @@ Expected stderr:
 │ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
 │ ): String! X.Xs
 ┃ debug.go
-┃ demos
+┃ demos/
 ┃ frontend.go
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
@@ -45,8 +45,8 @@ Expected stderr:
 ┃ symbols.go
 ┃ sys_unix.go
 ┃ sys_windows.go
-┃ testdata
-┃ viztest
+┃ testdata/
+┃ viztest/
 ┃ vterm.go
 ┃ vterm_lite.go
 ┃ vterm_lite_test.go

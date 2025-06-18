@@ -125,8 +125,9 @@ type RemoteGitRepository struct {
 	Services ServiceBindings
 	Platform Platform
 
-	AuthToken  dagql.Instance[*Secret]
-	AuthHeader dagql.Instance[*Secret]
+	AuthUsername string
+	AuthToken    dagql.Instance[*Secret]
+	AuthHeader   dagql.Instance[*Secret]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
@@ -240,10 +241,16 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}()
 
 	if repo.AuthToken.Self != nil {
-		username := "x-access-token"
-		if repo.URL.Host == "bitbucket.org" {
+		// caller-supplied username takes priority; otherwise pick a host-specific default
+		username := repo.AuthUsername
+		switch {
+		case username != "":
+			// explicit override – use as-is
+		case repo.URL.Host == "bitbucket.org":
 			// NOTE: bitbucket.org is picky, and needs *this* username
 			username = "x-token-auth"
+		default:
+			username = "x-access-token"
 		}
 
 		secretStore, err := query.Secrets(ctx)

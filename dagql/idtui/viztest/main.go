@@ -497,3 +497,11 @@ func (*Viztest) PathArgs(
 ) error {
 	return nil
 }
+
+func (*Viztest) CallFailingDep(ctx context.Context) error {
+	return dag.Dep().FailingFunction(ctx)
+}
+
+func (*Viztest) CallBubblingDep(ctx context.Context) error {
+	return dag.Dep().BubblingFunction(ctx)
+}
