@@ -1791,8 +1791,23 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
+func spanIsVisible(span *dagui.Span, row *dagui.TraceRow) bool {
+	for row := row.PreviousVisual; row != nil; row = row.PreviousVisual {
+		if row.Span.ID == span.ID {
+			return true
+		}
+	}
+	for row := row.NextVisual; row != nil; row = row.NextVisual {
+		if row.Span.ID == span.ID {
+			return true
+		}
+	}
+	return false
+}
+
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	if row.Span.ErrorOrigin != nil {
+	if row.Span.ErrorOrigin != nil &&
+		spanIsVisible(row.Span.ErrorOrigin, row) {
 		// span's error originated elsewhere; don't repeat the message, the ERROR status
 		// links to its origin instead
 		return
