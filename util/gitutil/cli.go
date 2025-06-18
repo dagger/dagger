@@ -3,6 +3,7 @@ package gitutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -234,6 +235,11 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	}
 
 	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return buf.Bytes(), fmt.Errorf("unknown git error: %w", err)
+		}
+
 		if cli.ignoreError {
 			return buf.Bytes(), nil
 		}
@@ -242,7 +248,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 		case <-ctx.Done():
 			cerr := context.Cause(ctx)
 			if cerr != nil {
-				return buf.Bytes(), fmt.Errorf("context completed: %w", cerr)
+				return buf.Bytes(), fmt.Errorf("context completed with error: %w", cerr)
 			}
 		default:
 		}
