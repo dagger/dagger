@@ -35,8 +35,8 @@ public class DaggerExceptionUtils {
 
   public static List<String> getCmd(GraphQLError error) {
     Object cmdList = getExtensionValueByKey(error, CMD_KEY);
-    if (cmdList != null && cmdList instanceof JsonArray array) {
-      return array.stream().map(JsonValue::toString).toList();
+    if (cmdList instanceof JsonArray array) {
+      return array.getValuesAs(JsonString.class).stream().map(JsonString::getString).toList();
     }
     return null;
   }
