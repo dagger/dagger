@@ -988,6 +988,46 @@ func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, fmt.Sprintf("ls: %s: No such file or directory", cmd))
 }
 
+func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
+	t.Run("specific code", func(ctx context.Context, t *testctx.T) {
+		script := `directory | with-new-file foo foo | entries; .exit 5; .echo ok`
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		var execErr *dagger.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 5, execErr.ExitCode)
+		require.Contains(t, execErr.Stdout, "foo")
+		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("no args", func(ctx context.Context, t *testctx.T) {
+		// without `set +e` it won't reach `.exit`
+		script := `_set +e; directory | with-new-file | entries; .exit; .echo ok`
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		var execErr *dagger.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 1, execErr.ExitCode)
+		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("no error", func(ctx context.Context, t *testctx.T) {
+		// no error because `.echo ok` returns status code 0
+		script := `_set +e; directory | with-new-file | entries; .echo ok; .exit; .echo exited`
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).With(daggerShell(script)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "ok")
+		require.NotContains(t, out, "exited")
+	})
+}
+
 func (ShellSuite) TestExecExit(ctx context.Context, t *testctx.T) {
 	msg := rand.Text()
 	script := fmt.Sprintf(`container | from %s | with-exec -- sh -c ">&2 echo %q; exit 5" | stdout`, alpineImage, msg)
