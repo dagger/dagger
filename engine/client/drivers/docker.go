@@ -3,6 +3,7 @@ package drivers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +21,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
-	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
@@ -109,7 +109,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 		if leftoverEngine == containerName {
 			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
 			if output, err := traceExec(ctx, cmd); err != nil {
-				return nil, errors.Wrapf(err, "failed to start container: %s", output)
+				return nil, fmt.Errorf("failed to start container %s: %w", output, err)
 			}
 			garbageCollectEngines(ctx, cleanup, slog, slices.Delete(leftoverEngines, i, i+1))
 			return connhDocker.Helper(&url.URL{
@@ -122,10 +122,10 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 	// ensure the image is pulled
 	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, errors.Wrapf(err, "failed to inspect image")
+			return nil, fmt.Errorf("failed to inspect image: %w", err)
 		}
 		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
-			return nil, errors.Wrapf(err, "failed to pull image")
+			return nil, fmt.Errorf("failed to pull image: %w", err)
 		}
 	}
 
@@ -166,7 +166,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 
 	if output, err := traceExec(ctx, cmd); err != nil {
 		if !isContainerAlreadyInUseOutput(output) {
-			return nil, errors.Wrapf(err, "failed to run container: %s", output)
+			return nil, fmt.Errorf("failed to run container %s: %w", output, err)
 		}
 	}
 
@@ -184,13 +184,13 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 func resolveImageID(imageRef string) (string, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return "", errors.Wrap(err, "parsing image reference")
+		return "", fmt.Errorf("parsing image reference: %w", err)
 	}
 	if digest, ok := ref.(name.Digest); ok {
 		// We already have the digest as part of the image ref
 		_, id, ok := strings.Cut(digest.DigestStr(), "sha256:")
 		if !ok {
-			return "", errors.Errorf("invalid image reference %q", imageRef)
+			return "", fmt.Errorf("invalid image reference %q", imageRef)
 		}
 		return id[:hashLen], nil
 	}
@@ -233,7 +233,7 @@ func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption
 	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
 	cmd.Stderr = io.MultiWriter(stdio.Stderr, outBuf)
 	if err := cmd.Run(); err != nil {
-		return outBuf.String(), errors.Wrap(err, "failed to run command")
+		return outBuf.String(), fmt.Errorf("failed to run command: %w", err)
 	}
 	return outBuf.String(), nil
 }
@@ -252,7 +252,7 @@ func collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]s
 	)
 	output, err := traceExec(ctx, cmd)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to list containers: %s", output)
+		return nil, fmt.Errorf("failed to list containers %s: %w", output, err)
 	}
 
 	output = strings.TrimSpace(output)
