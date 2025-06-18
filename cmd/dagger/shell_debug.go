@@ -66,7 +66,7 @@ func shellDebugFormat(data any) string {
 		if t.IsError() {
 			return shellDebugFormat(t.Error)
 		}
-		var r string
+		r := fmt.Sprintf("[key=%s]", t.Key)
 		if t.ModDigest != "" {
 			r += fmt.Sprintf(" [module=%s]", t.ModDigest)
 		}
@@ -74,12 +74,9 @@ func shellDebugFormat(data any) string {
 			r += fmt.Sprintf(" [namespace=%s]", t.Cmd)
 		}
 		if len(t.Calls) > 0 {
-			r += "\n" + shellDebugFormat(t.Calls)
+			r += ":\n" + shellDebugFormat(t.Calls)
 		}
-		if len(r) == 0 {
-			r = " <empty>"
-		}
-		return fmt.Sprintf("State [%s]: %s", t.Key, r)
+		return fmt.Sprintf("State %s", r)
 	default:
 		b, _ := json.MarshalIndent(t, "", "  ")
 		return string(b)

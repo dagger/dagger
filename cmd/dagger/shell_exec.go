@@ -12,8 +12,11 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -119,7 +122,7 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 // This handler is responsible to interpreting functions and module references
 // as commands that can be executed, and wraps any returned errors.
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-	return func(ctx context.Context, args []string) error {
+	return func(ctx context.Context, args []string) (rerr error) {
 		// This avoids interpreter builtins running first, which would make it
 		// impossible to have a function named "echo", for example. We can
 		// remove `__dag` from this point onward.
@@ -135,16 +138,37 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			return nil
 		}
 
+		// Having a span for each handler makes it much easier to debug what
+		// the shell is doing.
+		ctx, span := Tracer().Start(ctx, args[0],
+			// Don't show span by default unless there's an error or we're debugging.
+			telemetry.Passthrough(),
+			trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)),
+		)
+		defer telemetry.End(span, func() error {
+			if rerr != nil {
+				// TODO: it's helpful to show the span on error when it's a usage
+				// issue, but if it's from resolving a query it shows the error
+				// twice. Could still be useful though, to pinpoint exactly which
+				// part of the script triggered it.
+				attrs := []attribute.KeyValue{
+					attribute.Bool(telemetry.UIPassthroughAttr, false),
+					attribute.Bool(telemetry.UIRevealAttr, true),
+				}
+				span.SetAttributes(attrs...)
+			}
+			return rerr
+		})
+
+		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
 		st, err := h.cmd(ctx, args)
 		if err == nil && st != nil {
-			if h.debug {
-				shellDebug(ctx, "Stdout", args[0], args[1:], st)
-			}
 			err = h.Save(ctx, *st)
 		}
 		if err != nil {
-			if h.debug {
-				shellDebug(ctx, "Error", args[0], args[1:], err)
+			if h.Debug() {
+				slog.Debug("handler error", "err", err, "args", args)
 			}
 
 			if st == nil {
@@ -197,12 +221,15 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 		return st, err
 	}
 	if st == nil {
-		if h.debug {
-			shellDebug(ctx, "InvalidStdin", args, s)
+		if h.Debug() {
+			// Need `.debug` to check what was actually passed. Just write
+			// to stderr instead of logger.
+			shellDebug(ctx, "unexpected stdin", args, s)
 		}
 		return nil, fmt.Errorf("unexpected input for command %q", c)
 	}
-	if h.debug {
+
+	if h.Debug() {
 		shellDebug(ctx, "Stdin", c, a, st)
 	}
 
@@ -257,7 +284,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	if err != nil {
 		return nil, err
 	}
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "Entrypoint", cmd, args, st)
 	}
 
@@ -295,7 +322,7 @@ func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
 }
 
 func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*ShellState, error) {
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "StateLookup", name)
 	}
 
@@ -511,22 +538,24 @@ func (h *shellCallHandler) parseArgumentValues(
 	fn *modFunction,
 	args []string,
 ) (rargs map[string]any, rerr error) {
-	defer func() {
-		if rerr != nil {
-			rerr = fmt.Errorf("%w\n\nUsage: %s", rerr, h.FunctionFullUseLine(md, fn))
-		}
-	}()
-
 	values, newArgs, err := h.shellPreprocessArgs(ctx, fn, args)
-	if h.debug {
-		shellDebug(ctx, "Preprocess arguments", fn.CmdName(), struct {
-			Args    []string
-			NewArgs []string
-			Values  map[string]any
-		}{args, newArgs, values}, err)
-	}
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, fmt.Errorf("usage: %s", h.FunctionFullUseLine(md, fn)))
+	}
+
+	// Flag processing can be a source of bugs so it's very useful to be
+	// able to debug this step but excessive on default verbosity.
+	if debug && verbose > 3 && !slices.Equal(args, newArgs) {
+		dbgArgs := []any{
+			"function", fn.CmdName(),
+			"before", args,
+			"after", newArgs,
+		}
+		if len(values) > 0 {
+			dbgArgs = append(dbgArgs, "values", values)
+		}
+		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+		slog.Debug("preprocess function argument flags", dbgArgs...)
 	}
 
 	// no further processing needed
@@ -673,10 +702,6 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 			}
 		}
 		return value, false, nil
-	}
-
-	if h.debug {
-		shellDebug(ctx, "parse flag value", arg.FlagName(), states, bypass, rval)
 	}
 
 	// If value isn't one state exactly, we need to process into a string
