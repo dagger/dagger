@@ -96,7 +96,7 @@ func initializeClientGeneratorModule(
 	dag *dagger.Client,
 	srcRef string,
 	srcOpts ...dagger.ModuleSourceOpts,
-) (gdef *clientGeneratorModuleDef, rerr error) {
+) (rsrc *dagger.ModuleSource, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
 	defer telemetry.End(span, func() error {
 		// To not confuse the user, we don't want to show the error if the config
@@ -121,15 +121,7 @@ func initializeClientGeneratorModule(
 		return nil, ErrConfigNotFound
 	}
 
-	dependencies, err := modSrc.Dependencies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-
-	return &clientGeneratorModuleDef{
-		Source:       modSrc,
-		Dependencies: dependencies,
-	}, nil
+	return modSrc, nil
 }
 
 // moduleDef is a representation of a dagger module.
@@ -158,8 +150,6 @@ type moduleDef struct {
 
 type clientGeneratorModuleDef struct {
 	Source *dagger.ModuleSource
-
-	Dependencies []dagger.ModuleSource
 }
 
 func (m *moduleDef) Short() string {
