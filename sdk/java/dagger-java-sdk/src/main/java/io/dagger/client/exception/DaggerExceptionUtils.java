@@ -11,7 +11,6 @@ import static io.dagger.client.exception.DaggerExceptionConstants.TYPE_KEY;
 
 import io.smallrye.graphql.client.GraphQLError;
 import jakarta.json.JsonArray;
-import jakarta.json.JsonValue;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
