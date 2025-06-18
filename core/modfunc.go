@@ -391,7 +391,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			dagErr := errInst.Self
+			dagErr := errInst.Self.Clone()
 			originCtx := trace.SpanContextFromContext(
 				telemetry.Propagator.Extract(
 					context.Background(),
