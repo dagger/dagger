@@ -610,7 +610,6 @@ func (GitSuite) TestGitHTTPAuthUsername(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "Hello, default user!", dt)
 	})
-
 }
 
 func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
