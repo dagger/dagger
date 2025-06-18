@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	shellHandlerExit = 200
-
 	// shellInternalCmd is the command that is used internally to avoid conflicts
 	// with interpreter builtins. For example when `echo` is used, the command becomes
 	// `__dag echo`. Otherwise we can't have a function named `echo`.
@@ -50,6 +48,50 @@ func isInterpBuiltin(name string) bool {
 		return true
 	}
 	return false
+}
+
+// HandlerError attatches an exit code to an error returned by the handler.
+//
+// Could be replaced with `errors.Join(err, interp.ExitStatus(exit))` but
+// it always adds a "exit status X" message to the error, so this allows
+// printing only the original but still have `errors.As()` work with
+// `interp.ExitStatus`, which is necessary for the interpreter.
+//
+// We want fatal errors but adding `interp.ExitStatus` makes it non-fatal
+// so we always add it to get a consistent behavior and rely on
+// `set -eo pipefail` to make it fatal.
+//
+// The discrepancy is due to the interpreter library considering errors
+// without `interp.ExitStatus“ to be unexpected and thus fatal by default
+// (opt-out, not opt-in), to avoid going unnoticed.
+type HandlerError struct {
+	// Err is the original error
+	Err error
+	// ExitCode is the exit status code
+	ExitCode int
+}
+
+func (e *HandlerError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *HandlerError) Unwrap() []error {
+	return []error{e.Err, interp.ExitStatus(e.ExitCode)}
+}
+
+func NewHandlerError(err error) *HandlerError {
+	exit := 1
+
+	// Currently only dagger.ExecError produces an exit code > 1.
+	var exe *dagger.ExecError
+	if errors.As(err, &exe) {
+		exit = exe.ExitCode
+	}
+
+	return &HandlerError{
+		Err:      err,
+		ExitCode: exit,
+	}
 }
 
 // Call is a handler which runs on every [syntax.CallExpr].
@@ -130,12 +172,24 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			args = args[1:]
 		}
 
-		// If argument is a state value, just pass it on to stdout.
+		// If argument is a state value, just pass it on to stdout directly.
 		// Example: `$FOO` or `$FOO | bar`
 		if GetStateKey(args[0]) != "" {
 			hctx := interp.HandlerCtx(ctx)
 			fmt.Fprint(hctx.Stdout, args[0])
 			return nil
+		}
+
+		// It's a cascading error if the state from the previous handler in a
+		// pipeline failed.
+		var cascadingErr bool
+
+		// Read stdin. If not nil this will block until the previous handler
+		// has finished. If state is nil here it means it's the first command
+		// in a pipeline (foo | bar).
+		st, err := h.loadInput(ctx, args)
+		if st != nil {
+			cascadingErr = st.IsHandlerError()
 		}
 
 		// Having a span for each handler makes it much easier to debug what
@@ -146,7 +200,12 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)),
 		)
 		defer telemetry.End(span, func() error {
-			if rerr != nil {
+			if cascadingErr {
+				// Early exit if an error is passed through stdin.
+				span.SetAttributes(
+					attribute.Bool(telemetry.CanceledAttr, true),
+				)
+			} else if rerr != nil {
 				// TODO: it's helpful to show the span on error when it's a usage
 				// issue, but if it's from resolving a query it shows the error
 				// twice. Could still be useful though, to pinpoint exactly which
@@ -155,6 +214,10 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 					attribute.Bool(telemetry.UIPassthroughAttr, false),
 					attribute.Bool(telemetry.UIRevealAttr, true),
 				}
+				var he *HandlerError
+				if errors.As(rerr, &he) {
+					attrs = append(attrs, attribute.Int("dagger.io/shell.handler.exit", he.ExitCode))
+				}
 				span.SetAttributes(attrs...)
 			}
 			return rerr
@@ -162,49 +225,81 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-		st, err := h.cmd(ctx, args)
-		if err == nil && st != nil {
-			err = h.Save(ctx, *st)
+		// No error from loading input, so look for which function to call.
+		if err == nil {
+			st, err = h.cmd(ctx, args, st)
+
+			// Command returned a state for saving.
+			// Condition is nested just for clarity.
+			if err == nil && st != nil {
+				// The last command in a pipeline will resolve this state and
+				// if that query returns an error, it will be returned here.
+				// Otherwise this should only fail if there's an unexpected
+				// error while writing to the pipe the interpreter sets up.
+				err = h.Save(ctx, *st)
+			}
 		}
+
+		// At this point the error could come from stdin, processing a function
+		// call, or resolving a final query.
 		if err != nil {
 			if h.Debug() {
 				slog.Debug("handler error", "err", err, "args", args)
+			}
+
+			if !cascadingErr {
+				err = NewHandlerError(err)
 			}
 
 			if st == nil {
 				st = &ShellState{}
 			}
 
-			st.Error = err
-
 			// Ensure any error from the handler is written to stdout so that
-			// the next command in the chain knows about it.
+			// the next command in the pipeline knows about it.
+			//
+			// st.Error will already be set when previous handler failed so
+			// don't override its propagation.
+			//
+			// Current state kept simply as a precaution in case it helps
+			// debug what state produced the error, but we could simplify and
+			// always write a new empty state here.
+			if st.Error == nil {
+				st.Error = err
+			}
 			if e := h.Save(ctx, *st); e != nil {
-				return e
+				// Save is expected to return the current HandlerError if it's
+				// the last command in a pipeline or no error if it's not.
+				// Otherwise it has to be an unexpected failure when writing
+				// to the pipe that the interpreter sets up.
+				var he *HandlerError
+				if !errors.As(e, &he) {
+					// If we fail to pass the current error on to the next
+					// handler in the pipeline the next one will return a
+					// confiusing "unexpected input" error, but it's still
+					// better than obfuscating the original one if we returned
+					// here, so just log it.
+					slog.Error("failed to save error state", "args", args, "err", e)
+				}
 			}
 
-			// There's a bug in the library where a handler that does `return err`
-			// is fatal but NewExitStatus` is not. With a fatal error, if this
-			// is in a command substitution, the parent command won't even
-			// execute, but the next command in the pipeline will, and with.
-			// an empty stdin. This way we pass the error state as an argument
-			// to the parent command and fail there when parsing the arguments.
-			return interp.NewExitStatus(shellHandlerExit)
+			if cascadingErr {
+				return nil
+			}
+
+			return err
 		}
 
 		return nil
 	}
 }
 
-// cmd is the main logic for executing simple commands
-func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState, error) {
-	c, a := args[0], args[1:]
-
+func (h *shellCallHandler) loadInput(ctx context.Context, args []string) (*ShellState, error) {
 	stdin := interp.HandlerCtx(ctx).Stdin
 
 	// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
 	if stdin == nil {
-		return h.entrypointCall(ctx, c, a)
+		return nil, nil
 	}
 
 	b, err := io.ReadAll(stdin)
@@ -215,18 +310,26 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 
 	// Stdin expects a single state
 	st, err := h.state.Load(GetStateKey(s))
-	if err != nil {
-		// should pass st around to cleanup from state store in case the
-		// error came from the state
-		return st, err
-	}
-	if st == nil {
+	if st == nil && err == nil {
 		if h.Debug() {
 			// Need `.debug` to check what was actually passed. Just write
 			// to stderr instead of logger.
 			shellDebug(ctx, "unexpected stdin", args, s)
 		}
-		return nil, fmt.Errorf("unexpected input for command %q", c)
+		return nil, fmt.Errorf("unexpected input for command %q", args[0])
+	}
+
+	// Should pass state even if err != nil, for cleanup.
+	return st, err
+}
+
+// cmd is the main logic for executing simple commands
+func (h *shellCallHandler) cmd(ctx context.Context, args []string, st *ShellState) (*ShellState, error) {
+	c, a := args[0], args[1:]
+
+	// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
+	if st == nil {
+		return h.entrypointCall(ctx, c, a)
 	}
 
 	if h.Debug() {

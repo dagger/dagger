@@ -439,7 +439,9 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Use: ".echo [-n] [string ...]",
 			Description: `Write arguments to the standard output
 
-Writes any specified operands, separated by single blank (' ') characters and followed by a newline ('\n') character, to the standard output. If the -n option is specified, the trailing newline is suppressed.
+Writes any specified operands, separated by single blank (' ') characters and 
+followed by a newline ('\n') character, to the standard output. If the -n option 
+is specified, the trailing newline is suppressed.
 `,
 		},
 		&ShellCommand{
@@ -474,11 +476,19 @@ If no name is provided, all environment variables are printed. If a name is prov
 			},
 		},
 		&ShellCommand{
-			Use: ".wait",
+			Use: ".wait [id...]",
 			Description: `Wait for background processes to complete
 
-The return status is 0 if all specified processes exit successfully.
-If any process exits with a nonzero status, wait returns that status.
+'id' is the process or job ID. If no ID is specified, .wait always returns 0 (zero).
+Otherwise, it returns the exit status of the last failed command waited for. 
+When multiple processes are given, the command waits for all processes to complete.
+
+Example:
+	
+  container | from alpine | with-exec false | stdout &
+  job1=$!
+  .echo "job id: $job1"
+  .wait $job1
 `,
 		},
 		&ShellCommand{

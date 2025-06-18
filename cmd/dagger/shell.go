@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,7 +52,16 @@ var shellCmd = &cobra.Command{
 				llmModel: llmModel,
 				mode:     modeShell,
 			}
-			return handler.RunAll(ctx, args)
+
+			err := handler.RunAll(ctx, args)
+
+			// Don't bother printing the error message if the TUI is enabled.
+			var es interp.ExitStatus
+			if handler.tty && errors.As(err, &es) {
+				return ExitError{Code: int(es)}
+			}
+
+			return err
 		})
 	},
 	Hidden: true,
@@ -263,14 +273,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	interp.StdIO(nil, h.stdoutWriter, h.stderrWriter)(h.runner)
 	h.stdoutWriter.SetProcessFunc(h.stateResolver(ctx))
 
-	err = h.runner.Run(ctx, file)
-	if exit, ok := interp.IsExitStatus(err); ok {
-		if int(exit) != shellHandlerExit {
-			return ExitError{Code: int(exit)}
-		}
-		err = nil
-	}
-	return err
+	return h.runner.Run(ctx, file)
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
@@ -438,8 +441,8 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
-	hctx := interp.HandlerCtx(ctx)
-	_, err := fmt.Fprintln(hctx.Stdout, args...)
+	hc := interp.HandlerCtx(ctx)
+	_, err := fmt.Fprintln(hc.Stdout, args...)
 	return err
 }
 
