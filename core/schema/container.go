@@ -742,7 +742,7 @@ type containerFromArgs struct {
 	Address string
 }
 
-func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.Container], args containerFromArgs) (inst dagql.Instance[*core.Container], _ error) {
+func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectInstance[*core.Container], args containerFromArgs) (inst dagql.Instance[*core.Container], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -751,7 +751,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	platform := parent.Self.Platform
+	platform := parent.Self().Platform
 
 	refName, err := reference.ParseNormalizedNamed(args.Address)
 	if err != nil {
@@ -761,12 +761,12 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		ctr, err := parent.Self.FromCanonicalRef(ctx, refName, nil)
+		ctr, err := parent.Self().FromCanonicalRef(ctx, refName, nil)
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
+		return dagql.NewInstanceForCurrentID(ctx, ctr)
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -835,8 +835,8 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 
 	return parent.Build(
 		ctx,
-		dir.Self,
-		buildctxDir.Self,
+		dir.Self(),
+		buildctxDir.Self(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -855,7 +855,7 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithRootFS(ctx, dir.Self)
+	return parent.WithRootFS(ctx, dir.Self())
 }
 
 type containerPipelineArgs struct {
@@ -909,22 +909,22 @@ type containerWithSymlinkArgs struct {
 	ContainerDagOpInternalArgs
 }
 
-func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
-	target, err := expandEnvVar(ctx, parent.Self, args.Target, args.Expand)
+func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectInstance[*core.Container], args containerWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
+	target, err := expandEnvVar(ctx, parent.Self(), args.Target, args.Expand)
 	if err != nil {
 		return inst, err
 	}
 
-	linkName, err := expandEnvVar(ctx, parent.Self, args.LinkName, args.Expand)
+	linkName, err := expandEnvVar(ctx, parent.Self(), args.LinkName, args.Expand)
 	if err != nil {
 		return inst, err
 	}
 
-	ctr, err := parent.Self.WithSymlink(ctx, s.srv, target, linkName)
+	ctr, err := parent.Self().WithSymlink(ctx, s.srv, target, linkName)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
+	return dagql.NewInstanceForCurrentID(ctx, ctr)
 }
 
 func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
@@ -1192,7 +1192,7 @@ func (EnvVariable) Description() string {
 	return "A simple key value object that represents an environment variable."
 }
 
-func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) ([]EnvVariable, error) {
+func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[EnvVariable], error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -1242,7 +1242,7 @@ func (Label) TypeDescription() string {
 	return "A simple key value object that represents a label."
 }
 
-func (s *containerSchema) labels(ctx context.Context, parent *core.Container, args struct{}) ([]Label, error) {
+func (s *containerSchema) labels(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[Label], error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -1300,7 +1300,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.WithMountedDirectory(ctx, path, dir.Self, args.Owner, false)
+	return parent.WithMountedDirectory(ctx, path, dir.Self(), args.Owner, false)
 }
 
 type containerWithAnnotationArgs struct {
@@ -1363,7 +1363,7 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Cont
 		return nil, err
 	}
 
-	return parent.WithMountedFile(ctx, path, file.Self, args.Owner, false)
+	return parent.WithMountedFile(ctx, path, file.Self(), args.Owner, false)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -1382,7 +1382,7 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 		if err != nil {
 			return nil, err
 		}
-		dir = inst.Self
+		dir = inst.Self()
 	}
 
 	cache, err := args.Cache.Load(ctx, s.srv)
@@ -1398,7 +1398,7 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 	return parent.WithMountedCache(
 		ctx,
 		path,
-		cache.Self,
+		cache.Self(),
 		dir,
 		args.Sharing,
 		args.Owner,
@@ -1602,7 +1602,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, err
 	}
 
-	return parent.WithDirectory(ctx, path, dir.Self, args.CopyFilter, args.Owner)
+	return parent.WithDirectory(ctx, path, dir.Self(), args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -1622,7 +1622,7 @@ func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, 
 		return nil, err
 	}
 
-	return parent.WithFile(ctx, path, file.Self, args.Permissions, args.Owner)
+	return parent.WithFile(ctx, path, file.Self(), args.Permissions, args.Owner)
 }
 
 type containerWithFilesArgs struct {
@@ -1638,7 +1638,7 @@ func (s *containerSchema) withFiles(ctx context.Context, parent *core.Container,
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, file.Self)
+		files = append(files, file.Self())
 	}
 
 	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
@@ -1741,7 +1741,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Conta
 		return nil, err
 	}
 
-	return parent.WithUnixSocket(ctx, path, socket.Self, args.Owner)
+	return parent.WithUnixSocket(ctx, path, socket.Self(), args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
@@ -1828,7 +1828,7 @@ func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[
 
 func (s *containerSchema) asTarball(
 	ctx context.Context,
-	parent dagql.Instance[*core.Container],
+	parent dagql.ObjectInstance[*core.Container],
 	args containerAsTarballArgs,
 ) (inst dagql.Instance[*core.File], rerr error) {
 	platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
@@ -1866,7 +1866,7 @@ func (s *containerSchema) asTarball(
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := core.ServiceBindings{}
 
-	variants := append([]*core.Container{parent.Self}, platformVariants...)
+	variants := append([]*core.Container{parent.Self()}, platformVariants...)
 	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
@@ -1955,7 +1955,7 @@ func (s *containerSchema) asTarball(
 	}
 	bkref = nil
 	f.Result = snap
-	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+	fileInst, err := dagql.NewInstanceForCurrentID(ctx, f)
 	if err != nil {
 		return inst, err
 	}
@@ -1979,7 +1979,7 @@ func (s *containerSchema) import_(ctx context.Context, parent *core.Container, a
 	}
 	return parent.Import(
 		ctx,
-		source.Self,
+		source.Self(),
 		args.Tag,
 	)
 }
@@ -2083,7 +2083,7 @@ func (s *containerSchema) withoutExposedPort(ctx context.Context, parent *core.C
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
-func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Container, args struct{}) ([]core.Port, error) {
+func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[core.Port], error) {
 	// get descriptions from `Container.Ports` (not in the OCI spec)
 	ports := make(map[string]core.Port, len(parent.Ports))
 	for _, p := range parent.Ports {
@@ -2148,19 +2148,19 @@ type containerTerminalArgs struct {
 
 func (s *containerSchema) terminal(
 	ctx context.Context,
-	ctr dagql.Instance[*core.Container],
+	ctr dagql.ObjectInstance[*core.Container],
 	args containerTerminalArgs,
 ) (dagql.Instance[*core.Container], error) {
 	if len(args.Cmd) == 0 {
-		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
+		args.Cmd = ctr.Self().DefaultTerminalCmd.Args
 	}
 
 	if !args.ExperimentalPrivilegedNesting.Valid {
-		args.ExperimentalPrivilegedNesting = ctr.Self.DefaultTerminalCmd.ExperimentalPrivilegedNesting
+		args.ExperimentalPrivilegedNesting = ctr.Self().DefaultTerminalCmd.ExperimentalPrivilegedNesting
 	}
 
 	if !args.InsecureRootCapabilities.Valid {
-		args.InsecureRootCapabilities = ctr.Self.DefaultTerminalCmd.InsecureRootCapabilities
+		args.InsecureRootCapabilities = ctr.Self().DefaultTerminalCmd.InsecureRootCapabilities
 	}
 
 	// if still no args, default to sh
@@ -2168,7 +2168,7 @@ func (s *containerSchema) terminal(
 		args.Cmd = []string{"sh"}
 	}
 
-	err := ctr.Self.Terminal(ctx, ctr.ID(), &args.TerminalArgs)
+	err := ctr.Self().Terminal(ctx, ctr.ID(), &args.TerminalArgs)
 	if err != nil {
 		return ctr, err
 	}
@@ -2178,9 +2178,9 @@ func (s *containerSchema) terminal(
 
 func (s *containerSchema) terminalLegacy(
 	ctx context.Context,
-	ctr dagql.Instance[*core.Container],
+	ctr dagql.ObjectInstance[*core.Container],
 	args containerTerminalArgs,
-) (*core.TerminalLegacy, error) {
+) (dagql.Instance[*core.TerminalLegacy], error) {
 	// HACK: when attempting to construct a legacy terminal, just spin up a new
 	// terminal attachable. The returned terminal is definitely invalid, but,
 	// the intention was probably to debug it anyways, so we're probably okay.
@@ -2203,7 +2203,7 @@ func (s *containerSchema) terminalLegacy(
 			Value: args.InsecureRootCapabilities,
 		})
 	}
-	err := s.srv.Select(ctx, ctr, &dagql.Instance[*core.Container]{},
+	err := s.srv.Select(ctx, ctr, new(dagql.Instance[*core.Container]),
 		dagql.Selector{
 			Field: "terminal",
 			Args:  inputs,
@@ -2212,7 +2212,7 @@ func (s *containerSchema) terminalLegacy(
 	if err != nil {
 		return nil, err
 	}
-	return &core.TerminalLegacy{}, nil
+	return nil, nil
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {

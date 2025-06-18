@@ -38,11 +38,11 @@ var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
 	ctx context.Context,
-	self dagql.Object,
+	self dagql.ObjectValue,
 	id *call.ID,
 ) (
 	context.Context,
-	func(res dagql.Typed, cached bool, rerr error),
+	func(res dagql.Value, cached bool, rerr error),
 ) {
 	if isIntrospection(id) || isMeta(id) || isDagOp(id) {
 		// introspection+meta are very uninteresting spans
@@ -84,7 +84,7 @@ func AroundFunc(
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
-	return ctx, func(res dagql.Typed, cached bool, err error) {
+	return ctx, func(res dagql.Value, cached bool, err error) {
 		defer telemetry.End(span, func() error { return err })
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
@@ -93,7 +93,7 @@ func AroundFunc(
 }
 
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached bool, err error, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.Value, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
@@ -108,7 +108,11 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 	// This allows the UI to "simplify" the returned object's ID back to the
 	// current call's ID, so we can show the user myMod().unit().stdout()
 	// instead of container().from().[...].stdout().
-	if obj, ok := dagql.UnwrapAs[dagql.Object](res); ok {
+	// TODO: ??? works??
+	// TODO: ??? works??
+	// TODO: ??? works??
+	// if obj, ok := dagql.UnwrapAs[dagql.Object](res); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.ObjectValue](res); ok {
 		// Don't consider loadFooFromID to be a 'creator' as that would only
 		// obfuscate the real ID.
 		//
@@ -130,7 +134,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 }
 
 // logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call.ID) {
+func logResult(ctx context.Context, res dagql.Value, self dagql.ObjectValue, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
@@ -153,18 +157,22 @@ func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object) {
+func collectEffects(ctx context.Context, res dagql.Value, span trace.Span, self dagql.ObjectValue) {
+	if res == nil {
+		return
+	}
+
 	// Keep track of which effects were already installed prior to the call so we
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
-	for _, def := range collectDefs(ctx, self) {
+	for _, def := range collectDefs(ctx, self.Unwrap()) {
 		for _, op := range def.Def {
 			seenEffects[digest.FromBytes(op)] = true
 		}
 	}
 
 	var effectIDs []string
-	for _, def := range collectDefs(ctx, res) {
+	for _, def := range collectDefs(ctx, res.Unwrap()) {
 		for _, opBytes := range def.Def {
 			dig := digest.FromBytes(opBytes)
 			if seenEffects[dig] {

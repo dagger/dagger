@@ -596,11 +596,11 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
-		client.mod = modInst.Self
+		client.mod = modInst.Self()
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self.EngineVersion
+		engineVersion := client.mod.Source.Self().EngineVersion
 		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can

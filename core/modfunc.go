@@ -42,6 +42,8 @@ type ModuleFunction struct {
 	args       map[string]*UserModFunctionArg
 }
 
+var _ Callable = &ModuleFunction{}
+
 type UserModFunctionArg struct {
 	metadata *FunctionArg
 	modType  ModType
@@ -89,7 +91,7 @@ func NewModFunction(
 
 type CallOpts struct {
 	Inputs         []CallInput
-	ParentTyped    dagql.Typed
+	ParentTyped    dagql.Value
 	ParentFields   map[string]any
 	Cache          bool
 	SkipSelfSchema bool
@@ -198,7 +200,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
-	parent dagql.Object,
+	parent dagql.Value,
 	args map[string]dagql.Input,
 	view dagql.View,
 	inputCfg dagql.CacheConfig,
@@ -263,7 +265,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfg, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Value, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -391,7 +393,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			dagErr := errInst.Self.Clone()
+			dagErr := errInst.Self().Clone()
 			originCtx := trace.SpanContextFromContext(
 				telemetry.Propagator.Extract(
 					context.Background(),
@@ -445,14 +447,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to read function output file: %w", err)
 	}
 
-	var returnValue any
+	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
-	if err := dec.Decode(&returnValue); err != nil {
+	if err := dec.Decode(&returnValueAny); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
 
-	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)
+	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
@@ -468,7 +470,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 	returnedIDs := map[digest.Digest]*resource.ID{}
-	if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
+	if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
@@ -487,7 +489,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}
-	return dagql.NewPostCallTyped(returnValueTyped, secretTransferPostCall), nil
+
+	returnValue = returnValue.WithPostCall(secretTransferPostCall)
+	return returnValue, nil
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
@@ -568,7 +572,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.Source.Self
+	source := mod.Source.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
@@ -609,7 +613,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "Directory":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
 
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.Source.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -623,7 +627,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
+		dir, err := fn.mod.Source.Self().LoadContext(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}

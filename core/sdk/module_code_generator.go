@@ -23,7 +23,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	var inst dagql.Instance[*core.GeneratedCode]
@@ -43,5 +43,5 @@ func (sdk *codeGeneratorModule) Codegen(
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
 	}
-	return inst.Self, nil
+	return inst.Self(), nil
 }

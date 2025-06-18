@@ -23,7 +23,7 @@ func (sdk *runtimeModule) Runtime(
 	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	var inst dagql.Instance[*core.Container]
@@ -54,5 +54,5 @@ func (sdk *runtimeModule) Runtime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
 	}
-	return inst.Self, nil
+	return inst.Self(), nil
 }

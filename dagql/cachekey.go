@@ -20,7 +20,7 @@ const (
 // Canonical examples include loading client filesystem data or referencing client-side sockets/ports.
 func CachePerClient[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectInstance[P],
 	args A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -30,7 +30,7 @@ func CachePerClient[P Typed, A any](
 // CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Instance.
 func CachePerClientObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ ObjectValue,
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -50,7 +50,7 @@ func CachePerClientObject[A any](
 // It should be used when the operation should be run for each session, but not more than once for a given session.
 func CachePerSession[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectInstance[P],
 	args A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -60,7 +60,7 @@ func CachePerSession[P Typed, A any](
 // CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Instance.
 func CachePerSessionObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ ObjectValue,
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -89,7 +89,7 @@ const (
 	CacheTypePerCall
 )
 
-func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i Instance[T], a A, cc CacheConfig) (*CacheConfig, error) {
+func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i ObjectInstance[T], a A, cc CacheConfig) (*CacheConfig, error) {
 	switch a.CacheType() {
 	case CacheTypePerClient:
 		return CachePerClient(ctx, i, a, cc)
@@ -106,7 +106,7 @@ func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i I
 // always re-running.
 func CachePerCall[P Typed, A any](
 	_ context.Context,
-	_ Instance[P],
+	_ ObjectInstance[P],
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {

@@ -41,7 +41,7 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(id *call.ID, val Typed) (Object, error)
+	New(id *call.ID, val Value) (ObjectValue, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
@@ -63,19 +63,41 @@ type IDType interface {
 
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
-type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
+type FieldFunc func(context.Context, Value, map[string]Input) (Value, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
 	ID() *call.ID
 }
 
+// TODO: doc, prev doc below:
 // Object represents an Object in the graph which has an ID and can have
 // sub-selections.
-type Object interface {
-	Typed
+// TODO: also this name sucks, it's really like ValueWithID or something
+type Value interface {
+	Wrapper
 	IDable
 	PostCallable
+	Setter
+
+	// TODO: doc, subtly avoiding becoming a Typed interface, maybe rename ValueType or something?
+	// TODO: rm this now that we actually may want to implement Typed?
+	AstType() *ast.Type
+
+	// TODO:
+	// Typed
+
+	DerefValue() (Value, bool)
+	NthValue(int) (Value, error)
+
+	WithPostCall(fn cache.PostCallFunc) Value
+}
+
+// TODO: doc, prev doc below:
+// Object represents an Object in the graph which has an ID and can have
+// sub-selections.
+type ObjectValue interface {
+	Value
 
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
@@ -86,7 +108,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+	Call(context.Context, *Server, *call.ID) (Value, *call.ID, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
@@ -94,16 +116,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
-
-	// ReturnType gets the return type of the field selected by the given
-	// selector.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	ReturnType(context.Context, *Server, Selector) (Typed, *call.ID, error)
+	Select(context.Context, *Server, Selector) (Value, *call.ID, error)
 }
 
 // A type that has a callback attached that needs to always run before returned to a caller
@@ -111,7 +124,8 @@ type Object interface {
 type PostCallable interface {
 	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
 	// with a type used for attaching the postcall func
-	GetPostCall() (cache.PostCallFunc, Typed)
+	// TODO: update comment ^
+	GetPostCall() cache.PostCallFunc
 }
 
 // A type that has a callback attached that needs to always run when the result is removed
@@ -285,7 +299,7 @@ func (i Int) SetField(v reflect.Value) error {
 // Float is a GraphQL Float scalar.
 type Float float64
 
-func NewFloat(val float64) Float {
+func NewFloat[T constraints.Float](val T) Float {
 	return Float(val)
 }
 
@@ -770,14 +784,15 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 }
 
 // Load loads the instance with the given ID from the server.
-func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
+// TODO: this should probably be generalized to return Instance[T] now, so any non-object values too
+func (i ID[T]) Load(ctx context.Context, server *Server) (ObjectInstance[T], error) {
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return Instance[T]{}, fmt.Errorf("load %s: %w", i.id.Display(), err)
+		return nil, fmt.Errorf("load %s: %w", i.id.Display(), err)
 	}
-	obj, ok := val.(Instance[T])
+	obj, ok := val.(ObjectInstance[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
+		return nil, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
 	}
 	return obj, nil
 }
@@ -791,6 +806,8 @@ type Enumerable interface {
 	// Nth returns the Nth element of the Enumerable, with 1 representing the
 	// first entry.
 	Nth(int) (Typed, error)
+
+	NthValue(i int, enumID *call.ID) (Value, error)
 }
 
 // Array is an array of GraphQL values.
@@ -902,12 +919,16 @@ func NewBoolArray(elems ...bool) Array[Boolean] {
 	return ToArray(NewBoolean, elems...)
 }
 
-func NewIntArray(elems ...int) Array[Int] {
+func NewIntArray[T constraints.Integer](elems ...T) Array[Int] {
 	return ToArray(NewInt, elems...)
 }
 
-func NewFloatArray(elems ...float64) Array[Float] {
+func NewFloatArray[T constraints.Float](elems ...T) Array[Float] {
 	return ToArray(NewFloat, elems...)
+}
+
+func NewBooleanArray(elems ...bool) Array[Boolean] {
+	return ToArray(NewBoolean, elems...)
 }
 
 var _ Typed = Array[Typed]{}
@@ -931,11 +952,135 @@ func (arr Array[T]) Len() int {
 	return len(arr)
 }
 
+func (arr Array[T]) nth(i int) (T, error) {
+	if i < 1 || i > len(arr) {
+		var zero T
+		return zero, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
 func (arr Array[T]) Nth(i int) (Typed, error) {
+	return arr.nth(i)
+}
+
+func (arr Array[T]) NthValue(i int, enumID *call.ID) (Value, error) {
+	t, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// fmt.Println("Array.NthValue", "id", enumID.Display())
+
+	return instance[T]{
+		Constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
+}
+
+type InstanceArray[T Typed] []Instance[T]
+
+var _ Typed = InstanceArray[Typed]{}
+var _ Enumerable = InstanceArray[Typed]{}
+
+func (i InstanceArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr InstanceArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr InstanceArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr InstanceArray[T]) nth(i int) (Instance[T], error) {
 	if i < 1 || i > len(arr) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return arr[i-1], nil
+}
+
+func (arr InstanceArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr InstanceArray[T]) NthValue(i int, enumID *call.ID) (Value, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// fmt.Println("InstanceArray.NthValue", "id", inst.ID().Display(), fmt.Sprintf("%T", inst))
+
+	return inst, nil
+}
+
+type ObjectInstanceArray[T Typed] []ObjectInstance[T]
+
+var _ Typed = ObjectInstanceArray[Typed]{}
+var _ Enumerable = ObjectInstanceArray[Typed]{}
+
+func (i ObjectInstanceArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr ObjectInstanceArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr ObjectInstanceArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr ObjectInstanceArray[T]) nth(i int) (ObjectInstance[T], error) {
+	if i < 1 || i > len(arr) {
+		return nil, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
+func (arr ObjectInstanceArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr ObjectInstanceArray[T]) NthValue(i int, enumID *call.ID) (Value, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// fmt.Println("ObjectInstanceArray.NthValue", "id", inst.ID().Display(), fmt.Sprintf("%T", inst))
+
+	return inst, nil
 }
 
 type EnumValue interface {

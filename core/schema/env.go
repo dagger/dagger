@@ -82,7 +82,7 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	return env, nil
 }
 
-func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Inputs(), nil
 }
 
@@ -106,7 +106,7 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 	return nil, fmt.Errorf("output not found: %s", args.Name)
 }
 
-func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Outputs(), nil
 }
 
@@ -115,7 +115,12 @@ func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, a
 	Value       string
 	Description string
 }) (*core.Env, error) {
-	return env.WithInput(args.Name, dagql.NewString(args.Value), args.Description), nil
+	// TODO: not sure...
+	str, err := dagql.NewInstanceForCurrentID(ctx, dagql.NewString(args.Value))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create string instance: %w", err)
+	}
+	return env.WithInput(args.Name, str, args.Description), nil
 }
 
 func (s environmentSchema) withStringOutput(ctx context.Context, env *core.Env, args struct {
