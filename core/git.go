@@ -247,6 +247,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		case username != "":
 			// explicit override – use as-is
 		case repo.URL.Host == "bitbucket.org":
+			// NOTE: bitbucket.org is picky, and needs *this* username
 			username = "x-token-auth"
 		default:
 			username = "x-access-token"
