@@ -69,6 +69,12 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Module]{
+		// TODO:: cleanup
+		dagql.NodeFunc("source", func(ctx context.Context, mod dagql.ObjectInstance[*core.Module], args struct{}) (inst dagql.Instance[*core.ModuleSource], err error) {
+			return mod.Self().Source, nil
+		}).
+			Doc(`The source for the module.`),
+
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.Module]().
 			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
@@ -94,7 +100,7 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
-		dagql.NodeFunc("serve", s.moduleServe).
+		dagql.Func("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
@@ -107,10 +113,10 @@ func (s *moduleSchema) Install() {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
-		dagql.Func("source", s.currentModuleSource).
+		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -118,7 +124,7 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 			),
 
-		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
@@ -271,7 +277,7 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithListOf(elemType.Self), nil
+	return def.WithListOf(elemType.Self()), nil
 }
 
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
@@ -318,7 +324,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObjectField(args.Name, fieldType.Self, args.Description, sourceMap)
+	return def.WithObjectField(args.Name, fieldType.Self(), args.Description, sourceMap)
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
@@ -328,7 +334,7 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithFunction(fn.Self)
+	return def.WithFunction(fn.Self())
 }
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
@@ -338,7 +344,7 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	fn := inst.Self.Clone()
+	fn := inst.Self().Clone()
 	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
 	// FunctionName to "", so ignore the name of the function.
 	fn.Name = ""
@@ -420,7 +426,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	return core.NewFunction(args.Name, returnType.Self), nil
+	return core.NewFunction(args.Name, returnType.Self()), nil
 }
 
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
@@ -466,20 +472,20 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	}
 
 	// Check if default path from context is set for non-directory or non-file type
-	if argType.Self.Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
-		(argType.Self.AsObject.Value.Name != "Directory" && argType.Self.AsObject.Value.Name != "File") {
-		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self.AsObject.Value.Name)
+	if argType.Self().Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
+		(argType.Self().AsObject.Value.Name != "Directory" && argType.Self().AsObject.Value.Name != "File") {
+		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self().AsObject.Value.Name)
 	}
 
 	// Check if ignore is set for non-directory type
-	if argType.Self.Kind == core.TypeDefKindObject &&
-		len(args.Ignore) > 0 && argType.Self.AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self.AsObject.Value.Name)
+	if argType.Self().Kind == core.TypeDefKindObject &&
+		len(args.Ignore) > 0 && argType.Self().AsObject.Value.Name != "Directory" {
+		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self().AsObject.Value.Name)
 	}
 
 	// When using a default path SDKs can't set a default value and the argument
 	// may be non-nullable, so we need to enforce it as optional.
-	td := argType.Self
+	td := argType.Self()
 	if args.DefaultPath != "" {
 		td = td.WithOptional(true)
 	}
@@ -494,7 +500,7 @@ func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Funct
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return fn.WithSourceMap(sourceMap.Self), nil
+	return fn.WithSourceMap(sourceMap.Self()), nil
 }
 
 func (s *moduleSchema) currentModule(
@@ -513,7 +519,7 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 	return self.CurrentFunctionCall(ctx)
 }
 
-func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*core.Module], args struct {
+func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
@@ -524,10 +530,10 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta.Self, includeDependencies)
+	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -557,10 +563,10 @@ func (s *moduleSchema) functionCallReturnError(ctx context.Context, fnCall *core
 
 func (s *moduleSchema) moduleGeneratedContextDirectory(
 	ctx context.Context,
-	mod dagql.Instance[*core.Module],
+	mod dagql.ObjectInstance[*core.Module],
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], err error) {
-	err = s.dag.Select(ctx, mod.Self.Source, &inst,
+	err = s.dag.Select(ctx, mod.Self().Source, &inst,
 		dagql.Selector{
 			Field: "generatedContextDirectory",
 		},
@@ -572,7 +578,7 @@ func (s *moduleSchema) moduleDependencies(
 	ctx context.Context,
 	mod *core.Module,
 	args struct{},
-) ([]*core.Module, error) {
+) (dagql.Array[*core.Module], error) {
 	depMods := make([]*core.Module, 0, len(mod.Deps.Mods))
 	for _, dep := range mod.Deps.Mods {
 		switch dep := dep.(type) {
@@ -600,7 +606,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, err
 	}
-	return core.EnvHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self)
+	return core.EnvHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self())
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
@@ -610,7 +616,7 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 	if err != nil {
 		return nil, err
 	}
-	return mod.WithInterface(ctx, def.Self)
+	return mod.WithInterface(ctx, def.Self())
 }
 
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
@@ -621,7 +627,7 @@ func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, arg
 		return nil, err
 	}
 
-	return mod.WithEnum(ctx, def.Self)
+	return mod.WithEnum(ctx, def.Self())
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -634,17 +640,17 @@ func (s *moduleSchema) currentModuleName(
 
 func (s *moduleSchema) currentModuleSource(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectInstance[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], err error) {
-	curSrc := curMod.Module.Source
-	if curSrc.Self == nil {
+	curSrc := curMod.Self().Module.Source
+	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}
 
-	srcSubpath := curSrc.Self.SourceSubpath
+	srcSubpath := curSrc.Self().SourceSubpath
 	if srcSubpath == "" {
-		srcSubpath = curSrc.Self.SourceRootSubpath
+		srcSubpath = curSrc.Self().SourceRootSubpath
 	}
 
 	var generatedDiff dagql.Instance[*core.Directory]
@@ -655,7 +661,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
 
-	err = s.dag.Select(ctx, curSrc.Self.ContextDirectory, &inst,
+	err = s.dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
@@ -679,7 +685,7 @@ func (s *moduleSchema) currentModuleSource(
 
 func (s *moduleSchema) currentModuleWorkdir(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectInstance[*core.CurrentModule],
 	args struct {
 		Path string
 		core.CopyFilter
@@ -708,7 +714,7 @@ func (s *moduleSchema) currentModuleWorkdir(
 
 func (s *moduleSchema) currentModuleWorkdirFile(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectInstance[*core.CurrentModule],
 	args struct {
 		Path string
 	},
@@ -740,5 +746,5 @@ func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Option
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return sourceMapI.Self, nil
+	return sourceMapI.Self(), nil
 }

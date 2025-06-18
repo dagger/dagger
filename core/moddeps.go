@@ -184,17 +184,17 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
 					Module:      ifaceType.mod.IDModule(),
 				},
-				func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-					inst, ok := self.(dagql.Instance[*ModuleObject])
+				func(ctx context.Context, self dagql.Value, args map[string]dagql.Input) (dagql.Value, error) {
+					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
 					}
-					return &InterfaceAnnotatedValue{
+					return dagql.NewInstanceForCurrentID(ctx, &InterfaceAnnotatedValue{
 						TypeDef:        iface,
-						Fields:         inst.Self.Fields,
+						Fields:         inst.Fields,
 						UnderlyingType: objType,
 						IfaceType:      ifaceType,
-					}, nil
+					})
 				},
 				dagql.CacheSpec{
 					GetCacheConfig: ifaceType.mod.CacheConfigForCall,

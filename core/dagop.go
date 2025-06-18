@@ -132,14 +132,14 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		return nil, err
 	}
 
-	switch inst := obj.(type) {
-	case dagql.Instance[*Directory]:
-		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+	switch inst := obj.Unwrap().(type) {
+	case *Directory:
+		if inst.Result != nil {
+			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
-		res, err := inst.Self.Evaluate(ctx)
+		res, err := inst.Evaluate(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -149,13 +149,13 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		}
 		return []solver.Result{ref}, nil
 
-	case dagql.Instance[*File]:
-		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+	case *File:
+		if inst.Result != nil {
+			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
-		res, err := inst.Self.Evaluate(ctx)
+		res, err := inst.Evaluate(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -232,19 +232,17 @@ func (op RawDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) 
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	result, err := opt.Server.LoadType(ctx, op.ID)
+	resultVal, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
-	if wrapped, ok := result.(dagql.Wrapper); ok {
-		result = wrapped.Unwrap()
-	}
+	result := resultVal.Unwrap()
 
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	ref, err := query.Self.BuildkitCache().New(ctx, nil, g,
+	ref, err := query.BuildkitCache().New(ctx, nil, g,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(client.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
@@ -436,18 +434,18 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		return nil, err
 	}
 
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	bk, err := query.Self.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	switch inst := obj.(type) {
-	case dagql.Instance[*Container]:
-		return op.extractContainerBkOutputs(ctx, inst.Self, bk, opt.Worker)
+	switch inst := obj.Unwrap().(type) {
+	case *Container:
+		return op.extractContainerBkOutputs(ctx, inst, bk, opt.Worker)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)

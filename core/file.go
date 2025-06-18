@@ -56,7 +56,7 @@ func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 		defs = append(defs, file.LLB)
 	}
 	for _, bnd := range file.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
