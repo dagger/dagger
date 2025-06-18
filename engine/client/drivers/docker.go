@@ -108,7 +108,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
 			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
-			if output, err := traceExec(ctx, cmd); err != nil {
+			if output, err := traceExec(ctx, cmd, false); err != nil {
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
 			garbageCollectEngines(ctx, cleanup, slog, slices.Delete(leftoverEngines, i, i+1))
@@ -120,11 +120,11 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 	}
 
 	// ensure the image is pulled
-	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
+	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), true, telemetry.Encapsulated()); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, errors.Wrapf(err, "failed to inspect image")
 		}
-		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
+		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef), false); err != nil {
 			return nil, errors.Wrapf(err, "failed to pull image")
 		}
 	}
@@ -164,7 +164,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 
 	cmd.Args = append(cmd.Args, imageRef, "--debug")
 
-	if output, err := traceExec(ctx, cmd); err != nil {
+	if output, err := traceExec(ctx, cmd, false); err != nil {
 		if !isContainerAlreadyInUseOutput(output) {
 			return nil, errors.Wrapf(err, "failed to run container: %s", output)
 		}
@@ -213,7 +213,7 @@ func garbageCollectEngines(ctx context.Context, cleanup bool, log *slog.Logger, 
 		}
 		if output, err := traceExec(ctx, exec.CommandContext(ctx,
 			"docker", "rm", "-fv", engine,
-		)); err != nil {
+		), false); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -224,11 +224,18 @@ func garbageCollectEngines(ctx context.Context, cleanup bool, log *slog.Logger, 
 	}
 }
 
-func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption) (out string, rerr error) {
+func traceExec(ctx context.Context, cmd *exec.Cmd, ignoreError bool, opts ...trace.SpanStartOption) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")), opts...)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error {
+		var exitErr *exec.ExitError
+		if ignoreError && errors.As(rerr, &exitErr) {
+			return nil
+		}
+		return rerr
+	})
 	stdio := telemetry.SpanStdio(ctx, "")
 	defer stdio.Close()
+
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
 	cmd.Stderr = io.MultiWriter(stdio.Stderr, outBuf)
@@ -250,7 +257,7 @@ func collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]s
 		"--filter", "name="+strings.Join(names, "|"),
 		"--format", "{{.Names}}",
 	)
-	output, err := traceExec(ctx, cmd)
+	output, err := traceExec(ctx, cmd, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list containers: %s", output)
 	}
