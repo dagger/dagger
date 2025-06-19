@@ -147,7 +147,7 @@ type gitArgs struct {
 	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 
-	HTTPAuthUsername string                        `name:"httpAuthUsername" default:""`
+	HTTPAuthUsername dagql.Optional[dagql.String]  `name:"httpAuthUsername"`
 	HTTPAuthToken    dagql.Optional[core.SecretID] `name:"httpAuthToken"`
 	HTTPAuthHeader   dagql.Optional[core.SecretID] `name:"httpAuthHeader"`
 }
@@ -185,7 +185,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 	var (
 		sshAuthSock      dagql.Instance[*core.Socket]
-		httpAuthUsername string
+		httpAuthUsername dagql.String
 		httpAuthToken    dagql.Instance[*core.Secret]
 		httpAuthHeader   dagql.Instance[*core.Secret]
 	)
@@ -259,8 +259,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
-		if args.HTTPAuthUsername != "" {
-			httpAuthUsername = args.HTTPAuthUsername
+		if args.HTTPAuthUsername.Valid {
+			httpAuthUsername = args.HTTPAuthUsername.Value
 		}
 
 		if args.HTTPAuthToken.Valid {
@@ -360,10 +360,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				},
 			}
 			// Omit blank username; adding it would change the selector hash and kill cache hits.
-			if httpAuthUsername != "" {
+			if httpAuthUsername.String() != "" {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "httpAuthUsername",
-					Value: dagql.Opt(dagql.NewString(httpAuthUsername)),
+					Value: dagql.Opt(httpAuthUsername),
 				})
 			}
 			if args.KeepGitDir.Valid {

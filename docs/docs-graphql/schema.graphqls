@@ -3355,7 +3355,7 @@ type Query {
     sshAuthSocket: SocketID
 
     """Username used to populate the password during basic HTTP Authorization"""
-    httpAuthUsername: String = ""
+    httpAuthUsername: String
 
     """Secret used to populate the password during basic HTTP Authorization"""
     httpAuthToken: SecretID
