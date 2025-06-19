@@ -33,6 +33,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/interp"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -469,14 +470,19 @@ func main() {
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		stop()
 		var exit ExitError
-		if errors.As(err, &exit) {
+		switch {
+		case errors.As(err, &exit):
 			os.Exit(exit.Code)
-		} else if errors.Is(err, idtui.ErrShellExited) {
+		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
-		} else if errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted) {
+		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			os.Exit(2)
-		} else {
+		default:
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			var es interp.ExitStatus
+			if errors.As(err, &es) {
+				os.Exit(int(es))
+			}
 			os.Exit(1)
 		}
 	}

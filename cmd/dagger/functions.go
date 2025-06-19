@@ -188,8 +188,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 							// Only the pretty frontend prints the stderr of
 							// the exec error in the final render
 							if !tty && ex.Stdout != "" {
-								c.Println("Stdout:")
-								c.Println(ex.Stdout)
+								c.PrintErrln("Stdout:")
+								c.PrintErrln(ex.Stdout)
 							}
 							if !tty && ex.Stderr != "" {
 								c.PrintErrln("Stderr:")
@@ -632,6 +632,7 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
 	query, _ := q.Build(ctx)
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Debug("executing query", "query", query)
 
 	q = q.Bind(&response)
