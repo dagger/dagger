@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
@@ -123,11 +122,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 		}
 	}
 
-	if err == nil {
-		// It is important to set an Ok status here so functions can encapsulate
-		// any internal errors.
-		span.SetStatus(codes.Ok, "")
-	} else {
+	if err != nil {
 		// append id.Display() instead of setting it as a field to avoid double
 		// quoting
 		slog.Warn("error resolving "+id.Display(), "error", err)
