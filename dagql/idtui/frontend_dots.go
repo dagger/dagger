@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"strings"
 	"sync"
 
+	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/core/multiprefixw"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -29,13 +32,14 @@ const (
 )
 
 type frontendDots struct {
-	output    io.Writer
-	mu        sync.Mutex
-	verbosity int
-	primary   bool
-	db        *dagui.DB
-	opts      dagui.FrontendOpts
-	reporter  *frontendPretty
+	output      io.Writer
+	mu          sync.Mutex
+	verbosity   int
+	primary     bool
+	db          *dagui.DB
+	opts        dagui.FrontendOpts
+	reporter    *frontendPretty
+	pendingLogs map[dagui.SpanID][]sdklog.Record
 }
 
 // NewDots creates a new dots-style frontend that outputs green dots for
@@ -62,6 +66,8 @@ func NewDots(output io.Writer) Frontend {
 		output:   output,
 		db:       db,
 		reporter: reporter,
+
+		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
 	}
 }
 
@@ -157,6 +163,11 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 			continue // Span not found in DB?
 		}
 
+		// Check if there are pending logs for this span and flush them
+		if logExporter, ok := e.fe.LogExporter().(*dotsLogsExporter); ok {
+			logExporter.flushPendingLogsForSpan(id)
+		}
+
 		// Only print output when span ends
 		if span.EndTime().IsZero() {
 			continue // Span hasn't ended yet
@@ -247,65 +258,22 @@ func (e *dotsLogsExporter) Export(ctx context.Context, records []sdklog.Record) 
 		return nil
 	}
 
-	// Initialize writer if needed
-	if e.writer == nil {
-		e.writer = multiprefixw.New(e.fe.output)
-	}
-
-	// Group records by span to minimize prefix switching
+	// Group records by span and either flush immediately if span exists, or store for later
 	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
-	var spanOrder []dagui.SpanID
-
 	for _, record := range records {
 		spanID := dagui.SpanID{SpanID: record.SpanID()}
-		if _, exists := spanGroups[spanID]; !exists {
-			spanOrder = append(spanOrder, spanID)
-		}
 		spanGroups[spanID] = append(spanGroups[spanID], record)
 	}
 
-	// Sort spans to ensure consistent ordering
-	sort.Slice(spanOrder, func(i, j int) bool {
-		return spanOrder[i].SpanID.String() < spanOrder[j].SpanID.String()
-	})
-
-	// Process each span group
-	for _, spanID := range spanOrder {
-		records := spanGroups[spanID]
-
-		// Get span info from DB
+	for spanID, records := range spanGroups {
+		// Check if span exists in DB
 		dbSpan := e.fe.db.Spans.Map[spanID]
-		if dbSpan == nil {
-			continue // Skip logs for unknown spans
-		}
-
-		// Check if we should show this span
-		var skip bool
-		for p := range dbSpan.Parents {
-			if p.Encapsulate || !e.fe.opts.ShouldShow(e.fe.db, p) {
-				skip = true
-				break
-			}
-		}
-
-		if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
-			continue // Skip logs for encapsulated spans
-		}
-
-		// Set prefix to span name
-		spanName := dbSpan.Name
-		if spanName == "" {
-			spanName = "unknown"
-		}
-		prefix := fmt.Sprintf("[%s] ", spanName)
-		e.writer.SetPrefix(prefix)
-
-		// Write all logs for this span
-		for _, record := range records {
-			body := record.Body().AsString()
-			if body != "" {
-				fmt.Fprintln(e.writer, body)
-			}
+		if dbSpan != nil && dbSpan.Name != "" {
+			// Span exists, flush immediately
+			e.flushLogsForSpan(spanID, records)
+		} else {
+			// Span doesn't exist yet, store for later
+			e.fe.pendingLogs[spanID] = append(e.fe.pendingLogs[spanID], records...)
 		}
 	}
 
@@ -318,4 +286,82 @@ func (e *dotsLogsExporter) ForceFlush(ctx context.Context) error {
 
 func (e *dotsLogsExporter) Shutdown(ctx context.Context) error {
 	return nil
+}
+
+// flushLogsForSpan writes logs for a specific span with proper prefix
+func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklog.Record) {
+	// Get span info from DB
+	dbSpan := e.fe.db.Spans.Map[spanID]
+	if dbSpan == nil {
+		return
+	}
+
+	// Check if we should show this span
+	var skip bool
+	for p := range dbSpan.Parents {
+		if p.Encapsulate || !e.fe.opts.ShouldShow(e.fe.db, p) {
+			skip = true
+			break
+		}
+	}
+	if dbSpan.ID == e.fe.db.PrimarySpan {
+		// don't print primary span logs; they'll be printed at the end
+		skip = true
+	}
+
+	if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
+		return // Skip logs for encapsulated spans
+	}
+
+	// Initialize writer if needed
+	if e.writer == nil {
+		e.writer = multiprefixw.New(e.fe.output)
+	}
+
+	r := newRenderer(e.fe.db, 0, e.fe.opts)
+
+	// Set prefix
+	var spanName strings.Builder
+	out := NewOutput(&spanName, termenv.WithProfile(e.fe.reporter.profile))
+	fmt.Fprintf(out, "%s ", CaretDownFilled)
+	if dbSpan.Call() != nil {
+		r.renderCall(out, dbSpan, dbSpan.Call(), "", false, 0, false, nil)
+		fmt.Fprintln(out)
+	} else {
+		fmt.Fprintf(&spanName, "%s\n", termenv.String(dbSpan.Name).Bold())
+	}
+	e.writer.SetPrefix(spanName.String())
+
+	// Write all logs for this span, filtering out verbose logs
+	for _, record := range records {
+		// Check if this log is marked as verbose
+		isVerbose := false
+		record.WalkAttributes(func(kv log.KeyValue) bool {
+			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
+				isVerbose = true
+				return false // stop walking
+			}
+			return true // continue walking
+		})
+
+		// Skip verbose logs in the dots frontend
+		if isVerbose {
+			continue
+		}
+
+		body := record.Body().AsString()
+		if body != "" {
+			fmt.Fprint(e.writer, body)
+		}
+	}
+}
+
+// flushPendingLogsForSpan flushes any pending logs when a span becomes available
+func (e *dotsLogsExporter) flushPendingLogsForSpan(spanID dagui.SpanID) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if records, exists := e.fe.pendingLogs[spanID]; exists {
+		e.flushLogsForSpan(spanID, records)
+		delete(e.fe.pendingLogs, spanID)
+	}
 }
