@@ -170,7 +170,7 @@ class Client extends Client\AbstractClient
         ?bool $keepGitDir = true,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
-        ?string $httpAuthUsername = null,
+        ?string $httpAuthUsername = '',
         SecretId|Secret|null $httpAuthToken = null,
         SecretId|Secret|null $httpAuthHeader = null,
         ServiceId|Service|null $experimentalServiceHost = null,

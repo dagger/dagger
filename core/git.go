@@ -125,7 +125,7 @@ type RemoteGitRepository struct {
 	Services ServiceBindings
 	Platform Platform
 
-	AuthUsername dagql.String
+	AuthUsername string
 	AuthToken    dagql.Instance[*Secret]
 	AuthHeader   dagql.Instance[*Secret]
 }
@@ -242,7 +242,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 
 	if repo.AuthToken.Self != nil {
 		// caller-supplied username takes priority; otherwise pick a host-specific default
-		username := repo.AuthUsername.String()
+		username := repo.AuthUsername
 		switch {
 		case username != "":
 			// explicit override – use as-is
