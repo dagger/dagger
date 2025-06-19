@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
@@ -516,6 +517,64 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 	return results, nil
 }
 
+type waitstatus struct {
+	mu   *sync.Mutex
+	m    map[string]int
+	done bool
+}
+
+func NewWaitStatus() *waitstatus {
+	ws := &waitstatus{
+		mu: &sync.Mutex{},
+		m:  map[string]int{},
+	}
+	go ws.run()
+	return ws
+}
+
+func (ws *waitstatus) run() {
+	stop := false
+	for !stop {
+		time.Sleep(time.Second * 30)
+		ws.mu.Lock()
+		for k, v := range ws.m {
+			fmt.Printf("ACB waiting on %s -> %d\n", k, v)
+		}
+		if ws.done {
+			stop = true
+		}
+		ws.mu.Unlock()
+	}
+}
+
+func (ws *waitstatus) stop() {
+	ws.mu.Lock()
+	ws.done = true
+	ws.mu.Unlock()
+}
+func (ws *waitstatus) add(s string) {
+	ws.mu.Lock()
+	v, ok := ws.m[s]
+	if !ok {
+		v = 0
+	}
+	ws.m[s] = v + 1
+	ws.mu.Unlock()
+}
+func (ws *waitstatus) remove(s string) {
+	ws.mu.Lock()
+	v, ok := ws.m[s]
+	if ok {
+		v -= 1
+		if v == 0 {
+			delete(ws.m, s)
+		} else {
+			ws.m[s] = v
+		}
+	}
+	ws.mu.Unlock()
+}
+
 // Resolve resolves the given selections on the given object.
 //
 // Each selection is resolved in parallel, and the results are returned in a
@@ -523,14 +582,20 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
 	results := new(sync.Map)
 
+	ws := NewWaitStatus()
+	defer ws.stop()
+
 	pool := pool.New().WithErrors()
 	for _, sel := range sels {
+		k := fmt.Sprintf("%s", sel)
+		ws.add(k)
 		pool.Go(func() error {
 			res, err := s.resolvePath(ctx, self, sel)
 			if err != nil {
 				return err
 			}
 			results.Store(sel.Name(), res)
+			ws.remove(k)
 			return nil
 		})
 	}

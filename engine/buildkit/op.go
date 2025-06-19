@@ -122,6 +122,9 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 	ctx = engine.ContextWithClientMetadata(ctx, &op.ClientMetadata)
 	ctx = ctxWithBkSessionGroup(ctx, g)
 
+	fmt.Printf("ACB Exec start\n")
+	defer fmt.Printf("ACB Exec end\n")
+
 	server, err := op.server.DagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)

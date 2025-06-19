@@ -176,9 +176,11 @@ func DagOpDirectory[T dagql.Typed, A any](
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+	skipMeta bool,
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
 	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
 		if args.InDagOp() {
+			fmt.Printf("ACB innie %v\n", fn)
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
@@ -186,7 +188,8 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 			ctx = core.ContextWithQuery(ctx, query.Self)
 			return fn(ctx, self, args)
 		}
-		return DagOpContainer(ctx, srv, self, args, nil, fn)
+		fmt.Printf("ACB outie %v\n", fn)
+		return DagOpContainer(ctx, srv, self, args, nil, fn, skipMeta)
 	}
 }
 
@@ -197,13 +200,14 @@ func DagOpContainer[A any](
 	args A,
 	data any,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+	skipMeta bool,
 ) (inst dagql.Instance[*core.Container], _ error) {
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), self.Self, deps)
+	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), self.Self, deps, skipMeta)
 	if err != nil {
 		return inst, err
 	}
