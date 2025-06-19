@@ -253,7 +253,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 					Value: dagql.Opt(dagql.NewString(args.SSHKnownHosts)),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{Field: "git", Args: selectArgs})
+			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+				Field: "git",
+				Args:  selectArgs,
+				View:  dagql.View(dagql.CurrentID(ctx).View()),
+			})
 			return inst, err
 		} else {
 			return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
@@ -380,7 +384,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 					Value: dagql.Opt(dagql.NewID[*core.Service](args.ExperimentalServiceHost.Value.ID())),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{Field: "git", Args: selectArgs})
+			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+				Field: "git",
+				Args:  selectArgs,
+				View:  dagql.View(dagql.CurrentID(ctx).View()),
+			})
 			return inst, err
 		}
 	}
