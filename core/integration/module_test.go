@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -5852,15 +5853,21 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 		}
 		if token := tc.token(); token != "" {
 			ctr = ctr.
-				WithExec([]string{
-					"git", "config", "--global",
-					"credential.https://" + tc.expectedHost + ".helper",
-					`!f() { test "$1" = get && echo -e "password=` + token + `\nusername=git"; }; f`,
-				})
+				WithNewFile("/tmp/git-config", makeGitCredentials("https://"+tc.expectedHost, "git", token)).
+				WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/git-config")
 		}
 
 		return ctr
 	}, cleanup
+}
+
+func makeGitCredentials(url string, username string, token string) string {
+	helper := fmt.Sprintf(`!f() { test "$1" = get && echo -e "password=%s\nusername=%s"; }; f`, token, username)
+
+	contents := bytes.NewBuffer(nil)
+	fmt.Fprintf(contents, "[credential %q]\n", url)
+	fmt.Fprintf(contents, "\thelper = %q\n", helper)
+	return contents.String()
 }
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {

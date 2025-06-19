@@ -34,20 +34,8 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 	// Creates isolated Git credentials per host to allow parallel test execution
 	setupGitCredentials := func(host, token, workDir string) []string {
 		gitConfigPath := filepath.Join(workDir, ".gitconfig")
-		credentialsPath := filepath.Join(workDir, ".git-credentials")
-
-		// Store auth token for specific host
-		cred := fmt.Sprintf("https://x-token-auth:%s@%s\n", token, host)
-		err := os.WriteFile(credentialsPath, []byte(cred), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials(host, "x-token-auth", token)), 0600)
 		require.NoError(t, err)
-
-		// Configure Git to use local credentials file for this host
-		gitConfig := fmt.Sprintf(`[credential "%s"]
-        helper = store --file=%s
-`, host, credentialsPath)
-		err = os.WriteFile(gitConfigPath, []byte(gitConfig), 0600)
-		require.NoError(t, err)
-
 		return []string{"GIT_CONFIG_GLOBAL=" + gitConfigPath}
 	}
 

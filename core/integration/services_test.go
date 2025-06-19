@@ -2161,21 +2161,22 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 }
 
 func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*dagger.Service, string) {
-	return httpServiceAuth(ctx, t, c, content, nil)
+	return httpServiceAuth(ctx, t, c, content, "", nil)
 }
 func httpServiceDir(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
-	return httpServiceDirAuth(ctx, t, c, dir, nil)
+	return httpServiceDirAuth(ctx, t, c, "", dir, "", nil)
 }
 
-func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, content string, token *dagger.Secret) (*dagger.Service, string) {
-	return httpServiceDirAuth(ctx, t, c, c.Directory().WithNewFile("index.html", content), token)
-}
-func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory, token *dagger.Secret) (*dagger.Service, string) {
-	return httpServiceDirAuthWithUsername(ctx, t, c, dir, "x-access-token", token)
+func httpServiceAuth(ctx context.Context, t testing.TB, c *dagger.Client, content string, username string, token *dagger.Secret) (*dagger.Service, string) {
+	return httpServiceDirAuth(ctx, t, c, "", c.Directory().WithNewFile("index.html", content), username, token)
 }
 
-func httpServiceDirAuthWithUsername(ctx context.Context, t testing.TB, c *dagger.Client, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+func httpServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
 	t.Helper()
+
+	if username == "" {
+		username = "x-access-token"
+	}
 
 	var tokenPlaintext string
 	if token != nil {
@@ -2219,8 +2220,12 @@ server {
 		WithExposedPort(80).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
-	hostname, err := svc.Hostname(ctx)
-	require.NoError(t, err)
+	if hostname == "" {
+		hostname, err = svc.Hostname(ctx)
+		require.NoError(t, err)
+	} else {
+		svc = svc.WithHostname(hostname)
+	}
 	url := fmt.Sprintf("http://%s", hostname)
 	return svc, url
 }
@@ -2250,18 +2255,10 @@ func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, c
 	return gitDaemon, repoURL
 }
 
-func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string, token *dagger.Secret) (*dagger.Service, string) {
+func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, content *dagger.Directory, branchName string, username string, token *dagger.Secret) (*dagger.Service, string) {
 	t.Helper()
 
-	gitDaemon, repoURL := httpServiceDirAuth(ctx, t, c, makeGitDir(c, content, branchName), token)
-	repoURL += "/repo.git"
-	return gitDaemon, repoURL
-}
-
-func gitServiceHTTPWithUsernameAuth(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string, username string, token *dagger.Secret) (*dagger.Service, string) {
-	t.Helper()
-
-	gitDaemon, repoURL := httpServiceDirAuthWithUsername(ctx, t, c, makeGitDir(c, content, branchName), username, token)
+	gitDaemon, repoURL := httpServiceDirAuth(ctx, t, c, hostname, makeGitDir(c, content, branchName), username, token)
 	repoURL += "/repo.git"
 	return gitDaemon, repoURL
 }

@@ -184,10 +184,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	var (
-		sshAuthSock      dagql.Instance[*core.Socket]
-		httpAuthUsername string
-		httpAuthToken    dagql.Instance[*core.Secret]
-		httpAuthHeader   dagql.Instance[*core.Secret]
+		sshAuthSock    dagql.Instance[*core.Socket]
+		httpAuthToken  dagql.Instance[*core.Secret]
+		httpAuthHeader dagql.Instance[*core.Secret]
 	)
 
 	switch remote.Scheme {
@@ -250,19 +249,19 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			if args.SSHKnownHosts != "" {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "sshKnownHosts",
-					Value: dagql.Opt(dagql.NewString(args.SSHKnownHosts)),
+					Value: dagql.NewString(args.SSHKnownHosts),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{Field: "git", Args: selectArgs})
+			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+				Field: "git",
+				Args:  selectArgs,
+				View:  dagql.View(dagql.CurrentID(ctx).View()),
+			})
 			return inst, err
 		} else {
 			return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
-		if args.HTTPAuthUsername != "" {
-			httpAuthUsername = args.HTTPAuthUsername
-		}
-
 		if args.HTTPAuthToken.Valid {
 			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, s.srv)
 			if err != nil {
@@ -323,7 +322,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			if err != nil {
 				// it's possible to provide auth tokens via chained API calls, so warn now but
 				// don't fail. Auth will be checked again before relevant operations later.
-				slog.Warn("Failed to retrieve git credentials: %v", err)
+				slog.Warn("Failed to retrieve git credentials", "error", err)
 				break
 			}
 
@@ -360,10 +359,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				},
 			}
 			// Omit blank username; adding it would change the selector hash and kill cache hits.
-			if httpAuthUsername != "" {
+			if credentials.Username != "" {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "httpAuthUsername",
-					Value: dagql.Opt(dagql.NewString(httpAuthUsername)),
+					Value: dagql.NewString(credentials.Username),
 				})
 			}
 			if args.KeepGitDir.Valid {
@@ -378,7 +377,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 					Value: dagql.Opt(dagql.NewID[*core.Service](args.ExperimentalServiceHost.Value.ID())),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{Field: "git", Args: selectArgs})
+			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+				Field: "git",
+				Args:  selectArgs,
+				View:  dagql.View(dagql.CurrentID(ctx).View()),
+			})
 			return inst, err
 		}
 	}
@@ -394,7 +397,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
 			SSHAuthSocket: sshAuthSock.Self,
-			AuthUsername:  httpAuthUsername,
+			AuthUsername:  args.HTTPAuthUsername,
 			AuthToken:     httpAuthToken,
 			AuthHeader:    httpAuthHeader,
 			Services:      gitServices,
