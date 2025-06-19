@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/core/multiprefixw"
 	"github.com/dagger/dagger/dagql/dagui"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -111,7 +113,7 @@ func (fe *frontendDots) SpanExporter() sdktrace.SpanExporter {
 }
 
 func (fe *frontendDots) LogExporter() sdklog.Exporter {
-	return fe.db.LogExporter()
+	return &dotsLogsExporter{fe: fe}
 }
 
 func (fe *frontendDots) MetricExporter() sdkmetric.Exporter {
@@ -222,5 +224,98 @@ func (e *dotsMetricExporter) ForceFlush(ctx context.Context) error {
 }
 
 func (e *dotsMetricExporter) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+// dotsLogsExporter implements log.Exporter for the dots frontend
+type dotsLogsExporter struct {
+	fe     *frontendDots
+	writer *multiprefixw.Writer
+	mu     sync.Mutex
+}
+
+func (e *dotsLogsExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Export to DB first like other frontends
+	if err := e.fe.db.LogExporter().Export(ctx, records); err != nil {
+		return err
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	// Initialize writer if needed
+	if e.writer == nil {
+		e.writer = multiprefixw.New(e.fe.output)
+	}
+
+	// Group records by span to minimize prefix switching
+	spanGroups := make(map[dagui.SpanID][]sdklog.Record)
+	var spanOrder []dagui.SpanID
+
+	for _, record := range records {
+		spanID := dagui.SpanID{SpanID: record.SpanID()}
+		if _, exists := spanGroups[spanID]; !exists {
+			spanOrder = append(spanOrder, spanID)
+		}
+		spanGroups[spanID] = append(spanGroups[spanID], record)
+	}
+
+	// Sort spans to ensure consistent ordering
+	sort.Slice(spanOrder, func(i, j int) bool {
+		return spanOrder[i].SpanID.String() < spanOrder[j].SpanID.String()
+	})
+
+	// Process each span group
+	for _, spanID := range spanOrder {
+		records := spanGroups[spanID]
+
+		// Get span info from DB
+		dbSpan := e.fe.db.Spans.Map[spanID]
+		if dbSpan == nil {
+			continue // Skip logs for unknown spans
+		}
+
+		// Check if we should show this span
+		var skip bool
+		for p := range dbSpan.Parents {
+			if p.Encapsulate || !e.fe.opts.ShouldShow(e.fe.db, p) {
+				skip = true
+				break
+			}
+		}
+
+		if skip || (dbSpan.Encapsulated && !dbSpan.IsFailedOrCausedFailure()) {
+			continue // Skip logs for encapsulated spans
+		}
+
+		// Set prefix to span name
+		spanName := dbSpan.Name
+		if spanName == "" {
+			spanName = "unknown"
+		}
+		prefix := fmt.Sprintf("[%s] ", spanName)
+		e.writer.SetPrefix(prefix)
+
+		// Write all logs for this span
+		for _, record := range records {
+			body := record.Body().AsString()
+			if body != "" {
+				fmt.Fprintln(e.writer, body)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *dotsLogsExporter) ForceFlush(ctx context.Context) error {
+	return nil
+}
+
+func (e *dotsLogsExporter) Shutdown(ctx context.Context) error {
 	return nil
 }
