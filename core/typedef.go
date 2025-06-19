@@ -581,7 +581,7 @@ func (typeDef *TypeDef) validateEnumMember(name, value string) error {
 	// $            : End of the string
 	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
 	if !regexp.MustCompile(pattern).MatchString(name) {
-		return fmt.Errorf("enum value %q is not valid (only letters, digits and underscores are allowed)", name)
+		return fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", name)
 	}
 
 	// Verify if the enum value is duplicated.
@@ -589,7 +589,7 @@ func (typeDef *TypeDef) validateEnumMember(name, value string) error {
 		if v.Name == name {
 			return fmt.Errorf("enum %q is already defined", name)
 		}
-		if v.Value == value {
+		if v.Value != "" && v.Value == value {
 			return fmt.Errorf("enum %q is already defined with value %q", v.Name, value)
 		}
 	}
@@ -1041,10 +1041,10 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 }
 
 type EnumMemberTypeDef struct {
-	Name        string     `field:"true" doc:"The name of the enum value."`
-	Value       string     `field:"true" doc:"The value of the enum value"`
-	Description string     `field:"true" doc:"A doc string for the enum value, if any."`
-	SourceMap   *SourceMap `field:"true" doc:"The location of this enum value declaration."`
+	Name        string     `field:"true" doc:"The name of the enum member."`
+	Value       string     `field:"true" doc:"The value of the enum member"`
+	Description string     `field:"true" doc:"A doc string for the enum member, if any."`
+	SourceMap   *SourceMap `field:"true" doc:"The location of this enum member declaration."`
 
 	OriginalName string
 }
@@ -1092,15 +1092,21 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 	return &cp
 }
 
-func (enumValue *EnumMemberTypeDef) EnumValueDirective() *ast.Directive {
-	return &ast.Directive{
-		Name: "enumValue",
-		Arguments: ast.ArgumentList{
-			{
-				Name: "value",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  enumValue.Value,
+func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
+	if enumValue.Value == "" {
+		return nil
+	}
+
+	return []*ast.Directive{
+		{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  enumValue.Value,
+					},
 				},
 			},
 		},

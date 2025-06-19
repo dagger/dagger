@@ -114,6 +114,10 @@ type ModuleEnum struct {
 	TypeDef *EnumTypeDef
 	Name    string
 
+	// Local marks this enum value as local to the module that declares its
+	// typedef. This is so that when converting it to/from it's own module we
+	// can use its OriginalName, but when converting it for other modules, we
+	// use the declared Name.
 	Local bool
 }
 
@@ -155,7 +159,7 @@ func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 		def := &ast.EnumValueDefinition{
 			Name:        name,
 			Description: val.Description,
-			Directives:  []*ast.Directive{val.EnumValueDirective()},
+			Directives:  val.EnumValueDirectives(),
 		}
 		if val.SourceMap != nil {
 			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
@@ -205,7 +209,7 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("invalid enum value %q for %s", val, e.TypeName())
+	return nil, fmt.Errorf("invalid enum member %q for %s", val, e.TypeName())
 }
 
 func (e *ModuleEnum) memberTypedef() *EnumMemberTypeDef {

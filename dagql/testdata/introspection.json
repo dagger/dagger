@@ -20,85 +20,35 @@
             "description": "Upward.",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"UP\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "DOWN",
             "description": "Downward.",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"DOWN\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "LEFT",
             "description": "Leftward.",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"LEFT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "RIGHT",
             "description": "Rightward.",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"RIGHT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INERT",
             "description": "No direction.",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INERT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           }
         ],
         "directives": []
@@ -999,323 +949,133 @@
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"QUERY\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "MUTATION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"MUTATION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "SUBSCRIPTION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"SUBSCRIPTION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "FIELD",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"FIELD\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "FRAGMENT_DEFINITION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"FRAGMENT_DEFINITION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "FRAGMENT_SPREAD",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"FRAGMENT_SPREAD\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INLINE_FRAGMENT",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INLINE_FRAGMENT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "VARIABLE_DEFINITION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"VARIABLE_DEFINITION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "SCHEMA",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"SCHEMA\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "SCALAR",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"SCALAR\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "OBJECT",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"OBJECT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "FIELD_DEFINITION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"FIELD_DEFINITION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "ARGUMENT_DEFINITION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"ARGUMENT_DEFINITION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INTERFACE",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INTERFACE\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "UNION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"UNION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "ENUM",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"ENUM\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "ENUM_VALUE",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"ENUM_VALUE\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INPUT_OBJECT",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INPUT_OBJECT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INPUT_FIELD_DEFINITION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INPUT_FIELD_DEFINITION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           }
         ],
         "directives": []
@@ -1981,136 +1741,56 @@
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"SCALAR\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "OBJECT",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"OBJECT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INTERFACE",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INTERFACE\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "UNION",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"UNION\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "ENUM",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"ENUM\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "INPUT_OBJECT",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"INPUT_OBJECT\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "LIST",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"LIST\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "NON_NULL",
             "description": "",
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "enumValue",
-                "args": [
-                  {
-                    "name": "value",
-                    "value": "\"NON_NULL\""
-                  }
-                ]
-              }
-            ]
+            "directives": []
           }
         ],
         "directives": []

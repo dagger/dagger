@@ -206,7 +206,7 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
-			Deprecated("Use withEnumMember instead").
+			Deprecated("Use `withEnumMember` instead").
 			Args(
 				dagql.Arg("value").Doc(`The name of the value in the enum`),
 				dagql.Arg("description").Doc(`A doc string for the value, if any`),
@@ -219,8 +219,8 @@ func (s *moduleSchema) Install() {
 			Args(
 				dagql.Arg("name").Doc(`The name of the member in the enum`),
 				dagql.Arg("value").Doc(`The value of the member in the enum`),
-				dagql.Arg("description").Doc(`A doc string for the value, if any`),
-				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
+				dagql.Arg("description").Doc(`A doc string for the member, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the enum member definition.`),
 			),
 	}.Install(s.dag)
 
@@ -366,9 +366,6 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	if args.Value == "" {
-		return nil, fmt.Errorf("enum value must not be empty")
-	}
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
@@ -378,16 +375,17 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 
 func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
-	Value       string
+	Value       string `default:""`
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	if args.Value == "" {
-		return nil, fmt.Errorf("enum value must not be empty")
-	}
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
+	}
+
+	if args.Value == args.Name {
+		args.Value = ""
 	}
 
 	supports, err := supportEnumMembers(ctx)

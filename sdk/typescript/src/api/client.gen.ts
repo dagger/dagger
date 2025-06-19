@@ -1419,12 +1419,17 @@ export type TypeDefWithEnumOpts = {
 
 export type TypeDefWithEnumMemberOpts = {
   /**
-   * A doc string for the value, if any
+   * The value of the member in the enum
+   */
+  value?: string
+
+  /**
+   * A doc string for the member, if any
    */
   description?: string
 
   /**
-   * The source map for the enum value definition.
+   * The source map for the enum member definition.
    */
   sourceMap?: SourceMap
 }
@@ -4138,7 +4143,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * A doc string for the enum value, if any.
+   * A doc string for the enum member, if any.
    */
   description = async (): Promise<string> => {
     if (this._description) {
@@ -4153,7 +4158,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * The name of the enum value.
+   * The name of the enum member.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -4168,7 +4173,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * The location of this enum value declaration.
+   * The location of this enum member declaration.
    */
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
@@ -4176,7 +4181,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * The value of the enum value
+   * The value of the enum member
    */
   value = async (): Promise<string> => {
     if (this._value) {
@@ -9176,16 +9181,15 @@ export class TypeDef extends BaseClient {
   /**
    * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
    * @param name The name of the member in the enum
-   * @param value The value of the member in the enum
-   * @param opts.description A doc string for the value, if any
-   * @param opts.sourceMap The source map for the enum value definition.
+   * @param opts.value The value of the member in the enum
+   * @param opts.description A doc string for the member, if any
+   * @param opts.sourceMap The source map for the enum member definition.
    */
   withEnumMember = (
     name: string,
-    value: string,
     opts?: TypeDefWithEnumMemberOpts,
   ): TypeDef => {
-    const ctx = this._ctx.select("withEnumMember", { name, value, ...opts })
+    const ctx = this._ctx.select("withEnumMember", { name, ...opts })
     return new TypeDef(ctx)
   }
 

@@ -3783,7 +3783,7 @@ func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValu
 	}
 }
 
-// A doc string for the enum value, if any.
+// A doc string for the enum member, if any.
 func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -3836,7 +3836,7 @@ func (r *EnumValueTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The name of the enum value.
+// The name of the enum member.
 func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3849,7 +3849,7 @@ func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The location of this enum value declaration.
+// The location of this enum member declaration.
 func (r *EnumValueTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
@@ -3858,7 +3858,7 @@ func (r *EnumValueTypeDef) SourceMap() *SourceMap {
 	}
 }
 
-// The value of the enum value
+// The value of the enum member
 func (r *EnumValueTypeDef) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -9984,16 +9984,22 @@ func (r *TypeDef) WithEnum(name string, opts ...TypeDefWithEnumOpts) *TypeDef {
 
 // TypeDefWithEnumMemberOpts contains options for TypeDef.WithEnumMember
 type TypeDefWithEnumMemberOpts struct {
-	// A doc string for the value, if any
+	// The value of the member in the enum
+	Value string
+	// A doc string for the member, if any
 	Description string
-	// The source map for the enum value definition.
+	// The source map for the enum member definition.
 	SourceMap *SourceMap
 }
 
 // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-func (r *TypeDef) WithEnumMember(name string, value string, opts ...TypeDefWithEnumMemberOpts) *TypeDef {
+func (r *TypeDef) WithEnumMember(name string, opts ...TypeDefWithEnumMemberOpts) *TypeDef {
 	q := r.query.Select("withEnumMember")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `value` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Value) {
+			q = q.Arg("value", opts[i].Value)
+		}
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
@@ -10004,7 +10010,6 @@ func (r *TypeDef) WithEnumMember(name string, value string, opts ...TypeDefWithE
 		}
 	}
 	q = q.Arg("name", name)
-	q = q.Arg("value", value)
 
 	return &TypeDef{
 		query: q,
@@ -10021,7 +10026,7 @@ type TypeDefWithEnumValueOpts struct {
 
 // Adds a static value for an Enum TypeDef, failing if the type is not an enum.
 //
-// Deprecated: Use withEnumMember instead
+// Deprecated: Use WithEnumMember instead
 func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) *TypeDef {
 	q := r.query.Select("withEnumValue")
 	for i := len(opts) - 1; i >= 0; i-- {

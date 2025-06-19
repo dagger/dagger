@@ -130,13 +130,15 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
      */
     public function withEnumMember(
         string $name,
-        string $value,
+        ?string $value = '',
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $value) {
         $innerQueryBuilder->setArgument('value', $value);
+        }
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }

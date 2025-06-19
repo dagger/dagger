@@ -1113,14 +1113,14 @@ export class Test {
 			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
 
 			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
 
 			out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1207,7 +1207,7 @@ class Test:
 
     @dagger.function
     def to_status(self, status: str) -> Status:
-        # Doing "Status(proto)" will fail in Python, so mock
+        # Doing "Status(status)" will fail in Python, so mock
         # it to force sending the invalid value back to the server.
         class MockEnum(dagger.Enum):
             ACTIVE = "ACTIVE value"
@@ -1297,7 +1297,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// fromStatusOpt
 				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
@@ -1313,7 +1313,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// toStatus
 				if tc.supportsMembers {
@@ -1325,7 +1325,7 @@ export class Test {
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// introspection
 				mod := inspectModule(ctx, t, modGen)

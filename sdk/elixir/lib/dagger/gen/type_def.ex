@@ -177,16 +177,17 @@ defmodule Dagger.TypeDef do
   @doc """
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.
   """
-  @spec with_enum_member(t(), String.t(), String.t(), [
+  @spec with_enum_member(t(), String.t(), [
+          {:value, String.t() | nil},
           {:description, String.t() | nil},
           {:source_map, Dagger.SourceMapID.t() | nil}
         ]) :: Dagger.TypeDef.t()
-  def with_enum_member(%__MODULE__{} = type_def, name, value, optional_args \\ []) do
+  def with_enum_member(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
       type_def.query_builder
       |> QB.select("withEnumMember")
       |> QB.put_arg("name", name)
-      |> QB.put_arg("value", value)
+      |> QB.maybe_put_arg("value", optional_args[:value])
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
@@ -197,7 +198,7 @@ defmodule Dagger.TypeDef do
   end
 
   @deprecated """
-  Use withEnumMember instead
+  Use `with_enum_member` instead
   """
   @doc """
   Adds a static value for an Enum TypeDef, failing if the type is not an enum.

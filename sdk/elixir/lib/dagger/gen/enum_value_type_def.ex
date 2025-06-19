@@ -16,7 +16,7 @@ defmodule Dagger.EnumValueTypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
-  A doc string for the enum value, if any.
+  A doc string for the enum member, if any.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = enum_value_type_def) do
@@ -38,7 +38,7 @@ defmodule Dagger.EnumValueTypeDef do
   end
 
   @doc """
-  The name of the enum value.
+  The name of the enum member.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = enum_value_type_def) do
@@ -49,7 +49,7 @@ defmodule Dagger.EnumValueTypeDef do
   end
 
   @doc """
-  The location of this enum value declaration.
+  The location of this enum member declaration.
   """
   @spec source_map(t()) :: Dagger.SourceMap.t()
   def source_map(%__MODULE__{} = enum_value_type_def) do
@@ -63,7 +63,7 @@ defmodule Dagger.EnumValueTypeDef do
   end
 
   @doc """
-  The value of the enum value
+  The value of the enum member
   """
   @spec value(t()) :: {:ok, String.t()} | {:error, term()}
   def value(%__MODULE__{} = enum_value_type_def) do

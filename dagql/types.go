@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1005,13 +1004,12 @@ func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
 		if val.View != nil && !val.View.Contains(view) {
 			continue
 		}
-
 		def := &ast.EnumValueDefinition{
 			Name:        string(val.Value),
 			Description: val.Description,
 		}
-		if directive := enumValueDirective(cmp.Or(val.Underlying, val.Value)); directive != nil {
-			def.Directives = append(def.Directives, directive)
+		if val.Value != val.Underlying {
+			def.Directives = append(def.Directives, enumValueDirectives(val.Underlying)...)
 		}
 		values = append(values, def)
 	}
@@ -1019,20 +1017,22 @@ func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
 	return values
 }
 
-func enumValueDirective[T enumValue](value T) *ast.Directive {
+func enumValueDirectives[T enumValue](value T) []*ast.Directive {
 	var zero T
 	if value == zero {
 		return nil
 	}
 
-	return &ast.Directive{
-		Name: "enumValue",
-		Arguments: ast.ArgumentList{
-			{
-				Name: "value",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  string(value),
+	return []*ast.Directive{
+		{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  string(value),
+					},
 				},
 			},
 		},
@@ -1053,7 +1053,7 @@ func (e *EnumValues[T]) Lookup(val string) (T, error) {
 			return possible.Value, nil
 		}
 	}
-	return zero, fmt.Errorf("invalid enum value %q for %T", val, zero)
+	return zero, fmt.Errorf("invalid enum member %q for %T", val, zero)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
@@ -1133,9 +1133,9 @@ func (e *EnumValueName) DecodeInput(val any) (Input, error) {
 	case string:
 		return &EnumValueName{Enum: e.Enum, Name: x}, nil
 	case bool:
-		return nil, fmt.Errorf("invalid enum value %t", x)
+		return nil, fmt.Errorf("invalid enum name %t", x)
 	case nil:
-		return nil, fmt.Errorf("invalid enum value null")
+		return nil, fmt.Errorf("invalid enum name null")
 	default:
 		return nil, fmt.Errorf("cannot create enum name from %T", x)
 	}

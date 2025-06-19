@@ -822,7 +822,7 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -891,7 +891,7 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -2492,7 +2492,11 @@ func (m *Test) FromStatus(status Status) string {
 `)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		requireErrOut(t, err, "enum value must not be empty")
+		require.NoError(t, err)
+
+		out, err := modGen.With(daggerCall("from-status", "--status=value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
 	})
 }
 

@@ -188,7 +188,7 @@ func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []intro
 func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
 	m := map[string][]introspection.EnumValue{}
 	for _, v := range s {
-		value := v.Directives.EnumValue()
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
 			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
 		}) {
@@ -198,9 +198,10 @@ func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]i
 
 	var result [][]introspection.EnumValue
 	for _, v := range s {
-		if res, ok := m[v.Directives.EnumValue()]; ok {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if res, ok := m[value]; ok {
 			result = append(result, res)
-			delete(m, v.Directives.EnumValue())
+			delete(m, value)
 		}
 	}
 	return result

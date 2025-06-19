@@ -256,7 +256,7 @@
                     <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withEnumMember">withEnumMember</a>(string $name, string $value, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
+                    <a href="#method_withEnumMember">withEnumMember</a>(string $name, string|null $value = &#039;&#039;, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         
                                             <p><p>Adds a static value for an Enum TypeDef, failing if the type is not an enum.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -832,7 +832,7 @@
                     <h3 id="method_withEnumMember">
         <div class="location">at line 131</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
-    <strong>withEnumMember</strong>(string $name, string $value, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
+    <strong>withEnumMember</strong>(string $name, string|null $value = &#039;&#039;, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         </code>
     </h3>
     <div class="details">    
@@ -852,7 +852,7 @@
                 <td></td>
             </tr>
                     <tr>
-                <td>string</td>
+                <td>string|null</td>
                 <td>$value</td>
                 <td></td>
             </tr>
@@ -887,7 +887,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnumValue">
-        <div class="location">at line 152</div>
+        <div class="location">at line 154</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withEnumValue</strong>(string $value, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         </code>
@@ -939,7 +939,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withField">
-        <div class="location">at line 171</div>
+        <div class="location">at line 173</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withField</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         </code>
@@ -996,7 +996,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withFunction">
-        <div class="location">at line 192</div>
+        <div class="location">at line 194</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withFunction</strong>(<abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr> $function)
         </code>
@@ -1038,7 +1038,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 202</div>
+        <div class="location">at line 204</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withInterface</strong>(string $name, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         </code>
@@ -1090,7 +1090,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withKind">
-        <div class="location">at line 221</div>
+        <div class="location">at line 223</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withKind</strong>(<abbr title="Dagger\TypeDefKind">TypeDefKind</abbr> $kind)
         </code>
@@ -1132,7 +1132,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withListOf">
-        <div class="location">at line 231</div>
+        <div class="location">at line 233</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withListOf</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $elementType)
         </code>
@@ -1174,7 +1174,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 243</div>
+        <div class="location">at line 245</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withObject</strong>(string $name, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
         </code>
@@ -1226,7 +1226,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withOptional">
-        <div class="location">at line 262</div>
+        <div class="location">at line 264</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withOptional</strong>(bool $optional)
         </code>
@@ -1268,7 +1268,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withScalar">
-        <div class="location">at line 272</div>
+        <div class="location">at line 274</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withScalar</strong>(string $name, string|null $description = &#039;&#039;)
         </code>

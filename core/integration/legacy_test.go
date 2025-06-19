@@ -1091,7 +1091,7 @@ class Test:
 
     @dagger.function
     def to_status(self, status: str) -> Status:
-        # Doing "Status(proto)" will fail in Python, so mock
+        # Doing "Status(status)" will fail in Python, so mock
         # it to force sending the invalid value back to the server.
         class MockEnum(dagger.Enum):
             ACTIVE = "here"

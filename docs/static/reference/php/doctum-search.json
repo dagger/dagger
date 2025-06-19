@@ -2655,7 +2655,7 @@
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::description",
 			"p": "Dagger/EnumValueTypeDef.html#method_description",
-			"d": "<p>A doc string for the enum value, if any.</p>"
+			"d": "<p>A doc string for the enum member, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -2667,19 +2667,19 @@
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::name",
 			"p": "Dagger/EnumValueTypeDef.html#method_name",
-			"d": "<p>The name of the enum value.</p>"
+			"d": "<p>The name of the enum member.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::sourceMap",
 			"p": "Dagger/EnumValueTypeDef.html#method_sourceMap",
-			"d": "<p>The location of this enum value declaration.</p>"
+			"d": "<p>The location of this enum member declaration.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::value",
 			"p": "Dagger/EnumValueTypeDef.html#method_value",
-			"d": "<p>The value of the enum value</p>"
+			"d": "<p>The value of the enum member</p>"
 		},
 		{
 			"t": "M",

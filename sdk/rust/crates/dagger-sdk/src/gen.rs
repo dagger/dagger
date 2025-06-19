@@ -5376,7 +5376,7 @@ pub struct EnumValueTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl EnumValueTypeDef {
-    /// A doc string for the enum value, if any.
+    /// A doc string for the enum member, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -5386,12 +5386,12 @@ impl EnumValueTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The name of the enum value.
+    /// The name of the enum member.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The location of this enum value declaration.
+    /// The location of this enum member declaration.
     pub fn source_map(&self) -> SourceMap {
         let query = self.selection.select("sourceMap");
         SourceMap {
@@ -5400,7 +5400,7 @@ impl EnumValueTypeDef {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The value of the enum value
+    /// The value of the enum member
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
@@ -9974,12 +9974,15 @@ pub struct TypeDefWithEnumOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumMemberOpts<'a> {
-    /// A doc string for the value, if any
+    /// A doc string for the member, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// The source map for the enum value definition.
+    /// The source map for the enum member definition.
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<SourceMapId>,
+    /// The value of the member in the enum
+    #[builder(setter(into, strip_option), default)]
+    pub value: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
@@ -10151,12 +10154,10 @@ impl TypeDef {
     /// # Arguments
     ///
     /// * `name` - The name of the member in the enum
-    /// * `value` - The value of the member in the enum
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_enum_member(&self, name: impl Into<String>, value: impl Into<String>) -> TypeDef {
+    pub fn with_enum_member(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withEnumMember");
         query = query.arg("name", name.into());
-        query = query.arg("value", value.into());
         TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -10168,17 +10169,17 @@ impl TypeDef {
     /// # Arguments
     ///
     /// * `name` - The name of the member in the enum
-    /// * `value` - The value of the member in the enum
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_enum_member_opts<'a>(
         &self,
         name: impl Into<String>,
-        value: impl Into<String>,
         opts: TypeDefWithEnumMemberOpts<'a>,
     ) -> TypeDef {
         let mut query = self.selection.select("withEnumMember");
         query = query.arg("name", name.into());
-        query = query.arg("value", value.into());
+        if let Some(value) = opts.value {
+            query = query.arg("value", value);
+        }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }

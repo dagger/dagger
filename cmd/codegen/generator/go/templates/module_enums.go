@@ -214,9 +214,11 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	for _, val := range spec.values {
 		memberTypeDefCode := []Code{
 			Lit(val.name),
-			Lit(val.value),
 		}
 		var withEnumMemberOpts []Code
+		if val.value != "" {
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Value").Op(":").Lit(val.value))
+		}
 		if val.doc != "" {
 			withEnumMemberOpts = append(withEnumMemberOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
 		}

@@ -191,7 +191,7 @@ class Module:
             for member in cls:
                 enum_def = enum_def.with_enum_member(
                     str(member.name),
-                    str(member.value),
+                    value=str(member.value),
                     description=getattr(member, "description", None),
                 )
             mod = mod.with_enum(enum_def)

@@ -3955,7 +3955,7 @@ class EnumValueTypeDef(Type):
     """A definition of a value in a custom enum defined in a Module."""
 
     async def description(self) -> str:
-        """A doc string for the enum value, if any.
+        """A doc string for the enum member, if any.
 
         Returns
         -------
@@ -4000,7 +4000,7 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(EnumValueTypeDefID)
 
     async def name(self) -> str:
-        """The name of the enum value.
+        """The name of the enum member.
 
         Returns
         -------
@@ -4021,13 +4021,13 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(str)
 
     def source_map(self) -> "SourceMap":
-        """The location of this enum value declaration."""
+        """The location of this enum member declaration."""
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
     async def value(self) -> str:
-        """The value of the enum value
+        """The value of the enum member
 
         Returns
         -------
@@ -9883,8 +9883,8 @@ class TypeDef(Type):
     def with_enum_member(
         self,
         name: str,
-        value: str,
         *,
+        value: str | None = "",
         description: str | None = "",
         source_map: SourceMap | None = None,
     ) -> Self:
@@ -9898,13 +9898,13 @@ class TypeDef(Type):
         value:
             The value of the member in the enum
         description:
-            A doc string for the value, if any
+            A doc string for the member, if any
         source_map:
-            The source map for the enum value definition.
+            The source map for the enum member definition.
         """
         _args = [
             Arg("name", name),
-            Arg("value", value),
+            Arg("value", value, ""),
             Arg("description", description, ""),
             Arg("sourceMap", source_map, None),
         ]
@@ -9922,7 +9922,7 @@ class TypeDef(Type):
         enum.
 
         .. deprecated::
-            Use withEnumMember instead
+            Use :py:meth:`with_enum_member` instead
 
         Parameters
         ----------
@@ -9934,7 +9934,7 @@ class TypeDef(Type):
             The source map for the enum value definition.
         """
         warnings.warn(
-            'Method "with_enum_value" is deprecated: Use withEnumMember instead',
+            'Method "with_enum_value" is deprecated: Use "with_enum_member" instead',
             DeprecationWarning,
             stacklevel=4,
         )
