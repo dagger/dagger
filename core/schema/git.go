@@ -250,7 +250,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			if args.SSHKnownHosts != "" {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "sshKnownHosts",
-					Value: dagql.Opt(dagql.NewString(args.SSHKnownHosts)),
+					Value: dagql.NewString(args.SSHKnownHosts),
 				})
 			}
 			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
