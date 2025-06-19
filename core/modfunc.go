@@ -69,7 +69,7 @@ func NewModFunction(
 			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type", metadata.Name, argMetadata.Name)
+			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.ToType())
 		}
 		argTypes[argMetadata.Name] = &UserModFunctionArg{
 			metadata: argMetadata,

@@ -190,32 +190,43 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
-// // TODO: these depend on unreleased APIs
-// func (dev *DaggerDev) Evals(
-// 	ctx context.Context,
-// 	// +defaultPath=./core/llm_docs.md
-// 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
-// 	systemPrompt *dagger.File,
-// ) error {
-// 	return dag.Evaluator(dagger.EvaluatorOpts{
-// 		Docs:          docs,
-// 		InitialPrompt: systemPrompt,
-// 	}).EvalsAcrossModels().Check(ctx)
-// }
+// Run the Dagger evals across the major model providers.
+func (dev *DaggerDev) Evals(
+	ctx context.Context,
+	// Run particular evals, or all evals if unspecified.
+	// +optional
+	evals []string,
+	// Run particular models, or all models if unspecified.
+	// +optional
+	models []string,
+) error {
+	return dev.evaluator().
+		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
+			Evals:  evals,
+			Models: models,
+		}).
+		Check(ctx)
+}
 
-// func (dev *DaggerDev) GenerateSystemPrompt(
-// 	ctx context.Context,
-// 	// +defaultPath=./core/llm_docs.md
-// 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
-// 	systemPrompt *dagger.File,
-// ) (string, error) {
-// 	return dag.Evaluator(dagger.EvaluatorOpts{
-// 		Docs:          docs,
-// 		InitialPrompt: systemPrompt,
-// 	}).GenerateSystemPrompt(ctx)
-// }
+func (dev *DaggerDev) evaluator() *dagger.Evaluator {
+	return dag.Evaluator().
+		WithDocsFile(dev.Source.File("core/llm_docs.md")).
+		WithoutDefaultSystemPrompt().
+		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
+		WithEvals([]*dagger.EvaluatorEval{
+			// FIXME: ideally this list would live closer to where the evals are
+			// defined, but it's not possible for a module to return an interface type
+			// https://github.com/dagger/dagger/issues/7582
+			dag.Evals().Basic().AsEvaluatorEval(),
+			dag.Evals().BuildMulti().AsEvaluatorEval(),
+			dag.Evals().BuildMultiNoVar().AsEvaluatorEval(),
+			dag.Evals().WorkspacePattern().AsEvaluatorEval(),
+			dag.Evals().ReadImplicitVars().AsEvaluatorEval(),
+			dag.Evals().UndoChanges().AsEvaluatorEval(),
+			dag.Evals().CoreAPI().AsEvaluatorEval(),
+			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
+		})
+}
 
 // Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {

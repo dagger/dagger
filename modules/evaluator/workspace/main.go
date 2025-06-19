@@ -21,8 +21,22 @@ type Workspace struct {
 	// The current system prompt.
 	SystemPrompt string
 
+	// Whether to disable Dagger's built-in system prompt.
+	DisableDefaultSystemPrompt bool
+
+	// Evaluations to perform.
+	Evals []Eval
+
 	// Observations made throughout running evaluations.
 	Findings []string
+}
+
+type Eval interface {
+	Name(context.Context) (string, error)
+	Prompt(base *dagger.LLM) *dagger.LLM
+	Check(ctx context.Context, prompt *dagger.LLM) error
+
+	DaggerObject
 }
 
 var testedModels = []string{
@@ -33,18 +47,10 @@ var testedModels = []string{
 	"claude-sonnet-4-0",
 }
 
-type EvalFunc = func(*dagger.Evals) *dagger.EvalsReport
-
-var evals = map[string]EvalFunc{
-	"Basic":              (*dagger.Evals).Basic,
-	"BuildMulti":         (*dagger.Evals).BuildMulti,
-	"BuildMultiNoVar":    (*dagger.Evals).BuildMultiNoVar,
-	"WorkspacePattern":   (*dagger.Evals).WorkspacePattern,
-	"ReadImplicitVars":   (*dagger.Evals).ReadImplicitVars,
-	"UndoChanges":        (*dagger.Evals).UndoChanges,
-	"CoreAPI":            (*dagger.Evals).CoreAPI,
-	"ModuleDependencies": (*dagger.Evals).ModuleDependencies,
-	// "CoreMulti":        (*dagger.Evals).CoreMulti,
+// Set the system prompt for future evaluations.
+func (w *Workspace) WithoutDefaultSystemPrompt() *Workspace {
+	w.DisableDefaultSystemPrompt = true
+	return w
 }
 
 // Set the system prompt for future evaluations.
@@ -71,14 +77,32 @@ func (w *Workspace) Backoff(seconds int) *Workspace {
 	return w
 }
 
+// Register an eval to perform.
+func (w *Workspace) WithEval(eval Eval) *Workspace {
+	w.Evals = append(w.Evals, eval)
+	return w
+}
+
+// Register evals to perform.
+func (w *Workspace) WithEvals(evals []Eval) *Workspace {
+	for _, eval := range evals {
+		w.Evals = append(w.Evals, eval)
+	}
+	return w
+}
+
 // The list of possible evals you can run.
-func (w *Workspace) EvalNames() []string {
+func (w *Workspace) EvalNames(ctx context.Context) ([]string, error) {
 	var names []string
-	for eval := range evals {
-		names = append(names, eval)
+	for _, eval := range w.Evals {
+		name, err := eval.Name(ctx)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, name)
 	}
 	sort.Strings(names)
-	return names
+	return names, nil
 }
 
 // The list of models that you can run evaluations against.
@@ -118,6 +142,8 @@ type AttemptsReport struct {
 	TotalAttempts     int
 	InputTokens       int
 	OutputTokens      int
+	CachedTokenReads  int
+	CachedTokenWrites int
 }
 
 // Run an evaluation and return its report.
@@ -132,14 +158,25 @@ func (w *Workspace) Evaluate(
 	// +optional
 	attempts int,
 ) (_ *AttemptsReport, rerr error) {
-	evalFn, ok := evals[name]
-	if !ok {
+	var eval Eval
+	for _, e := range w.Evals {
+		evalName, err := e.Name(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if evalName == name {
+			eval = e
+			break
+		}
+	}
+	if eval == nil {
 		return nil, fmt.Errorf("unknown evaluation: %s", name)
 	}
 
-	llm := dag.LLM(dagger.LLMOpts{Model: model})
+	base := w.baseLLM(dag.LLM(), model)
+
 	if attempts == 0 {
-		provider, err := llm.Provider(ctx)
+		provider, err := base.Provider(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +184,8 @@ func (w *Workspace) Evaluate(
 	}
 
 	reports := make([]string, attempts)
-	var inputTokens, outputTokens int32
+	var totalInputTokens, totalOutputTokens int32
+	var totalCachedTokenReads, totalCachedTokenWrites int32
 	var successCount int32
 	wg := new(sync.WaitGroup)
 	for attempt := range attempts {
@@ -162,21 +200,70 @@ func (w *Workspace) Evaluate(
 			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
 
-			eval := w.evaluate(model, attempt, evalFn)
+			prompt := eval.Prompt(base.Attempt(attempt))
 
-			evalReport, err := eval.Report(ctx)
-			if err != nil {
-				return err
+			var succeeded bool
+			evalErr := eval.Check(ctx, prompt)
+			if evalErr == nil {
+				succeeded = true
+				atomic.AddInt32(&successCount, 1)
 			}
 
-			report := new(strings.Builder)
-			fmt.Fprintf(report, "## Attempt %d\n", attempt+1)
-			fmt.Fprintln(report)
-			fmt.Fprintln(report, evalReport)
-			reports[attempt] = report.String()
+			reportMD := new(strings.Builder)
+			fmt.Fprintf(reportMD, "## Attempt %d\n", attempt+1)
+			fmt.Fprintln(reportMD)
+
+			fmt.Fprintln(reportMD, "### Message Log")
+			fmt.Fprintln(reportMD)
+			history, err := prompt.History(ctx)
+			if err != nil {
+				fmt.Fprintln(reportMD, "Failed to get history:", err)
+			} else {
+				numLines := len(history)
+				// Calculate the width needed for the largest line number
+				width := len(fmt.Sprintf("%d", numLines))
+				for i, line := range history {
+					// Format with right-aligned padding, number, separator, and content
+					fmt.Fprintf(reportMD, "    %*d | %s\n", width, i+1, line)
+				}
+			}
+			fmt.Fprintln(reportMD)
+
+			fmt.Fprintln(reportMD, "### Total Token Cost")
+			fmt.Fprintln(reportMD)
+			usage := prompt.TokenUsage()
+			if inputTokens, err := usage.InputTokens(ctx); err == nil {
+				fmt.Fprintln(reportMD, "* Input Tokens:", inputTokens)
+				atomic.AddInt32(&totalInputTokens, int32(inputTokens))
+			}
+			if outputTokens, err := usage.OutputTokens(ctx); err == nil {
+				fmt.Fprintln(reportMD, "* Output Tokens:", outputTokens)
+				atomic.AddInt32(&totalOutputTokens, int32(outputTokens))
+			}
+			if cachedTokenReads, err := usage.CachedTokenReads(ctx); err == nil {
+				fmt.Fprintln(reportMD, "* Cached Token Reads:", cachedTokenReads)
+				atomic.AddInt32(&totalCachedTokenReads, int32(cachedTokenReads))
+			}
+			if cachedTokenWrites, err := usage.CachedTokenWrites(ctx); err == nil {
+				fmt.Fprintln(reportMD, "* Cached Token Writes:", cachedTokenWrites)
+				atomic.AddInt32(&totalCachedTokenWrites, int32(cachedTokenWrites))
+			}
+			fmt.Fprintln(reportMD)
+
+			fmt.Fprintln(reportMD, "### Evaluation Result")
+			fmt.Fprintln(reportMD)
+			if evalErr != nil {
+				fmt.Fprintln(reportMD, evalErr)
+				fmt.Fprintln(reportMD, "FAILED")
+			} else {
+				fmt.Fprintln(reportMD, "SUCCESS")
+			}
+			fmt.Fprintln(reportMD)
+
+			reports[attempt] = reportMD.String()
 
 			// Write report to OTel too
-			toolsDoc, err := eval.ToolsDoc(ctx)
+			toolsDoc, err := prompt.Tools(ctx)
 			if err != nil {
 				return err
 			}
@@ -185,29 +272,12 @@ func (w *Workspace) Evaluate(
 			fmt.Fprintln(stdio.Stdout)
 			fmt.Fprintln(stdio.Stdout, toolsDoc)
 			fmt.Fprintln(stdio.Stdout)
-			fmt.Fprint(stdio.Stdout, report.String())
+			fmt.Fprint(stdio.Stdout, reportMD.String())
 
-			i, err := eval.InputTokens(ctx)
-			if err != nil {
-				return err
-			}
-
-			o, err := eval.OutputTokens(ctx)
-			if err != nil {
-				return err
-			}
-
-			atomic.AddInt32(&inputTokens, int32(i))
-			atomic.AddInt32(&outputTokens, int32(o))
-
-			succeeded, err := eval.Succeeded(ctx)
-			if err != nil {
-				return err
-			}
 			if !succeeded {
 				return errors.New("evaluation failed")
 			}
-			atomic.AddInt32(&successCount, 1)
+
 			return nil
 		}()
 	}
@@ -233,16 +303,28 @@ func (w *Workspace) Evaluate(
 		SuccessRate:       successRate,
 		SucceededAttempts: int(successCount),
 		TotalAttempts:     attempts,
-		InputTokens:       int(inputTokens),
-		OutputTokens:      int(outputTokens),
+		InputTokens:       int(totalInputTokens),
+		OutputTokens:      int(totalOutputTokens),
+		CachedTokenReads:  int(totalCachedTokenReads),
+		CachedTokenWrites: int(totalCachedTokenWrites),
 	}, nil
 }
 
-func (w *Workspace) evaluate(model string, attempt int, evalFn EvalFunc) *dagger.EvalsReport {
-	return evalFn(
-		dag.Evals().
-			WithModel(model).
-			WithAttempt(attempt + 1).
-			WithSystemPrompt(w.SystemPrompt),
-	)
+func (w *Workspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
+	if base == nil {
+		base = dag.LLM()
+	}
+	if w.DisableDefaultSystemPrompt {
+		base = base.WithoutDefaultSystemPrompt()
+	}
+	if modelOverride == "" {
+		modelOverride = w.Model
+	}
+	if modelOverride != "" {
+		base = base.WithModel(modelOverride)
+	}
+	if w.SystemPrompt != "" {
+		base = base.WithSystemPrompt(w.SystemPrompt)
+	}
+	return base
 }

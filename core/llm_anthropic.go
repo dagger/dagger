@@ -66,7 +66,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 }
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),

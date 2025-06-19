@@ -163,7 +163,7 @@ func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool
 }
 
 func (s mcpServer) setTools() error {
-	tools, err := s.env.Tools(s.dag)
+	tools, err := s.env.Tools()
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
 	}

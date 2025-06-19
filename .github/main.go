@@ -306,9 +306,8 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		},
 	}).WithJob(gha.Job(
 		"testdev",
-		"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",
+		"evals",
 		dagger.GhaJobOpts{
-			Module:        "modules/evaluator",
 			DaggerVersion: ".", // testdev, so run against local dagger
 			Runner:        AltGoldRunner(),
 			// NOTE: avoid running for forks

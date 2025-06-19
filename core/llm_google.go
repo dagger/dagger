@@ -62,7 +62,7 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) []*genai.Tool {
 	}
 }
 
-func (c *GenaiClient) prepareGenaiHistory(history []ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
 	systemInstruction = &genai.Content{
 		Parts: []*genai.Part{},
 		Role:  "system",
@@ -193,7 +193,7 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 	}
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *GenaiClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	// setup tracing & telemetry
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
