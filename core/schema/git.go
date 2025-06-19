@@ -327,6 +327,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				break
 			}
 
+			httpAuthUsername = dagql.NewString(credentials.Username)
+
 			hash := sha256.Sum256([]byte(credentials.Password))
 			secretName := hex.EncodeToString(hash[:])
 			var authToken dagql.Instance[*core.Secret]
