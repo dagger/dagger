@@ -112,19 +112,28 @@ Here are a few examples of useful patterns:
 <TabItem value="go" label="Go">
 ```go
 // exclude Go tests and test data
-+ignore=["**_test.go", "**/testdata/**"]
+// +ignore=["**_test.go", "**/testdata/**"]
 
 // exclude binaries
-+ignore=["bin"]
+// +ignore=["bin"]
 
 // exclude Python dependencies
-+ignore=["**/.venv", "**/__pycache__"]
+// +ignore=["**/.venv", "**/__pycache__"]
 
 // exclude Node.js dependencies
-+ignore=["**/node_modules"]
+// +ignore=["**/node_modules"]
 
 // exclude Git metadata
-+ignore=[".git", "**/.gitignore"]
+// +ignore=[".git", "**/.gitignore"]
+```
+
+You can also split them into multiple lines:
+
+```go
+// +ignore=[
+//   "**_test.go",
+//   "**/testdata/**"
+// ]
 ```
 </TabItem>
 <TabItem value="python" label="Python">
