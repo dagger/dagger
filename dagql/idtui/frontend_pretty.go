@@ -383,9 +383,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
-	if fe.reportOnly && fe.Verbosity < dagui.ExpandCompletedVerbosity {
-		fe.Verbosity = dagui.ExpandCompletedVerbosity
-	}
 	fe.recalculateViewLocked()
 
 	// Unfocus for the final render.
