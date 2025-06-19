@@ -327,7 +327,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			if err != nil {
 				// it's possible to provide auth tokens via chained API calls, so warn now but
 				// don't fail. Auth will be checked again before relevant operations later.
-				slog.Warn("Failed to retrieve git credentials: %v", err)
+				slog.Warn("Failed to retrieve git credentials", "error", err)
 				break
 			}
 
