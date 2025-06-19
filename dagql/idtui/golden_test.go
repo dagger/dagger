@@ -212,7 +212,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		daggerBin = bin
 	}
 
-	daggerArgs := []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
+	daggerArgs := []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
 	daggerArgs = append(daggerArgs, ex.Args...)
 
 	if ex.Verbosity > 0 {
