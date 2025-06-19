@@ -225,7 +225,7 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
-          .addException(ClassName.bestGuess("DaggerQueryException"));
+          .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
     } else if (field.getTypeRef().isList()) {
       fieldMethodBuilder.addStatement(
           "return nextQueryBuilder.executeListQuery($L.class)",
@@ -233,14 +233,14 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
-          .addException(ClassName.bestGuess("DaggerQueryException"));
+          .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
     } else if (Helpers.isIdToConvert(field)) {
       fieldMethodBuilder.addStatement("nextQueryBuilder.executeQuery()");
       fieldMethodBuilder.addStatement("return this");
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
-          .addException(ClassName.bestGuess("DaggerQueryException"));
+          .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
     } else if (field.getTypeRef().isObject()) {
       fieldMethodBuilder.addStatement("return new $L(nextQueryBuilder)", returnType);
     } else {
@@ -248,7 +248,7 @@ class ObjectVisitor extends AbstractVisitor {
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)
-          .addException(ClassName.bestGuess("DaggerQueryException"));
+          .addException(ClassName.get("io.dagger.client.exception", "DaggerQueryException"));
     }
 
     if (field.isDeprecated()) {

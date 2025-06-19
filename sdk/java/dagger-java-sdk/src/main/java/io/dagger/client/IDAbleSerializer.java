@@ -1,5 +1,6 @@
 package io.dagger.client;
 
+import io.dagger.client.exception.DaggerQueryException;
 import jakarta.json.bind.serializer.JsonbSerializer;
 import jakarta.json.bind.serializer.SerializationContext;
 import jakarta.json.stream.JsonGenerator;

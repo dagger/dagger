@@ -1,6 +1,6 @@
 package io.dagger.modules.defaults;
 
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.File;
 import io.dagger.module.annotation.Default;

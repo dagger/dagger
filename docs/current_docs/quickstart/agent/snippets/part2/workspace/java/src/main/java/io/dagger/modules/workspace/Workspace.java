@@ -3,7 +3,7 @@ package io.dagger.modules.workspace;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
 import io.dagger.client.File;
@@ -31,7 +31,7 @@ public class Workspace {
    */
   @Function
   public String readFile(String path)
-    throws ExecutionException, DaggerQueryException, InterruptedException {
+      throws ExecutionException, DaggerQueryException, InterruptedException {
     return source.file(path).contents();
   }
 

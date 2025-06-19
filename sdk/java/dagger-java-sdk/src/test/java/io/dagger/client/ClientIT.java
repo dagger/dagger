@@ -1,8 +1,12 @@
 package io.dagger.client;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.dagger.client.exception.DaggerExecException;
+import io.dagger.client.exception.DaggerQueryException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -66,14 +70,14 @@ public class ClientIT {
       try {
         client.container().from("fake.invalid:latest").id();
       } catch (DaggerQueryException dqe) {
-        assertThat(dqe.getErrors()).hasSizeGreaterThan(0);
+        assertThat(dqe.getError()).isNotNull();
       }
 
       try {
         client.container().from("alpine:3.16.2").withExec(List.of("false")).sync();
-      } catch (DaggerQueryException dqe) {
-        assertThat(dqe.getErrors()).hasSizeGreaterThan(0);
-        assertThat(dqe.getErrors()[0].getExtensions()).containsEntry("_type", "EXEC_ERROR");
+      } catch (DaggerExecException dee) {
+        assertThat(dee.getError()).isNotNull();
+        assertThat(dee.getError().getExtensions()).containsEntry("_type", "EXEC_ERROR");
       }
     }
   }

@@ -1,6 +1,9 @@
 package io.dagger.sample;
 
-import io.dagger.client.*;
+import io.dagger.client.AutoCloseableClient;
+import io.dagger.client.Container;
+import io.dagger.client.Dagger;
+import io.dagger.client.Directory;
 import java.util.List;
 
 @Description("Clone the Dagger git repository and build from a Dockerfile")

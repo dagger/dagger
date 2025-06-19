@@ -2,7 +2,7 @@ package io.dagger.modules.mymodule;
 
 import static io.dagger.client.Dagger.dag;
 
-import io.dagger.client.DaggerQueryException;
+import io.dagger.client.exception.DaggerQueryException;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;

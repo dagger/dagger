@@ -1,15 +1,19 @@
 package io.dagger.java.module;
 
 import static io.dagger.client.Dagger.dag;
-
-import io.dagger.client.*;
-import io.dagger.module.annotation.*;
-import io.dagger.module.annotation.Enum;
-import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
+import io.dagger.client.Platform;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.Default;
+import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.Enum;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Ignore;
+import io.dagger.module.annotation.Object;
 
 /** Dagger Java Module main object */
 @Object
