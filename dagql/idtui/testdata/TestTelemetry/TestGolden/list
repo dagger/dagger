@@ -3,9 +3,11 @@ Expected stdout:
 debug.go
 demos/
 frontend.go
+frontend_dots.go
 frontend_plain.go
 frontend_pretty.go
 golden_test.go
+multiprefixw/
 output.go
 symbols.go
 sys_unix.go
@@ -38,9 +40,11 @@ Expected stderr:
 ┃ debug.go
 ┃ demos/
 ┃ frontend.go
+┃ frontend_dots.go
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
 ┃ golden_test.go
+┃ multiprefixw/
 ┃ output.go
 ┃ symbols.go
 ┃ sys_unix.go
