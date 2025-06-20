@@ -538,6 +538,84 @@ func (s String) SetField(v reflect.Value) error {
 	}
 }
 
+type SerializedString[T any] struct {
+	Self T
+}
+
+func NewSerializedString[T any](val T) SerializedString[T] {
+	return SerializedString[T]{
+		Self: val,
+	}
+}
+
+var _ Typed = SerializedString[any]{}
+
+func (SerializedString[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+}
+
+var _ InputDecoder = SerializedString[any]{}
+
+func (SerializedString[T]) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		var v T
+		err := json.Unmarshal([]byte(x), &v)
+		if err != nil {
+			return nil, err
+		}
+		return NewSerializedString(v), nil
+	default:
+		return nil, fmt.Errorf("cannot create SerializedString from %T", x)
+	}
+}
+
+var _ Input = SerializedString[any]{}
+
+func (s SerializedString[T]) Decoder() InputDecoder {
+	return s
+}
+
+func (s SerializedString[T]) ToLiteral() call.Literal {
+	return call.NewLiteralString(s.String())
+}
+
+func (s SerializedString[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Self)
+}
+
+func (s *SerializedString[T]) UnmarshalJSON(p []byte) error {
+	var v T
+	if err := json.Unmarshal(p, &v); err != nil {
+		return err
+	}
+	*s = SerializedString[T]{v}
+	return nil
+}
+
+func (s SerializedString[T]) String() string {
+	res, err := s.MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+	return string(res)
+}
+
+var _ Setter = SerializedString[any]{}
+
+func (s SerializedString[T]) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case SerializedString[T]:
+		v.Set(reflect.ValueOf(s))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
+}
+
 type ScalarValue interface {
 	ScalarType
 	Input
