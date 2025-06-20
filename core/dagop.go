@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
@@ -113,17 +115,19 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 		return "", err
 	}
 	return digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
 		op.Path,
 		string(opData),
-	}, "+")), nil
+	}, "\x00")), nil
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
 		op.Path,
-	}, "+"))
+	}, "\x00"))
 	return cm, nil
 }
 
@@ -224,16 +228,18 @@ func (op RawDagOp) Backend() buildkit.CustomOpBackend {
 
 func (op RawDagOp) Digest() (digest.Digest, error) {
 	return digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
 		op.Filename,
-	}, "+")), nil
+	}, "\x00")), nil
 }
 
 func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	cm.Digest = digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
 		op.Filename,
-	}, "+"))
+	}, "\x00"))
 	return cm, nil
 }
 
@@ -314,6 +320,7 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 func NewContainerDagOp(
 	ctx context.Context,
 	id *call.ID,
+	argDigest digest.Digest,
 	ctr *Container,
 	extraInputs []llb.State,
 ) (*Container, error) {
@@ -323,10 +330,25 @@ func NewContainerDagOp(
 	}
 	inputs = append(inputs, extraInputs...)
 
+	// NB: strip out the buildkit inputs! this is so that we rely entirely on
+	// the *buildkit* inputs.
+	ctrDigest, err := DigestOf(ctr.WithoutInputs())
+	if err != nil {
+		return nil, err
+	}
+
 	dagop := &ContainerDagOp{
-		ID:          id,
-		Mounts:      mounts,
-		OutputCount: outputCount,
+		ID: id,
+		CacheKey: digest.FromString(
+			strings.Join([]string{
+				ctrDigest.String(),
+				argDigest.String(),
+			}, "\x00"),
+		),
+		ContainerMountData: ContainerMountData{
+			Mounts:      mounts,
+			OutputCount: outputCount,
+		},
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -371,7 +393,19 @@ func newContainerDagOp(
 }
 
 type ContainerDagOp struct {
-	ID *call.ID
+	ID       *call.ID
+	CacheKey digest.Digest
+
+	ContainerMountData
+}
+
+type ContainerMountData struct {
+	// inputs are all the inputs provided to the op
+	//
+	// be careful accessing it directly (stable order is not guaranteed, and it
+	// may also contain a bunch of other stuff), ideally access it through a
+	// known pb.Mount.Output index.
+	Inputs []solver.Result
 
 	// all the container mounts - the order here should be guaranteed:
 	// - rootfs is at 0
@@ -382,25 +416,25 @@ type ContainerDagOp struct {
 
 	// the number of outputs produced
 	OutputCount int
-
-	// utility values set in the context of an Exec
-	g   bksession.Group
-	opt buildkit.OpOpts
-
-	// inputs are all the inputs provided to the op
-	//
-	// be careful accessing it directly (stable order is not guaranteed, and it
-	// may also contain a bunch of other stuff), ideally access it through a
-	// known pb.Mount.Output index.
-	inputs []solver.Result
 }
 
-func (op ContainerDagOp) Inputs() []bkcache.ImmutableRef {
-	refs := make([]bkcache.ImmutableRef, 0, len(op.inputs))
-	for _, input := range op.inputs {
+func (mounts ContainerMountData) InputRefs() []bkcache.ImmutableRef {
+	refs := make([]bkcache.ImmutableRef, 0, len(mounts.Inputs))
+	for _, input := range mounts.Inputs {
 		refs = append(refs, input.Sys().(*worker.WorkerRef).ImmutableRef)
 	}
 	return refs
+}
+
+type mountDataContextKey struct{}
+
+func ctxWithMountData(ctx context.Context, mount ContainerMountData) context.Context {
+	return context.WithValue(ctx, mountDataContextKey{}, mount)
+}
+
+func CurrentMountData(ctx context.Context) (ContainerMountData, bool) {
+	opt, ok := ctx.Value(mountDataContextKey{}).(ContainerMountData)
+	return opt, ok
 }
 
 func (op ContainerDagOp) Name() string {
@@ -411,42 +445,114 @@ func (op ContainerDagOp) Backend() buildkit.CustomOpBackend {
 	return &op
 }
 
-func (op ContainerDagOp) Group() bksession.Group {
-	return op.g
-}
-
 func (op ContainerDagOp) Digest() (digest.Digest, error) {
 	mountsData, err := json.Marshal(op.Mounts)
 	if err != nil {
 		return "", err
 	}
+
 	return digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
+		op.CacheKey.String(),
 		fmt.Sprint(op.OutputCount),
 		string(mountsData),
-	}, "+")), nil
+	}, "\x00")), nil
 }
 
 func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	// TODO: we need proper cache map control here, to control content digesting
-	dgst, err := op.Digest()
+	inputs := []string{
+		engine.BaseVersion(engine.Version),
+		op.CacheKey.String(),
+	}
+
+	// mount data
+	mountsData, err := json.Marshal(op.Mounts)
 	if err != nil {
 		return nil, err
 	}
-	cm.Digest = dgst
+	inputs = append(inputs, string(mountsData))
+	inputs = append(inputs, fmt.Sprint(op.OutputCount))
+
+	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+
+	// Logic imported from buildkit for handling content caching of mounts
+	// NOTE: this probably can be significantly improved in the future.
+	for mountIdx, mount := range op.Mounts {
+		if mount.Input == pb.Empty {
+			// No inputs, so no content-caching to apply.
+			continue
+		}
+
+		// Assume we *cannot* perform
+		// content-based caching, and then enable it selectively only for cases
+		// where we want to
+		contentBasedCache := false
+
+		// Allow content-based cached where safe - these are enforced to avoid
+		// the following case:
+		// - A "snapshot" contains "foo/a.txt" and "bar/b.txt"
+		// - "RUN --mount from=snapshot,src=bar touch bar/c.txt" creates a new
+		//   file in bar
+		// - If we run again, but this time "snapshot" contains a new
+		//   "foo/sneaky.txt", the content-based cache matches the previous
+		//   run, since we only select "bar"
+		// - But this cached result is incorrect - "foo/sneaky.txt" isn't in
+		//   our cached result, but it is in our input.
+		if mount.Output == pb.SkipOutput {
+			// if the mount has no outputs, it's safe to enable content-based
+			// caching, since it's guaranteed to not be used as an input for
+			// any future steps
+			contentBasedCache = true
+		} else if mount.Readonly {
+			// if the mount is read-only, then it's also safe, since it can't
+			// be modified by the operation
+			contentBasedCache = true
+		} else if path.Join("/", mount.Selector) == pb.RootMount {
+			// if the mount mounts the entire source, then it's also safe,
+			// since there are no unselected "sneaky" files
+			contentBasedCache = true
+		}
+
+		// Now apply the user-specified option.
+		switch mount.ContentCache {
+		case pb.MountContentCache_OFF:
+			contentBasedCache = false
+		case pb.MountContentCache_ON:
+			if !contentBasedCache {
+				// If we can't enable cache for safety, then force-enabling it is invalid
+				return nil, fmt.Errorf("invalid mount cache content %v", mount)
+			}
+		case pb.MountContentCache_DEFAULT:
+			if mountIdx == 0 {
+				// we explicitly choose to not implement it on the root mount,
+				// since this is likely very expensive (and not incredibly useful)
+				contentBasedCache = false
+			}
+		}
+
+		if !contentBasedCache {
+			cm.Deps[mount.Input].ComputeDigestFunc = nil
+		}
+	}
+
 	return cm, nil
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	op.g = g
-	op.opt = opt
-	op.inputs = inputs
+	loadCtx := ctx
 
 	query, ok := opt.Server.Root().(dagql.Instance[*Query])
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
+	loadCtx = ContextWithQuery(loadCtx, query.Self)
+
+	mountData := op.ContainerMountData
+	mountData.Inputs = inputs
+	loadCtx = ctxWithMountData(loadCtx, mountData)
+
+	obj, err := opt.Server.LoadType(loadCtx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +564,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 
 	switch inst := obj.(type) {
 	case dagql.Instance[*Container]:
-		return op.extractContainerBkOutputs(ctx, inst.Self, bk, opt.Worker)
+		return extractContainerBkOutputs(ctx, inst.Self, bk, opt.Worker, op.ContainerMountData)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
@@ -481,10 +587,10 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 		}
 
 		mount := &pb.Mount{
-			Dest:     mnt.Target,
-			Selector: mnt.SourcePath,
-			Output:   pb.OutputIndex(outputIdx),
-			// ContentCache: nil,
+			Dest:         mnt.Target,
+			Selector:     mnt.SourcePath,
+			Output:       pb.OutputIndex(outputIdx),
+			ContentCache: pb.MountContentCache_DEFAULT,
 		}
 		if st.Output() == nil {
 			mount.Input = pb.Empty
@@ -635,7 +741,7 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 
 // extractContainerBkOutputs returns a list of outputs suitable to be returned
 // from CustomOp.Exec extracted from the container according to the dagop specification.
-func (op *ContainerDagOp) extractContainerBkOutputs(ctx context.Context, container *Container, bk *buildkit.Client, wkr worker.Worker) ([]solver.Result, error) {
+func extractContainerBkOutputs(ctx context.Context, container *Container, bk *buildkit.Client, wkr worker.Worker, mounts ContainerMountData) ([]solver.Result, error) {
 	getResult := func(def *pb.Definition, ref bkcache.ImmutableRef) (solver.Result, error) {
 		if ref != nil {
 			return worker.NewWorkerRefResult(ref.Clone(), wkr), nil
@@ -659,8 +765,8 @@ func (op *ContainerDagOp) extractContainerBkOutputs(ctx context.Context, contain
 		return worker.NewWorkerRefResult(nil, wkr), nil
 	}
 
-	outputs := make([]solver.Result, op.OutputCount)
-	for mountIdx, mount := range op.Mounts {
+	outputs := make([]solver.Result, mounts.OutputCount)
+	for mountIdx, mount := range mounts.Mounts {
 		if mount.Output == pb.SkipOutput {
 			continue
 		}

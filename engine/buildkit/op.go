@@ -46,6 +46,17 @@ type OpOpts struct {
 	Worker   worker.Worker
 }
 
+type opOptsContextKey struct{}
+
+func ctxWithOpOpts(ctx context.Context, opt OpOpts) context.Context {
+	return context.WithValue(ctx, opOptsContextKey{}, opt)
+}
+
+func CurrentOpOpts(ctx context.Context) (OpOpts, bool) {
+	opt, ok := ctx.Value(opOptsContextKey{}).(OpOpts)
+	return opt, ok
+}
+
 var customOps = map[string]CustomOp{}
 
 func RegisterCustomOp(op CustomOp) {
@@ -105,8 +116,8 @@ func (op *CustomOpWrapper) CacheMap(ctx context.Context, g bksession.Group, inde
 	if err != nil {
 		return nil, false, err
 	}
-
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
+
 	cm, err = op.Backend.CacheMap(ctx, cm)
 	if err != nil {
 		return nil, false, err
@@ -126,24 +137,27 @@ func CurrentBuildkitSessionGroup(ctx context.Context) (bksession.Group, bool) {
 }
 
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
+	ctx = ctxWithBkSessionGroup(ctx, g)
+
 	clientMetadata, err := op.clientMetadata(ctx, g)
 	if err != nil {
 		return nil, err
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
-	ctx = ctxWithBkSessionGroup(ctx, g)
 
 	server, err := op.server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
 
-	res, err := op.Backend.Exec(ctx, g, inputs, OpOpts{
+	opt := OpOpts{
 		CauseCtx: op.causeCtx,
 		Server:   server,
 		Worker:   op.worker,
-	})
-	return res, err
+	}
+	ctx = ctxWithOpOpts(ctx, opt)
+
+	return op.Backend.Exec(ctx, g, inputs, opt)
 }
 
 func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseFunc, err error) {
