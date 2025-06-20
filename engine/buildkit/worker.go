@@ -142,7 +142,7 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 				return nil, err
 			}
 			if ok {
-				w = w.execWorker(
+				w = w.ExecWorker(
 					SpanContextFromDescription(vtx.Options().Description),
 					*execMD,
 				)
@@ -164,7 +164,7 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 	return w.Worker.ResolveOp(vtx, s, sm)
 }
 
-func (w *Worker) execWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
+func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
 	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
 }
 
