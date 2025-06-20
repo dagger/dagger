@@ -14,9 +14,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
-	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
@@ -285,12 +283,25 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		ClientID:          identity.NewID(),
 		CallID:            dagql.CurrentID(ctx),
 		ExecID:            identity.NewID(),
-		CachePerSession:   !opts.Cache,
 		Internal:          true,
-		CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
+
+	var cacheMixins []string
+	if !opts.Cache {
+		// Scope the exec cache key to the current session ID. It will be
+		// cached in the context of the session but invalidated across
+		// different sessions.
+		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+	}
+	if !opts.SkipCallDigestCacheKey {
+		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
+		// for module function calls specifically so that their cache key is based on their arguments and
+		// receiver object.
+		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
+	}
+	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
@@ -348,37 +359,59 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
-	ctr := fn.runtime.Self
+	srv := dagql.CurrentDagqlServer(ctx)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-	metaDir, err := NewScratchDirectory(ctx, query.Platform())
+	var metaDir dagql.Instance[*Directory]
+	err = srv.Select(ctx, srv.Root(), &metaDir,
+		dagql.Selector{
+			Field: "directory",
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
 
-	// Setup the Exec for the Function call and evaluate it
-	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		NestedExecMetadata:            &execMD,
-		UseEntrypoint:                 true,
-	})
+	var ctr dagql.Instance[*Container]
+	err = srv.Select(ctx, fn.runtime, &ctr,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modMetaDirPath)},
+				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
+			},
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
+	execCtx := ctx
+	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
+	err = srv.Select(execCtx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
+				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
+				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
+				{Name: "execMD", Value: dagql.NewSerializedString(&execMD)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec function: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	_, err = ctr.Evaluate(ctx)
+	_, err = ctr.Self.Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
@@ -424,7 +457,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	ctrOutputDir, err := ctr.Directory(ctx, modMetaDirPath)
+	ctrOutputDir, err := ctr.Self.Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
@@ -460,7 +493,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Get the client ID actually used during the function call - this might not
 	// be the same as execMD.ClientID if the function call was cached at the
 	// buildkit level
-	clientID, err := ctr.usedClientID(ctx)
+	clientID, err := ctr.Self.usedClientID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get used client id")
 	}
@@ -501,26 +534,15 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}()
 	}
 
-	var opErr *solvererror.OpError
-	if !errors.As(baseErr, &opErr) {
+	var ierr buildkit.RichError
+	if !errors.As(baseErr, &ierr) {
 		return id, false, nil
 	}
-	op := opErr.Op
-	if op == nil || op.Op == nil {
-		return id, false, nil
-	}
-	execOp, ok := op.Op.(*bksolverpb.Op_Exec)
-	if !ok {
-		return id, false, nil
-	}
-
-	// This was an exec error, we will retrieve the exec's output and include
-	// it in the error message
 
 	// get the mnt containing module response data (in this case, the error ID)
 	var metaMountResult bksolver.Result
 	var foundMounts []string
-	for i, mnt := range execOp.Exec.Mounts {
+	for i, mnt := range ierr.Mounts {
 		foundMounts = append(foundMounts, mnt.Dest)
 		if mnt.Dest == modMetaDirPath {
 			metaMountResult = execErr.Mounts[i]
