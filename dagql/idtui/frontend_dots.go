@@ -71,14 +71,12 @@ func NewDots(output io.Writer) Frontend {
 
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error {
 	fe.opts = opts
-	err := f(ctx)
-	fmt.Fprintln(fe.out)
-	fmt.Fprintln(fe.out)
-	fe.reporter.FrontendOpts = fe.opts
-	if renderErr := fe.reporter.FinalRender(os.Stderr); renderErr != nil {
-		return renderErr
-	}
-	return err
+	return fe.reporter.Run(ctx, opts, func(ctx context.Context) error {
+		err := f(ctx)
+		fmt.Fprintln(fe.out)
+		fmt.Fprintln(fe.out)
+		return err
+	})
 }
 
 func (fe *frontendDots) Opts() *dagui.FrontendOpts {
