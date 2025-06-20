@@ -436,10 +436,6 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
-func (span *Span) IsDone() bool {
-	return !span.IsRunningOrEffectsRunning() && !span.IsPending()
-}
-
 // CausalSpans iterates over the spans that directly cause this span, by following
 // links (for newer engines) or attributes (for old engines).
 func (span *Span) CausalSpans(f func(*Span) bool) {

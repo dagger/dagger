@@ -8,27 +8,26 @@ import (
 )
 
 type Writer struct {
-	w io.Writer
-
-	Prefix       string
-	LineOverhang string
-
+	w              io.Writer
 	wrote          bool
-	lineTerminated bool
+	prefix         string
 	lastPrefix     string
+	lineTerminated bool
 }
 
 func New(w io.Writer) *Writer {
-	return &Writer{w: w, LineOverhang: DefaultLineOverhang}
+	return &Writer{w: w}
 }
 
-const DefaultLineOverhang = "\u23CE" // ⏎
+func (pw *Writer) SetPrefix(prefix string) {
+	pw.prefix = prefix
+}
 
 func (pw *Writer) Write(p []byte) (int, error) {
 	for len(p) > 0 {
 		n := bytes.IndexByte(p, '\n')
 		if n < 0 {
-			if err := pw.writePrefix(pw.Prefix); err != nil {
+			if err := pw.writePrefix(pw.prefix); err != nil {
 				return 0, err
 			}
 			if _, err := pw.w.Write(p); err != nil {
@@ -38,7 +37,7 @@ func (pw *Writer) Write(p []byte) (int, error) {
 			pw.lineTerminated = false
 			break
 		}
-		if err := pw.writePrefix(pw.Prefix); err != nil {
+		if err := pw.writePrefix(pw.prefix); err != nil {
 			return 0, err
 		}
 		if _, err := pw.w.Write(p[:n+1]); err != nil {
@@ -52,15 +51,15 @@ func (pw *Writer) Write(p []byte) (int, error) {
 }
 
 func (pw *Writer) writePrefix(prefix string) error {
-	isHeader := strings.HasSuffix(prefix, "\n")
-	wasHeader := strings.HasSuffix(pw.lastPrefix, "\n")
+	isHeader := strings.Contains(prefix, "\n")
+	wasHeader := strings.Contains(pw.lastPrefix, "\n")
 	if pw.lastPrefix == prefix && !pw.lineTerminated {
 		// same prefix and we're not a new line, so keep on going
 		return nil
 	}
 	if pw.wrote && pw.lastPrefix != prefix && !pw.lineTerminated {
 		// new prefix and last line was not terminated, so manually add linebreak
-		if _, err := fmt.Fprint(pw.w, pw.LineOverhang+"\n"); err != nil {
+		if _, err := fmt.Fprint(pw.w, "\u23CE\n"); err != nil { // ⏎
 			return err
 		}
 	}

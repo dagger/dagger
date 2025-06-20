@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,7 +33,6 @@ type frontendDots struct {
 	reporter    *frontendPretty
 	prefixW     *multiprefixw.Writer
 	pendingLogs map[dagui.SpanID][]sdklog.Record
-	finishers   map[dagui.SpanID]*dagui.Span
 }
 
 // NewDots creates a new dots-style frontend that outputs green dots for
@@ -59,9 +57,6 @@ func NewDots(output io.Writer) Frontend {
 	reporter := NewWithDB(output, db)
 	reporter.reportOnly = true
 
-	prefixW := multiprefixw.New(out)
-	prefixW.LineOverhang = ""
-
 	return &frontendDots{
 		profile: profile,
 		output:  out,
@@ -69,9 +64,8 @@ func NewDots(output io.Writer) Frontend {
 		db:       db,
 		reporter: reporter,
 
-		prefixW:     prefixW,
+		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
-		finishers:   make(map[dagui.SpanID]*dagui.Span),
 	}
 }
 
@@ -151,6 +145,8 @@ type dotsSpanExporter struct {
 	*frontendDots
 }
 
+var dotsPrefix = termenv.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack).String() + " "
+
 func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -160,82 +156,11 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 		return err
 	}
 
-	// Group spans by their top-level parent
-	topLevelGroups := make(map[*dagui.Span][]sdktrace.ReadOnlySpan)
-	finishedTopLevel := make(map[dagui.SpanID]bool)
-	rowsView := e.db.RowsView(dagui.FrontendOpts{
-		ZoomedSpan: e.db.PrimarySpan,
-		// We're only looking for the topmost spans, so show completed spans but
-		// don't expand them.
-		Verbosity: dagui.ShowCompletedVerbosity,
-	})
-	for _, toplevel := range rowsView.Body {
-		for _, span := range spans {
-			id := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
-			dbSpan := e.db.Spans.Map[id]
-			if dbSpan == nil {
-				continue // Span not found in DB?
-			}
-			if dbSpan.HasParent(toplevel.Span) {
-				topLevelGroups[toplevel.Span] = append(topLevelGroups[toplevel.Span], span)
-			}
-			if dbSpan == toplevel.Span && !dbSpan.IsRunningOrEffectsRunning() {
-				finishedTopLevel[dbSpan.ID] = true
-			}
-		}
-	}
-
-	// This obnoxious amount of code simply prints "DONE" for anything that had a
-	// prefix printed for it, either because it's a top-level span or a span that
-	// we showed logs for previously
-	e.flushFinishers()
-
-	// Process each group
-	for topLevel, groupSpans := range topLevelGroups {
-		e.processSpanGroup(topLevel, groupSpans)
-		e.flushFinishers()
-	}
-
-	return nil
-}
-
-func (fe *frontendDots) flushFinishers() {
-	r := newRenderer(fe.db, 0, fe.opts)
-	done := fe.output.String("DONE").Foreground(termenv.ANSIGreen)
-	for id, span := range fe.finishers {
-		if !span.IsDone() {
-			// fmt.Fprintln(fe.prefixW, "NOT DONE:", span.Name)
-			continue
-		}
-		logsPrefix := dotLogsPrefix(r, fe.profile, span)
-		spansPrefix := dotSpansPrefix(r, fe.profile, span)
-		duration := dagui.FormatDuration(span.Activity.Duration(time.Now()))
-		switch fe.prefixW.Prefix {
-		case logsPrefix:
-			fmt.Fprintf(fe.prefixW, "\n%s [%s]\n", done, duration)
-			delete(fe.finishers, id)
-		case spansPrefix:
-			fmt.Fprintf(fe.prefixW, " %s [%s]\n", done, duration)
-			// default:
-			// 	e.prefixW.Prefix = spansPrefix
-			// 	fmt.Fprintf(e.prefixW, " %s [%s]\n", done, duration)
-			delete(fe.finishers, id)
-		default:
-			// fmt.Fprintf(fe.prefixW, " %s: %q != (%q || %q) [%s]\n", done, fe.prefixW.Prefix, logsPrefix, spansPrefix, duration)
-
-		}
-	}
-}
-
-// processSpanGroup processes a group of spans that belong to the same top-level parent
-func (e *dotsSpanExporter) processSpanGroup(toplevel *dagui.Span, spans []sdktrace.ReadOnlySpan) {
-	r := newRenderer(e.db, 0, e.opts)
-	dotsPrefix := dotSpansPrefix(r, e.profile, toplevel)
 	for _, span := range spans {
 		id := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
 		dbSpan := e.db.Spans.Map[id]
 		if dbSpan == nil {
-			continue
+			continue // Span not found in DB?
 		}
 
 		// Check if there are pending logs for this span and flush them
@@ -262,17 +187,18 @@ func (e *dotsSpanExporter) processSpanGroup(toplevel *dagui.Span, spans []sdktra
 		}
 
 		// Give the symbols their own neutral prefix, so they get separated nicely from logs.
-		e.prefixW.Prefix = dotsPrefix
-		e.finishers[toplevel.ID] = toplevel
+		e.prefixW.SetPrefix(dotsPrefix)
 
 		// Print dot or X based on span status - dots style
 		switch span.Status().Code {
 		case codes.Error:
-			fmt.Fprint(e.prefixW, e.output.String("X").Foreground(termenv.ANSIRed))
+			fmt.Fprint(e.prefixW, termenv.String("X").Foreground(termenv.ANSIRed))
 		case codes.Ok, codes.Unset:
-			fmt.Fprint(e.prefixW, e.output.String(".").Foreground(termenv.ANSIGreen))
+			fmt.Fprint(e.prefixW, termenv.String(".").Foreground(termenv.ANSIGreen))
 		}
 	}
+
+	return nil
 }
 
 func (e *dotsSpanExporter) Shutdown(ctx context.Context) error {
@@ -357,30 +283,6 @@ func (e *dotsLogsExporter) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func dotSpansPrefix(r *renderer, profile termenv.Profile, span *dagui.Span) string {
-	var spanName strings.Builder
-	out := NewOutput(&spanName, termenv.WithProfile(profile))
-	fmt.Fprintf(out, "%s ", CaretRightFilled)
-	if span.Call() != nil {
-		r.renderCall(out, span, span.Call(), "", false, 0, false, nil)
-	} else {
-		fmt.Fprintf(&spanName, "%s", out.String(span.Name).Bold())
-	}
-	return spanName.String() + " "
-}
-
-func dotLogsPrefix(r *renderer, profile termenv.Profile, span *dagui.Span) string {
-	var spanName strings.Builder
-	out := NewOutput(&spanName, termenv.WithProfile(profile))
-	fmt.Fprintf(out, "%s ", CaretDownFilled)
-	if span.Call() != nil {
-		r.renderCall(out, span, span.Call(), "", false, 0, false, nil)
-	} else {
-		fmt.Fprintf(&spanName, "%s", out.String(span.Name).Bold())
-	}
-	return spanName.String() + "\n"
-}
-
 // flushLogsForSpan writes logs for a specific span with proper prefix
 func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklog.Record) {
 	// Get span info from DB
@@ -406,9 +308,21 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 		return // Skip logs for encapsulated spans
 	}
 
-	// Set prefix
+	// Initialize writer if needed
+
 	r := newRenderer(e.db, 0, e.opts)
-	prefix := dotLogsPrefix(r, e.profile, dbSpan)
+
+	// Set prefix
+	var spanName strings.Builder
+	out := NewOutput(&spanName, termenv.WithProfile(e.profile))
+	fmt.Fprintf(out, "%s ", CaretDownFilled)
+	if dbSpan.Call() != nil {
+		r.renderCall(out, dbSpan, dbSpan.Call(), "", false, 0, false, nil)
+		fmt.Fprintln(out)
+	} else {
+		fmt.Fprintf(&spanName, "%s\n", termenv.String(dbSpan.Name).Bold())
+	}
+	e.prefixW.SetPrefix(spanName.String())
 
 	// Write all logs for this span, filtering out verbose logs
 	for _, record := range records {
@@ -428,15 +342,9 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 		}
 
 		body := record.Body().AsString()
-		if body == "" {
-			continue
+		if body != "" {
+			fmt.Fprint(e.prefixW, body)
 		}
-
-		// Only set prefix + track finisher when we're actually gonna print
-		e.prefixW.Prefix = prefix
-		e.finishers[spanID] = dbSpan
-
-		fmt.Fprint(e.prefixW, body)
 	}
 }
 
