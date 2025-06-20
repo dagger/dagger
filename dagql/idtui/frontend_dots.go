@@ -24,19 +24,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// ANSI color codes for output
-const (
-	colorGreen = "\033[32m"
-	colorRed   = "\033[31m"
-	colorReset = "\033[0m"
-)
-
 type frontendDots struct {
 	profile     termenv.Profile
 	output      TermOutput
 	mu          sync.Mutex
-	verbosity   int
-	primary     bool
 	db          *dagui.DB
 	opts        dagui.FrontendOpts
 	reporter    *frontendPretty
