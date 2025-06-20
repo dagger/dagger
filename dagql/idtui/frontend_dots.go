@@ -26,7 +26,7 @@ import (
 
 type frontendDots struct {
 	profile     termenv.Profile
-	output      TermOutput
+	out         TermOutput
 	mu          sync.Mutex
 	db          *dagui.DB
 	opts        dagui.FrontendOpts
@@ -59,7 +59,7 @@ func NewDots(output io.Writer) Frontend {
 
 	return &frontendDots{
 		profile: profile,
-		output:  out,
+		out:     out,
 
 		db:       db,
 		reporter: reporter,
@@ -72,8 +72,8 @@ func NewDots(output io.Writer) Frontend {
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error {
 	fe.opts = opts
 	err := f(ctx)
-	fmt.Fprintln(fe.output)
-	fmt.Fprintln(fe.output)
+	fmt.Fprintln(fe.out)
+	fmt.Fprintln(fe.out)
 	fe.reporter.FrontendOpts = fe.opts
 	if renderErr := fe.reporter.FinalRender(os.Stderr); renderErr != nil {
 		return renderErr
@@ -145,8 +145,6 @@ type dotsSpanExporter struct {
 	*frontendDots
 }
 
-var dotsPrefix = termenv.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack).String() + " "
-
 func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -155,6 +153,8 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 	if err := e.db.ExportSpans(ctx, spans); err != nil {
 		return err
 	}
+
+	dotsPrefix := e.out.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack).String() + " "
 
 	for _, span := range spans {
 		id := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
@@ -187,15 +187,17 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 		}
 
 		// Give the symbols their own neutral prefix, so they get separated nicely from logs.
-		e.prefixW.SetPrefix(dotsPrefix)
-
+		e.prefixW.Prefix = dotsPrefix
 		// Print dot or X based on span status - dots style
 		switch span.Status().Code {
 		case codes.Error:
-			fmt.Fprint(e.prefixW, termenv.String("X").Foreground(termenv.ANSIRed))
+			fmt.Fprint(e.prefixW, e.out.String("X").Foreground(termenv.ANSIRed))
 		case codes.Ok, codes.Unset:
-			fmt.Fprint(e.prefixW, termenv.String(".").Foreground(termenv.ANSIGreen))
+			fmt.Fprint(e.prefixW, e.out.String(".").Foreground(termenv.ANSIGreen))
 		}
+
+		// When context-switching from dots, don't print an overhang indicator
+		e.prefixW.LineOverhang = ""
 	}
 
 	return nil
@@ -283,6 +285,18 @@ func (e *dotsLogsExporter) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+func dotLogsPrefix(r *renderer, profile termenv.Profile, span *dagui.Span) string {
+	var spanName strings.Builder
+	out := NewOutput(&spanName, termenv.WithProfile(profile))
+	fmt.Fprintf(out, "%s ", CaretDownFilled)
+	if span.Call() != nil {
+		r.renderCall(out, span, span.Call(), "", false, 0, false, nil)
+	} else {
+		fmt.Fprintf(&spanName, "%s", out.String(span.Name).Bold())
+	}
+	return spanName.String() + "\n"
+}
+
 // flushLogsForSpan writes logs for a specific span with proper prefix
 func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklog.Record) {
 	// Get span info from DB
@@ -308,21 +322,9 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 		return // Skip logs for encapsulated spans
 	}
 
-	// Initialize writer if needed
-
-	r := newRenderer(e.db, 0, e.opts)
-
 	// Set prefix
-	var spanName strings.Builder
-	out := NewOutput(&spanName, termenv.WithProfile(e.profile))
-	fmt.Fprintf(out, "%s ", CaretDownFilled)
-	if dbSpan.Call() != nil {
-		r.renderCall(out, dbSpan, dbSpan.Call(), "", false, 0, false, nil)
-		fmt.Fprintln(out)
-	} else {
-		fmt.Fprintf(&spanName, "%s\n", termenv.String(dbSpan.Name).Bold())
-	}
-	e.prefixW.SetPrefix(spanName.String())
+	r := newRenderer(e.db, 0, e.opts)
+	prefix := dotLogsPrefix(r, e.profile, dbSpan)
 
 	// Write all logs for this span, filtering out verbose logs
 	for _, record := range records {
@@ -342,9 +344,19 @@ func (e *dotsLogsExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklo
 		}
 
 		body := record.Body().AsString()
-		if body != "" {
-			fmt.Fprint(e.prefixW, body)
+		if body == "" {
+			continue
 		}
+
+		// Only set prefix + track finisher when we're actually gonna print
+		e.prefixW.Prefix = prefix
+		fmt.Fprint(e.prefixW, body)
+
+		// When context-switching, print an overhang so it's clear when the logs
+		// haven't line-terminated
+		e.prefixW.LineOverhang =
+			e.out.String(multiprefixw.DefaultLineOverhang).
+				Foreground(termenv.ANSIBrightBlack).String()
 	}
 }
 
