@@ -13,8 +13,8 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/core/multiprefixw"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
