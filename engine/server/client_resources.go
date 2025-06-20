@@ -48,8 +48,8 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 	socketIDs = filteredSocketIDs
 
-	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
-	if !ok {
+	srcClient, err := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
+	if err != nil {
 		if id.Optional {
 			return nil // no errors for this case
 		}

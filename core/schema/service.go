@@ -18,7 +18,7 @@ var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Install() {
 	dagql.Fields[*core.Container]{
-		dagql.Func("asService", s.containerAsServiceLegacy).
+		dagql.NodeFunc("asService", s.containerAsServiceLegacy).
 			View(BeforeVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
@@ -142,8 +142,59 @@ func (s *serviceSchema) Install() {
 	}.Install(s.srv)
 }
 
-func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
-	return parent.AsServiceLegacy(ctx)
+func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (inst dagql.Instance[*core.Service], _ error) {
+	id := parent.ID()
+	for id != nil && id.Field() != "withExec" {
+		id = id.Receiver()
+	}
+	if id == nil {
+		// no withExec found, so just rely on the entrypoint!
+		svc, err := parent.Self.AsService(ctx, core.ContainerAsServiceArgs{
+			UseEntrypoint: true,
+		})
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, svc)
+	}
+
+	// load the withExec parent
+	obj, err := s.srv.Load(ctx, id.Receiver())
+	if err != nil {
+		return inst, err
+	}
+	ctr, ok := obj.(dagql.Instance[*core.Container])
+	if !ok {
+		return inst, fmt.Errorf("expected %T, but got %T", ctr, obj)
+	}
+
+	// extract the withExec args
+	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
+	if !ok {
+		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.Type().NamedType)
+	}
+	inputs, err := dagql.ExtractIDArgs(withExecField.Args, id)
+	if err != nil {
+		return inst, err
+	}
+	var withExecArgs containerExecArgs
+	err = withExecField.Args.Decode(inputs, &withExecArgs, dagql.View(id.View()))
+	if err != nil {
+		return inst, err
+	}
+
+	// create a service based on that withExec
+	svc, err := ctr.Self.AsService(ctx, core.ContainerAsServiceArgs{
+		Args:                          withExecArgs.Args,
+		UseEntrypoint:                 withExecArgs.UseEntrypoint,
+		ExperimentalPrivilegedNesting: withExecArgs.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      withExecArgs.InsecureRootCapabilities,
+		NoInit:                        withExecArgs.NoInit,
+	})
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, svc)
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
