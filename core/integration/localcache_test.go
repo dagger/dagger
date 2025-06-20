@@ -427,7 +427,7 @@ type cacheEntryVals struct {
 	ActivelyUsed              bool
 }
 
-func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCacheEntry) *cacheEntryVals {
+func getCacheEntryVals(ctx context.Context, t *testctx.T, ent *dagger.EngineCacheEntry) *cacheEntryVals {
 	t.Helper()
 
 	vals := &cacheEntryVals{}
