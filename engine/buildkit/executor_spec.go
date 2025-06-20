@@ -66,7 +66,7 @@ const (
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
 
-	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
+	BuildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 
 	cgroupSampleInterval     = 3 * time.Second
 	finalCgroupSampleTimeout = 3 * time.Second
@@ -435,7 +435,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			state.metaMount = &mnt
 
-		case mnt.Destination == buildkitQemuEmulatorMountPoint:
+		case mnt.Destination == BuildkitQemuEmulatorMountPoint:
 			// buildkit puts the qemu emulator under /dev, which we aren't mounting now, so just
 			// leave it be
 			filteredMounts = append(filteredMounts, mnt)

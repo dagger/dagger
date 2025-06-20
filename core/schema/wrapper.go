@@ -177,12 +177,17 @@ func DagOpContainer[A any](
 	data any,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
 ) (inst dagql.Instance[*core.Container], _ error) {
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return inst, err
+	}
+
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), self.Self, deps)
+	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), argDigest, self.Self, deps)
 	if err != nil {
 		return inst, err
 	}

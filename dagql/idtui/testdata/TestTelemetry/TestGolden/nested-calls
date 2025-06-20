@@ -23,8 +23,7 @@ Expected stderr:
 ▼ .nestedCalls: [String!]! X.Xs
 ├─$ file(name: "file", contents: "hey"): File! X.Xs CACHED
 │
-├─● directory: Directory! X.Xs
-├─$ .withFile(
+├─$ Directory.withFile(
 │   ┆ path: "file"
 │   ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ permissions: 420

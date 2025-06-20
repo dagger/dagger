@@ -45,10 +45,9 @@ func AroundFunc(
 	context.Context,
 	func(res dagql.Typed, cached bool, rerr error),
 ) {
-	if isIntrospection(id) || isMeta(id) || isDagOp(id) {
+	if dagql.IsSkipped(ctx) || isIntrospection(id) || isMeta(id) || isDagOp(id) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
-		// FIXME: we lose telemetry.SpanStdio info in dagops from here
 		return ctx, dagql.NoopDone
 	}
 

@@ -170,6 +170,24 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
+func (container *Container) WithoutInputs() *Container {
+	container = container.Clone()
+
+	container.FS = nil
+	container.FSResult = nil
+
+	container.Meta = nil
+	container.MetaResult = nil
+
+	for i, mount := range container.Mounts {
+		mount.Source = nil
+		mount.Result = nil
+		container.Mounts[i] = mount
+	}
+
+	return container
+}
+
 var _ dagql.OnReleaser = (*Container)(nil)
 
 func (container *Container) OnRelease(ctx context.Context) error {
@@ -1767,21 +1785,17 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
+		Creator:                       trace.SpanContextFromContext(ctx),
+		Container:                     container,
+		Args:                          cmdargs,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NoInit:                        args.NoInit,
 	}, nil
 }
 
