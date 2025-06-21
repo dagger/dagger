@@ -326,7 +326,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=3.6.2" },
     { name = "beartype", specifier = ">=0.18.2" },
-    { name = "cattrs", specifier = ">=24.1.0" },
+    { name = "cattrs", specifier = ">=25.1.0" },
     { name = "gql", extras = ["httpx"], specifier = ">=3.5.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.23.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.23.0" },
