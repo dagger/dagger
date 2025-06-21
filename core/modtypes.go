@@ -16,7 +16,7 @@ type ModType interface {
 	// ConvertFromSDKResult converts a value returned from an SDK into values
 	// expected by the server, including conversion of IDs to their "unpacked"
 	// objects
-	ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error)
+	ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error)
 
 	// ConvertToSDKInput converts a value from the server into a value expected
 	// by the SDK, which may include converting objects to their IDs
@@ -24,7 +24,7 @@ type ModType interface {
 
 	// CollectCoreIDs collects all the call IDs from core objects in the given value, whether
 	// it's idable itself or is a list/object containing idable values (recursively)
-	CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error
+	CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -38,20 +38,27 @@ type PrimitiveType struct {
 	Def *TypeDef
 }
 
-func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+var _ ModType = &PrimitiveType{}
+
+func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
 	input := t.Def.ToInput()
 	if value == nil {
-		return input, nil
+		return dagql.NewInstanceForCurrentID(ctx, input)
 	}
-	return input.Decoder().DecodeInput(value)
+
+	retVal, err := input.Decoder().DecodeInput(value)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, retVal)
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
+func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Value, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -68,14 +75,16 @@ type ListType struct {
 	Underlying ModType
 }
 
-func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+var _ ModType = &ListType{}
+
+func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	arr := dagql.DynamicArrayOutput{
 		Elem: t.Elem.ToTyped(),
 	}
 	if value == nil {
 		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
 		// return an empty array, _not_ nil
-		return arr, nil
+		return dagql.NewInstanceForCurrentID(ctx, arr)
 	}
 	list, ok := value.([]any)
 	if !ok {
@@ -84,12 +93,15 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.T
 	arr.Values = make([]dagql.Typed, len(list))
 	for i, item := range list {
 		var err error
-		arr.Values[i], err = t.Underlying.ConvertFromSDKResult(ctx, item)
+		// TODO: subtle, if this was say a []*Container, we are losing the IDs of those containers and
+		// making their IDs the nth of the current one. Might only be fixable w/ pending cache improvements?
+		t, err := t.Underlying.ConvertFromSDKResult(ctx, item)
 		if err != nil {
 			return nil, err
 		}
+		arr.Values[i] = t.Unwrap()
 	}
-	return arr, nil
+	return dagql.NewInstanceForCurrentID(ctx, arr)
 }
 
 func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -114,16 +126,16 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
-func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	list, ok := value.(dagql.Enumerable)
+	list, ok := value.Unwrap().(dagql.Enumerable)
 	if !ok {
 		return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
 	}
 	for i := 1; i <= list.Len(); i++ {
-		item, err := list.Nth(i)
+		item, err := value.NthValue(i)
 		if err != nil {
 			return err
 		}
@@ -152,7 +164,9 @@ type NullableType struct {
 	Inner    ModType
 }
 
-func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+var _ ModType = &NullableType{}
+
+func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	nullable := dagql.DynamicNullable{
 		Elem: t.InnerDef.ToTyped(),
 	}
@@ -161,10 +175,10 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		if err != nil {
 			return nil, err
 		}
-		nullable.Value = val
+		nullable.Value = val.Unwrap()
 		nullable.Valid = true
 	}
-	return nullable, nil
+	return dagql.NewInstanceForCurrentID(ctx, nullable)
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -186,15 +200,11 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	return result, nil
 }
 
-func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	opt, ok := value.(dagql.Derefable)
-	if !ok {
-		return fmt.Errorf("%T.CollectCoreIDs: expected Derefable, got %T: %#v", t, value, value)
-	}
-	val, present := opt.Deref()
+	val, present := value.DerefValue()
 	if !present {
 		return nil
 	}

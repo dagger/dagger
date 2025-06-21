@@ -48,7 +48,7 @@ type MCP struct {
 	// Only show these functions, if non-empty
 	selectedMethods map[string]bool
 	// The last value returned by a function.
-	lastResult dagql.Typed
+	lastResult dagql.Value
 	// Indicates that the model has returned
 	returned bool
 }
@@ -80,7 +80,7 @@ func (m *MCP) Returned() bool {
 }
 
 // Get an object saved at a given key
-func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
+func (m *MCP) GetObject(key, expectedType string) (dagql.ObjectValue, error) {
 	if expectedType != "" {
 		// for maximal LLM compatibility, assume type for numeric ID args
 		if onlyNum, err := strconv.Atoi(key); err == nil {
@@ -89,7 +89,7 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	}
 	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
-			objType := obj.Type().Name()
+			objType := obj.AstType().Name()
 			if expectedType != "" && objType != expectedType {
 				return nil, fmt.Errorf("type error: expected %q, got %q", expectedType, objType)
 			}
@@ -100,7 +100,7 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-func (m *MCP) LastResult() dagql.Typed {
+func (m *MCP) LastResult() dagql.Value {
 	return m.lastResult
 }
 
@@ -394,7 +394,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
 	toolProps := toolSchema["properties"].(map[string]any)
-	var target dagql.Object
+	var target dagql.ObjectValue
 	if m.env.IsPrivileged() && selfType == schema.Query.Name {
 		target = srv.Root()
 	} else {
@@ -432,7 +432,7 @@ func (m *MCP) call(ctx context.Context,
 func (m *MCP) selectionToToolResult(
 	ctx context.Context,
 	srv *dagql.Server,
-	target dagql.Object,
+	target dagql.ObjectValue,
 	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
 ) (string, error) {
@@ -451,7 +451,7 @@ func (m *MCP) selectionToToolResult(
 		if _, isObj := srv.ObjectType(fieldDef.Type.Elem.NamedType); isObj {
 			// Handle arrays of objects by ingesting each object ID.
 			//
-			var objs []dagql.Object
+			var objs []dagql.Value
 			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
 				return "", fmt.Errorf("failed to sync: %w", err)
 			}
@@ -466,7 +466,11 @@ func (m *MCP) selectionToToolResult(
 	}
 
 	// Make the DagQL call.
-	var val dagql.Typed
+	var val dagql.Value
+	// TODO: this is probably broken, right?
+	// TODO: this is probably broken, right?
+	// TODO: this is probably broken, right?
+	// TODO: this is probably broken, right?
 	if err := srv.Select(ctx, target, &val, sels...); err != nil {
 		return "", fmt.Errorf("failed to sync: %w", err)
 	}
@@ -484,7 +488,7 @@ func (m *MCP) selectionToToolResult(
 
 	m.lastResult = val
 
-	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.ObjectValue](val); ok {
 		// Handle object returns
 		return m.newState(obj)
 	}
@@ -512,7 +516,7 @@ func (m *MCP) selectionToToolResult(
 
 func (m *MCP) toolCallToSelection(
 	srv *dagql.Server,
-	target dagql.Object,
+	target dagql.ObjectValue,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
@@ -552,7 +556,7 @@ func (m *MCP) toolCallToSelection(
 			if err != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
-			obj, ok := dagql.UnwrapAs[dagql.Object](envVal)
+			obj, ok := dagql.UnwrapAs[dagql.ObjectValue](envVal)
 			if !ok {
 				return sel, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 			}
@@ -716,7 +720,16 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
 				}
 				if output.ExpectedType == "String" {
-					output.Value = dagql.String(argStr)
+					// TODO: Not sure????
+					// TODO: Not sure????
+					// TODO: Not sure????
+					// TODO: Not sure????
+					// output.Value = dagql.String(argStr)
+					var err error
+					output.Value, err = dagql.NewInstanceForCurrentID(ctx, dagql.String(argStr))
+					if err != nil {
+						return nil, fmt.Errorf("failed to create String instance for %s: %w", name, err)
+					}
 				} else {
 					bnd, ok := m.env.objsByID[argStr]
 					if !ok {
@@ -724,7 +737,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 					}
 
 					obj := bnd.Value
-					actualType := obj.Type().Name()
+					actualType := obj.AstType().Name()
 					if output.ExpectedType != actualType {
 						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
 					}
@@ -1081,7 +1094,13 @@ NOTE: you must select methods before chaining them`,
 					}
 					args := maps.Clone(call.Args)
 					if i > 0 {
-						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
+						// TODO: ????
+						// TODO: ????
+						// TODO: ????
+						// TODO: ????
+						// TODO: ????
+						// if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
+						if obj, ok := dagql.UnwrapAs[dagql.ObjectValue](m.LastResult()); ok {
 							// override, since the whole point is to chain from the previous
 							// value; any value here is surely mistaken or hallucinated
 							args["self"] = m.env.Ingest(obj, "")
@@ -1169,7 +1188,7 @@ func (m *MCP) validateAndNormalizeChain(self string, calls []ChainedCall, allMet
 		if err != nil {
 			return err
 		}
-		currentType = obj.Type()
+		currentType = obj.AstType()
 	}
 	var errs error
 	for i, call := range calls {
@@ -1469,8 +1488,8 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 
 const jsonSchemaIDAttr = "x-id-type"
 
-func (m *MCP) newState(target dagql.Object) (string, error) {
-	typeName := target.Type().Name()
+func (m *MCP) newState(target dagql.ObjectValue) (string, error) {
+	typeName := target.AstType().Name()
 	_, known := m.env.typeCounts[typeName]
 	res := map[string]any{
 		"result": m.env.Ingest(target, ""),

@@ -57,18 +57,18 @@ func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Q
 	return filename, nil
 }
 
-func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
+func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectInstance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
 	if args.InDagOp() {
-		cache := parent.Self.BuildkitCache()
+		cache := parent.Self().BuildkitCache()
 		snap, err := cache.Get(ctx, args.DagOpData, nil)
 		if err != nil {
 			return inst, err
 		}
 		snap = snap.Clone()
 
-		f := core.NewFile(nil, args.DagOpPath, parent.Self.Platform(), nil)
+		f := core.NewFile(nil, args.DagOpPath, parent.Self().Platform(), nil)
 		f.Result = snap
-		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+		return dagql.NewInstanceForCurrentID(ctx, f)
 	}
 
 	filename, err := s.httpPath(ctx, parent, args)
@@ -86,7 +86,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		if err != nil {
 			return inst, err
 		}
-		secretStore, err := parent.Self.Secrets(ctx)
+		secretStore, err := parent.Self().Secrets(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get secret store: %w", err)
 		}
@@ -102,7 +102,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		if err != nil {
 			return inst, err
 		}
-		host, err := svc.Self.Hostname(ctx, svc.ID())
+		host, err := svc.Self().Hostname(ctx, svc.ID())
 		if err != nil {
 			return inst, err
 		}
@@ -111,7 +111,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 			Hostname: host,
 		}
 
-		svcs, err := parent.Self.Services(ctx)
+		svcs, err := parent.Self().Services(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get services: %w", err)
 		}
@@ -129,7 +129,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 	if authHeader != "" {
 		req.Header.Add("Authorization", authHeader)
 	}
-	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self, req, filename, permissions)
+	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self(), req, filename, permissions)
 	if err != nil {
 		return inst, err
 	}
@@ -150,7 +150,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 	}
 
 	// evaluate now! so that the snapshot definitely lives long enough
-	if _, err := inst.Self.Evaluate(ctx); err != nil {
+	if _, err := inst.Self().Evaluate(ctx); err != nil {
 		return inst, err
 	}
 	return inst, nil

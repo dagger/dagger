@@ -47,7 +47,7 @@ type Service struct {
 	Container *Container
 
 	// TunnelUpstream is the service that this service is tunnelling to.
-	TunnelUpstream *dagql.Instance[*Service]
+	TunnelUpstream dagql.Instance[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward
 
@@ -72,9 +72,6 @@ func (svc *Service) Clone() *Service {
 	cp := *svc
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
-	}
-	if cp.TunnelUpstream != nil {
-		cp.TunnelUpstream.Self = cp.TunnelUpstream.Self.Clone()
 	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
@@ -681,7 +678,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self, true)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}

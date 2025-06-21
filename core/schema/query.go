@@ -29,7 +29,7 @@ func (s *querySchema) Install() {
 		// (via the magic __ prefix).
 		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, func(
 			ctx context.Context,
-			base dagql.Instance[*core.Query],
+			base dagql.ObjectInstance[*core.Query],
 			args schemaJSONArgs,
 			cfg dagql.CacheConfig,
 		) (*dagql.CacheConfig, error) {
@@ -102,7 +102,7 @@ type schemaJSONArgs struct {
 
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
-	parent dagql.Instance[*core.Query],
+	parent dagql.ObjectInstance[*core.Query],
 	args schemaJSONArgs,
 ) (inst dagql.Instance[*core.File], rerr error) {
 	data, err := s.srv.Query(ctx, codegenintrospection.Query, nil)
@@ -136,11 +136,11 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
-	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self.Platform())
+	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
 	if err != nil {
 		return inst, err
 	}
-	bk, err := parent.Self.Buildkit(ctx)
+	bk, err := parent.Self().Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -156,7 +156,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+	fileInst, err := dagql.NewInstanceForCurrentID(ctx, f)
 	if err != nil {
 		return inst, err
 	}

@@ -73,8 +73,8 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get base container during module client generation: %w", err)
 	}
 
-	contextDir := modSource.Self.ContextDirectory
-	rootSourcePath := modSource.Self.SourceRootSubpath
+	contextDir := modSource.Self().ContextDirectory
+	rootSourcePath := modSource.Self().SourceRootSubpath
 
 	modSourceID, err := modSource.ID().Encode()
 	if err != nil {
@@ -175,7 +175,7 @@ func (sdk *goSDK) Codegen(
 		return nil, err
 	}
 
-	var modifiedSrcDir dagql.Instance[*core.Directory]
+	var modifiedSrcDir dagql.ObjectInstance[*core.Directory]
 	if err := sdk.dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
@@ -282,24 +282,24 @@ func (sdk *goSDK) Runtime(
 	); err != nil {
 		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
-	return ctr.Self, nil
+	return ctr.Self(), nil
 }
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.Instance[*core.ModuleSource],
-) (dagql.Instance[*core.Container], error) {
-	var ctr dagql.Instance[*core.Container]
+) (dagql.ObjectInstance[*core.Container], error) {
+	var ctr dagql.ObjectInstance[*core.Container]
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
 
-	modName := src.Self.ModuleOriginalName
-	contextDir := src.Self.ContextDirectory
-	srcSubpath := src.Self.SourceSubpath
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
 
 	ctr, err = sdk.base(ctx)
 	if err != nil {
@@ -330,7 +330,7 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	}
-	if !src.Self.ConfigExists {
+	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
@@ -449,10 +449,10 @@ func (sdk *goSDK) baseWithCodegen(
 	return ctr, nil
 }
 
-func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], error) {
-	var inst dagql.Instance[*core.Container]
+func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectInstance[*core.Container], error) {
+	var inst dagql.ObjectInstance[*core.Container]
 
-	var baseCtr dagql.Instance[*core.Container]
+	var baseCtr dagql.ObjectInstance[*core.Container]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &baseCtr,
 		dagql.Selector{
 			Field: "_builtinContainer",
@@ -527,7 +527,7 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
 	}
 
-	var ctr dagql.Instance[*core.Container]
+	var ctr dagql.ObjectInstance[*core.Container]
 	if err := sdk.dag.Select(ctx, baseCtr, &ctr,
 		dagql.Selector{
 			Field: "withMountedCache",
@@ -668,7 +668,7 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 		return nil, fmt.Errorf("failed to select internal socket: %w", err)
 	}
 
-	if sockInst.Self == nil {
+	if sockInst.Self() == nil {
 		return nil, fmt.Errorf("sockInst.Self is NIL")
 	}
 

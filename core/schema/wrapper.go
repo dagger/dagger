@@ -15,13 +15,13 @@ func DagOpWrapper[T dagql.Typed, A DagOpInternalArgsIface, R dagql.Typed](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, R],
 ) dagql.NodeFuncHandler[T, A, R] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
+	return func(ctx context.Context, self dagql.ObjectInstance[T], args A) (inst dagql.Instance[R], err error) {
 		if args.InDagOp() {
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
 			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
+			ctx = core.ContextWithQuery(ctx, query.Self())
 			return fn(ctx, self, args)
 		}
 		return DagOp(ctx, srv, self, args, fn)
@@ -38,16 +38,22 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	self dagql.Instance[T],
 	args A,
 	fn dagql.NodeFuncHandler[T, A, R],
-) (inst R, err error) {
-	deps, err := extractLLBDependencies(ctx, self.Self)
+) (inst dagql.Instance[R], err error) {
+	deps, err := extractLLBDependencies(ctx, self.Self())
 	if err != nil {
 		return inst, err
 	}
 	filename := "output.json"
-	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
+
+	op, err := core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
 		ID:       currentIDForRawDagOp(ctx, filename),
 		Filename: filename,
 	}, deps)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewInstanceForCurrentID(ctx, op)
 }
 
 type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance[T], args A) (string, error)
@@ -57,16 +63,16 @@ type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance
 // JSON, so we'd just end up with a cached ID instead of the actual content.
 func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	fn dagql.NodeFuncHandler[T, A, *core.File],
 	pfn PathFunc[T, A],
-) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
+) dagql.NodeFuncHandler[T, A, *core.File] {
+	return func(ctx context.Context, self dagql.ObjectInstance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if args.InDagOp() {
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
 			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
+			ctx = core.ContextWithQuery(ctx, query.Self())
 			return fn(ctx, self, args)
 		}
 		return DagOpFile(ctx, srv, self, args, "", fn, pfn)
@@ -84,10 +90,10 @@ func DagOpFile[T dagql.Typed, A any](
 	self dagql.Instance[T],
 	args A,
 	data string,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	fn dagql.NodeFuncHandler[T, A, *core.File],
 	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
-	deps, err := extractLLBDependencies(ctx, self.Self)
+	deps, err := extractLLBDependencies(ctx, self.Self())
 	if err != nil {
 		return inst, err
 	}
@@ -112,23 +118,23 @@ func DagOpFile[T dagql.Typed, A any](
 		return inst, err
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, srv, self, file)
+	return dagql.NewInstanceForCurrentID(ctx, file)
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
 func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	fn dagql.NodeFuncHandler[T, A, *core.Directory],
 	pfn PathFunc[T, A],
-) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
+) dagql.NodeFuncHandler[T, A, *core.Directory] {
+	return func(ctx context.Context, self dagql.ObjectInstance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if args.InDagOp() {
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
 			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
+			ctx = core.ContextWithQuery(ctx, query.Self())
 			return fn(ctx, self, args)
 		}
 		return DagOpDirectory(ctx, srv, self, args, "", fn, pfn)
@@ -144,10 +150,10 @@ func DagOpDirectory[T dagql.Typed, A any](
 	self dagql.Instance[T],
 	args A,
 	data string,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	fn dagql.NodeFuncHandler[T, A, *core.Directory],
 	pfn PathFunc[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
-	deps, err := extractLLBDependencies(ctx, self.Self)
+	deps, err := extractLLBDependencies(ctx, self.Self())
 	if err != nil {
 		return inst, err
 	}
@@ -170,20 +176,20 @@ func DagOpDirectory[T dagql.Typed, A any](
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
+	return dagql.NewInstanceForCurrentID(ctx, dir)
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
-) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
-	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
+	fn dagql.NodeFuncHandler[*core.Container, A, *core.Container],
+) dagql.NodeFuncHandler[*core.Container, A, *core.Container] {
+	return func(ctx context.Context, self dagql.ObjectInstance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
 		if args.InDagOp() {
 			query, ok := srv.Root().(dagql.Instance[*core.Query])
 			if !ok {
 				return inst, fmt.Errorf("server root was %T", srv.Root())
 			}
-			ctx = core.ContextWithQuery(ctx, query.Self)
+			ctx = core.ContextWithQuery(ctx, query.Self())
 			return fn(ctx, self, args)
 		}
 		return DagOpContainer(ctx, srv, self, args, nil, fn)
@@ -196,18 +202,18 @@ func DagOpContainer[A any](
 	self dagql.Instance[*core.Container],
 	args A,
 	data any,
-	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+	fn dagql.NodeFuncHandler[*core.Container, A, *core.Container],
 ) (inst dagql.Instance[*core.Container], _ error) {
-	deps, err := extractLLBDependencies(ctx, self.Self)
+	deps, err := extractLLBDependencies(ctx, self.Self())
 	if err != nil {
 		return inst, err
 	}
 
-	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), self.Self, deps)
+	ctr, err := core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), self.Self(), deps)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, srv, self, ctr)
+	return dagql.NewInstanceForCurrentID(ctx, ctr)
 }
 
 const (

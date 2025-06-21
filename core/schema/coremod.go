@@ -263,12 +263,17 @@ type CoreModScalar struct {
 
 var _ core.ModType = (*CoreModScalar)(nil)
 
-func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: found no scalar type")
 	}
-	return s.DecodeInput(value)
+
+	input, err := s.DecodeInput(value)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: failed to decode input: %w", err)
+	}
+	return dagql.NewInstanceForCurrentID(ctx, input)
 }
 
 func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -284,7 +289,7 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
+func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Value, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -309,7 +314,7 @@ type CoreModObject struct {
 
 var _ core.ModType = (*CoreModObject)(nil)
 
-func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
 		slog.Warn("CoreModObject.ConvertFromSDKResult: got nil value")
@@ -338,21 +343,21 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	switch x := value.(type) {
 	case dagql.Input:
 		return x, nil
-	case dagql.Object:
+	case dagql.Value:
 		return x.ID().Encode()
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
 	}
 }
 
-func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
 	switch x := value.(type) {
 	case dagql.Input:
 		return nil
-	case dagql.Object:
+	case dagql.Value:
 		ids[x.ID().Digest()] = &resource.ID{ID: *x.ID()}
 		return nil
 	default:
@@ -382,12 +387,17 @@ type CoreModEnum struct {
 
 var _ core.ModType = (*CoreModEnum)(nil)
 
-func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
 	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
 	}
-	return s.DecodeInput(value)
+
+	input, err := s.DecodeInput(value)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: failed to decode input: %w", err)
+	}
+	return dagql.NewInstanceForCurrentID(ctx, input)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -398,7 +408,7 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(value)
 }
 
-func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 

@@ -11,24 +11,58 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 )
 
+// TODO: since reflection is needed afterall, simplify this again?
 func builtinOrTyped(val any) (Typed, error) {
 	switch x := val.(type) {
 	case Typed:
 		return x, nil
+
 	case string:
 		return String(x), nil
+	case *string:
+		return NullableForPtr(x, NewString), nil
+	case []string:
+		return NewStringArray(x...), nil
+
 	case int:
 		return Int(x), nil
+	case *int:
+		return NullableForPtr(x, NewInt), nil
+	case []int:
+		return NewIntArray(x...), nil
 	case int32:
 		return Int(x), nil
+	case *int32:
+		return NullableForPtr(x, NewInt), nil
+	case []int32:
+		return NewIntArray(x...), nil
 	case int64:
 		return Int(x), nil
+	case *int64:
+		return NullableForPtr(x, NewInt), nil
+	case []int64:
+		return NewIntArray(x...), nil
+
 	case float32:
 		return Float(x), nil
+	case *float32:
+		return NullableForPtr(x, NewFloat), nil
+	case []float32:
+		return NewFloatArray(x...), nil
 	case float64:
 		return Float(x), nil
+	case *float64:
+		return NullableForPtr(x, NewFloat), nil
+	case []float64:
+		return NewFloatArray(x...), nil
+
 	case bool:
 		return Boolean(x), nil
+	case *bool:
+		return NullableForPtr(x, NewBoolean), nil
+	case []bool:
+		return NewBooleanArray(x...), nil
+
 	default:
 		valT := reflect.TypeOf(val)
 		valV := reflect.ValueOf(val)
@@ -104,6 +138,17 @@ func (d DynamicArrayOutput) Nth(i int) (Typed, error) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
+}
+
+func (d DynamicArrayOutput) NthValue(i int, enumID *call.ID) (Value, error) {
+	t, err := d.Nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return instance[Typed]{
+		Constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
 }
 
 func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
@@ -274,4 +319,15 @@ func (d DynamicArrayInput) Nth(i int) (Typed, error) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
+}
+
+func (d DynamicArrayInput) NthValue(i int, enumID *call.ID) (Value, error) {
+	t, err := d.Nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return instance[Typed]{
+		Constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
 }

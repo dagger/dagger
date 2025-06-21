@@ -60,12 +60,12 @@ func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 }
 
 func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
-	if secret.Self == nil {
+	if secret.Self() == nil {
 		return fmt.Errorf("secret must not be nil")
 	}
 
-	if secret.Self.URI != "" {
-		_, _, err := secretprovider.ResolverForID(secret.Self.URI)
+	if secret.Self().URI != "" {
+		_, _, err := secretprovider.ResolverForID(secret.Self().URI)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return secret.Self.Name, true
+	return secret.Self().Name, true
 }
 
 func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
@@ -127,7 +127,7 @@ func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return secret.Self.URI, true
+	return secret.Self().URI, true
 }
 
 func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool) {
@@ -137,11 +137,11 @@ func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool
 	if !ok {
 		return "", false
 	}
-	if secret.Self.URI != "" {
-		return secret.Self.URI, true
+	if secret.Self().URI != "" {
+		return secret.Self().URI, true
 	}
-	if secret.Self.Name != "" {
-		return secret.Self.Name, true
+	if secret.Self().Name != "" {
+		return secret.Self().Name, true
 	}
 	return "", true
 }
@@ -154,7 +154,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
 	}
 
-	return store.GetSecretPlaintextDirect(ctx, secret.Self)
+	return store.GetSecretPlaintextDirect(ctx, secret.Self())
 }
 
 // GetSecretPlaintextDirect returns the plaintext of the given secret, even if it's not in the store yet.
