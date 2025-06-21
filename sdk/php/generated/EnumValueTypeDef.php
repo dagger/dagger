@@ -14,7 +14,7 @@ namespace Dagger;
 class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * A doc string for the enum value, if any.
+     * A doc string for the enum member, if any.
      */
     public function description(): string
     {
@@ -32,7 +32,7 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The name of the enum value.
+     * The name of the enum member.
      */
     public function name(): string
     {
@@ -41,11 +41,20 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The location of this enum value declaration.
+     * The location of this enum member declaration.
      */
     public function sourceMap(): SourceMap
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The value of the enum member
+     */
+    public function value(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
     }
 }

@@ -1,7 +1,8 @@
 import dataclasses
 import inspect
-import json
 import logging
+
+from cattrs.preconf.json import JsonConverter
 
 import dagger
 from dagger.mod._types import APIName, ContextPath
@@ -92,13 +93,15 @@ class Parameter:
     default_path: ContextPath | None = None
     default_value: dagger.JSON | None = None
 
-    def __post_init__(self):
+    conv: dataclasses.InitVar[JsonConverter]
+
+    def __post_init__(self, conv: JsonConverter):
         self._validate()
 
         if not self.has_default:
             return
         try:
-            self.default_value = dagger.JSON(json.dumps(self.signature.default))
+            self.default_value = dagger.JSON(conv.dumps(self.signature.default))
         except TypeError as e:
             # Rather than failing on a default value that's not JSON
             # serializable and going through hoops to support more and more

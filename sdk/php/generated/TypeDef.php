@@ -128,6 +128,29 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
      */
+    public function withEnumMember(
+        string $name,
+        ?string $value = '',
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $value) {
+        $innerQueryBuilder->setArgument('value', $value);
+        }
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+     */
     public function withEnumValue(
         string $value,
         ?string $description = '',

@@ -1038,6 +1038,13 @@ func (m *Test) FromProto(proto dagger.NetworkProtocol) string {
 	return string(proto)
 }
 
+func (m *Test) FromProtoDefault(
+	// +default="UDP"
+	proto dagger.NetworkProtocol,
+) string {
+	return string(proto)
+}
+
 func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 	return dagger.NetworkProtocol(proto)
 }
@@ -1052,6 +1059,10 @@ from dagger import function, object_type
 class Test:
     @function
     def from_proto(self, proto: dagger.NetworkProtocol) -> str:
+        return str(proto)
+
+    @function
+    def from_proto_default(self, proto: dagger.NetworkProtocol = dagger.NetworkProtocol.UDP) -> str:
         return str(proto)
 
     @function
@@ -1079,6 +1090,11 @@ export class Test {
   }
 
   @func()
+  fromProtoDefault(Proto: NetworkProtocol = NetworkProtocol.Udp): string {
+    return Proto as string;
+  }
+
+  @func()
   toProto(Proto: string): NetworkProtocol {
     return Proto as NetworkProtocol;
   }
@@ -1097,14 +1113,18 @@ export class Test {
 			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
 
 			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum member")
+
+			out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
 		})
 	}
 }
@@ -1112,12 +1132,14 @@ export class Test {
 func (TypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
 	t.Run("custom enum type", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
-			sdk    string
-			source string
+			sdk             string
+			supportsMembers bool
+			source          string
 		}
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:             "go",
+				supportsMembers: true,
 				source: `package main
 
 // Enum for Status
@@ -1125,14 +1147,14 @@ type Status string
 
 const (
 	// Active status
-	Active Status = "ACTIVE"
+	Active Status = "ACTIVE value"
 
 	// Inactive status
-	Inactive Status = "INACTIVE"
+	Inactive Status = "INACTIVE value"
 )
 
 func New(
-	// +default="INACTIVE"
+	// +default="INACTIVE value"
 	status Status,
 ) *Test {
 	return &Test{Status: status}
@@ -1159,15 +1181,16 @@ func (m *Test) ToStatus(status string) Status {
 `,
 			},
 			{
-				sdk: "python",
+				sdk:             "python",
+				supportsMembers: true,
 				source: `import dagger
 
 @dagger.enum_type
 class Status(dagger.Enum):
     """Enum for Status"""
 
-    ACTIVE = "ACTIVE", "Active status"
-    INACTIVE = "INACTIVE", "Inactive status"
+    ACTIVE = "ACTIVE value", "Active status"
+    INACTIVE = "INACTIVE value", "Inactive status"
 
 
 @dagger.object_type
@@ -1176,32 +1199,34 @@ class Test:
 
     @dagger.function
     def from_status(self, status: Status) -> str:
-        return str(status)
+        return status.value
 
     @dagger.function
     def from_status_opt(self, status: Status | None) -> str:
-        return str(status) if status else ""
+        return status.value if status else ""
 
     @dagger.function
     def to_status(self, status: str) -> Status:
-        # Doing "Status(proto)" will fail in Python, so mock
+        # Doing "Status(status)" will fail in Python, so mock
         # it to force sending the invalid value back to the server.
         class MockEnum(dagger.Enum):
-            INACTIVE = "INACTIVE"
+            ACTIVE = "ACTIVE value"
+            INACTIVE = "INACTIVE value"
             INVALID = "INVALID"
 
         return MockEnum(status)
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:             "typescript",
+				supportsMembers: false,
 				source: `import { func, object, enumType } from "@dagger.io/dagger"
 
 /**
  * Enum for Status
  */
 @enumType()
-class Status {
+export class Status {
   /**
    * Active status
    */
@@ -1218,8 +1243,7 @@ export class Test {
   @func()
   status: Status
 
-  // FIXME: this should be Status.Inactive instead of "INACTIVE"
-  constructor(status: Status = "INACTIVE") {
+  constructor(status: Status = Status.Inactive) {
     this.status = status
   }
 
@@ -1250,47 +1274,75 @@ export class Test {
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
 
-				// fromStatus
-				out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
-
-				out, err = modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+				// status property
+				out, err := modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.status").String())
 
+				// fromStatus
+				out, err = modGen.With(daggerQuery(`{test{fromStatus(status: ACTIVE)}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				if tc.supportsMembers {
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.fromStatus").String())
+				} else {
+					require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+				}
+
+				out, err = modGen.With(daggerQuery(`{test{fromStatus(status: INACTIVE)}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				if tc.supportsMembers {
+					require.Equal(t, "INACTIVE value", gjson.Get(out, "test.fromStatus").String())
+				} else {
+					require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
+				}
+
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// fromStatusOpt
 				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "", gjson.Get(out, "test.fromStatusOpt").String())
 
-				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "ACTIVE")}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: ACTIVE)}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatusOpt").String())
+				if tc.supportsMembers {
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.fromStatusOpt").String())
+				} else {
+					require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatusOpt").String())
+				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// toStatus
-				out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
+				if tc.supportsMembers {
+					out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE value")}}`)).Stdout(ctx)
+				} else {
+					out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
+				}
 				require.NoError(t, err)
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-				requireErrOut(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum member")
 
 				// introspection
 				mod := inspectModule(ctx, t, modGen)
 				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
 				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
-				require.Len(t, statusEnum.Get("values").Array(), 2)
-				require.Equal(t, "ACTIVE", statusEnum.Get("values.0.name").String())
-				require.Equal(t, "INACTIVE", statusEnum.Get("values.1.name").String())
-				require.Equal(t, "Active status", statusEnum.Get("values.0.description").String())
-				require.Equal(t, "Inactive status", statusEnum.Get("values.1.description").String())
+				require.Len(t, statusEnum.Get("members").Array(), 2)
+				require.Equal(t, "ACTIVE", statusEnum.Get("members.0.name").String())
+				require.Equal(t, "INACTIVE", statusEnum.Get("members.1.name").String())
+				if tc.supportsMembers {
+					require.Equal(t, "ACTIVE value", statusEnum.Get("members.0.value").String())
+					require.Equal(t, "INACTIVE value", statusEnum.Get("members.1.value").String())
+				} else {
+					require.Equal(t, "ACTIVE", statusEnum.Get("members.0.value").String())
+					require.Equal(t, "INACTIVE", statusEnum.Get("members.1.value").String())
+				}
+				require.Equal(t, "Active status", statusEnum.Get("members.0.description").String())
+				require.Equal(t, "Inactive status", statusEnum.Get("members.1.description").String())
 			})
 		}
 	})
@@ -1303,10 +1355,10 @@ type Status string
 
 const (
 	// Active status
-	Active Status = "ACTIVE"
+	Active Status = "ACTIVE value"
 
 	// Inactive status
-	Inactive Status = "INACTIVE"
+	Inactive Status = "INACTIVE value"
 )
 
 type Dep struct{}
@@ -1332,12 +1384,14 @@ func (m *Dep) Invert(status Status) Status {
 `
 
 		type testCase struct {
-			sdk    string
-			source string
+			sdk             string
+			supportsMembers bool
+			source          string
 		}
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:             "go",
+				supportsMembers: true,
 				source: `package main
 
 import (
@@ -1345,10 +1399,16 @@ import (
 	"dagger/test/internal/dagger"
 )
 
-type Test struct{}
+type Test struct {
+	Status dagger.DepStatus // +private
+}
+
+func New() *Test {
+	return &Test{Status: dagger.DepStatusActive}
+}
 
 func (m *Test) Active() (string) {
-	return string(dagger.DepStatusActive)
+	return string(m.Status)
 }
 
 func (m *Test) Inactive(ctx context.Context) (string, error) {
@@ -1365,15 +1425,20 @@ func (m *Test) Inactive(ctx context.Context) (string, error) {
 `,
 			},
 			{
-				sdk: "python",
-				source: `import dagger
+				sdk:             "python",
+				supportsMembers: true,
+				source: `import dataclasses
+
+import dagger
 from dagger import dag, DepStatus
 
 @dagger.object_type
 class Test:
+    status: DepStatus = dataclasses.field(default=DepStatus.ACTIVE, init=False)
+
     @dagger.function
     def active(self) -> str:
-        return str(DepStatus.ACTIVE)
+        return str(self.status)
 
     @dagger.function
     async def inactive(self) -> str:
@@ -1383,14 +1448,21 @@ class Test:
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:             "typescript",
+				supportsMembers: false,
 				source: `import { dag, func, object, DepStatus } from "@dagger.io/dagger"
 
 @object()
 export class Test {
+  status: DepStatus
+
+  constructor() {
+    this.status = DepStatus.Active;
+  }
+
   @func()
   active(): string {
-    return DepStatus.Active;
+    return this.status;
   }
 
   @func()
@@ -1414,13 +1486,21 @@ export class Test {
 
 				out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "ACTIVE", gjson.Get(out, "test.active").String())
-				require.Equal(t, "INACTIVE", gjson.Get(out, "test.inactive").String())
+				if tc.supportsMembers {
+					require.Equal(t, "ACTIVE value", gjson.Get(out, "test.active").String())
+					require.Equal(t, "INACTIVE value", gjson.Get(out, "test.inactive").String())
+				} else {
+					require.Equal(t, "ACTIVE", gjson.Get(out, "test.active").String())
+					require.Equal(t, "INACTIVE", gjson.Get(out, "test.inactive").String())
+				}
 			})
 		}
 	})
 
 	t.Run("custom conflicting enum type", func(ctx context.Context, t *testctx.T) {
+		// we can't define an enum with the values false/true/null
+		// however, these tests define FALSE/TRUE/NULL, which should be fine!
+
 		depSrc := `package main
 
 type Dep struct{}
@@ -1473,10 +1553,9 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 				With(withModInitAt("./dep", "go", depSrc)).
 				With(daggerExec("install", "./dep"))
 
-			_, err := modGen.With(daggerQuery(`{test{testBool}}`)).Stdout(ctx)
-			require.Error(t, err)
-			require.NoError(t, c.Close())
-			require.Contains(t, logs.String(), "invalid enum value false")
+			out, err := modGen.With(daggerQuery(`{test{testBool}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"test":{"testBool":"false"}}`, out)
 		})
 
 		t.Run("null", func(ctx context.Context, t *testctx.T) {
@@ -1487,10 +1566,9 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 				With(withModInitAt("./dep", "go", depSrc)).
 				With(daggerExec("install", "./dep"))
 
-			_, err := modGen.With(daggerQuery(`{test{testNull}}`)).Stdout(ctx)
-			require.Error(t, err)
-			require.NoError(t, c.Close())
-			require.Contains(t, logs.String(), "invalid enum value null")
+			out, err := modGen.With(daggerQuery(`{test{testNull}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"test":{"testNull":"null"}}`, out)
 		})
 	})
 }

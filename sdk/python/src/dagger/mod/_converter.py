@@ -9,7 +9,7 @@ from cattrs.preconf.json import make_converter as make_json_converter
 
 import dagger
 from dagger import dag
-from dagger.client._core import Arg
+from dagger.client._core import Arg, configure_converter_enum
 from dagger.client._guards import is_id_type, is_id_type_subclass
 from dagger.client.base import Interface, Scalar, Type
 from dagger.mod._resolver import Function
@@ -46,7 +46,6 @@ def make_converter():
         is_id_type_subclass,
         dagger_type_structure,
     )
-
     conv.register_unstructure_hook_func(
         lambda t: is_id_type_subclass(t) or is_dagger_interface_type(t),
         dagger_type_unstructure,
@@ -56,6 +55,8 @@ def make_converter():
         is_dagger_interface_type,
         dagger_interface_structure,
     )
+
+    configure_converter_enum(conv)
 
     return conv
 

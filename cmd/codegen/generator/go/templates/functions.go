@@ -1,12 +1,12 @@
 package templates
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"go/token"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -73,6 +73,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatName":              formatName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
+		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
 		"IsArgOptional":           funcs.isArgOptional,
@@ -170,10 +171,40 @@ func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
-	sort.SliceStable(s, func(i, j int) bool {
-		return s[i].Name < s[j].Name
+	s = slices.Clone(s)
+	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
+		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
+	})
+	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
+		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
 	})
 	return s
+}
+
+// groupEnumByValue returns a list of lists of enums, grouped by similar enum value.
+//
+// Additionally, enum names within a single value are removed (which would
+// result in duplicate codegen).
+func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
+			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+		}) {
+			m[value] = append(m[value], v)
+		}
+	}
+
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if res, ok := m[value]; ok {
+			result = append(result, res)
+			delete(m, value)
+		}
+	}
+	return result
 }
 
 func (funcs goTemplateFuncs) formatArrayField(fields []*introspection.Field) string {

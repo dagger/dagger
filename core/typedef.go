@@ -72,7 +72,7 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
-func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
+func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:        fn.Name,
 		Description: formatGqlDescription(fn.Description),
@@ -82,7 +82,15 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 		spec.Directives = append(spec.Directives, fn.SourceMap.TypeDirective())
 	}
 	for _, arg := range fn.Args {
-		input := arg.TypeDef.ToInput()
+		modType, ok, local, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
+		if err != nil {
+			return spec, fmt.Errorf("failed to get typedef for arg %q: %w", arg.Name, err)
+		}
+		if !ok {
+			return spec, fmt.Errorf("failed to get typedef for arg %q", arg.Name)
+		}
+
+		input := modType.TypeDef().ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
 			var val any
@@ -91,8 +99,9 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 			if err := dec.Decode(&val); err != nil {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
 			}
+
 			var err error
-			defaultVal, err = input.Decoder().DecodeInput(val)
+			defaultVal, err = modType.TypeDef().ToDefault(val, local)
 			if err != nil {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
 			}
@@ -415,6 +424,24 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	return typed
 }
 
+func (typeDef *TypeDef) ToDefault(val any, local bool) (dagql.Input, error) {
+	var typed dagql.Input
+
+	if typeDef.Kind == TypeDefKindEnum {
+		typed = &ModuleEnum{
+			TypeDef: typeDef.AsEnum.Value,
+			Local:   local,
+		}
+		if typeDef.Optional {
+			typed = dagql.DynamicOptional{Elem: typed}
+		}
+	} else {
+		typed = typeDef.ToInput()
+	}
+
+	return typed.Decoder().DecodeInput(val)
+}
+
 func (typeDef *TypeDef) ToType() *ast.Type {
 	return typeDef.ToTyped().Type()
 }
@@ -516,11 +543,35 @@ func (typeDef *TypeDef) WithEnum(name, desc string, sourceMap *SourceMap) *TypeD
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithEnumValue(name, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithEnumValue(name, value, desc string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
+	if err := typeDef.validateEnumMember(name, name); err != nil {
+		return nil, err
+	}
 
+	typeDef = typeDef.Clone()
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumValueTypeDef(name, value, desc, sourceMap))
+
+	return typeDef, nil
+}
+
+func (typeDef *TypeDef) WithEnumMember(name, value, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+	if !typeDef.AsEnum.Valid {
+		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
+	}
+	if err := typeDef.validateEnumMember(name, value); err != nil {
+		return nil, err
+	}
+
+	typeDef = typeDef.Clone()
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, sourceMap))
+
+	return typeDef, nil
+}
+
+func (typeDef *TypeDef) validateEnumMember(name, value string) error {
 	// Validate if the enum follows GraphQL spec.
 	// A GraphQL enum should be: only letters, digits and underscores, and has to start with a letter or a single underscore.
 	// To do so, we can use a regular expression.
@@ -529,22 +580,21 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string, sourceMap *SourceMap) (
 	// [a-zA-Z0-9_]*: Following characters can be letters, digits, or underscores (zero or more times)
 	// $            : End of the string
 	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
-
 	if !regexp.MustCompile(pattern).MatchString(name) {
-		return nil, fmt.Errorf("enum value %q is not valid (only letters, digits and underscores are allowed)", name)
+		return fmt.Errorf("enum name %q is not valid (only letters, digits and underscores are allowed)", name)
 	}
 
 	// Verify if the enum value is duplicated.
-	for _, v := range typeDef.AsEnum.Value.Values {
+	for _, v := range typeDef.AsEnum.Value.Members {
 		if v.Name == name {
-			return nil, fmt.Errorf("enum value %q is already defined", name)
+			return fmt.Errorf("enum %q is already defined", name)
+		}
+		if v.Value != "" && v.Value == value {
+			return fmt.Errorf("enum %q is already defined with value %q", v.Name, value)
 		}
 	}
 
-	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Values = append(typeDef.AsEnum.Value.Values, NewEnumValueTypeDef(name, desc, sourceMap))
-
-	return typeDef, nil
+	return nil
 }
 
 func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
@@ -941,10 +991,10 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 
 type EnumTypeDef struct {
 	// Name is the standardized name of the enum (CamelCase), as used for the enum in the graphql schema
-	Name        string              `field:"true" doc:"The name of the enum."`
-	Description string              `field:"true" doc:"A doc string for the enum, if any."`
-	Values      []*EnumValueTypeDef `field:"true" doc:"The values of the enum."`
-	SourceMap   *SourceMap          `field:"true" doc:"The location of this enum declaration."`
+	Name        string               `field:"true" doc:"The name of the enum."`
+	Description string               `field:"true" doc:"A doc string for the enum, if any."`
+	Members     []*EnumMemberTypeDef `field:"true" doc:"The members of the enum."`
+	SourceMap   *SourceMap           `field:"true" doc:"The location of this enum declaration."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
 	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -967,20 +1017,6 @@ func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
 }
 
-// Implements dagql.Enum interface
-func (enum *EnumTypeDef) ListValues() ast.EnumValueList {
-	var values ast.EnumValueList
-
-	for _, val := range enum.Values {
-		values = append(values, &ast.EnumValueDefinition{
-			Name:        val.Name,
-			Description: val.Description,
-		})
-	}
-
-	return values
-}
-
 func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef {
 	return &EnumTypeDef{
 		Name:         strcase.ToCamel(name),
@@ -993,9 +1029,9 @@ func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef
 func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	cp := enum
 
-	cp.Values = make([]*EnumValueTypeDef, len(enum.Values))
-	for i, value := range enum.Values {
-		cp.Values[i] = value.Clone()
+	cp.Members = make([]*EnumMemberTypeDef, len(enum.Members))
+	for i, value := range enum.Members {
+		cp.Members[i] = value.Clone()
 	}
 	if enum.SourceMap != nil {
 		cp.SourceMap = enum.SourceMap.Clone()
@@ -1004,32 +1040,49 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	return &cp
 }
 
-type EnumValueTypeDef struct {
-	Name        string     `field:"true" doc:"The name of the enum value."`
-	Description string     `field:"true" doc:"A doc string for the enum value, if any."`
-	SourceMap   *SourceMap `field:"true" doc:"The location of this enum value declaration."`
+type EnumMemberTypeDef struct {
+	Name        string     `field:"true" doc:"The name of the enum member."`
+	Value       string     `field:"true" doc:"The value of the enum member"`
+	Description string     `field:"true" doc:"A doc string for the enum member, if any."`
+	SourceMap   *SourceMap `field:"true" doc:"The location of this enum member declaration."`
+
+	OriginalName string
 }
 
-func (*EnumValueTypeDef) Type() *ast.Type {
+func (*EnumMemberTypeDef) Type() *ast.Type {
 	return &ast.Type{
+		// FIXME: currently preserved as a legacy type (since we don't support
+		// renaming types)
 		NamedType: "EnumValueTypeDef",
 		NonNull:   true,
 	}
 }
 
-func (*EnumValueTypeDef) TypeDescription() string {
+func (*EnumMemberTypeDef) TypeDescription() string {
 	return "A definition of a value in a custom enum defined in a Module."
 }
 
-func NewEnumValueTypeDef(name, description string, sourceMap *SourceMap) *EnumValueTypeDef {
-	return &EnumValueTypeDef{
-		Name:        name,
-		Description: description,
-		SourceMap:   sourceMap,
+func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
+	return &EnumMemberTypeDef{
+		OriginalName: name,
+		Name:         strcase.ToScreamingSnake(name),
+		Value:        value,
+		Description:  description,
+		SourceMap:    sourceMap,
 	}
 }
 
-func (enumValue EnumValueTypeDef) Clone() *EnumValueTypeDef {
+func NewEnumValueTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
+	return &EnumMemberTypeDef{
+		OriginalName: name,
+		Name:         value,
+		Value:        value,
+		Description:  description,
+		SourceMap:    sourceMap,
+	}
+}
+
+func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 	cp := enumValue
 
 	if enumValue.SourceMap != nil {
@@ -1037,6 +1090,27 @@ func (enumValue EnumValueTypeDef) Clone() *EnumValueTypeDef {
 	}
 
 	return &cp
+}
+
+func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
+	if enumValue.Value == "" {
+		return nil
+	}
+
+	return []*ast.Directive{
+		{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  enumValue.Value,
+					},
+				},
+			},
+		},
+	}
 }
 
 type TypeDefKind string
@@ -1048,41 +1122,53 @@ func (k TypeDefKind) String() string {
 var TypeDefKinds = dagql.NewEnum[TypeDefKind]()
 
 var (
-	TypeDefKindString = TypeDefKinds.Register("STRING_KIND",
-		"A string value.")
+	TypeDefKindString = TypeDefKinds.Register("STRING_KIND", "A string value.")
+	_                 = TypeDefKinds.AliasView("STRING", "STRING_KIND", enumView)
 
-	TypeDefKindFloat = TypeDefKinds.Register("FLOAT_KIND",
-		"A float value.")
+	TypeDefKindInteger = TypeDefKinds.Register("INTEGER_KIND", "An integer value.")
+	_                  = TypeDefKinds.AliasView("INTEGER", "INTEGER_KIND", enumView)
 
-	TypeDefKindInteger = TypeDefKinds.Register("INTEGER_KIND",
-		"An integer value.")
-	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND",
-		"A boolean value.")
-	TypeDefKindScalar = TypeDefKinds.Register("SCALAR_KIND",
-		"A scalar value of any basic kind.")
+	TypeDefKindFloat = TypeDefKinds.Register("FLOAT_KIND", "A float value.")
+	_                = TypeDefKinds.AliasView("FLOAT", "FLOAT_KIND", enumView)
+
+	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND", "A boolean value.")
+	_                  = TypeDefKinds.AliasView("BOOLEAN", "BOOLEAN_KIND", enumView)
+
+	TypeDefKindScalar = TypeDefKinds.Register("SCALAR_KIND", "A scalar value of any basic kind.")
+	_                 = TypeDefKinds.AliasView("SCALAR", "SCALAR_KIND", enumView)
+
 	TypeDefKindList = TypeDefKinds.Register("LIST_KIND",
-		"A list of values all having the same type.",
-		"Always paired with a ListTypeDef.")
+		"Always paired with a ListTypeDef.",
+		"A list of values all having the same type.")
+	_ = TypeDefKinds.AliasView("LIST", "LIST_KIND", enumView)
+
 	TypeDefKindObject = TypeDefKinds.Register("OBJECT_KIND",
-		"A named type defined in the GraphQL schema, with fields and functions.",
-		"Always paired with an ObjectTypeDef.")
+		"Always paired with an ObjectTypeDef.",
+		"A named type defined in the GraphQL schema, with fields and functions.")
+	_ = TypeDefKinds.AliasView("OBJECT", "OBJECT_KIND", enumView)
+
 	TypeDefKindInterface = TypeDefKinds.Register("INTERFACE_KIND",
-		`A named type of functions that can be matched+implemented by other
-		objects+interfaces.`,
-		"Always paired with an InterfaceTypeDef.")
+		"Always paired with an InterfaceTypeDef.",
+		`A named type of functions that can be matched+implemented by other objects+interfaces.`)
+	_ = TypeDefKinds.AliasView("INTERFACE", "INTERFACE_KIND", enumView)
+
 	TypeDefKindInput = TypeDefKinds.Register("INPUT_KIND",
-		`A graphql input type, used only when representing the core API via TypeDefs.`,
-	)
+		`A graphql input type, used only when representing the core API via TypeDefs.`)
+	_ = TypeDefKinds.AliasView("INPUT", "INPUT_KIND", enumView)
+
 	TypeDefKindVoid = TypeDefKinds.Register("VOID_KIND",
 		"A special kind used to signify that no value is returned.",
 		`This is used for functions that have no return value. The outer TypeDef
 		specifying this Kind is always Optional, as the Void is never actually
 		represented.`,
 	)
+	_ = TypeDefKinds.AliasView("VOID", "VOID_KIND", enumView)
+
 	TypeDefKindEnum = TypeDefKinds.Register("ENUM_KIND",
 		"A GraphQL enum type and its values",
 		"Always paired with an EnumTypeDef.",
 	)
+	_ = TypeDefKinds.AliasView("ENUM", "ENUM_KIND", enumView)
 )
 
 func (k TypeDefKind) Type() *ast.Type {

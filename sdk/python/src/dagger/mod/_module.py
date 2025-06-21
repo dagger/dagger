@@ -11,13 +11,15 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
 import anyio
-import anyio.to_thread
 import cattrs
 import cattrs.gen
+from cattrs.preconf import is_primitive_enum
+from cattrs.preconf.json import JsonConverter
 from typing_extensions import dataclass_transform, overload
 
 import dagger
 from dagger import dag
+from dagger.client._core import configure_converter_enum
 from dagger.mod._arguments import Parameter
 from dagger.mod._converter import make_converter, to_typedef
 from dagger.mod._exceptions import (
@@ -60,7 +62,7 @@ class Module:
 
     def __init__(self, name: str = os.getenv("DAGGER_MODULE_NAME", "")):
         self.name: str = name
-        self._converter: cattrs.Converter = make_converter()
+        self._converter: JsonConverter = make_converter()
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
@@ -121,7 +123,7 @@ class Module:
             if self.is_main(obj_type):
                 # Only the main object's constructor is needed.
                 # It's the entrypoint to the module.
-                obj_type.add_constructor()
+                obj_type.get_constructor(self._converter)
 
                 # Module description from main object's parent module
                 if desc := get_parent_module_doc(obj_type.cls):
@@ -189,8 +191,9 @@ class Module:
         for name, cls in self._enums.items():
             enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
             for member in cls:
-                enum_def = enum_def.with_enum_value(
-                    str(member.value),
+                enum_def = enum_def.with_enum_member(
+                    str(member.name),
+                    value=str(member.value),
                     description=getattr(member, "description", None),
                 )
             mod = mod.with_enum(enum_def)
@@ -266,7 +269,7 @@ class Module:
         obj_type = self.get_object(parent_name)
 
         if name == "":
-            fn = obj_type.get_constructor()
+            fn = obj_type.get_constructor(self._converter)
         else:
             parent = await self._get_parent_instance(obj_type.cls, parent_state)
 
@@ -571,8 +574,12 @@ class Module:
             return hasattr(fn, FUNCTION_DEF_KEY)
 
         for _, meth in inspect.getmembers(cls, _is_function):
-            fn = Function(meth, getattr(meth, FUNCTION_DEF_KEY))
-            fn.origin = cls
+            fn = Function(
+                meth,
+                meta=getattr(meth, FUNCTION_DEF_KEY),
+                origin=cls,
+                converter=self._converter,
+            )
             obj_def.functions[fn.name] = fn
 
         if interface:
@@ -683,11 +690,6 @@ class Module:
             class Options(dagger.Enum):
                 ONE = "ONE", "The first value"
                 TWO = "TWO", "The second value"
-
-
-        .. note::
-            Only the values and their descriptions are reported to the
-            Dagger API. The member's name is only used in Python.
         """
 
         def wrapper(cls: T) -> T:
@@ -701,6 +703,14 @@ class Module:
 
             cls = cast(T, enum.unique(cls))
             self._enums.setdefault(cls.__name__, cls)
+
+            # Primitive enums get converted based on their primitive type rather
+            # than the custom hook for converting based on member names so we
+            # need to register the hooks for each specific class. Not necessary
+            # to add hooks for non-primitive enums because those are already
+            # handled by the general enum.Enum subclass check.
+            if is_primitive_enum(cls):
+                configure_converter_enum(self._converter, cls)
 
             return cls
 

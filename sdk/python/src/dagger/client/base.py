@@ -16,7 +16,7 @@ class Scalar(str):
     __slots__ = ()
 
 
-class Enum(str, enum.Enum):
+class Enum(enum.Enum):
     """Custom enumeration."""
 
     __slots__ = ()

@@ -6671,6 +6671,10 @@
                         <td> A unique identifier for this EnumTypeDef. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-members" href="#EnumTypeDef-members"><code>members</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td> The members of the enum. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-name" href="#EnumTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the enum. </td>
                       </tr>
@@ -6683,8 +6687,10 @@
                         <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td> The values of the enum. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td>
+                          <span class="deprecation-reason">use members instead</span>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6729,7 +6735,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-description" href="#EnumValueTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> A doc string for the enum value, if any. </td>
+                        <td> A doc string for the enum member, if any. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-id" href="#EnumValueTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span> </td>
@@ -6737,11 +6743,15 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-name" href="#EnumValueTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the enum value. </td>
+                        <td> The name of the enum member. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
-                        <td> The location of this enum value declaration. </td>
+                        <td> The location of this enum member declaration. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-value" href="#EnumValueTypeDef-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The value of the enum member </td>
                       </tr>
                     </tbody>
                   </table>
@@ -8899,6 +8909,34 @@
                         <td>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <p><code>GZIP</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ZSTD</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ESTARGZ</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>UNCOMPRESSED</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8943,6 +8981,20 @@
                       <tr>
                         <td>
                           <p><code>DockerMediaTypes</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OCI</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DOCKER</code></p>
                         </td>
                         <td>
                         </td>
@@ -10080,6 +10132,27 @@
                         <td>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <p><code>LOCAL</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>GIT</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIR</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -11021,8 +11094,38 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumMember" href="#TypeDef-withEnumMember"><code>withEnumMember</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
                         <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The value of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the member, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum member definition.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. <span class="deprecation-reason">Use <code>withEnumMember</code> instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11253,15 +11356,15 @@
                       </tr>
                       <tr>
                         <td>
-                          <p><code>FLOAT_KIND</code></p>
-                        </td>
-                        <td> A float value. </td>
-                      </tr>
-                      <tr>
-                        <td>
                           <p><code>INTEGER_KIND</code></p>
                         </td>
                         <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
                       </tr>
                       <tr>
                         <td>
@@ -11280,8 +11383,8 @@
                           <p><code>LIST_KIND</code></p>
                         </td>
                         <td>
-                          <p>A list of values all having the same type.</p>
                           <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11289,8 +11392,8 @@
                           <p><code>OBJECT_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                           <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11298,8 +11401,8 @@
                           <p><code>INTERFACE_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                           <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11320,6 +11423,87 @@
                       <tr>
                         <td>
                           <p><code>ENUM_KIND</code></p>
+                        </td>
+                        <td>
+                          <p>A GraphQL enum type and its values</p>
+                          <p>Always paired with an EnumTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>STRING</code></p>
+                        </td>
+                        <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTEGER</code></p>
+                        </td>
+                        <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT</code></p>
+                        </td>
+                        <td> A float value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>BOOLEAN</code></p>
+                        </td>
+                        <td> A boolean value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SCALAR</code></p>
+                        </td>
+                        <td> A scalar value of any basic kind. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LIST</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OBJECT</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTERFACE</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INPUT</code></p>
+                        </td>
+                        <td> A graphql input type, used only when representing the core API via TypeDefs. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>VOID</code></p>
+                        </td>
+                        <td>
+                          <p>A special kind used to signify that no value is returned.</p>
+                          <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ENUM</code></p>
                         </td>
                         <td>
                           <p>A GraphQL enum type and its values</p>

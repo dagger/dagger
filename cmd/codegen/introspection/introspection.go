@@ -345,6 +345,14 @@ func (t *Directives) SourceMap() *SourceMap {
 	}
 }
 
+func (t *Directives) EnumValue() string {
+	d := t.Directive("enumValue")
+	if d == nil {
+		return ""
+	}
+	return fromJSON[string](*d.Arg("value").Value)
+}
+
 type Directive struct {
 	Name string          `json:"name"`
 	Args []*DirectiveArg `json:"args"`

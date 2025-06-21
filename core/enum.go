@@ -37,20 +37,17 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 		slog.Warn("%T.ConvertFromSDKResult: got nil value", m)
 		return nil, nil
 	}
+	if enum, ok := value.(*ModuleEnum); ok {
+		value = enum.Name
+	}
 
 	switch value := value.(type) {
 	case string:
-		decoder, err := m.getDecoder(ctx)
+		enum, err := m.getEnum(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get decoder: %w", m, err)
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
 		}
-
-		val, err := decoder.DecodeInput(value)
-		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
-		}
-
-		return val, nil
+		return enum.DecodeInput(value)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -60,33 +57,53 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if value == nil {
 		return nil, nil
 	}
-	decoder, err := m.getDecoder(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%T.ConvertToSDKInput: failed to get decoder: %w", m, err)
+	var input any = value
+	if enum, ok := value.(*ModuleEnum); ok {
+		input = enum.Name
 	}
-	return decoder.DecodeInput(value)
+
+	base, err := m.getEnum(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
+	}
+
+	decoder := *base
+	decoder.Local = false
+	result, err := decoder.DecodeInput(input)
+	if err != nil {
+		return nil, err
+	}
+	enum := result.(*ModuleEnum)
+	if base.Local {
+		return enum.memberTypedef().OriginalName, nil
+	}
+	return enum.memberTypedef().Name, nil
 }
 
 func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
-func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, error) {
+func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	// Check the dependencies
 	srv, err := m.mod.Deps.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
 	}
 
-	enumType, ok := srv.ScalarType(m.typeDef.Name)
+	scalar, ok := srv.ScalarType(m.typeDef.Name)
 	if ok {
-		return enumType, nil
+		enum, ok := scalar.(*ModuleEnum)
+		if !ok {
+			return nil, fmt.Errorf("%T.getDecoder: incorrect type %T for scalar", m, scalar)
+		}
+		return enum, nil
 	}
 
 	// If not check if the enum is part of its own module
 	for _, enumTypeDef := range m.mod.EnumDefs {
 		if enumTypeDef.AsEnum.Value.Name == m.typeDef.Name {
-			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value}, nil
+			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value, Local: true}, nil
 		}
 	}
 
@@ -95,7 +112,13 @@ func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, er
 
 type ModuleEnum struct {
 	TypeDef *EnumTypeDef
-	Value   string
+	Name    string
+
+	// Local marks this enum value as local to the module that declares its
+	// typedef. This is so that when converting it to/from it's own module we
+	// can use its OriginalName, but when converting it for other modules, we
+	// use the declared Name.
+	Local bool
 }
 
 func (e *ModuleEnum) TypeName() string {
@@ -128,10 +151,15 @@ func (e *ModuleEnum) TypeDefinition(view dagql.View) *ast.Definition {
 
 func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
-	for _, val := range e.TypeDef.Values {
+	for _, val := range e.TypeDef.Members {
+		name := val.Name
+		if e.Local && val.OriginalName != "" {
+			name = val.OriginalName
+		}
 		def := &ast.EnumValueDefinition{
-			Name:        val.Name,
+			Name:        name,
 			Description: val.Description,
+			Directives:  val.EnumValueDirectives(),
 		}
 		if val.SourceMap != nil {
 			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
@@ -148,7 +176,7 @@ func (e *ModuleEnum) Install(dag *dagql.Server) error {
 }
 
 func (e *ModuleEnum) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(e.Value)
+	return call.NewLiteralEnum(e.Name)
 }
 
 func (e *ModuleEnum) Decoder() dagql.InputDecoder {
@@ -160,22 +188,39 @@ func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 	if err != nil {
 		return nil, err
 	}
-	return e.Lookup(v.(*dagql.EnumValueName).Value)
+	return e.Lookup(v.(*dagql.EnumValueName).Name)
 }
 
 func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
-	for _, possible := range e.TypeDef.Values {
-		if val == possible.Name {
+	if len(e.TypeDef.Members) == 0 {
+		// this is a fairly good indication that something wrong has happened internally
+		return nil, fmt.Errorf("enum %s has no members", e.TypeName())
+	}
+	for _, possible := range e.TypeDef.Members {
+		name := possible.Name
+		if e.Local && possible.OriginalName != "" {
+			name = possible.OriginalName
+		}
+		if val == name {
 			return &ModuleEnum{
 				TypeDef: e.TypeDef,
-				Value:   possible.Name,
+				Name:    possible.Name,
 			}, nil
 		}
 	}
 
-	return nil, fmt.Errorf("invalid enum value %q", val)
+	return nil, fmt.Errorf("invalid enum member %q for %s", val, e.TypeName())
+}
+
+func (e *ModuleEnum) memberTypedef() *EnumMemberTypeDef {
+	for _, possible := range e.TypeDef.Members {
+		if possible.Name == e.Name {
+			return possible
+		}
+	}
+	return nil
 }
 
 func (e *ModuleEnum) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.Value)
+	return json.Marshal(e.Name)
 }

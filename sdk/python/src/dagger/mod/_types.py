@@ -20,7 +20,7 @@ class FunctionDefinition:
     doc: str | None = None
 
 
-class Enum(base.Enum):
+class Enum(str, base.Enum):
     """A string based :py:class:`enum.Enum` with optional descriptions for the values.
 
     Example usage::

@@ -14,6 +14,7 @@ from typing import (
 )
 
 from beartype.door import TypeHint
+from cattrs.preconf.json import JsonConverter, make_converter
 from typing_extensions import Self, TypeVar, override
 
 from dagger.mod._arguments import Parameter
@@ -57,6 +58,7 @@ class Function(Generic[P, R]):
     meta: FunctionDefinition = dataclasses.field(default_factory=FunctionDefinition)
     original_name: PythonName = dataclasses.field(init=False)
     origin: type | None = dataclasses.field(default=None)
+    converter: JsonConverter = dataclasses.field(default_factory=make_converter)
 
     def __post_init__(self):
         self.original_name = self.wrapped.__name__
@@ -131,6 +133,7 @@ class Function(Generic[P, R]):
             doc=get_doc(param.annotation),
             ignore=get_ignore(param.annotation),
             default_path=get_default_path(param.annotation),
+            conv=self.converter,
         )
 
     @property
@@ -225,12 +228,11 @@ class ObjectType(Generic[T]):
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 
-    def add_constructor(self):
-        self.functions[""] = Constructor(self.cls)
-
-    def get_constructor(self):
+    def get_constructor(self, conv: JsonConverter | None = None):
         if "" not in self.functions:
-            self.add_constructor()
+            self.functions[""] = Constructor(self.cls)
+        if conv is not None:
+            self.functions[""].converter = conv
         return self.functions[""]
 
     def get_bound_function(self, parent: object, name: str) -> Function:

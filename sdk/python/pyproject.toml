@@ -27,7 +27,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "anyio>=3.6.2",
-    "cattrs>=24.1.0",
+    "cattrs>=25.1.0",
     "gql[httpx]>=3.5.0",
     "beartype>=0.18.2",
     "platformdirs>=2.6.2",
