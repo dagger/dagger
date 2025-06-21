@@ -32,7 +32,6 @@ class Docs:
         """Build and preview the documentation in the browser."""
         return (
             self.container.with_(mounted_workdir(self.build()))
-            .with_exec(["uv", "run", "python", "-m", "http.server", str(bind)])
             .with_exposed_port(bind)
-            .as_service()
+            .as_service(args=["uv", "run", "python", "-m", "http.server", str(bind)])
         )

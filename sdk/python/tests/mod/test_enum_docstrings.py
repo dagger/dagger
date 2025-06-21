@@ -1,5 +1,8 @@
 import enum
 
+import pytest
+
+import dagger
 from dagger.mod._utils import extract_enum_member_doc
 
 
@@ -32,3 +35,11 @@ def test_extract_enum_member_doc_no_docs():
     docs = extract_enum_member_doc(EmptyEnum)
 
     assert docs == {}
+
+
+def test_enum_deprecation():
+    with pytest.warns(DeprecationWarning, match="Use 'enum.Enum' instead"):
+
+        class DeprecatedEnum(dagger.Enum):
+            FIRST = "first", "This is the first option"
+            SECOND = "second", "This is the second option"

@@ -1183,14 +1183,19 @@ func (m *Test) ToStatus(status string) Status {
 			{
 				sdk:             "python",
 				supportsMembers: true,
-				source: `import dagger
+				source: `import enum
+
+import dagger
 
 @dagger.enum_type
-class Status(dagger.Enum):
+class Status(enum.Enum):
     """Enum for Status"""
 
-    ACTIVE = "ACTIVE value", "Active status"
-    INACTIVE = "INACTIVE value", "Inactive status"
+    ACTIVE = "ACTIVE value"
+    """Active status"""
+
+    INACTIVE = "INACTIVE value"
+    """Inactive status"""
 
 
 @dagger.object_type
@@ -1209,7 +1214,7 @@ class Test:
     def to_status(self, status: str) -> Status:
         # Doing "Status(status)" will fail in Python, so mock
         # it to force sending the invalid value back to the server.
-        class MockEnum(dagger.Enum):
+        class MockEnum(enum.Enum):
             ACTIVE = "ACTIVE value"
             INACTIVE = "INACTIVE value"
             INVALID = "INVALID"

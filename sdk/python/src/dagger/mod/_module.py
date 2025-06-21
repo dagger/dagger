@@ -669,15 +669,9 @@ class Module:
     def enum_type(self) -> Callable[[T], T]: ...
 
     def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
-        """Exposes a Python :py:class:`enum.Enum` as a :py:class:`dagger.EnumTypeDef`.
+        '''Exposes a Python :py:class:`enum.Enum` as a :py:class:`dagger.EnumTypeDef`.
 
-        The Dagger Python SDK looks for a ``description`` attribute in the enum
-        member. There's a convenience base class :py:class:`dagger.Enum` that
-        makes it easy to specify those descriptions as a second value.
-
-        Examples
-        --------
-        Basic usage::
+        Example usage::
 
             import enum
             import dagger
@@ -685,20 +679,14 @@ class Module:
 
             @dagger.enum_type
             class Options(enum.Enum):
+                """Enumeration description"""
+
                 ONE = "ONE"
+                """Description for the first value"""
+
                 TWO = "TWO"
-
-
-        Using convenience base class for descriptions::
-
-            import dagger
-
-
-            @dagger.enum_type
-            class Options(dagger.Enum):
-                ONE = "ONE", "The first value"
-                TWO = "TWO", "The second value"
-        """
+                """Description for the second value"""
+        '''
 
         def wrapper(cls: T) -> T:
             if not inspect.isclass(cls):
