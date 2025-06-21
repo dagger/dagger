@@ -2542,13 +2542,14 @@ func (m *Test) Official() []Language {
 		{
 			sdk: "python",
 			source: `from typing import Final
+import enum
 
 import dagger
 from dagger import dag
 
 
 @dagger.enum_type
-class Language(dagger.Enum):
+class Language(enum.Enum):
     GO = "GO" 
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
@@ -2556,14 +2557,14 @@ class Language(dagger.Enum):
     ELIXIR = "ELIXIR"
 
 
-FAVES: Final = [Language.GO, Language.PYTHON]
+FAVES: Final[Language] = [Language.GO, Language.PYTHON]
 
 
 @dagger.object_type
 class Test:
     @dagger.function
     def faves(self, langs: list[Language] = FAVES) -> str:
-        return " ".join(langs)
+        return " ".join(lang.value for lang in langs)
 
     @dagger.function
     def official(self) -> list[Language]:

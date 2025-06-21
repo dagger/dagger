@@ -1199,11 +1199,11 @@ class Test:
 
     @dagger.function
     def from_status(self, status: Status) -> str:
-        return str(status)
+        return status.value
 
     @dagger.function
     def from_status_opt(self, status: Status | None) -> str:
-        return str(status) if status else ""
+        return status.value if status else ""
 
     @dagger.function
     def to_status(self, status: str) -> Status:
@@ -1427,8 +1427,9 @@ func (m *Test) Inactive(ctx context.Context) (string, error) {
 			{
 				sdk:             "python",
 				supportsMembers: true,
-				source: `import dagger
-import dataclasses
+				source: `import dataclasses
+
+import dagger
 from dagger import dag, DepStatus
 
 @dagger.object_type

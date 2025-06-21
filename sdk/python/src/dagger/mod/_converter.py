@@ -9,12 +9,10 @@ from cattrs.preconf.json import make_converter as make_json_converter
 
 import dagger
 from dagger import dag
-from dagger.client import base
-from dagger.client._core import Arg
+from dagger.client._core import Arg, configure_converter_enum
 from dagger.client._guards import is_id_type, is_id_type_subclass
 from dagger.client.base import Interface, Scalar, Type
 from dagger.mod._resolver import Function
-from dagger.mod._types import Enum
 from dagger.mod._utils import (
     get_doc,
     get_module,
@@ -53,25 +51,12 @@ def make_converter():
         dagger_type_unstructure,
     )
 
-    def to_enum_name(val: enum.Enum) -> str:
-        return val.name
-
-    def from_enum_name(name: str, cls: type[enum.Enum]) -> enum.Enum:
-        return cls[name]
-
-    conv.register_unstructure_hook(enum.Enum, to_enum_name)
-    conv.register_structure_hook(enum.Enum, from_enum_name)
-
-    conv.register_unstructure_hook(base.Enum, to_enum_name)
-    conv.register_structure_hook(base.Enum, from_enum_name)
-
-    conv.register_unstructure_hook(Enum, to_enum_name)
-    conv.register_structure_hook(Enum, from_enum_name)
-
     conv.register_structure_hook_func(
         is_dagger_interface_type,
         dagger_interface_structure,
     )
+
+    configure_converter_enum(conv)
 
     return conv
 
