@@ -13,6 +13,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/engine/slog"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
@@ -178,10 +179,65 @@ func (s *ShellStateStore) Prune(ctx context.Context) int {
 	return count
 }
 
-func (s *ShellStateStore) debug(ctx context.Context) {
+func (s *ShellStateStore) debug(ctx context.Context, dump bool) {
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	// Dumping the full states in the store can be useful to debug issues related
+	// to managing state but it can generate a bunch of hard to read output so
+	// tailor to verbosity level.
+
+	if verbose < 2 {
+		s.mu.RLock()
+		size := len(s.data)
+		s.mu.RUnlock()
+		slog.Debug("state store", "items", size)
+		return
+	}
+
+	if !dump || verbose < 4 {
+		s.mu.RLock()
+		keys := slices.Collect(maps.Keys(s.data))
+		s.mu.RUnlock()
+		slog.Debug("state store", "items", keys)
+		return
+	}
+
 	s.mu.RLock()
-	shellDebug(ctx, "State dump", slices.Collect(maps.Values(s.data)))
+	states := slices.Collect(maps.Values(s.data))
 	s.mu.RUnlock()
+
+	for _, st := range states {
+		slog.Debug("state store dump", spreadDebugArgs(&st)...)
+	}
+}
+
+func spreadDebugArgs(args ...any) []any {
+	a := []any{}
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case *ShellState:
+			if t == nil {
+				a = append(a, "state", nil)
+				continue
+			}
+			a = append(a, "key", t.Key)
+			if t.ModDigest != "" {
+				a = append(a, "module", t.ModDigest)
+			}
+			if t.Cmd != "" {
+				a = append(a, "namespace", t.Cmd)
+			}
+			if len(t.Calls) > 0 {
+				a = append(a, "calls", t.Calls)
+			}
+			if t.Error != nil {
+				a = append(a, "error", t.Error)
+			}
+		default:
+			a = append(a, arg)
+		}
+	}
+	return a
 }
 
 // ShellState is an intermediate representation of a query
@@ -264,6 +320,12 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	}
 	nkey := h.state.Store(st)
 	w := interp.HandlerCtx(ctx).Stdout
+
+	if debug && h.Debug() {
+		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+		slog.Debug("saving state", spreadDebugArgs(&st, "newKey", nkey)...)
+	}
+
 	_, err := w.Write([]byte(newStateToken(nkey)))
 	return err
 }
@@ -419,7 +481,9 @@ func (h *shellCallHandler) resolveState(ctx context.Context, key string) (string
 	if err != nil {
 		return "", err
 	}
+	h.mu.Lock()
 	h.lastResult = r
+	h.mu.Unlock()
 	return r.String()
 }
 

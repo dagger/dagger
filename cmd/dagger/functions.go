@@ -632,6 +632,7 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
 	query, _ := q.Build(ctx)
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Debug("executing query", "query", query)
 
 	q = q.Bind(&response)

@@ -154,7 +154,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	if err != nil {
 		return err
 	}
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "Command: "+c.Name(), a, st)
 	}
 	return c.Run(ctx, c, a, st)
@@ -311,7 +311,10 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			State:  NoState,
 			Run: func(_ context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
+				// while developing or troubleshooting what happens in each step
+				h.mu.Lock()
 				h.debug = !h.debug
+				h.mu.Unlock()
 				return nil
 			},
 		},
@@ -511,7 +514,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				if h.debug {
+				if h.Debug() {
 					shellDebug(ctx, "Workdir", h.Workdir())
 				}
 				return h.Print(ctx, h.Pwd())
@@ -684,11 +687,6 @@ Without arguments, the current working directory is replaced by the initial cont
 					if err != nil {
 						return err
 					}
-
-					if h.debug {
-						shellDebug(ctx, "Stdout (stdlib)", fn.CmdName(), args, st)
-					}
-
 					return h.Save(ctx, *st)
 				},
 				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
