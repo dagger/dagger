@@ -12,6 +12,7 @@ import {
   DaggerObject,
   DaggerObjectBase,
   DaggerTypeObject,
+  DaggerEnumClass,
 } from "../introspector/dagger_module/index.js"
 import { TypeDef } from "../introspector/typedef.js"
 import { InvokeCtx } from "./context.js"
@@ -152,19 +153,19 @@ export async function loadValue(
   }
 
   switch (type.kind) {
-    case TypeDefKind.ListKind:
+    case TypeDefKind.List:
       return Promise.all(
         value.map(
           async (v: any) =>
             await loadValue(
               executor,
               v,
-              (type as TypeDef<TypeDefKind.ListKind>).typeDef,
+              (type as TypeDef<TypeDefKind.List>).typeDef,
             ),
         ),
       )
-    case TypeDefKind.ObjectKind: {
-      const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
+    case TypeDefKind.Object: {
+      const objectType = (type as TypeDef<TypeDefKind.Object>).name
 
       // Workaround to call get any object that has an id
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -177,19 +178,23 @@ export async function loadValue(
 
       return executor.buildClass(objectType, value)
     }
-    case TypeDefKind.InterfaceKind: {
-      const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
+    case TypeDefKind.Interface: {
+      const interfaceType = (type as TypeDef<TypeDefKind.Interface>).name
 
       return executor.buildInterface(interfaceType, value)
     }
+    case TypeDefKind.Enum: {
+      const enumType = (type as TypeDef<TypeDefKind.Enum>).name
+
+      return executor.buildEnum(enumType, value)
+    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
-    case TypeDefKind.StringKind:
-    case TypeDefKind.IntegerKind:
-    case TypeDefKind.BooleanKind:
-    case TypeDefKind.FloatKind:
-    case TypeDefKind.VoidKind:
-    case TypeDefKind.ScalarKind:
-    case TypeDefKind.EnumKind:
+    case TypeDefKind.String:
+    case TypeDefKind.Integer:
+    case TypeDefKind.Boolean:
+    case TypeDefKind.Float:
+    case TypeDefKind.Void:
+    case TypeDefKind.Scalar:
       return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
@@ -216,20 +221,20 @@ export function loadObjectReturnType(
   }
 
   switch (retType.kind) {
-    case TypeDefKind.ListKind: {
+    case TypeDefKind.List: {
       // Loop until we find the original object type.
       // This way we handle the list of list (e.g Object[][][]...[])
       let listType = retType
-      while (listType.kind === TypeDefKind.ListKind) {
-        listType = (listType as TypeDef<TypeDefKind.ListKind>).typeDef
+      while (listType.kind === TypeDefKind.List) {
+        listType = (listType as TypeDef<TypeDefKind.List>).typeDef
       }
 
-      return module.objects[(listType as TypeDef<TypeDefKind.ObjectKind>).name]
+      return module.objects[(listType as TypeDef<TypeDefKind.Object>).name]
     }
-    case TypeDefKind.ObjectKind:
-      return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
-    case TypeDefKind.EnumKind:
-      return module.enums[(retType as TypeDef<TypeDefKind.EnumKind>).name]
+    case TypeDefKind.Object:
+      return module.objects[(retType as TypeDef<TypeDefKind.Object>).name]
+    case TypeDefKind.Enum:
+      return module.enums[(retType as TypeDef<TypeDefKind.Enum>).name]
     default:
       return object
   }
@@ -273,30 +278,35 @@ export async function loadResult(
         throw new Error(`could not find type for result property ${key}`)
       }
 
-      let referencedObject: DaggerObjectBase | undefined = undefined
+      let referencedObject: DaggerObjectBase | DaggerEnumBase | undefined =
+        undefined
 
       // Handle nested objects
-      if (property.type.kind === TypeDefKind.ObjectKind) {
+      if (property.type.kind === TypeDefKind.Object) {
         referencedObject =
-          module.objects[
-            (property.type as TypeDef<TypeDefKind.ObjectKind>).name
-          ]
+          module.objects[(property.type as TypeDef<TypeDefKind.Object>).name]
       }
 
       // Handle list of nested objects
-      if (property.type.kind === TypeDefKind.ListKind) {
+      if (property.type.kind === TypeDefKind.List) {
         let _property = property.type
 
         // Loop until we find the original type.
-        while (_property.kind === TypeDefKind.ListKind) {
-          _property = (_property as TypeDef<TypeDefKind.ListKind>).typeDef
+        while (_property.kind === TypeDefKind.List) {
+          _property = (_property as TypeDef<TypeDefKind.List>).typeDef
         }
 
         // If the original type is an object, we use it as the referenced object.
-        if (_property.kind === TypeDefKind.ObjectKind) {
+        if (_property.kind === TypeDefKind.Object) {
           referencedObject =
-            module.objects[(_property as TypeDef<TypeDefKind.ObjectKind>).name]
+            module.objects[(_property as TypeDef<TypeDefKind.Object>).name]
         }
+      }
+
+      // Handle enums
+      if (property.type.kind === TypeDefKind.Enum) {
+        referencedObject =
+          module.enums[(property.type as TypeDef<TypeDefKind.Enum>).name]
       }
 
       // If there's no referenced object, we use the current object.
@@ -314,8 +324,20 @@ export async function loadResult(
     return state
   }
 
-  if (typeof result === "object" && object instanceof DaggerEnum) {
-    return result
+  // If it's an enum, we need to resolve the enum member name instead of the value.
+  // A enum value A = "a" will be returned as "a" by the function so we need to
+  // transform it back to "A" to be sent as result to the engine.
+  if (object instanceof DaggerEnum || object instanceof DaggerEnumClass) {
+    const enumMember = Object.entries(object.values).find(
+      ([, member]) => member.value === result,
+    )
+
+    // If the enum member is not found, we return the result as is and let the engine handle it.
+    if (!enumMember) {
+      return result
+    }
+
+    return enumMember[0]
   }
 
   // Handle primitive types

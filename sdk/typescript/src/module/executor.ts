@@ -72,6 +72,26 @@ export class Executor {
     return ifaceImpl
   }
 
+  /**
+   * Transfer a Dagger enum member name into its implemented value.
+   * An enum value A = "a" will be received as "A" by the entrypoint
+   * but should be transformed into "a" to be sent to the function.
+   * If the enum isn't found in the module, it may be a core enum so we keep the value
+   * as is.
+   */
+  buildEnum(enumName: string, value: string): any {
+    const enumObject = this.daggerModule.enums[enumName]
+    if (!enumObject) {
+      return value
+    }
+
+    if (!enumObject.values[value]) {
+      throw new Error(`Enum ${enumName} does not have member ${value}`)
+    }
+
+    return enumObject.values[value].value
+  }
+
   async getResult(
     object: string,
     method: string,
@@ -150,25 +170,25 @@ class InterfaceWrapper {
         // If the function is returning an IDable, we don't need to execute it
         // since it will be resolved later.
         if (
-          fct.returnType!.kind === TypeDefKind.InterfaceKind ||
-          fct.returnType!.kind === TypeDefKind.ObjectKind
+          fct.returnType!.kind === TypeDefKind.Interface ||
+          fct.returnType!.kind === TypeDefKind.Object
         ) {
           return this
         }
 
         // If the function is returning a list, we may need to load the sub-objects
-        if (fct.returnType!.kind === TypeDefKind.ListKind) {
-          const listTypeDef = (fct.returnType as TypeDef<TypeDefKind.ListKind>)
+        if (fct.returnType!.kind === TypeDefKind.List) {
+          const listTypeDef = (fct.returnType as TypeDef<TypeDefKind.List>)
             .typeDef
 
           // If the list is an object or an interface, then we need to load the sub-objects.
           if (
-            listTypeDef.kind === TypeDefKind.ObjectKind ||
-            listTypeDef.kind === TypeDefKind.InterfaceKind
+            listTypeDef.kind === TypeDefKind.Object ||
+            listTypeDef.kind === TypeDefKind.Interface
           ) {
             const typedef = listTypeDef as
-              | TypeDef<TypeDefKind.ObjectKind>
-              | TypeDef<TypeDefKind.InterfaceKind>
+              | TypeDef<TypeDefKind.Object>
+              | TypeDef<TypeDefKind.Interface>
 
             // Resolves the call to get the list of IDs to load
             const ids = await this._ctx
