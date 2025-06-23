@@ -122,6 +122,18 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Value
 		if !ok {
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
+
+		curID := value.ID()
+		fieldID := curID.Append(
+			fieldTypeDef.TypeDef.ToType(),
+			fieldTypeDef.Name,
+			curID.View(),
+			curID.Module(),
+			0,
+			"",
+		)
+		ctx := dagql.ContextWithID(ctx, fieldID)
+
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)

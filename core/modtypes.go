@@ -134,11 +134,15 @@ func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Value, ids ma
 	if !ok {
 		return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
 	}
+
 	for i := 1; i <= list.Len(); i++ {
 		item, err := value.NthValue(i)
 		if err != nil {
 			return err
 		}
+
+		ctx := dagql.ContextWithID(ctx, item.ID())
+
 		if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
 			return err
 		}
