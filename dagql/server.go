@@ -557,19 +557,14 @@ func (s *Server) Resolve(ctx context.Context, self ObjectValue, sels ...Selectio
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (ObjectValue, error) {
-	res, id, err := s.loadType(ctx, id)
+	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
-	return s.toSelectable(id, res)
+	return s.toSelectable(res)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (Value, error) {
-	res, _, err := s.loadType(ctx, id)
-	return res, err
-}
-
-func (s *Server) loadType(ctx context.Context, id *call.ID) (Value, *call.ID, error) {
 	var base Value
 	var err error
 	if id.Receiver() != nil {
@@ -577,7 +572,7 @@ func (s *Server) loadType(ctx context.Context, id *call.ID) (Value, *call.ID, er
 		if nth == 0 {
 			base, err = s.LoadType(ctx, id.Receiver())
 			if err != nil {
-				return nil, nil, fmt.Errorf("load base: %w", err)
+				return nil, fmt.Errorf("load base: %w", err)
 			}
 		} else {
 			// we are selecting the nth element of an enumerable, load the list
@@ -585,34 +580,33 @@ func (s *Server) loadType(ctx context.Context, id *call.ID) (Value, *call.ID, er
 			// than trying to call the field on the object
 			baseValue, err := s.LoadType(ctx, id.Receiver())
 			if err != nil {
-				return nil, nil, fmt.Errorf("load base enum: %w", err)
+				return nil, fmt.Errorf("load base enumerable: %w", err)
 			}
 
 			res, err := baseValue.NthValue(nth)
 			if err != nil {
-				return nil, nil, fmt.Errorf("nth %d: %w", nth, err)
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
 			}
 
 			var ok bool
 			res, ok = res.DerefValue()
 			if !ok {
 				// the nth element is nil, maybe this should be allowed but for now error out
-				return nil, nil, fmt.Errorf("item %d is null from enumerable", nth)
+				return nil, fmt.Errorf("item %d is null from enumerable", nth)
 			}
 
-			return res, id, nil
+			return res, nil
 		}
 	} else {
 		base = s.root
 	}
 
-	baseObj, err := s.toSelectable(id, base)
+	baseObj, err := s.toSelectable(base)
 	if err != nil {
-		return nil, nil, fmt.Errorf("toSelectable: %w", err)
+		return nil, fmt.Errorf("toSelectable: %w", err)
 	}
 
-	res, id, err := baseObj.Call(ctx, s, id)
-	return res, id, err
+	return baseObj.Call(ctx, s, id)
 }
 
 // Select evaluates a series of chained field selections starting from the
@@ -623,17 +617,7 @@ func (s *Server) Select(ctx context.Context, self ObjectValue, dest any, sels ..
 	ctx = withInternal(ctx)
 
 	var res Value = self
-	var id *call.ID
 	for i, sel := range sels {
-		// TODO:
-		// TODO:
-		// TODO:
-		fmt.Println("SELECT",
-			"selector:", sel,
-			fmt.Sprintf("res:%T", res),
-			fmt.Sprintf("id:%s", id.Display()),
-		)
-
 		nth := int(sel.Nth)
 		// TODO: comment wtf is goin on here
 		if nth != 0 {
@@ -641,7 +625,7 @@ func (s *Server) Select(ctx context.Context, self ObjectValue, dest any, sels ..
 		}
 
 		var err error
-		res, id, err = self.Select(ctx, s, sel)
+		res, err = self.Select(ctx, s, sel)
 		if err != nil {
 			return fmt.Errorf("select: %w", err)
 		}
@@ -652,7 +636,6 @@ func (s *Server) Select(ctx context.Context, self ObjectValue, dest any, sels ..
 		}
 
 		if nth != 0 {
-			id = id.SelectNth(nth)
 			res, err = res.NthValue(nth)
 			if err != nil {
 				return fmt.Errorf("nth %d: %w", nth, err)
@@ -690,8 +673,7 @@ func (s *Server) Select(ctx context.Context, self ObjectValue, dest any, sels ..
 					continue
 				}
 				if isObj {
-					nthID := id.SelectNth(nth)
-					val, err = s.toSelectable(nthID, val)
+					val, err = s.toSelectable(val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -706,7 +688,7 @@ func (s *Server) Select(ctx context.Context, self ObjectValue, dest any, sels ..
 
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(id, res)
+			self, err = s.toSelectable(res)
 			if err != nil {
 				return err
 			}
@@ -934,7 +916,7 @@ func (s *Server) resolvePath(ctx context.Context, self ObjectValue, sel Selectio
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
-	val, chainedID, err := self.Select(ctx, s, sel.Selector)
+	val, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -964,8 +946,7 @@ func (s *Server) resolvePath(ctx context.Context, self ObjectValue, sel Selectio
 			if len(sel.Subselections) == 0 {
 				results = append(results, val.Unwrap())
 			} else {
-				nthID := chainedID.SelectNth(nth)
-				node, err := s.toSelectable(nthID, val)
+				node, err := s.toSelectable(val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
@@ -984,7 +965,7 @@ func (s *Server) resolvePath(ctx context.Context, self ObjectValue, sel Selectio
 	}
 
 	// instantiate the return value so we can sub-select
-	node, err := s.toSelectable(chainedID, val)
+	node, err := s.toSelectable(val)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
@@ -992,7 +973,7 @@ func (s *Server) resolvePath(ctx context.Context, self ObjectValue, sel Selectio
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
-func (s *Server) toSelectable(chainedID *call.ID, val Value) (ObjectValue, error) {
+func (s *Server) toSelectable(val Value) (ObjectValue, error) {
 	if sel, ok := val.(ObjectValue); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
@@ -1003,7 +984,7 @@ func (s *Server) toSelectable(chainedID *call.ID, val Value) (ObjectValue, error
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.AstType().Name())
 	}
-	return class.New(chainedID, val)
+	return class.New(val)
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {

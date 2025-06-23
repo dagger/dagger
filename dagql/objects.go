@@ -260,7 +260,7 @@ func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.F
 }
 
 // New returns a new instance of the class.
-func (class Class[T]) New(id *call.ID, val Value) (ObjectValue, error) {
+func (class Class[T]) New(val Value) (ObjectValue, error) {
 	if objInstance, ok := val.(ObjectInstance[T]); ok {
 		return objInstance, nil
 	}
@@ -278,7 +278,7 @@ func (class Class[T]) New(id *call.ID, val Value) (ObjectValue, error) {
 
 	return objectInstance[T]{
 		instance: instance[T]{
-			Constructor: id,
+			Constructor: val.ID(),
 			self:        self,
 		},
 		Class: class,
@@ -464,10 +464,10 @@ func (r objectInstance[T]) WithObjectDigest(customDigest digest.Digest) ObjectIn
 func NoopDone(res Value, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
-func (r objectInstance[T]) Select(ctx context.Context, s *Server, sel Selector) (Value, *call.ID, error) {
+func (r objectInstance[T]) Select(ctx context.Context, s *Server, sel Selector) (Value, error) {
 	preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
 }
@@ -609,12 +609,12 @@ func (r objectInstance[T]) preselect(ctx context.Context, s *Server, sel Selecto
 }
 
 // Call calls the field on the instance specified by the ID.
-func (r objectInstance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Value, *call.ID, error) {
+func (r objectInstance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Value, error) {
 	fieldName := newID.Field()
 	view := View(newID.View())
 	field, ok := r.Class.Field(fieldName, view)
 	if !ok {
-		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
 	}
 
 	idArgs := newID.Args()
@@ -634,7 +634,7 @@ func (r objectInstance[T]) Call(ctx context.Context, s *Server, newID *call.ID) 
 		case inputLit != nil:
 			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
 			if err != nil {
-				return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+				return nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 			}
 			inputArgs[argSpec.Name] = input
 
@@ -643,7 +643,7 @@ func (r objectInstance[T]) Call(ctx context.Context, s *Server, newID *call.ID) 
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 
@@ -657,7 +657,7 @@ func (r objectInstance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 	doNotCache bool,
-) (Value, *call.ID, error) {
+) (Value, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
 	callCacheKey := newID.Digest()
@@ -706,10 +706,10 @@ func (r objectInstance[T]) call(
 	}, opts...)
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := res.PostCall(ctx); err != nil {
-		return nil, nil, fmt.Errorf("post-call error: %w", err)
+		return nil, fmt.Errorf("post-call error: %w", err)
 	}
 	val := res.Result()
 
@@ -733,12 +733,12 @@ func (r objectInstance[T]) call(
 			newID = valID
 			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		}
 	}
 
-	return val, newID, nil
+	return val, nil
 }
 
 type View string

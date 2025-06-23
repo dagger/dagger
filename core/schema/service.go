@@ -250,7 +250,12 @@ func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, 
 func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectInstance[*core.Service], args struct{}) (dagql.Instance[dagql.Array[core.Port]], error) {
 	ports, err := parent.Self().Ports(ctx, parent.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service ports: %w", err)
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// return nil, fmt.Errorf("failed to get service ports: %w", err)
+		return nil, fmt.Errorf("failed to get service ports: %w\n%s", err, parent.ID().Display())
 	}
 	return dagql.NewInstanceForCurrentID(ctx, dagql.Array[core.Port](ports))
 }

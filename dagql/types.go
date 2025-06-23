@@ -41,7 +41,7 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(id *call.ID, val Value) (ObjectValue, error)
+	New(val Value) (ObjectValue, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
@@ -108,7 +108,7 @@ type ObjectValue interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (Value, *call.ID, error)
+	Call(context.Context, *Server, *call.ID) (Value, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
@@ -116,7 +116,7 @@ type ObjectValue interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, *Server, Selector) (Value, *call.ID, error)
+	Select(context.Context, *Server, Selector) (Value, error)
 }
 
 // A type that has a callback attached that needs to always run before returned to a caller

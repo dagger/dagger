@@ -436,6 +436,9 @@ func TestNullableResults(t *testing.T) {
 			return dagql.MapArrayInput(args.Array, func(id dagql.Optional[dagql.ID[*points.Point]]) (dagql.Nullable[*points.Point], error) {
 				return dagql.MapOpt(id, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 					point, err := id.Load(ctx, srv)
+					if err != nil {
+						return nil, err
+					}
 					return point.Self(), err
 				})
 			})
@@ -2530,7 +2533,7 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objInstance, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a simple field
@@ -2560,7 +2563,7 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "NestedObject class not found")
 
 		// Create an instance
-		objInstance, err := nestedObjClass.New(nil, nestedObj)
+		objInstance, err := nestedObjClass.New(nestedObj)
 		require.NoError(t, err)
 
 		// Test selecting through a chain of objects
@@ -2582,7 +2585,7 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objInstance, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a null field
@@ -2609,7 +2612,7 @@ func TestServerSelect(t *testing.T) {
 		// For arrays, we need to use a different approach
 		// First, get the array result
 		var arrayResult dagql.Value
-		arrayResult, _, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
+		arrayResult, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
 		require.NoError(t, err)
 
 		// Verify it's enumerable
@@ -2683,7 +2686,7 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objInstance, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a non-existent field
