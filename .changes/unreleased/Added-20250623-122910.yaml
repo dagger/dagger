@@ -1,0 +1,6 @@
+kind: Added
+body: You can now set `$DAGGER_PROGRESS` to configure your preferred progress format globally, instead of passing the `--progress` flag every time.
+time: 2025-06-23T12:29:10.639374327-04:00
+custom:
+    Author: vito
+    PR: "10617"
