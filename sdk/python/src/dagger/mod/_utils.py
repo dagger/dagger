@@ -1,5 +1,8 @@
+import ast
 import builtins
+import contextlib
 import dataclasses
+import enum
 import functools
 import importlib
 import importlib.util
@@ -263,3 +266,51 @@ def get_parent_module_doc(obj: type) -> str | None:
         return None
     mod = importlib.import_module(spec.parent)
     return inspect.getdoc(mod)
+
+
+def _extract_doc_from_next_stmt(class_body: list[ast.stmt], index: int) -> str | None:
+    """Extract docstring from the statement following the given index."""
+    next_idx = index + 1
+    if next_idx >= len(class_body):
+        return None
+
+    next_stmt = class_body[next_idx]
+    if (
+        isinstance(next_stmt, ast.Expr)
+        and isinstance(next_stmt.value, ast.Constant)
+        and isinstance(next_stmt.value.value, str)
+    ):
+        return next_stmt.value.value.strip()
+    return None
+
+
+def extract_enum_member_doc(cls: type[enum.Enum]) -> dict[str, str]:
+    """Extract docstrings for enum members by parsing the AST."""
+    member_docs: dict[str, str] = {}
+
+    with contextlib.suppress(OSError, TypeError, SyntaxError):
+        source = inspect.getsource(cls)
+        tree = ast.parse(source)
+
+        # Find the class definition
+        class_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
+                class_node = node
+                break
+
+        if class_node is not None:
+            # Look for assignments followed by string literals
+            for i, stmt in enumerate(class_node.body):
+                if not isinstance(stmt, ast.Assign):
+                    continue
+
+                # Check if this is an enum member assignment
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        member_name = target.id
+                        doc = _extract_doc_from_next_stmt(class_node.body, i)
+                        if doc:
+                            member_docs[member_name] = doc
+
+    return member_docs

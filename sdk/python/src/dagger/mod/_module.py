@@ -42,6 +42,7 @@ from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, Pyth
 from dagger.mod._utils import (
     asyncify,
     await_maybe,
+    extract_enum_member_doc,
     get_doc,
     get_parent_module_doc,
     is_annotated,
@@ -190,11 +191,18 @@ class Module:
         # Enum types
         for name, cls in self._enums.items():
             enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
+            member_docs = extract_enum_member_doc(cls)
+
             for member in cls:
+                # Get description from either description attribute or AST doc
+                description = getattr(member, "description", None)
+                if description is None:
+                    description = member_docs.get(member.name)
+
                 enum_def = enum_def.with_enum_member(
-                    str(member.name),
+                    member.name,
                     value=str(member.value),
-                    description=getattr(member, "description", None),
+                    description=description,
                 )
             mod = mod.with_enum(enum_def)
 
@@ -661,15 +669,9 @@ class Module:
     def enum_type(self) -> Callable[[T], T]: ...
 
     def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
-        """Exposes a Python :py:class:`enum.Enum` as a :py:class:`dagger.EnumTypeDef`.
+        '''Exposes a Python :py:class:`enum.Enum` as a :py:class:`dagger.EnumTypeDef`.
 
-        The Dagger Python SDK looks for a ``description`` attribute in the enum
-        member. There's a convenience base class :py:class:`dagger.Enum` that
-        makes it easy to specify those descriptions as a second value.
-
-        Examples
-        --------
-        Basic usage::
+        Example usage::
 
             import enum
             import dagger
@@ -677,20 +679,14 @@ class Module:
 
             @dagger.enum_type
             class Options(enum.Enum):
+                """Enumeration description"""
+
                 ONE = "ONE"
+                """Description for the first value"""
+
                 TWO = "TWO"
-
-
-        Using convenience base class for descriptions::
-
-            import dagger
-
-
-            @dagger.enum_type
-            class Options(dagger.Enum):
-                ONE = "ONE", "The first value"
-                TWO = "TWO", "The second value"
-        """
+                """Description for the second value"""
+        '''
 
         def wrapper(cls: T) -> T:
             if not inspect.isclass(cls):

@@ -1,4 +1,5 @@
 import dataclasses
+import warnings
 from typing import TypeAlias
 
 from dagger.client import base
@@ -28,11 +29,22 @@ class Enum(str, base.Enum):
         class Options(dagger.Enum):
             ONE = "ONE", "The first value"
             TWO = "TWO"  # no description
+
+    .. deprecated::
+        Use "enum.Enum" instead, with docstrings for descriptions.
     """
 
     __slots__ = ("description",)
 
     def __new__(cls, value, description=None):
+        warnings.warn(
+            (
+                "Class 'dagger.Enum' is deprecated: Use 'enum.Enum' instead, "
+                "with docstrings for descriptions."
+            ),
+            DeprecationWarning,
+            stacklevel=4,
+        )
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj.description = description

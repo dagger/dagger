@@ -1,16 +1,26 @@
-import dagger
+import enum
+
 from dagger import dag, enum_type, function, object_type
 
 
 @enum_type
-class Severity(dagger.Enum):
+class Severity(enum.Enum):
     """Vulnerability severity levels"""
 
-    UNKNOWN = "UNKNOWN", "Undetermined risk; analyze further"
-    LOW = "LOW", "Minimal risk; routine fix"
-    MEDIUM = "MEDIUM", "Moderate risk; timely fix"
-    HIGH = "HIGH", "Serious risk; quick fix needed."
-    CRITICAL = "CRITICAL", "Severe risk; immediate action."
+    UNKNOWN = "UNKNOWN"
+    """Undetermined risk; analyze further"""
+
+    LOW = "LOW"
+    """Minimal risk; routine fix"""
+
+    MEDIUM = "MEDIUM"
+    """Moderate risk; timely fix"""
+
+    HIGH = "HIGH"
+    """Serious risk; quick fix needed."""
+
+    CRITICAL = "CRITICAL"
+    """Severe risk; immediate action."""
 
 
 @object_type
@@ -32,7 +42,7 @@ class MyModule:
                     "--no-progress",
                     "--exit-code=1",
                     "--vuln-type=os,library",
-                    "--severity=" + severity,
+                    "--severity=" + severity.name,
                     "--show-suppressed",
                     "--input=/mnt/ctr.tar",
                 ]
