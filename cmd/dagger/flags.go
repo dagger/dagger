@@ -233,8 +233,8 @@ type enumValue struct {
 var _ DaggerValue = &enumValue{}
 
 func (v *enumValue) Type() string {
-	vs := make([]string, 0, len(v.typedef.Values))
-	for _, v := range v.typedef.Values {
+	vs := make([]string, 0, len(v.typedef.Members))
+	for _, v := range v.typedef.Members {
 		vs = append(vs, v.Name)
 	}
 	return strings.Join(vs, ",")
@@ -249,7 +249,7 @@ func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.
 }
 
 func (v *enumValue) Set(s string) error {
-	for _, allow := range v.typedef.Values {
+	for _, allow := range v.typedef.Members {
 		if strings.EqualFold(s, allow.Name) {
 			v.value = allow.Name
 			return nil

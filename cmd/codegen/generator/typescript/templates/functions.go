@@ -1,8 +1,10 @@
 package templates
 
 import (
+	"cmp"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -298,8 +300,11 @@ func (funcs typescriptTemplateFuncs) sortInputFields(s []introspection.InputValu
 }
 
 func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
-	sort.SliceStable(s, func(i, j int) bool {
-		return s[i].Name < s[j].Name
+	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
+		return cmp.Compare(funcs.formatEnum(x.Name), funcs.formatEnum(y.Name))
+	})
+	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
+		return funcs.formatEnum(x.Name) == funcs.formatEnum(y.Name)
 	})
 	return s
 }

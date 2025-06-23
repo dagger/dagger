@@ -5429,7 +5429,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/main.go:16:6\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
 
 					// interface
 					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22:6\)\n`,
@@ -5449,7 +5449,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "A", // dep \(../../../dep/main.go:18:5\)`,
 				},
 			},
 		},
@@ -6083,8 +6083,9 @@ query { host { directory(path: ".") { asModule {
         asEnum {
             name
             description
-            values {
+            members {
                 name
+				value
 				description
 			}
         }

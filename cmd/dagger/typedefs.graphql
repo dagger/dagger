@@ -89,9 +89,9 @@ query TypeDefs {
 		asEnum {
 			name
 			description
-			values {
+			members {
 				name
-			    description
+				description
 			}
 		}
 		asInterface {

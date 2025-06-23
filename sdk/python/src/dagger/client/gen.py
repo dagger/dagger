@@ -267,11 +267,19 @@ class CacheSharingMode(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
+    ESTARGZ = "EStarGZ"
+
     EStarGZ = "EStarGZ"
+
+    GZIP = "Gzip"
 
     Gzip = "Gzip"
 
+    UNCOMPRESSED = "Uncompressed"
+
     Uncompressed = "Uncompressed"
+
+    ZSTD = "Zstd"
 
     Zstd = "Zstd"
 
@@ -279,7 +287,11 @@ class ImageLayerCompression(Enum):
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
+    DOCKER = "DockerMediaTypes"
+
     DockerMediaTypes = "DockerMediaTypes"
+
+    OCI = "OCIMediaTypes"
 
     OCIMediaTypes = "OCIMediaTypes"
 
@@ -287,9 +299,15 @@ class ImageMediaTypes(Enum):
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
+    DIR = "DIR_SOURCE"
+
     DIR_SOURCE = "DIR_SOURCE"
 
+    GIT = "GIT_SOURCE"
+
     GIT_SOURCE = "GIT_SOURCE"
+
+    LOCAL = "LOCAL_SOURCE"
 
     LOCAL_SOURCE = "LOCAL_SOURCE"
 
@@ -318,8 +336,17 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
+    BOOLEAN = "BOOLEAN_KIND"
+    """A boolean value."""
+
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+
+    ENUM = "ENUM_KIND"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
 
     ENUM_KIND = "ENUM_KIND"
     """A GraphQL enum type and its values
@@ -327,38 +354,77 @@ class TypeDefKind(Enum):
     Always paired with an EnumTypeDef.
     """
 
+    FLOAT = "FLOAT_KIND"
+    """A float value."""
+
     FLOAT_KIND = "FLOAT_KIND"
     """A float value."""
+
+    INPUT = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
+    INTEGER = "INTEGER_KIND"
+    """An integer value."""
+
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
 
-    INTERFACE_KIND = "INTERFACE_KIND"
-    """A named type of functions that can be matched+implemented by other objects+interfaces.
+    INTERFACE = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
 
-    Always paired with an InterfaceTypeDef.
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
+
+    INTERFACE_KIND = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
+
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
+
+    LIST = "LIST_KIND"
+    """Always paired with a ListTypeDef.
+
+    A list of values all having the same type.
     """
 
     LIST_KIND = "LIST_KIND"
-    """A list of values all having the same type.
+    """Always paired with a ListTypeDef.
 
-    Always paired with a ListTypeDef.
+    A list of values all having the same type.
+    """
+
+    OBJECT = "OBJECT_KIND"
+    """Always paired with an ObjectTypeDef.
+
+    A named type defined in the GraphQL schema, with fields and functions.
     """
 
     OBJECT_KIND = "OBJECT_KIND"
-    """A named type defined in the GraphQL schema, with fields and functions.
+    """Always paired with an ObjectTypeDef.
 
-    Always paired with an ObjectTypeDef.
+    A named type defined in the GraphQL schema, with fields and functions.
     """
+
+    SCALAR = "SCALAR_KIND"
+    """A scalar value of any basic kind."""
 
     SCALAR_KIND = "SCALAR_KIND"
     """A scalar value of any basic kind."""
 
+    STRING = "STRING_KIND"
+    """A string value."""
+
     STRING_KIND = "STRING_KIND"
     """A string value."""
+
+    VOID = "VOID_KIND"
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+    """
 
     VOID_KIND = "VOID_KIND"
     """A special kind used to signify that no value is returned.
@@ -3815,6 +3881,12 @@ class EnumTypeDef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
 
+    async def members(self) -> list["EnumValueTypeDef"]:
+        """The members of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("members", _args)
+        return await _ctx.execute_object_list(EnumValueTypeDef)
+
     async def name(self) -> str:
         """The name of the enum.
 
@@ -3865,7 +3937,14 @@ class EnumTypeDef(Type):
         return await _ctx.execute(str)
 
     async def values(self) -> list["EnumValueTypeDef"]:
-        """The values of the enum."""
+        """.. deprecated::
+        use members instead
+        """
+        warnings.warn(
+            'Method "values" is deprecated: use members instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("values", _args)
         return await _ctx.execute_object_list(EnumValueTypeDef)
@@ -3876,7 +3955,7 @@ class EnumValueTypeDef(Type):
     """A definition of a value in a custom enum defined in a Module."""
 
     async def description(self) -> str:
-        """A doc string for the enum value, if any.
+        """A doc string for the enum member, if any.
 
         Returns
         -------
@@ -3921,7 +4000,7 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(EnumValueTypeDefID)
 
     async def name(self) -> str:
-        """The name of the enum value.
+        """The name of the enum member.
 
         Returns
         -------
@@ -3942,10 +4021,31 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(str)
 
     def source_map(self) -> "SourceMap":
-        """The location of this enum value declaration."""
+        """The location of this enum member declaration."""
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    async def value(self) -> str:
+        """The value of the enum member
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -9780,6 +9880,37 @@ class TypeDef(Type):
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
 
+    def with_enum_member(
+        self,
+        name: str,
+        *,
+        value: str | None = "",
+        description: str | None = "",
+        source_map: SourceMap | None = None,
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        Parameters
+        ----------
+        name:
+            The name of the member in the enum
+        value:
+            The value of the member in the enum
+        description:
+            A doc string for the member, if any
+        source_map:
+            The source map for the enum member definition.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value, ""),
+            Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
+        ]
+        _ctx = self._select("withEnumMember", _args)
+        return TypeDef(_ctx)
+
     def with_enum_value(
         self,
         value: str,
@@ -9790,6 +9921,9 @@ class TypeDef(Type):
         """Adds a static value for an Enum TypeDef, failing if the type is not an
         enum.
 
+        .. deprecated::
+            Use :py:meth:`with_enum_member` instead
+
         Parameters
         ----------
         value:
@@ -9799,6 +9933,11 @@ class TypeDef(Type):
         source_map:
             The source map for the enum value definition.
         """
+        warnings.warn(
+            'Method "with_enum_value" is deprecated: Use "with_enum_member" instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("value", value),
             Arg("description", description, ""),

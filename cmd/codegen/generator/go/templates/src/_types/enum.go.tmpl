@@ -6,20 +6,76 @@ type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
 
-{{- $needsScopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
-const (
-	{{- range $index, $field := .EnumValues | SortEnumFields }}
+func (v {{ $enumName }}) Name() string {
+	switch v {
+	{{- range $fields := .EnumValues | GroupEnumByValue }}
+	{{- $field := index $fields 0 }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	case {{ $fullFieldName }}:
+		return "{{ $field.Name }}"
+	{{- end }}
+	default:
+		return ""
+	}
+}
+
+func (v {{ $enumName }}) Value() string {
+	return string(v)
+}
+
+func (v *{{ $enumName }}) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	{{- range $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
-	{{ $field.Description | Comment }}
-	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}"
-	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-	{{ if $needsScopedEnums }}
-	{{ $field.Description | Comment }}
-	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
-	{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
-	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-	{{ end }}
+	case "{{ $field.Name }}":
+		*v = {{ $fullFieldName }}
+	{{- end }}
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
+{{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
+const (
+	{{- range $fields := .EnumValues | GroupEnumByValue }}
+	{{- $mainFieldName := "" }}
+	{{- range $idx, $field := slice $fields }}
+		{{- $fieldName := ($field.Name | FormatEnum "") }}
+		{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+		{{- $fieldValue := "" }}
+		{{- if eq $idx 0 }}
+			{{- $fieldValue = $field.Directives.EnumValue }}
+			{{- if not $fieldValue }}
+				{{- $fieldValue = $field.Name }}
+			{{- end }}
+			{{- $fieldValue = $fieldValue | printf "%q" }}
+			{{- $mainFieldName = $fullFieldName }}
+		{{- else }}
+			{{- $fieldValue = $mainFieldName }}
+		{{- end }}
+		{{- with $field.Description }}
+		{{ . | Comment }}
+		{{- end }}
+		{{ $fullFieldName }} {{ $enumName }} = {{ $fieldValue }}
+		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+		{{- if $needsUnscopedEnums }}
+		{{ $field.Description | Comment }}
+		{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+		{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
+		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+		{{- end }}
+	{{- end }}
+
 	{{ end }}
 )
 

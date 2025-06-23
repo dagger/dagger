@@ -1829,6 +1829,32 @@
       {
         "args": [
           {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "value",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates the underlying value of an enum member.",
+        "locations": [
+          "ENUM_VALUE"
+        ],
+        "name": "enumValue"
+      },
+      {
+        "args": [
+          {
             "defaultValue": "\"Not stabilized\"",
             "deprecationReason": null,
             "description": "Explains why this element was marked experimental.",

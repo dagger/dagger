@@ -938,23 +938,30 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
-type EnumValue interface {
+type enumValue interface {
 	Input
 	~string
 }
 
-// EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumValue] struct {
-	values       []T
-	descriptions []string
+type EnumValue[T enumValue] struct {
+	Value       T
+	Underlying  T
+	Description string
+	View        ViewFilter
 }
 
+// EnumValues is a list of possible values for an Enum.
+type EnumValues[T enumValue] []EnumValue[T]
+
 // NewEnum creates a new EnumType with the given possible values.
-func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
-	return &EnumValues[T]{
-		values:       vals,
-		descriptions: make([]string, len(vals)),
+func NewEnum[T enumValue](vals ...T) *EnumValues[T] {
+	enum := make(EnumValues[T], 0, len(vals))
+	for _, val := range vals {
+		enum = append(enum, EnumValue[T]{
+			Value: val,
+		})
 	}
+	return &enum
 }
 
 func (e *EnumValues[T]) Type() *ast.Type {
@@ -970,7 +977,7 @@ func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
-		EnumValues: e.PossibleValues(),
+		EnumValues: e.PossibleValues(view),
 	}
 	var val T
 	if isType, ok := any(val).(Descriptive); ok {
@@ -980,23 +987,56 @@ func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
 }
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
+	if enum, ok := val.(T); ok {
+		val = string(enum)
+	}
+
 	v, err := (&EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
 	if err != nil {
 		return nil, err
 	}
-	return e.Lookup(v.(*EnumValueName).Value)
+	return e.Lookup(v.(*EnumValueName).Name)
 }
 
-func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
 	var values ast.EnumValueList
-	for i, val := range e.values {
-		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val),
-			Description: e.descriptions[i],
-		})
+	for _, val := range *e {
+		if val.View != nil && !val.View.Contains(view) {
+			continue
+		}
+		def := &ast.EnumValueDefinition{
+			Name:        string(val.Value),
+			Description: val.Description,
+		}
+		if val.Value != val.Underlying {
+			def.Directives = append(def.Directives, enumValueDirectives(val.Underlying)...)
+		}
+		values = append(values, def)
 	}
 
 	return values
+}
+
+func enumValueDirectives[T enumValue](value T) []*ast.Directive {
+	var zero T
+	if value == zero {
+		return nil
+	}
+
+	return []*ast.Directive{
+		{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  string(value),
+					},
+				},
+			},
+		},
+	}
 }
 
 func (e *EnumValues[T]) Literal(val T) call.Literal {
@@ -1004,19 +1044,48 @@ func (e *EnumValues[T]) Literal(val T) call.Literal {
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
-	var enum T
-	for _, possible := range e.values {
-		if val == string(possible) {
-			return possible, nil
+	var zero T
+	for _, possible := range *e {
+		if val == string(possible.Value) {
+			if possible.Underlying != zero {
+				return possible.Underlying, nil
+			}
+			return possible.Value, nil
 		}
 	}
-	return enum, fmt.Errorf("invalid enum value %q", val)
+	return zero, fmt.Errorf("invalid enum member %q for %T", val, zero)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
-	e.values = append(e.values, val)
-	e.descriptions = append(e.descriptions, FormatDescription(desc...))
+	return e.RegisterView(val, nil, desc...)
+}
+
+func (e *EnumValues[T]) RegisterView(val T, view ViewFilter, desc ...string) T {
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+		View:        view,
+	})
 	return val
+}
+
+func (e *EnumValues[T]) Alias(val T, target T) T {
+	return e.AliasView(val, target, nil)
+}
+
+func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
+	for _, v := range *e {
+		if v.Value == target {
+			*e = append(*e, EnumValue[T]{
+				Value:       val,
+				Underlying:  v.Value,
+				Description: v.Description,
+				View:        view,
+			})
+			return val
+		}
+	}
+	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
 func (e *EnumValues[T]) Install(srv *Server) {
@@ -1025,8 +1094,8 @@ func (e *EnumValues[T]) Install(srv *Server) {
 }
 
 type EnumValueName struct {
-	Enum  string
-	Value string
+	Enum string
+	Name string
 }
 
 var _ Input = &EnumValueName{}
@@ -1050,7 +1119,7 @@ func (e *EnumValueName) TypeDefinition(view View) *ast.Definition {
 }
 
 func (e *EnumValueName) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(e.Value)
+	return call.NewLiteralEnum(e.Name)
 }
 
 func (e *EnumValueName) Decoder() InputDecoder {
@@ -1060,20 +1129,20 @@ func (e *EnumValueName) Decoder() InputDecoder {
 func (e *EnumValueName) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case *EnumValueName:
-		return &EnumValueName{Enum: e.Enum, Value: x.Value}, nil
+		return &EnumValueName{Enum: e.Enum, Name: x.Name}, nil
 	case string:
-		return &EnumValueName{Enum: e.Enum, Value: x}, nil
+		return &EnumValueName{Enum: e.Enum, Name: x}, nil
 	case bool:
-		return nil, fmt.Errorf("invalid enum value %t", x)
+		return nil, fmt.Errorf("invalid enum name %t", x)
 	case nil:
-		return nil, fmt.Errorf("invalid enum value null")
+		return nil, fmt.Errorf("invalid enum name null")
 	default:
 		return nil, fmt.Errorf("cannot create enum name from %T", x)
 	}
 }
 
 func (e *EnumValueName) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.Value)
+	return json.Marshal(e.Name)
 }
 
 func MustInputSpec(val Type) InputObjectSpec {

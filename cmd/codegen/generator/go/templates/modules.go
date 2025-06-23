@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -97,6 +98,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
+		schema:     funcs.schema,
 		moduleName: funcs.cfg.ModuleName,
 
 		methods: make(map[string][]method),
@@ -251,6 +253,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
 
 			case *types.Basic:
+				if ps.isDaggerGenerated(obj) {
+					continue
+				}
 				enum := underlyingObj
 				enumTypeSpec, err := ps.parseGoEnum(enum, named)
 				if err != nil {
@@ -795,6 +800,8 @@ func (ps *parseState) fillObjectFunctionCase(
 }
 
 type parseState struct {
+	schema *introspection.Schema
+
 	pkg        *packages.Package
 	fset       *token.FileSet
 	moduleName string
@@ -852,6 +859,7 @@ func (ps *parseState) astSpecForObj(obj types.Object) (ast.Spec, error) {
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", obj.Name())
 	}
+
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue

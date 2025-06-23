@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
@@ -299,3 +300,36 @@ func Supports(ctx context.Context, minVersion string) (bool, error) {
 	id := dagql.CurrentID(ctx)
 	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
 }
+
+// AllVersion is a view that contains all versions.
+var AllVersion = dagql.AllView{}
+
+// AfterVersion is a view that checks if a target version is greater than *or*
+// equal to the filtered version.
+type AfterVersion string
+
+var _ dagql.ViewFilter = AfterVersion("")
+
+func (minVersion AfterVersion) Contains(version dagql.View) bool {
+	if version == "" {
+		return true
+	}
+	return semver.Compare(string(version), string(minVersion)) >= 0
+}
+
+// BeforeVersion is a view that checks if a target version is less than the
+// filtered version.
+type BeforeVersion string
+
+var _ dagql.ViewFilter = BeforeVersion("")
+
+func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
+	if version == "" {
+		return false
+	}
+	return semver.Compare(string(version), string(maxVersion)) < 0
+}
+
+var (
+	enumView = AfterVersion("v0.18.11")
+)
