@@ -283,21 +283,19 @@ export class AST {
     node: ts.Node,
     type: ts.Type,
   ): TypeDef<TypeDefKind> | undefined {
-    if (type.flags & ts.TypeFlags.String)
-      return { kind: TypeDefKind.StringKind }
+    if (type.flags & ts.TypeFlags.String) return { kind: TypeDefKind.String }
     if (type.flags & ts.TypeFlags.Number) {
       // Float will be interpreted as number by the TypeScript compiler so we need to check if the
       // text is "float" to know if it's a float or an integer.
       // It can also be interpreted as a reference, but this is handled separately at an upper level.
       if (node.getText().includes("float")) {
-        return { kind: TypeDefKind.FloatKind }
+        return { kind: TypeDefKind.Float }
       }
 
-      return { kind: TypeDefKind.IntegerKind }
+      return { kind: TypeDefKind.Integer }
     }
-    if (type.flags & ts.TypeFlags.Boolean)
-      return { kind: TypeDefKind.BooleanKind }
-    if (type.flags & ts.TypeFlags.Void) return { kind: TypeDefKind.VoidKind }
+    if (type.flags & ts.TypeFlags.Boolean) return { kind: TypeDefKind.Boolean }
+    if (type.flags & ts.TypeFlags.Void) return { kind: TypeDefKind.Void }
 
     // If a type has a flag Object, is can basically be anything.
     // We firstly wants to see if it's a promise or an array so we can unwrap the
@@ -325,7 +323,7 @@ export class AST {
 
             if (type.symbol.getName() === "Array") {
               return {
-                kind: TypeDefKind.ListKind,
+                kind: TypeDefKind.List,
                 typeDef: this.tsTypeToTypeDef(node, typeArgument),
               }
             }

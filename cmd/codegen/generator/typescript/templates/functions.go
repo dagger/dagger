@@ -55,6 +55,9 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ArgsHaveDescription":       funcs.argsHaveDescription,
 		"SortInputFields":           funcs.sortInputFields,
 		"SortEnumFields":            funcs.sortEnumFields,
+		"ExtractEnumValue":          funcs.extractEnumValue,
+		"GroupEnumByValue":          funcs.groupEnumByValue,
+		"GetInputEnumValueType":     funcs.getInputEnumValueType,
 		"Solve":                     funcs.solve,
 		"Subtract":                  funcs.subtract,
 		"ConvertID":                 commonFunc.ConvertID,
@@ -239,7 +242,6 @@ var jsKeywords = map[string]struct{}{
 
 // formatEnum formats a GraphQL enum into a TS equivalent
 func (funcs typescriptTemplateFuncs) formatEnum(s string) string {
-	s = strings.ToLower(s)
 	return strcase.ToCamel(s)
 }
 
@@ -282,6 +284,14 @@ func (funcs typescriptTemplateFuncs) getEnumValues(values introspection.InputVal
 	return enums
 }
 
+func (funcs typescriptTemplateFuncs) getInputEnumValueType(enum introspection.InputValue) string {
+	if enum.TypeRef.OfType != nil && enum.TypeRef.OfType.Kind == introspection.TypeKindEnum {
+		return enum.TypeRef.OfType.Name
+	}
+
+	return enum.TypeRef.Name
+}
+
 func (funcs typescriptTemplateFuncs) getRequiredArgs(values introspection.InputValues) introspection.InputValues {
 	required, _ := funcs.splitRequiredOptionalArgs(values)
 	return required
@@ -301,12 +311,50 @@ func (funcs typescriptTemplateFuncs) sortInputFields(s []introspection.InputValu
 
 func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
-		return cmp.Compare(funcs.formatEnum(x.Name), funcs.formatEnum(y.Name))
+		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
 	})
 	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
-		return funcs.formatEnum(x.Name) == funcs.formatEnum(y.Name)
+		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
 	})
+
+	// Remove enums without values that may exist
+	s = slices.DeleteFunc(s, func(x introspection.EnumValue) bool {
+		return x.Name == "" && x.Directives.EnumValue() == ""
+	})
+
 	return s
+}
+
+func (funcs typescriptTemplateFuncs) extractEnumValue(enum introspection.EnumValue) string {
+	return enum.Directives.EnumValue()
+}
+
+// groupEnumByValue returns a list of lists of enums, grouped by similar enum value.
+//
+// Additionally, enum names within a single value are removed (which would
+// result in duplicate codegen).
+func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value :=  cmp.Or(v.Directives.EnumValue(), v.Name)
+		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
+			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+		}) {
+			m[value] = append(m[value], v)
+		}
+	}
+
+
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		value :=  cmp.Or(v.Directives.EnumValue(), v.Name)
+		if res, ok := m[value]; ok {
+			result = append(result, res)
+			delete(m, value)
+		}
+	}
+
+	return result
 }
 
 func (funcs typescriptTemplateFuncs) argsHaveDescription(values introspection.InputValues) bool {

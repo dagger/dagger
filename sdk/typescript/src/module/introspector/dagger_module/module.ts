@@ -95,7 +95,7 @@ export class DaggerModule {
     // Float is a special case, it's an alias of number but it serves to declare a float type
     // in the Dagger API.
     // So we auto register it because it will be detected as a referenced type by the introspector.
-    float: { kind: TypeDefKind.FloatKind },
+    float: { kind: TypeDefKind.Float },
   }
 
   constructor(
@@ -127,7 +127,7 @@ export class DaggerModule {
 
     this.objects[this.name] = mainDaggerObject
     this.references[this.name] = {
-      kind: TypeDefKind.ObjectKind,
+      kind: TypeDefKind.Object,
       name: this.name,
     }
 
@@ -169,7 +169,7 @@ export class DaggerModule {
       if (classRef) {
         if (classRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
           this.references[reference] = {
-            kind: TypeDefKind.ObjectKind,
+            kind: TypeDefKind.Object,
             name: reference,
           }
           continue
@@ -179,7 +179,7 @@ export class DaggerModule {
           const daggerObject = new DaggerObject(classRef.node, this.ast)
           this.objects[daggerObject.name] = daggerObject
           this.references[daggerObject.name] = {
-            kind: TypeDefKind.ObjectKind,
+            kind: TypeDefKind.Object,
             name: daggerObject.name,
           }
 
@@ -192,7 +192,7 @@ export class DaggerModule {
           const daggerEnum = new DaggerEnumClass(classRef.node, this.ast)
           this.enums[daggerEnum.name] = daggerEnum
           this.references[daggerEnum.name] = {
-            kind: TypeDefKind.EnumKind,
+            kind: TypeDefKind.Enum,
             name: daggerEnum.name,
           }
 
@@ -212,7 +212,7 @@ export class DaggerModule {
       if (enumRef) {
         if (enumRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
           this.references[reference] = {
-            kind: TypeDefKind.EnumKind,
+            kind: TypeDefKind.Enum,
             name: reference,
           }
           continue
@@ -222,7 +222,7 @@ export class DaggerModule {
         const daggerEnum = new DaggerEnum(enumRef.node, this.ast)
         this.enums[daggerEnum.name] = daggerEnum
         this.references[daggerEnum.name] = {
-          kind: TypeDefKind.EnumKind,
+          kind: TypeDefKind.Enum,
           name: daggerEnum.name,
         }
 
@@ -238,7 +238,7 @@ export class DaggerModule {
         const daggerInterface = new DaggerInterface(interfaceRef.node, this.ast)
         this.interfaces[daggerInterface.name] = daggerInterface
         this.references[daggerInterface.name] = {
-          kind: TypeDefKind.InterfaceKind,
+          kind: TypeDefKind.Interface,
           name: daggerInterface.name,
         }
         this.resolveReferences(daggerInterface.getReferences())
@@ -300,25 +300,25 @@ export class DaggerModule {
     const type = this.ast.getTypeFromTypeAlias(typeAlias.node)
 
     if (type.flags & ts.TypeFlags.String) {
-      this.references[reference] = { kind: TypeDefKind.StringKind }
+      this.references[reference] = { kind: TypeDefKind.String }
 
       return
     }
 
     if (type.flags & ts.TypeFlags.Number) {
-      this.references[reference] = { kind: TypeDefKind.IntegerKind }
+      this.references[reference] = { kind: TypeDefKind.Integer }
 
       return
     }
 
     if (type.flags & ts.TypeFlags.Boolean) {
-      this.references[reference] = { kind: TypeDefKind.BooleanKind }
+      this.references[reference] = { kind: TypeDefKind.Boolean }
 
       return
     }
 
     if (type.flags & ts.TypeFlags.Void) {
-      this.references[reference] = { kind: TypeDefKind.VoidKind }
+      this.references[reference] = { kind: TypeDefKind.Void }
 
       return
     }
@@ -329,7 +329,7 @@ export class DaggerModule {
       type.flags & ts.TypeFlags.Union
     ) {
       this.references[reference] = {
-        kind: TypeDefKind.ScalarKind,
+        kind: TypeDefKind.Scalar,
         name: reference,
       }
 
@@ -339,7 +339,7 @@ export class DaggerModule {
     if (type.flags & ts.TypeFlags.Object) {
       if (typeAlias.file.fileName.endsWith(CLIENT_GEN_FILE)) {
         this.references[reference] = {
-          kind: TypeDefKind.ObjectKind,
+          kind: TypeDefKind.Object,
           name: reference,
         }
 
@@ -349,7 +349,7 @@ export class DaggerModule {
       const daggerObject = new DaggerTypeObject(typeAlias.node, this.ast)
       this.objects[daggerObject.name] = daggerObject
       this.references[daggerObject.name] = {
-        kind: TypeDefKind.ObjectKind,
+        kind: TypeDefKind.Object,
         name: daggerObject.name,
       }
 
