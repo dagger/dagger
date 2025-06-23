@@ -193,7 +193,7 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var pbDefs []*pb.Definition
-	if src.ContextDirectory.Self() != nil {
+	if src.ContextDirectory != nil {
 		defs, err := src.ContextDirectory.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err

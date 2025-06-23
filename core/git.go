@@ -120,7 +120,7 @@ type RemoteGitRepository struct {
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
-	SSHAuthSocket *Socket
+	SSHAuthSocket dagql.Instance[*Socket]
 
 	Services ServiceBindings
 	Platform Platform
@@ -240,7 +240,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	if repo.AuthToken.Self != nil {
+	if repo.AuthToken != nil {
 		// caller-supplied username takes priority; otherwise pick a host-specific default
 		username := repo.AuthUsername
 		switch {
@@ -267,7 +267,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		opts = append(opts, gitutil.WithArgs(
 			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
 		))
-	} else if repo.AuthHeader.Self != nil {
+	} else if repo.AuthHeader != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
@@ -284,7 +284,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if repo.SSHAuthSocket != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.IDDigest)
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.Self().IDDigest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}

@@ -240,6 +240,9 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
 		}
+		if converted == nil {
+			continue
+		}
 		fieldDefs, err := collectPBDefinitions(ctx, converted.Unwrap())
 		if err != nil {
 			return nil, err

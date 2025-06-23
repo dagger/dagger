@@ -274,7 +274,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectInstance[*core.Q
 				return inst, err
 			}
 		}
-		if httpAuthToken.Self() == nil && httpAuthHeader.Self() == nil {
+		if httpAuthToken == nil && httpAuthHeader == nil {
 			// For HTTP refs, try to load client credentials from the git helper
 			parentClientMetadata, err := parent.Self().NonModuleParentClientMetadata(ctx)
 			if err != nil {
@@ -396,7 +396,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectInstance[*core.Q
 		Backend: &core.RemoteGitRepository{
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
-			SSHAuthSocket: sshAuthSock.Self(),
+			SSHAuthSocket: sshAuthSock,
 			AuthUsername:  args.HTTPAuthUsername,
 			AuthToken:     httpAuthToken,
 			AuthHeader:    httpAuthHeader,
@@ -410,13 +410,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectInstance[*core.Q
 	}
 
 	var resourceIDs []*resource.ID
-	if sshAuthSock.Self() != nil {
+	if sshAuthSock != nil {
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *sshAuthSock.ID()})
 	}
-	if httpAuthToken.Self() != nil {
+	if httpAuthToken != nil {
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthToken.ID()})
 	}
-	if httpAuthHeader.Self() != nil {
+	if httpAuthHeader != nil {
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
 	if len(resourceIDs) > 0 {
@@ -469,16 +469,24 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectInstance[*core.G
 			// *might* change
 			ref.FullRef,
 			ref.Commit,
-			// also include what auth methods are used, currently we can't
-			// handle a cache hit where the result has a different auth
-			// method than the caller used (i.e. a git repo is pulled w/
-			// a token but hits cache for a dir where a ssh sock was used)
-			string(ref.Repo.AuthToken.ID().Digest()),
-			string(ref.Repo.AuthHeader.ID().Digest()),
-			ref.Repo.SSHAuthSocket.LLBID(),
 			// finally, the legacy args
 			strconv.FormatBool(inst.Self().Repo.DiscardGitDir),
 		}
+
+		// also include what auth methods are used, currently we can't
+		// handle a cache hit where the result has a different auth
+		// method than the caller used (i.e. a git repo is pulled w/
+		// a token but hits cache for a dir where a ssh sock was used)
+		if ref.Repo.AuthToken != nil {
+			dgstInputs = append(dgstInputs, string(ref.Repo.AuthToken.ID().Digest()))
+		}
+		if ref.Repo.AuthHeader != nil {
+			dgstInputs = append(dgstInputs, string(ref.Repo.AuthHeader.ID().Digest()))
+		}
+		if ref.Repo.SSHAuthSocket != nil {
+			dgstInputs = append(dgstInputs, ref.Repo.SSHAuthSocket.Self().LLBID())
+		}
+
 		inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
 		return inst, nil
 	}
@@ -629,8 +637,8 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectInstance[*core.
 
 	remoteRepo, isRemoteRepo := parent.Self().Repo.Backend.(*core.RemoteGitRepository)
 	if isRemoteRepo {
-		usedAuth := remoteRepo.AuthToken.Self() != nil ||
-			remoteRepo.AuthHeader.Self() != nil ||
+		usedAuth := remoteRepo.AuthToken != nil ||
+			remoteRepo.AuthHeader != nil ||
 			remoteRepo.SSHAuthSocket != nil
 		if usedAuth {
 			// do a full hash of the actual files/dirs in the private git repo so

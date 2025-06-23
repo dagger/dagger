@@ -237,7 +237,7 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.EnumTypeDef]{
-		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) ([]*core.EnumMemberTypeDef, error) {
+		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) (dagql.Array[*core.EnumMemberTypeDef], error) {
 			return self.Members, nil
 		}).Deprecated("use members instead"),
 	}.Install(s.dag)

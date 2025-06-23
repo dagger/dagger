@@ -705,7 +705,7 @@ var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.Source.Self() != nil {
+	if mod.Source != nil {
 		dirDefs, err := mod.Source.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err

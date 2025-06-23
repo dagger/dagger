@@ -53,7 +53,7 @@ func newModuleSDK(
 
 	var sdk dagql.ObjectValue
 	var constructorArgs []dagql.NamedInput
-	if optionalFullSDKSourceDir.Self() != nil {
+	if optionalFullSDKSourceDir != nil {
 		constructorArgs = []dagql.NamedInput{
 			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](optionalFullSDKSourceDir.ID()))},
 		}
@@ -96,7 +96,7 @@ func (sdk *module) withConfig(
 		return sdk, nil
 	}
 
-	fieldspec, err := withConfigFn.FieldSpec(ctx, sdk.mod.Self)
+	fieldspec, err := withConfigFn.FieldSpec(ctx, sdk.mod.Self())
 	if err != nil {
 		return nil, err
 	}
