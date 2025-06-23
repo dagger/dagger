@@ -2376,7 +2376,7 @@ func TestCustomDigest(t *testing.T) {
 
 	dagql.Fields[*CoolInt]{}.Install(srv)
 	dagql.Fields[Query]{
-		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.Instance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
+		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.ObjectInstance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
 			inst, err = dagql.NewInstanceForCurrentID(ctx, &CoolInt{Val: args.Val})
 			if err != nil {
 				return inst, err
@@ -2386,19 +2386,19 @@ func TestCustomDigest(t *testing.T) {
 
 		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
 		dagql.NodeFuncWithCacheKey("modInt",
-			func(ctx context.Context, self dagql.Instance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
+			func(ctx context.Context, self dagql.ObjectInstance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
 				inst, err = dagql.NewInstanceForCurrentID(ctx, &CoolInt{Val: args.Val})
 				if err != nil {
 					return inst, err
 				}
 				return inst.WithDigest(digest.Digest(strconv.Itoa(args.Val % 2))), nil
 			},
-			func(ctx context.Context, _ dagql.Instance[Query], _ argsType, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+			func(ctx context.Context, _ dagql.ObjectInstance[Query], _ argsType, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 				cacheCfg.Digest = digest.Digest(identity.NewID())
 				return &cacheCfg, nil
 			}),
 
-		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.Instance[Query], args struct {
+		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.ObjectInstance[Query], args struct {
 			CoolInt dagql.ID[*CoolInt]
 		}) (dagql.Instance[*CoolInt], error) {
 			return args.CoolInt.Load(ctx, srv)
@@ -2765,7 +2765,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "value",
 				Type: dagql.Int(0),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
+			Func: func(ctx context.Context, self dagql.ObjectInstance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
 				return dagql.NewInstanceForCurrentID(ctx, dagql.Int(self.Self().Value))
 			},
 		},
@@ -2774,7 +2774,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "text",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
+			Func: func(ctx context.Context, self dagql.ObjectInstance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
 				return dagql.NewInstanceForCurrentID(ctx, dagql.String(self.Self().Text))
 			},
 		},
@@ -2783,7 +2783,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "nullableField",
 				Type: dagql.Null[dagql.String](),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
+			Func: func(ctx context.Context, self dagql.ObjectInstance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
 				if self.Self().NullableField == nil {
 					return dagql.NewInstanceForCurrentID(ctx, dagql.Null[dagql.String]())
 				}
@@ -2804,7 +2804,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "name",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
+			Func: func(ctx context.Context, self dagql.ObjectInstance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
 				return dagql.NewInstanceForCurrentID(ctx, dagql.String(self.Self().Name))
 			},
 		},
@@ -2813,7 +2813,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "inner",
 				Type: &TestObject{},
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
+			Func: func(ctx context.Context, self dagql.ObjectInstance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Value, error) {
 				return dagql.NewInstanceForCurrentID(ctx, self.Self().Inner)
 			},
 		},
