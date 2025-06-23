@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
@@ -47,11 +49,19 @@ var shellCmd = &cobra.Command{
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
 				dag:      dag,
-				debug:    debug,
 				llmModel: llmModel,
 				mode:     modeShell,
 			}
-			return handler.RunAll(ctx, args)
+
+			err := handler.RunAll(ctx, args)
+
+			// Don't bother printing the error message if the TUI is enabled.
+			var es interp.ExitStatus
+			if handler.tty && errors.As(err, &es) {
+				return ExitError{Code: int(es)}
+			}
+
+			return err
 		})
 	},
 	Hidden: true,
@@ -72,10 +82,6 @@ type shellCallHandler struct {
 
 	// stderrWriter is used to call withTerminal on each write the runner makes to stderr
 	stderrWriter *terminalWriter
-
-	// debug writes to the handler context's stderr what the arguments, input,
-	// and output are for each command that the exec handler processes
-	debug bool
 
 	// builtins is the list of Dagger Shell builtin commands
 	builtins []*ShellCommand
@@ -108,7 +114,10 @@ type shellCallHandler struct {
 	llmModel   string
 	llmL       sync.Mutex // synchronizing LLM init status
 
-	// mu is used to synchronize access to the workdir and interpreter
+	// debug mode toggle
+	debug bool
+
+	// mu is used to synchronize access between the global handler and interpreter runs
 	mu sync.RWMutex
 
 	// interpreter mode (shell or prompt)
@@ -117,6 +126,15 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+// Debug prints to stderr internal command handler state and workflow that
+// can be helpful while developing the shell or even troubhleshooting, and
+// is toggled with the hidden builtin .debug
+func (h *shellCallHandler) Debug() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.debug
 }
 
 // RunAll is the entry point for the shell command
@@ -219,8 +237,15 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.initwd = *wd
 	h.wd = h.initwd
 
-	if h.debug {
-		shellDebug(ctx, "initial context", h.initwd, h.debugLoadedModules())
+	// not h.Debug() on purpose because it's only set from within an interpreter run
+	if debug {
+		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+		slog.Debug("initial workdir",
+			"context", h.initwd.Context,
+			"path", h.initwd.Path,
+			"module", h.initwd.Module,
+			"loaded modules", h.debugLoadedModules(),
+		)
 	}
 
 	h.registerCommands()
@@ -248,14 +273,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	interp.StdIO(nil, h.stdoutWriter, h.stderrWriter)(h.runner)
 	h.stdoutWriter.SetProcessFunc(h.stateResolver(ctx))
 
-	err = h.runner.Run(ctx, file)
-	if exit, ok := interp.IsExitStatus(err); ok {
-		if int(exit) != shellHandlerExit {
-			return ExitError{Code: int(exit)}
-		}
-		err = nil
-	}
-	return err
+	return h.runner.Run(ctx, file)
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
@@ -364,13 +382,17 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	stderrW := newTerminalWriter(stdio.Stderr.Write)
 	interp.StdIO(nil, stdoutW, stderrW)(h.runner)
 
+	// Try to prevent the state store from chugging memory on possibly
+	// long interactive sessions.
 	// Note: This may not be worth it as items will already be pruned
 	// when last used. We should only have orphans at this point if
 	// there's a variable that gets reset with a different value and
 	// that should hardly cause memory issues.
 	defer h.state.Prune(ctx)
-	if h.debug {
-		defer h.state.debug(ctx)
+
+	if debug {
+		// requires `--debug -vvvv` and .debug` for full dump
+		defer h.state.debug(ctx, h.Debug())
 	}
 
 	// Run shell command
@@ -419,8 +441,8 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
-	hctx := interp.HandlerCtx(ctx)
-	_, err := fmt.Fprintln(hctx.Stdout, args...)
+	hc := interp.HandlerCtx(ctx)
+	_, err := fmt.Fprintln(hc.Stdout, args...)
 	return err
 }
 

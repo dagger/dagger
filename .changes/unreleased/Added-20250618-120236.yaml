@@ -1,0 +1,24 @@
+kind: Added
+body: |-
+    Propagate exit codes properly in shell
+
+    The `.exit` builtin was added.
+
+    The `.wait` builtin now accepts a list of job ids to wait for. For example:
+
+    ```sh
+    container | from alpine | with-exec false | stdout &
+    job1=$!
+    container | from alpine | with-exec echo ok | stdout &
+    job2=$!
+    .echo ".wait $job1 $job2"
+    .wait $job1 $job2
+    ```
+    The above example should exit with status code 1 because `.wait` returns
+    the exit of the first command that failed. This is different from Bash
+    which returns the exit status of the last command in the list, even if 
+    it succeeded when others have failed.
+time: 2025-06-18T12:02:36.139894Z
+custom:
+    Author: helderco
+    PR: "10438"
