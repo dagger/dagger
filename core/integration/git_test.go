@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -497,7 +499,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", c.Directory().WithNewFile("README.md", "Hello, world!"), "main", "", c.SetSecret("target", "foobar"))
 
 	t.Run("no auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
@@ -549,25 +551,22 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (GitSuite) TestGitHTTPAuthUsername(ctx context.Context, t *testctx.T) {
+func (GitSuite) TestAuthUsername(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// Test with custom username support
-	gitDaemonCustom, repoURLCustom := gitServiceHTTPWithUsernameAuth(ctx, t, c,
+	gitDaemonCustom, repoURLCustom := gitServiceHTTPWithBranch(ctx, t, c, "",
 		c.Directory().WithNewFile("README.md", "Hello, custom user!"),
 		"main",
 		"customuser",
 		c.SetSecret("custom-pass", "secretpass"))
 
 	t.Run("custom username with token", func(ctx context.Context, t *testctx.T) {
-		// Test with a non-interactive git command to avoid credential prompts
 		git := c.Git(repoURLCustom, dagger.GitOpts{
 			ExperimentalServiceHost: gitDaemonCustom,
 			HTTPAuthToken:           c.SetSecret("custom-token", "secretpass"),
 			HTTPAuthUsername:        "customuser",
 		})
 
-		// Force non-interactive mode
 		dt, err := git.
 			Branch("main").
 			Tree().
@@ -591,10 +590,10 @@ func (GitSuite) TestGitHTTPAuthUsername(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, "Authentication failed")
 	})
 
-	// Test default username behavior
-	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c,
+	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c, "",
 		c.Directory().WithNewFile("README.md", "Hello, default user!"),
 		"main",
+		"",
 		c.SetSecret("default-pass", "foobar"))
 
 	t.Run("default username (x-access-token)", func(ctx context.Context, t *testctx.T) {
@@ -612,11 +611,97 @@ func (GitSuite) TestGitHTTPAuthUsername(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
+	username := "git"
+	password := "secretpass"
+
+	t.Run("loads username and password from client", func(ctx context.Context, t *testctx.T) {
+		hostname := "my-git-repo" + identity.NewID()
+
+		gitConfigPath := path.Join(t.TempDir(), "git-config")
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
+			c.Directory().WithNewFile("README.md", "Hello, user!"),
+			"main",
+			username,
+			c.SetSecret("secret"+identity.NewID(), password),
+		)
+
+		dt, err := c.Git(gitServiceURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitService,
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, user!", dt)
+	})
+
+	t.Run("incorrect username fails", func(ctx context.Context, t *testctx.T) {
+		hostname := "my-git-repo" + identity.NewID()
+
+		gitConfigPath := path.Join(t.TempDir(), "git-config")
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
+			c.Directory().WithNewFile("README.md", "Hello, bad username!"),
+			"main",
+			username+"XXX",
+			c.SetSecret("secret"+identity.NewID(), password),
+		)
+
+		_, err = c.Git(gitServiceURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitService,
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "Authentication failed")
+	})
+
+	t.Run("incorrect password fails", func(ctx context.Context, t *testctx.T) {
+		hostname := "my-git-repo" + identity.NewID()
+
+		gitConfigPath := path.Join(t.TempDir(), "git-config")
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
+
+		gitService, gitServiceURL := gitServiceHTTPWithBranch(ctx, t, c, hostname,
+			c.Directory().WithNewFile("README.md", "Hello, bad password!"),
+			"main",
+			username,
+			c.SetSecret("secret"+identity.NewID(), password+"XXX"),
+		)
+
+		_, err = c.Git(gitServiceURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitService,
+		}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "Authentication failed")
+	})
+}
+
 func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
 	// these were deprecated in dagger/dagger#10248
 
 	c := connect(ctx, t)
-	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", c.Directory().WithNewFile("README.md", "Hello, world!"), "main", "", c.SetSecret("target", "foobar"))
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
 		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
