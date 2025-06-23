@@ -57,6 +57,9 @@ class Type(Object):
             and self._ctx == other._ctx
         )
 
+    def __hash__(self) -> int:
+        return hash((type(self), self._graphql_name(), self._ctx))
+
     def _select(self, *args, **kwargs):
         return self._ctx.select(self._graphql_name(), *args, **kwargs)
 

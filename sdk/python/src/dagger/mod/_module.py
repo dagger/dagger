@@ -1,4 +1,3 @@
-# ruff: noqa: BLE001
 import dataclasses
 import enum
 import inspect

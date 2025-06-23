@@ -32,6 +32,8 @@ ignore = [
     "FIX002",
     # Pandas
     "PD",
+    # Allow import inside functions to avoid circular imports issues.
+    "PLC0415",
     # Avoid conflicts with the formatter
     "W191",
     "E111",
@@ -89,7 +91,7 @@ ignore = [
     # Allow accessing private fields in tests.
     "SLF001",
     # Allow covering `Optional` in tests.
-    "UP007",
+    "UP045",
 ]
 # Allow alias imports in __init__.
 "**/__init__.py" = ["PLC0414"]
