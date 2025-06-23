@@ -73,7 +73,7 @@ type LLM struct {
 	err  error
 
 	// History of messages
-	messages []ModelMessage
+	messages []*ModelMessage
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -94,7 +94,7 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (*LLMResponse, error)
 	IsRetryable(err error) bool
 }
 
@@ -126,7 +126,7 @@ type ModelMessage struct {
 	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string        `json:"tool_call_id,omitempty"`
 	ToolErrored bool          `json:"tool_errored,omitempty"`
-	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
+	TokenUsage  LLMTokenUsage `json:"token_usage,omitzero"`
 }
 
 type LLMToolCall struct {
@@ -187,7 +187,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []ModelMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -444,11 +444,11 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func NewLLM(ctx context.Context, model string, maxAPICalls int, srv *dagql.Server) (*LLM, error) {
 	return &LLM{
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(),
+		mcp:         NewEnv(srv).MCP(),
 		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
@@ -516,8 +516,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.mcp.Tools(srv)
+func (llm *LLM) ToolsDoc() (string, error) {
+	tools, err := llm.mcp.Tools()
 	if err != nil {
 		return "", err
 	}
@@ -532,7 +532,7 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 	return result, nil
 }
 
-func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
+func (llm *LLM) WithModel(model string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
 
@@ -540,16 +540,14 @@ func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) 
 	defer llm.endpointMtx.Unlock()
 	llm.endpoint = nil
 
-	return llm, nil
+	return llm
 }
 
 // Append a user message (prompt) to the message history
 func (llm *LLM) WithPrompt(
-	ctx context.Context,
 	// The prompt message.
 	prompt string,
-	srv *dagql.Server,
-) (*LLM, error) {
+) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
 		if binding, found := llm.mcp.env.Input(key); found {
 			return binding.String()
@@ -558,37 +556,26 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	func() {
-		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
-			attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
-			attribute.String(telemetry.UIMessageAttr, "sent"),
-		))
-		defer span.End()
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-			log.String(telemetry.ContentTypeAttr, "text/markdown"))
-		defer stdio.Close()
-		fmt.Fprint(stdio.Stdout, prompt)
-	}()
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "user",
 		Content: prompt,
 	})
-	return llm, nil
+	return llm
 }
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
-func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Server) (*LLM, error) {
+func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 	contents, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPrompt(ctx, string(contents), srv)
+	return llm.WithPrompt(string(contents)), nil
 }
 
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "system",
 		Content: prompt,
 	})
@@ -603,8 +590,8 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 }
 
 // Return the last message sent by the agent
-func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) LastReply(ctx context.Context) (string, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return "", err
 	}
 	var reply string = "(no reply)"
@@ -621,12 +608,12 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
 	if llm.disableDefaultSystemPrompt {
 		return llm.messages
 	}
 	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" {
-		return append([]ModelMessage{
+		return append([]*ModelMessage{
 			{
 				Role:    "system",
 				Content: prompt,
@@ -649,12 +636,12 @@ func (err *ModelFinishedError) Error() string {
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) Sync(ctx context.Context) error {
 	if err := llm.allowed(ctx); err != nil {
 		return err
 	}
 	llm.once.Do(func() {
-		llm.err = llm.loop(ctx, dag)
+		llm.err = llm.loop(ctx)
 	})
 	return llm.err
 }
@@ -694,7 +681,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		return errors.New("no interjection provided; giving up")
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.messages = append(llm.messages, ModelMessage{
+	llm.messages = append(llm.messages, &ModelMessage{
 		Role:    "user",
 		Content: msg,
 	})
@@ -733,7 +720,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) loop(ctx context.Context) error {
 	var hasUserMessage bool
 	for _, message := range llm.messages {
 		if message.Role == "user" {
@@ -759,12 +746,35 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools(dag)
+		tools, err := llm.mcp.Tools()
 		if err != nil {
 			return err
 		}
 
 		messagesToSend := llm.messagesWithSystemPrompt()
+
+		var userMessages []*ModelMessage
+		for _, msg := range slices.Backward(messagesToSend) {
+			if msg.Role != "user" || msg.ToolCallID != "" {
+				// only display user messages appended since the last response
+				break
+			}
+			userMessages = append(userMessages, msg)
+		}
+		slices.Reverse(userMessages)
+		for _, msg := range userMessages {
+			func() {
+				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+					attribute.String(telemetry.UIMessageAttr, "sent"),
+				))
+				defer span.End()
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				defer stdio.Close()
+				fmt.Fprint(stdio.Stdout, msg.Content)
+			}()
+		}
 
 		var res *LLMResponse
 
@@ -815,7 +825,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 
 		// Add the model reply to the history
-		llm.messages = append(llm.messages, ModelMessage{
+		llm.messages = append(llm.messages, &ModelMessage{
 			Role:       "assistant",
 			Content:    res.Content,
 			ToolCalls:  res.ToolCalls,
@@ -836,7 +846,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		for _, toolCall := range res.ToolCalls {
 			content, isError := llm.mcp.Call(ctx, tools, toolCall)
-			llm.messages = append(llm.messages, ModelMessage{
+			llm.messages = append(llm.messages, &ModelMessage{
 				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
 				ToolCallID:  toolCall.ID,
@@ -892,8 +902,8 @@ func squash(str string) string {
 	return strings.ReplaceAll(str, "\n", `\n`)
 }
 
-func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) History(ctx context.Context) ([]string, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	var history []string
@@ -941,8 +951,8 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (JSON, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
@@ -983,7 +993,7 @@ func (v *LLMVariable) Type() *ast.Type {
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx, dag); err != nil {
+	if err := llm.Sync(ctx); err != nil {
 		return res, err
 	}
 	if llm.mcp.LastResult() == nil {
@@ -1000,7 +1010,7 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	if err := llm.Sync(ctx, dag); err != nil {
+	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
 	var res LLMTokenUsage

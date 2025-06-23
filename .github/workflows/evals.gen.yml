@@ -256,9 +256,8 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check
+                COMMAND: dagger call -q evals
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: modules/evaluator
                 DOTENV: |-
                     ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY
                     GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY

@@ -85,6 +85,24 @@ func (c *SessionCache) GetOrInitialize(
 	}, opts...)
 }
 
+type seenKeysCtxKey struct{}
+
+// WithRepeatedTelemetry resets the state of seen cache keys so that we emit
+// telemetry for spans that we've already seen within the session.
+//
+// This is useful in scenarios where we want to see actions performed, even if
+// they had been performed already (e.g. an LLM running tools).
+func WithRepeatedTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{})
+}
+
+func telemetryKeys(ctx context.Context) *sync.Map {
+	if v := ctx.Value(seenKeysCtxKey{}); v != nil {
+		return v.(*sync.Map)
+	}
+	return nil
+}
+
 func (c *SessionCache) GetOrInitializeWithCallbacks(
 	ctx context.Context,
 	key CacheKeyType,
@@ -100,8 +118,16 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	var zeroKey CacheKeyType
 	isZero := key == zeroKey
 
-	_, seen := c.seenKeys.LoadOrStore(key, struct{}{})
+	keys := telemetryKeys(ctx)
+	if keys == nil {
+		keys = &c.seenKeys
+	}
+	_, seen := keys.LoadOrStore(key, struct{}{})
 	if o.Telemetry != nil && (!seen || isZero) {
+		// track keys globally in addition to any local key stores, otherwise we'll
+		// see dupes when e.g. IDs returned out of the "bubble" are loaded
+		c.seenKeys.Store(key, struct{}{})
+
 		telemetryCtx, done := o.Telemetry(ctx)
 		defer func() {
 			var val Typed
