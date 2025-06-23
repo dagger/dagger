@@ -123,6 +123,10 @@ const (
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"
 
+	// Indicates that the log contains verbose/detailed content that should be
+	// filtered out in minimal frontends.
+	LogsVerboseAttr = "dagger.io/logs.verbose"
+
 	// OTel metric attribute so we can correlate metrics with spans
 	MetricsSpanIDAttr = "dagger.io/metrics.span"
 

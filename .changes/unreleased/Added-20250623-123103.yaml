@@ -1,0 +1,6 @@
+kind: Added
+body: Added a new `dots` progress format, which is a much quieter alternative to `plain` suitable for use in CI. This format focuses on printing logs and reduces everything else to just green dots and red Xes for success/failure, similar to test runners like RSpec. [Demo](https://asciinema.org/a/723921)
+time: 2025-06-23T12:31:03.380635845-04:00
+custom:
+    Author: vito
+    PR: "10617"

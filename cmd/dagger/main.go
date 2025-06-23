@@ -80,6 +80,14 @@ var (
 	Frontend idtui.Frontend
 )
 
+func init() {
+	// allow user explicitly setting progress via env, but default it to "auto"
+	// otherwise
+	if progress == "" {
+		progress = "auto"
+	}
+}
+
 var (
 	stdin          io.Reader
 	stdout, stderr io.Writer
@@ -323,7 +331,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
@@ -426,7 +434,9 @@ func main() {
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
 	if progress == "auto" {
-		if hasTTY {
+		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
+			progress = env
+		} else if hasTTY {
 			progress = "tty"
 		} else {
 			progress = "plain"
@@ -445,6 +455,8 @@ func main() {
 			os.Exit(1)
 		}
 		Frontend = idtui.NewPretty(stderr)
+	case "dots":
+		Frontend = idtui.NewDots(stderr)
 	case "report":
 		Frontend = idtui.NewReporter(stderr)
 	default:

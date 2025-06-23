@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
@@ -131,7 +132,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 
 // logResult prints the result of a call to the span's stdout.
 func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call.ID) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
 	if !ok {
