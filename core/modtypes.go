@@ -78,7 +78,7 @@ type ListType struct {
 var _ ModType = &ListType{}
 
 func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Value, error) {
-	arr := dagql.DynamicArrayOutput{
+	arr := dagql.DynamicInstanceArrayOutput{
 		Elem: t.Elem.ToTyped(),
 	}
 	if value == nil {
@@ -90,16 +90,19 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.V
 	if !ok {
 		return nil, fmt.Errorf("ListType.ConvertFromSDKResult: expected []any, got %T", value)
 	}
-	arr.Values = make([]dagql.Typed, len(list))
+	arr.Values = make([]dagql.Value, len(list))
 	for i, item := range list {
 		var err error
-		// TODO: subtle, if this was say a []*Container, we are losing the IDs of those containers and
-		// making their IDs the nth of the current one. Might only be fixable w/ pending cache improvements?
+
+		curID := dagql.CurrentID(ctx)
+		itemID := curID.SelectNth(i + 1)
+		ctx := dagql.ContextWithID(ctx, itemID)
+
 		t, err := t.Underlying.ConvertFromSDKResult(ctx, item)
 		if err != nil {
 			return nil, err
 		}
-		arr.Values[i] = t.Unwrap()
+		arr.Values[i] = t
 	}
 	return dagql.NewInstanceForCurrentID(ctx, arr)
 }

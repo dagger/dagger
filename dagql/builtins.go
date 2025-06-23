@@ -109,6 +109,7 @@ func builtinOrTyped(val any) (Typed, error) {
 	}
 }
 
+// TODO: can this be deduped with DynamicInstanceArrayOutput, just centralize around always having lists of Values?
 type DynamicArrayOutput struct {
 	Elem   Typed
 	Values []Typed
@@ -156,6 +157,62 @@ func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 }
 
 func (d DynamicArrayOutput) SetField(val reflect.Value) error {
+	if val.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %v", val.Kind())
+	}
+	val.Set(reflect.MakeSlice(val.Type(), len(d.Values), len(d.Values)))
+	for i, elem := range d.Values {
+		if err := assign(val.Index(i), elem); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type DynamicInstanceArrayOutput struct {
+	Elem   Typed
+	Values []Value
+}
+
+var _ Typed = DynamicInstanceArrayOutput{}
+
+func (d DynamicInstanceArrayOutput) Type() *ast.Type {
+	return &ast.Type{
+		Elem:    d.Elem.Type(),
+		NonNull: true,
+	}
+}
+
+var _ Enumerable = DynamicInstanceArrayOutput{}
+
+func (d DynamicInstanceArrayOutput) Element() Typed {
+	return d.Elem
+}
+
+func (d DynamicInstanceArrayOutput) Len() int {
+	return len(d.Values)
+}
+
+func (d DynamicInstanceArrayOutput) Nth(i int) (Typed, error) {
+	val, err := d.NthValue(i, nil)
+	if err != nil {
+		return nil, err
+	}
+	return val.Unwrap(), nil
+}
+
+func (d DynamicInstanceArrayOutput) NthValue(i int, _ *call.ID) (Value, error) {
+	if i < 1 || i > len(d.Values) {
+		return nil, fmt.Errorf("index %d out of bounds", i)
+	}
+	return d.Values[i-1], nil
+}
+
+func (d DynamicInstanceArrayOutput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Values)
+}
+
+func (d DynamicInstanceArrayOutput) SetField(val reflect.Value) error {
 	if val.Kind() != reflect.Slice {
 		return fmt.Errorf("expected slice, got %v", val.Kind())
 	}
