@@ -8317,10 +8317,10 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.252.1:
-  version "1.252.1"
-  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.252.1.tgz#bec1ec96afbf912109d780c41beadc4c380b0d15"
-  integrity sha512-EkUCULWJqonMAvzE6CRX9MQupKG18X+r81+hYp3CBRcvbZG5gkbwR39t6p1347wBZJEsC1cKrjRnklc4w7XAUw==
+posthog-js@^1.255.1:
+  version "1.255.1"
+  resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.255.1.tgz#c8c335f496d3062985fc00662804604cd3edb884"
+  integrity sha512-KMh0o9MhORhEZVjXpktXB5rJ8PfDk+poqBoTSoLzWgNjhJf6D8jcyB9jUMA6vVPfn4YeepVX5NuclDRqOwr5Mw==
   dependencies:
     core-js "^3.38.1"
     fflate "^0.4.8"
@@ -9567,10 +9567,10 @@ typedoc-plugin-frontmatter@^1.3.0:
   dependencies:
     yaml "^2.7.0"
 
-typedoc-plugin-markdown@^4.6.4:
-  version "4.6.4"
-  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.4.tgz#b28ce1a31b93a1e5a31f74b5fcc6f27f0417cbee"
-  integrity sha512-AnbToFS1T1H+n40QbO2+i0wE6L+55rWnj7zxnM1r781+2gmhMF2dB6dzFpaylWLQYkbg4D1Y13sYnne/6qZwdw==
+typedoc-plugin-markdown@^4.7.0:
+  version "4.7.0"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.7.0.tgz#26075805ad5025a654e61720169e445bd24d81c0"
+  integrity sha512-PitbnAps2vpcqK2gargKoiFXLWFttvwUbyns/E6zGIFG5Gz8ZQJGttHnYR9csOlcSjB/uyjd8tnoayrtsXG17w==
 
 typedoc@^0.28.5:
   version "0.28.5"
