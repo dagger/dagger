@@ -61,7 +61,7 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/sdk/python"
     schedule:
       interval: "weekly"
