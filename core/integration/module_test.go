@@ -3842,7 +3842,10 @@ import (
 type Test struct {}
 
 func (t *Test) Call(
-  //+ignore=["foo.txt", "bar"]
+  // +ignore=[
+  //   "foo.txt",
+  //   "bar"
+  // ]
   dir *dagger.Directory,
 ) *dagger.Directory {
  return dir
