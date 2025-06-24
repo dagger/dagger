@@ -56,8 +56,8 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "~24.0.3",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.34.1",
-    "@typescript-eslint/parser": "^8.34.1",
+    "@typescript-eslint/eslint-plugin": "^8.35.0",
+    "@typescript-eslint/parser": "^8.35.0",
     "eslint": "^9.29.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-prettier": "^5.5.0",
@@ -67,6 +67,6 @@
     "rollup-plugin-dts": "^6.2.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
-    "typescript-eslint": "^8.34.1"
+    "typescript-eslint": "^8.35.0"
   }
 }
