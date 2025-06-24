@@ -86,7 +86,7 @@ require (
 	github.com/moby/sys/userns v0.1.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.6.0
+	github.com/openai/openai-go v1.7.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.2.1
