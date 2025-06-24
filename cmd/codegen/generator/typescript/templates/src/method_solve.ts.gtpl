@@ -96,7 +96,7 @@
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
     return response.map((r) => new Client(ctx.copy()).load{{ . | FormatReturnType | ToSingleType | FormatProtected }}FromID(r.id))
         {{- else if .TypeRef.IsEnum }}
-        {{- /* If it's an Enum, we receive the member name so we must convert it to the actual value */- }}
+        {{- /* If it's an Enum, we receive the member name so we must convert it to the actual value */ -}}
     return {{ $promiseRetType }}NameToValue(response)
         {{- else }}
     return response
