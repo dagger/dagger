@@ -230,7 +230,9 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
-	fe.db.PrimarySpan = spanID
+	fe.db.SetPrimarySpan(spanID)
+	fe.ZoomedSpan = spanID
+	fe.FocusedSpan = spanID
 	fe.mu.Unlock()
 }
 
