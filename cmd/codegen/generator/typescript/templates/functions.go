@@ -336,7 +336,7 @@ func (funcs typescriptTemplateFuncs) extractEnumValue(enum introspection.EnumVal
 func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
 	m := map[string][]introspection.EnumValue{}
 	for _, v := range s {
-		value :=  cmp.Or(v.Directives.EnumValue(), v.Name)
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
 			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
 		}) {
@@ -344,10 +344,9 @@ func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValu
 		}
 	}
 
-
 	var result [][]introspection.EnumValue
 	for _, v := range s {
-		value :=  cmp.Or(v.Directives.EnumValue(), v.Name)
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
 		if res, ok := m[value]; ok {
 			result = append(result, res)
 			delete(m, value)
