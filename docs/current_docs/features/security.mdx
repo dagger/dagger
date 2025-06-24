@@ -22,7 +22,7 @@ By requiring typed arguments such as `Directory`, `Socket`, `Service`, or `Secre
 
 ## Secrets
 
-Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secrets can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
+Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secrets can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/), [Vault](https://www.hashicorp.com/products/vault), and [Google Cloud Secret Manager](https://cloud.google.com/secret-manager).
 
 :::important
 Dagger has built-in safeguards to ensure that secrets are used without exposing them in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. This ensures that sensitive data does not leak - for example, in the event of a crash.
@@ -65,21 +65,45 @@ Secrets can also be passed from host files via the `file` provider (shown below)
 
 <VideoPlayer src="/img/current_docs/features/secrets-file.webm" alt="Secret from file" />
 
-### Hashicorp Vault and 1Password
+### External secret managers
 
-Secrets can also be read from external secret managers, such as Vault (`vault`):
+Secrets can also be read from external secret managers:
+
+#### Hashicorp Vault
+
+Using Vault as the secret provider:
 
 ```shell
 dagger call github-api --token=vault://credentials.github
 ```
 
-Here is the same example, but using 1Password as the secret provider. The secret is passed from 1Password via the `op` provider. This requires the Dagger CLI to be authenticated with 1Password, which can be done by running `op signin` in the terminal.
+#### 1Password
+
+Using 1Password as the secret provider. The secret is passed from 1Password via the `op` provider. This requires the Dagger CLI to be authenticated with 1Password, which can be done by running `op signin` in the terminal.
 
 ```shell
 dagger call github-api --token=op://infra/github/credential
 ```
 
 <VideoPlayer src="/img/current_docs/features/secrets-1password.webm" alt="Secret from 1Password" />
+
+#### Google Cloud Secret Manager
+
+Using Google Cloud Secret Manager as the secret provider. This requires authentication via Application Default Credentials (ADC) or the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+
+```shell
+# Using just the secret name (requires GCP_PROJECT_ID environment variable)
+dagger call github-api --token=gcp://my-github-token
+
+# Using secret name with specific version
+dagger call github-api --token=gcp://my-github-token/versions/2
+
+# Using full resource name
+dagger call github-api --token=gcp://projects/my-project/secrets/github-token
+
+# Using secret with TTL for caching
+dagger call github-api --token="gcp://my-github-token?ttl=5m"
+```
 
 ## Learn more
 

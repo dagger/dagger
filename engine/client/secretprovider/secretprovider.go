@@ -21,6 +21,7 @@ var resolvers = map[string]SecretResolver{
 	"op":        opProvider,
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
+	"gcp":       gcpProvider,
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
