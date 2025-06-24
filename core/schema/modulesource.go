@@ -99,7 +99,7 @@ func (s *moduleSourceSchema) Install() {
 		dagql.Func("dependencies", func(ctx context.Context, src *core.ModuleSource, args struct{}) (dagql.ObjectInstanceArray[*core.ModuleSource], error) {
 			return src.Dependencies, nil
 		}).
-			Doc(`The full directory loaded for the module source, including the source code as a subdirectory.`),
+			Doc(`The dependencies of the module source.`),
 
 		// sync is used by external dependencies like daggerverse
 		Syncer[*core.ModuleSource]().
