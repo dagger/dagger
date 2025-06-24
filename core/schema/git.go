@@ -473,9 +473,9 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.Instance[*core.GitRepo
 			// handle a cache hit where the result has a different auth
 			// method than the caller used (i.e. a git repo is pulled w/
 			// a token but hits cache for a dir where a ssh sock was used)
-			string(ref.Repo.AuthToken.ID().Digest()),
-			string(ref.Repo.AuthHeader.ID().Digest()),
-			ref.Repo.SSHAuthSocket.LLBID(),
+			strconv.FormatBool(ref.Repo.AuthToken.Self != nil),
+			strconv.FormatBool(ref.Repo.AuthHeader.Self != nil),
+			strconv.FormatBool(ref.Repo.SSHAuthSocket != nil),
 			// finally, the legacy args
 			strconv.FormatBool(inst.Self.Repo.DiscardGitDir),
 		}
