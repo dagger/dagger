@@ -31,7 +31,6 @@ function buildArgs(args: any): string {
   const formatValue = (key: string, value: string) => {
     // Special treatment for enumeration, they must be inserted without quotes
     if (metadata[key]?.is_enum) {
-      console.log(metadata[key], metadata[key].value_to_name, metadata)
       return JSON.stringify(metadata[key].value_to_name?.(value)).replace(
         /['"]+/g,
         "",
