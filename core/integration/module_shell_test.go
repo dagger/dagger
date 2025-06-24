@@ -947,11 +947,6 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 			prompt:   `.ls ./$($FOO | name)/$($BAR | name)`,
 			expected: "foobar.txt\n",
 		},
-		{
-			name:     "builtin argument",
-			prompt:   `_echo ./$($FOO | name)/$($BAR | name)/`,
-			expected: "./foo/bar/\n",
-		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			script := []string{
@@ -964,6 +959,19 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, out)
+		})
+	}
+
+	// Don't use `_echo` because it'll just spit out whatever we give it
+	// to stdout, which will be picked up by the state resolution at
+	// the end of the run.
+	for _, prefix := range []string{"_", "."} {
+		t.Run("builtin argument with "+prefix, func(ctx context.Context, t *testctx.T) {
+			script := prefix + "exit $(directory | with-new-file exit_code 5 | file exit_code | contents)"
+			_, err := modGen.With(daggerShellNoMod(script)).Sync(ctx)
+			var execErr *dagger.ExecError
+			require.ErrorAs(t, err, &execErr)
+			require.Equal(t, 5, execErr.ExitCode)
 		})
 	}
 }
