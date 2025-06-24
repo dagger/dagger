@@ -110,11 +110,7 @@ func recordStatus(ctx context.Context, res dagql.Value, span trace.Span, cached 
 	// This allows the UI to "simplify" the returned object's ID back to the
 	// current call's ID, so we can show the user myMod().unit().stdout()
 	// instead of container().from().[...].stdout().
-	// TODO: ??? works??
-	// TODO: ??? works??
-	// TODO: ??? works??
-	// if obj, ok := dagql.UnwrapAs[dagql.Object](res); ok {
-	if obj, ok := dagql.UnwrapAs[dagql.ObjectValue](res); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.Value](res); ok {
 		// Don't consider loadFooFromID to be a 'creator' as that would only
 		// obfuscate the real ID.
 		//
