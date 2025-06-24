@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"dagger/metrics/internal/dagger"
 )
 
@@ -18,20 +17,18 @@ type Metrics struct {
 }
 
 func New(
-	ctx context.Context,
-
 	// +defaultPath="./config"
 	config *dagger.Directory,
-) (*Metrics, error) {
+) *Metrics {
 	return &Metrics{
 		Config: config,
-	}, nil
+	}
 }
 
 // Grafana configured with Prometheus & Dagger Engine metrics
-func (m *Metrics) Run() (*dagger.Container, error) {
+func (m *Metrics) Run() *dagger.Container {
 	return m.Grafana().
-		WithServiceBinding("prometheus", m.Prometheus().AsService()), nil
+		WithServiceBinding("prometheus", m.Prometheus().AsService())
 }
 
 // Grafana container configured with Prometheus & Dagger Engine metrics
