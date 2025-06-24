@@ -24,8 +24,8 @@ var (
 		Help: "Total disk space consumed by the local cache in bytes",
 	})
 
-	localCacheEntryCountGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dagger_local_cache_entry_count",
+	localCacheEntriesGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dagger_local_cache_entries",
 		Help: "Number of entries in the local cache",
 	})
 )
@@ -38,7 +38,7 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 	if err := prometheus.Register(localCacheTotalDiskSizeGauge); err != nil {
 		return err
 	}
-	if err := prometheus.Register(localCacheEntryCountGauge); err != nil {
+	if err := prometheus.Register(localCacheEntriesGauge); err != nil {
 		return err
 	}
 
@@ -59,7 +59,7 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 			entrySet, err := srv.EngineLocalCacheEntries(ctx)
 			if err == nil {
 				localCacheTotalDiskSizeGauge.Set(float64(entrySet.DiskSpaceBytes))
-				localCacheEntryCountGauge.Set(float64(entrySet.EntryCount))
+				localCacheEntriesGauge.Set(float64(entrySet.EntryCount))
 			} else {
 				slog.Error("failed to get local cache entries for prometheus metrics", "error", err)
 			}
