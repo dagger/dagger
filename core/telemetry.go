@@ -23,8 +23,9 @@ const (
 	IsDagOpArgName = "isDagOp"
 )
 
-func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
+func collectDefs(ctx context.Context, val dagql.Value) []*pb.Definition {
 	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
+		ctx := dagql.ContextWithID(ctx, val.ID())
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 			slog.Warn("failed to get LLB definitions", "err", err)
 			return nil
@@ -166,14 +167,14 @@ func collectEffects(ctx context.Context, res dagql.Value, span trace.Span, self 
 	// Keep track of which effects were already installed prior to the call so we
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
-	for _, def := range collectDefs(ctx, self.Unwrap()) {
+	for _, def := range collectDefs(ctx, self) {
 		for _, op := range def.Def {
 			seenEffects[digest.FromBytes(op)] = true
 		}
 	}
 
 	var effectIDs []string
-	for _, def := range collectDefs(ctx, res.Unwrap()) {
+	for _, def := range collectDefs(ctx, res) {
 		for _, opBytes := range def.Def {
 			dig := digest.FromBytes(opBytes)
 			if seenEffects[dig] {

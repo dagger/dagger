@@ -90,7 +90,7 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.V
 	if !ok {
 		return nil, fmt.Errorf("ListType.ConvertFromSDKResult: expected []any, got %T", value)
 	}
-	arr.Values = make([]dagql.Value, len(list))
+	arr.Values = make([]dagql.Value, 0, len(list))
 	for i, item := range list {
 		var err error
 
@@ -102,7 +102,7 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.V
 		if err != nil {
 			return nil, err
 		}
-		arr.Values[i] = t
+		arr.Values = append(arr.Values, t)
 	}
 	return dagql.NewInstanceForCurrentID(ctx, arr)
 }

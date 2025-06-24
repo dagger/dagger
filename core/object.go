@@ -96,6 +96,9 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 }
 
 func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
+	if value == nil {
+		return nil
+	}
 	var objFields map[string]any
 	switch value := value.Unwrap().(type) {
 	case nil:
@@ -248,6 +251,18 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for field %q", name)
 		}
+
+		curID := dagql.CurrentID(ctx)
+		fieldID := curID.Append(
+			field.TypeDef.ToType(),
+			field.Name,
+			curID.View(),
+			curID.Module(),
+			0,
+			"",
+		)
+		ctx := dagql.ContextWithID(ctx, fieldID)
+
 		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)

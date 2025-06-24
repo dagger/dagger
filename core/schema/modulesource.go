@@ -1967,11 +1967,13 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	// run codegen too if we have a name and SDK
 	genDirInst := srcInst.Self().ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		genDirInst, err = s.runCodegen(ctx, srcInst)
-
+		updatedGenDirInst, err := s.runCodegen(ctx, srcInst)
 		var missingImplErr ErrSDKCodegenNotImplemented
 		if err != nil && !errors.As(err, &missingImplErr) {
 			return nil, fmt.Errorf("failed to run codegen: %w", err)
+		}
+		if err == nil {
+			genDirInst = updatedGenDirInst
 		}
 	}
 
