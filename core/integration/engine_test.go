@@ -817,7 +817,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 		soughtMetrics := map[string]struct{}{
 			"dagger_connected_clients":                 {},
 			"dagger_local_cache_total_disk_size_bytes": {},
-			"dagger_local_cache_entry_count":           {},
+			"dagger_local_cache_entries":               {},
 		}
 		foundMetrics := map[string]int{}
 		for _, line := range strings.Split(out, "\n") {
@@ -860,9 +860,9 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
 					validatedAll = false
 				}
-			case "dagger_local_cache_entry_count":
-				if num < 0 {
-					t.Logf("expected dagger_local_cache_entry_count >= 0, got %d", num)
+			case "dagger_local_cache_entries":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_entries >= 0, got %d", num)
 					validatedAll = false
 				}
 			default:
