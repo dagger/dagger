@@ -108,28 +108,32 @@ func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, e
 		}
 	}
 
+	// We may allow some interpreter builtins to be used as dagger shell
+	// builtins but rather than calling the interpreter builtin from the
+	// command's Run function it's simpler to use ShellCommand just for the
+	// documentation (.help) but strip the builtin prefix here ('.') when executing
+	// so the interpreter runs the builtin directly instead of our exec handler.
+	if after, ok := strings.CutPrefix(args[0], "."); ok && interp.IsBuiltin(after) {
+		if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
+			args[0] = shellInterpBuiltinPrefix + after
+		}
+	}
+
 	// When there's a Dagger function with a name that conflicts
 	// with an interpreter builtin, the Dagger function is favored.
 	// To force the builtin to execute instead, prefix the command
 	// with "_". For example: "container | from $(_echo alpine)".
 	if after, found := strings.CutPrefix(args[0], shellInterpBuiltinPrefix); found && interp.IsBuiltin(after) {
-		args[0] = after
-		return args, nil
+		// Make sure to resolve state in arguments since this is going
+		// to be handed off to the interpreter.
+		a, err := h.resolveResults(ctx, args[1:])
+		args = append([]string{after}, a...)
+		return args, err
 	}
 
-	// We may allow some interpreter builtins to be used as dagger shell
-	// builtins, but there's no way to directly call the interpreter
-	// command from there so we use ShellCommand just for the documentation
-	// (.help) but strip the builtin prefix here ('.') when executing.
-	if after, ok := strings.CutPrefix(args[0], "."); ok && interp.IsBuiltin(after) {
-		if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
-			args[0] = after
-			return args, nil
-		}
-	}
-
-	// If the command is an interpreter builtin, bypass the interpreter
-	// builtins to ensure the exec handler is executed.
+	// If the command is an interpreter builtin (no prefix), bypass the
+	// interpreter and run our exec handler instead to ensure module functions
+	// take precedence.
 	if interp.IsBuiltin(args[0]) {
 		return append([]string{shellInternalCmd}, args...), nil
 	}

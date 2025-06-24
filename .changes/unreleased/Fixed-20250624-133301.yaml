@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'shell: fixed arguments with pipelines to interpreter builtins not being resolved'
+time: 2025-06-24T13:33:01.431418Z
+custom:
+    Author: helderco
+    PR: "10635"
