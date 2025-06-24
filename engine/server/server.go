@@ -624,6 +624,13 @@ func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
 }
 
+// ConnectedClients returns the number of currently connected clients
+func (srv *Server) ConnectedClients() int {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	return len(srv.daggerSessions)
+}
+
 func (srv *Server) Locker() *locker.Locker {
 	return srv.locker
 }

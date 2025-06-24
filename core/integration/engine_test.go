@@ -3,12 +3,14 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/identity"
 	"github.com/pelletier/go-toml"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
@@ -764,4 +767,119 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for errCh2")
 	}
+}
+
+func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineCtr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "3s").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+	})
+	devEngine := devEngineContainerAsService(devEngineCtr)
+
+	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+
+	var eg errgroup.Group
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	t.Cleanup(clientCancel)
+	eg.Go(func() error {
+		_, err := clientCtr.
+			With(daggerNonNestedExec("listen")).
+			Sync(clientCtx)
+		if strings.Contains(err.Error(), "context canceled") {
+			return nil // expected, we cancel it later
+		}
+		if err != nil {
+			t.Logf("error running dagger listen: %v", err)
+		}
+		return err
+	})
+
+	var foundAll bool
+	for range 30 {
+		out, err := clientCtr.
+			WithExec([]string{"apk", "add", "curl"}).
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			Stdout(ctx)
+		if err != nil {
+			t.Logf("error fetching metrics: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// find the lines with metrics we care about testing
+		soughtMetrics := map[string]struct{}{
+			"dagger_connected_clients":                 {},
+			"dagger_local_cache_total_disk_size_bytes": {},
+			"dagger_local_cache_entries":               {},
+		}
+		foundMetrics := map[string]int{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+
+			for metricName := range soughtMetrics {
+				numStr, found := strings.CutPrefix(line, metricName+" ")
+				if !found {
+					continue
+				}
+				num, err := strconv.Atoi(numStr)
+				require.NoError(t, err)
+
+				delete(soughtMetrics, metricName)
+				foundMetrics[metricName] = num
+			}
+
+			if len(soughtMetrics) == 0 {
+				break
+			}
+		}
+
+		if len(soughtMetrics) != 0 {
+			t.Logf("did not find all sought metrics in output: %v", soughtMetrics)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// found everything, but validate values
+		validatedAll := true
+		for metricName, num := range foundMetrics {
+			switch metricName {
+			case "dagger_connected_clients":
+				if num != 1 {
+					t.Logf("expected dagger_connected_clients = 1, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_total_disk_size_bytes":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_entries":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			default:
+				t.Fatalf("unexpected metric %q found in output", metricName)
+			}
+		}
+
+		if validatedAll {
+			foundAll = true
+			break // everything found + validated, exit retry loop
+		}
+
+		// retry again in a second
+		time.Sleep(1 * time.Second)
+	}
+	require.True(t, foundAll, "did not find all expected metrics in output after 30 attempts")
+
+	clientCancel()
+	require.NoError(t, eg.Wait(), "error from client exec")
 }
