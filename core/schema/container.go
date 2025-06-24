@@ -2203,6 +2203,7 @@ func (s *containerSchema) terminalLegacy(
 			Value: args.InsecureRootCapabilities,
 		})
 	}
+
 	err := s.srv.Select(ctx, ctr, new(dagql.Instance[*core.Container]),
 		dagql.Selector{
 			Field: "terminal",
@@ -2212,7 +2213,8 @@ func (s *containerSchema) terminalLegacy(
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
+
+	return dagql.NewInstanceForCurrentID[*core.TerminalLegacy](ctx, nil)
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
