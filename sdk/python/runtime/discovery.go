@@ -83,6 +83,9 @@ type Discovery struct {
 	// the presence of certain files like .python-version.
 	EnableCustomConfig bool
 
+	// True if running a client generation function.
+	ClientGen bool
+
 	// Used to synchronize updates.
 	mu sync.Mutex
 }
@@ -209,6 +212,9 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		if err != nil {
 			return fmt.Errorf("get module source subpath: %w", err)
 		}
+		// At minimum the source path should default to ".". It's only empty
+		// when doing client generation, so fallback to the dir where  dagger.json
+		// is.
 		if p == "" {
 			r, err := m.ModSource.SourceRootSubpath(gctx)
 			if err != nil {
@@ -223,12 +229,12 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 	})
 
 	eg.Go(func() error {
-		p, err := m.ModSource.SourceRootSubpath(gctx)
+		deps, err := m.ModSource.Dependencies(gctx)
 		if err != nil {
-			return fmt.Errorf("get module root subpath: %w", err)
+			return fmt.Errorf("get module source dependencies: %w", err)
 		}
 		d.mu.Lock()
-		m.RootSubPath = p
+		m.HasDeps = len(deps) > 0
 		d.mu.Unlock()
 		return nil
 	})
