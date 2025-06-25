@@ -81,6 +81,13 @@ func (j *Job) uploadEngineLogsStep() []api.JobStep {
 				"overwrite": "true",
 			},
 		},
+		// TODO: not always, but leave commented for break glass?
+		{
+			Name:  "Kernel logs",
+			If:    "always()",
+			Shell: "bash",
+			Run:   `sudo dmesg || true`,
+		},
 	}
 }
 
