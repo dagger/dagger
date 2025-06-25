@@ -2,79 +2,34 @@
 slug: /
 ---
 
-# Dagger Documentation
+# Intro to Dagger
 
-## What is Dagger?
+Dagger is a platform for composing and running software engineering workflows. It lets you build workflows from containers, LLMs, files, repositories, directories, and other resources as reusable components that run anywhere with full type safety and automatic caching.
 
-Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
+Write function chains once in your preferred language. Run them consistently across local development, CI, and production to boost shipping velocity, improve software quality, and gain complete observability.
 
-<div class="text--center"><img src="img/current_docs/index/dagger-factory.jpg" width="75%"></img></div>
+Built by the creators of Docker, supported by a vibrant open-source community, and actively used by software teams for real-world automation.
 
-## Key Features
+## Get started
 
-- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
+[**Quickstart →**](./quickstart/ci)<br />
+Learn Dagger fundamentals and build your first workflow in 10 minutes
 
-- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
+[**Core Concepts →**](./quickstart)<br />
+Understand composable objects, functions, and modules before diving in
 
-- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
+[**Installation →**](./install)<br />
+Install Dagger and set up your development environment
 
-- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
+## Common use cases
 
-![Dagger Trace](/img/current_docs/index/cloud-trace.gif)
+- **Continuous Integration** - Reliable, testable CI pipelines that boost shipping velocity
+- **Development Environments** - Consistent environments for humans and AI agents
+- **Testing & QA** - Parallel test execution that improves quality and reduces feedback cycles
+- **AI Integration** - LLM-powered code review, testing, and automation with full observability
 
-- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
+## Community & Support
 
-- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
-
-- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
-
-<div class="text--center"><img src="img/current_docs/index/da-robots-white-box.svg" width="60%"></img></div>
-
-## Architecture
-
-Dagger consists of a number of components, all of which work together in an integrated fashion to provide the best possible platform for composable workflows.
-
-### Dagger Engine
-
-The Dagger Engine is the core runtime powering the Dagger platform. It combines an execution engine, universal type system, data layer and module system. It can run on any OCI-compatible system, and is controlled by the Dagger API.
-
-### Dagger CLI
-
-The Dagger CLI is your primary entrypoint to Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
-The Dagger CLI acts as a client to the Dagger Engine. It can automatically provision an engine if needed.
-
-### Client libraries
-
-Client libraries allow controlling the Dagger Engine directly from your code.
-
-To fully take advantage of the Dagger's universal type system, client libraries are automatically generated: the Dagger CLI and SDKs provides the necessary tooling.
-This allows for cross-language composition: install any Dagger module as a dependency, and your generated client will include native bindings, regardless of languages.
-
-### SDKs
-
-Dagger SDKs provide resources for developing Dagger modules using a familiar language and toolchain. Each SDK provides:
-
-1) A *client generator*, to *consume* the Dagger API with native code.
-2) A *server generator*, to *extend* the Dagger API with native code.
-3) Examples and reference documentation
-
-### Modules
-
-Dagger modules are platform-agnostic software components that consume or extend Dagger types.
-
-### Dagger API
-
-The Dagger API is a unified interface for programming the Dagger Engine.
-
-It defines a universal type system based on GraphQL, which can be introspected by any client, and dynamically extended by specially crafted servers.
-The core features of the Dagger Engine - execution engine, data layer - are available as builtin types.
-
-### Dagger Cloud
-
-[Dagger Cloud](https://dagger.cloud) complements Dagger with a production-grade control plane. Features of Dagger Cloud include workflow visualization and operational insights. Dagger Cloud provides a web interface to visualize each step of your workflow, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
-
-Dagger Cloud also collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all workflows, both pre-push and post-push.
-
-### The Daggerverse
-
-The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.
+- [**Discord community**](https://discord.gg/dagger-io) - Get help and share ideas
+- [**GitHub**](https://github.com/dagger/dagger) - Open source repository
+- [**Daggerverse**](https://daggerverse.dev) - Community module registry
