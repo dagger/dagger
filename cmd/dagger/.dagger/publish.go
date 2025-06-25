@@ -143,6 +143,7 @@ func (cli *DaggerCli) PublishMetadata(
 ) error {
 	ctr := dag.
 		Alpine(dagger.AlpineOpts{
+			Branch:   "3.22",
 			Packages: []string{"aws-cli"},
 		}).
 		Container().
