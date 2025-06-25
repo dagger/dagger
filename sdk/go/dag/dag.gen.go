@@ -420,6 +420,12 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
+// Load a Span from its ID.
+func LoadSpanFromID(id dagger.SpanID) *dagger.Span {
+	client := initClient()
+	return client.LoadSpanFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -444,6 +450,12 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 	return client.ModuleSource(refString, opts...)
 }
 
+// Returns a span that reveals its child spans and hides itself.
+func Reveal() *dagger.Span {
+	client := initClient()
+	return client.Reveal()
+}
+
 // Creates a new secret.
 func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
@@ -462,6 +474,12 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
+}
+
+// Create a new OpenTelemetry span.
+func Span(name string, opts ...dagger.SpanOpts) *dagger.Span {
+	client := initClient()
+	return client.Span(name, opts...)
 }
 
 // Create a new TypeDef.
