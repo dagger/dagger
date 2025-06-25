@@ -119,7 +119,17 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		}
 		repos = wolfiRepositories()
 
-		basePkgs = []string{"wolfi-baselayout", "busybox", "apk-tools"}
+		basePkgs = []string{
+			// HACK: Wolfi will occasionally publish APKINDEX files that are missing required
+			// versions of glibc and related packages. This is a problem when one of them, like
+			// ld-linux, specifies a dependency on an exact version that is not present.
+			// This resolves itself usually within an hour, but to avoid fundamental breakage of
+			// builds we are currently pinning these packages for now.
+			"busybox",
+			"glibc=2.41-r51",
+			"ld-linux=2.41-r51",
+			"libcrypt1=2.41-r51",
+		}
 	default:
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
@@ -135,11 +145,10 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 
 	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base container: %w", err)
-	}
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, m.Packages)
+	allPkgs := make([]string, 0, len(m.Packages)+len(basePkgs))
+	allPkgs = append(allPkgs, basePkgs...)
+	allPkgs = append(allPkgs, m.Packages...)
+	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, allPkgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create package container: %w", err)
 	}
@@ -179,19 +188,17 @@ func (m *Alpine) withPkgs(
 		return nil, fmt.Errorf("failed to get packages: %w", err)
 	}
 	if len(conflicts) > 0 {
-		// TODO: confirm that ignoring also matches apk add behavior (seems like it does)
-		fmt.Printf("package conflicts: %v\n", conflicts)
+		// conflicts aren't fatal, the most common one is "musl" on Wolfi, which only
+		// happens because some packages there explicitly say it cannot be a dependency
+		// (i.e. it's dependent on musl not being installed because it wants glibc).
+		fmt.Printf("unfatal package conflicts: %v\n", conflicts)
 	}
 
 	setupBase := dag.Container().From("busybox:latest")
 
 	type apkPkg struct {
-		name        string
-		dir         *dagger.Directory
-		preInstall  *dagger.File
-		postInstall *dagger.File
-		trigger     *dagger.File
-		rmFileNames []string
+		name string
+		dir  *dagger.Directory
 	}
 
 	var eg errgroup.Group
@@ -206,7 +213,7 @@ func (m *Alpine) withPkgs(
 				WithMountedFile(mntPath, dag.HTTP(url)).
 				WithMountedDirectory(outDir, dag.Directory()).
 				WithWorkdir(outDir).
-				WithExec([]string{"tar", "-xf", mntPath})
+				WithExec([]string{"tar", "-xf", mntPath, "--exclude=.*"})
 
 			alpinePkg := &apkPkg{
 				name: pkg.PackageName(),
@@ -231,21 +238,6 @@ func (m *Alpine) withPkgs(
 				}
 			}
 
-			for _, entry := range entries {
-				if !strings.HasPrefix(entry, ".") {
-					continue
-				}
-				alpinePkg.rmFileNames = append(alpinePkg.rmFileNames, entry)
-				switch entry {
-				case ".pre-install":
-					alpinePkg.preInstall = unpacked.File(filepath.Join(outDir, entry))
-				case ".post-install":
-					alpinePkg.postInstall = unpacked.File(filepath.Join(outDir, entry))
-				case ".trigger":
-					alpinePkg.trigger = unpacked.File(filepath.Join(outDir, entry))
-				}
-			}
-
 			alpinePkgs[i] = alpinePkg
 			return nil
 		})
@@ -254,33 +246,19 @@ func (m *Alpine) withPkgs(
 		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
+	installBusyboxSymlinks := false
 	for _, pkg := range alpinePkgs {
-		ctr = ctr.With(pkgscript("pre-install", pkg.name, pkg.preInstall))
-		ctr = ctr.WithDirectory("/", pkg.dir, dagger.ContainerWithDirectoryOpts{
-			Exclude: pkg.rmFileNames,
-		})
-		ctr = ctr.With(pkgscript("post-install", pkg.name, pkg.postInstall))
+		ctr = ctr.WithDirectory("/", pkg.dir)
 
-		if m.Distro == DistroWolfi && pkg.name == "busybox" {
-			// Need a bit of special casing here due to this change in wolfi's glibc package:
-			// https://github.com/wolfi-dev/os/commit/8229c0379cada98fb9504dd19a068dbbe2bd0d98
-			//
-			// That change requires that the busybox symlinks are created when glibc's trigger
-			// executes (otherwise `/usr/bin/sh` won't exist). However, that's tricky because
-			// the busybox actually has a dependency on glibc in wolfi.
-			//
-			// It turns out that change didn't affect apko because apko doesn't run any scripts
-			// (just installs them) and has an extra hardcoded step that manually creates busybox
-			// symlinks.
-			//
-			// We do run scripts, but to ensure that glibc's trigger can run successfully we run
-			// busybox's trigger right away after it's installed, ensuring the symlinks exist
-			// and glibc's trigger can run successfully later.
-			ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
+		if pkg.name == "busybox" {
+			// We copy apko and don't run scripts, but with a special exception for busybox,
+			// whose symlinks are usually installed by a script. We just manually
+			// install them at the end if busybox is installed.
+			installBusyboxSymlinks = true
 		}
 	}
-	for _, pkg := range alpinePkgs {
-		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
+	if installBusyboxSymlinks {
+		ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
 	}
 
 	return ctr, nil
@@ -305,18 +283,4 @@ func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, erro
 		keys[filepath.Base(u)] = keyBytes
 	}
 	return keys, nil
-}
-
-func pkgscript(kind string, pkg string, script *dagger.File) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		if script == nil {
-			return ctr
-		}
-
-		path := fmt.Sprintf("/tmp/%s.%s", pkg, kind)
-		return ctr.
-			WithMountedFile(path, script).
-			WithExec([]string{path}).
-			WithoutMount(path)
-	}
 }
