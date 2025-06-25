@@ -28,6 +28,11 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type Evaluatable interface {
+	dagql.Typed
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
+
 type HasPBDefinitions interface {
 	// PBDefinitions returns all the buildkit definitions that are part of a core type
 	PBDefinitions(context.Context) ([]*pb.Definition, error)

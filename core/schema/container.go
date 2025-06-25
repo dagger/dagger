@@ -332,7 +332,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withFile", s.withFile).
+		dagql.NodeFunc("withFile", DagOpContainerWrapper(s.srv, s.withFile)).
 			Doc(`Return a container snapshot with a file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "/path/to/new-file.txt"`),
@@ -345,7 +345,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withoutFile", s.withoutFile).
+		dagql.NodeFunc("withoutFile", DagOpContainerWrapper(s.srv, s.withoutFile)).
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to remove (e.g., "/file.txt").`),
@@ -353,7 +353,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withoutFiles", s.withoutFiles).
+		dagql.NodeFunc("withoutFiles", DagOpContainerWrapper(s.srv, s.withoutFiles)).
 			Doc(`Return a new container spanshot with specified files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`),
@@ -361,7 +361,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withFiles", s.withFiles).
+		dagql.NodeFunc("withFiles", DagOpContainerWrapper(s.srv, s.withFiles)).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
@@ -415,7 +415,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withoutDirectory", s.withoutDirectory).
+		dagql.NodeFunc("withoutDirectory", DagOpContainerWrapper(s.srv, s.withoutDirectory)).
 			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to remove (e.g., ".github/").`),
@@ -1688,90 +1688,120 @@ type containerWithFileArgs struct {
 	WithFileArgs
 	Owner  string `default:""`
 	Expand bool   `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
+func (s *containerSchema) withFile(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithFileArgs) (inst dagql.Instance[*core.Container], err error) {
 	file, err := args.Source.Load(ctx, s.srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFile(ctx, path, file.Self, args.Permissions, args.Owner)
+	ctr, err := parent.Self.WithFile(ctx, s.srv, path, file.Self, args.Permissions, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithFilesArgs struct {
 	WithFilesArgs
 	Owner  string `default:""`
 	Expand bool   `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withFiles(ctx context.Context, parent *core.Container, args containerWithFilesArgs) (*core.Container, error) {
+func (s *containerSchema) withFiles(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithFilesArgs) (inst dagql.Instance[*core.Container], err error) {
 	files := []*core.File{}
 	for _, id := range args.Sources {
 		file, err := id.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		files = append(files, file.Self)
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFiles(ctx, path, files, args.Permissions, args.Owner)
+	ctr, err := parent.Self.WithFiles(ctx, s.srv, path, files, args.Permissions, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithoutDirectoryArgs struct {
 	Path   string
 	Expand bool `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withoutDirectory(ctx context.Context, parent *core.Container, args containerWithoutDirectoryArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.Instance[*core.Container], err error) {
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithoutPaths(ctx, path)
+	ctr, err := parent.Self.WithoutPaths(ctx, s.srv, path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithoutFileArgs struct {
 	Path   string
 	Expand bool `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Container, args containerWithoutFileArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithoutFileArgs) (inst dagql.Instance[*core.Container], err error) {
+	path, err := expandEnvVar(ctx, parent.Self, args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithoutPaths(ctx, path)
+	ctr, err := parent.Self.WithoutPaths(ctx, s.srv, path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithoutFilesArgs struct {
 	Paths  []string
 	Expand bool `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withoutFiles(ctx context.Context, parent *core.Container, args containerWithoutFilesArgs) (*core.Container, error) {
+func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithoutFilesArgs) (inst dagql.Instance[*core.Container], err error) {
 	paths := args.Paths
-	var err error
 	for i, p := range args.Paths {
-		paths[i], err = expandEnvVar(ctx, parent, p, args.Expand)
+		paths[i], err = expandEnvVar(ctx, parent.Self, p, args.Expand)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 	}
 
-	return parent.WithoutPaths(ctx, paths...)
+	ctr, err := parent.Self.WithoutPaths(ctx, s.srv, paths...)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 type containerWithNewFileArgs struct {
