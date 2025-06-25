@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"runtime"
 	"slices"
 	"strconv"
@@ -437,28 +436,25 @@ func (container *Container) usedClientID(ctx context.Context) (string, error) {
 
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
-		return "", fmt.Errorf("%w: %s requires an exec", ErrNoCommand, filePath)
+		return "", ErrNoCommand
 	}
-
 	file := NewFile(
 		container.Meta,
-		path.Join(buildkit.MetaMountDestPath, filePath),
+		filePath,
 		container.Platform,
 		container.Services,
 	)
-
 	content, err := file.Contents(ctx)
 	if err != nil {
 		return "", err
 	}
-
 	return string(content), nil
 }
 
 func MetaMountState(ctx context.Context, stdin string) llb.State {
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
+		meta = meta.Mkfile(buildkit.MetaMountStdinPath, 0o666, []byte(stdin))
 	}
 
 	return llb.Scratch().File(meta,

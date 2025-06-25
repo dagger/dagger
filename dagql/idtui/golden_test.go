@@ -447,7 +447,7 @@ var scrubs = []scrubber{
 	{
 		regexp.MustCompile(`\$ container: Container! X\.Xs CACHED`),
 		"$ container: Container! X.Xs CACHED",
-		"✔ container: Container! X.Xs",
+		"● container: Container! X.Xs",
 	},
 }
 
