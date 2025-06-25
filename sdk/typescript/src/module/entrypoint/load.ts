@@ -229,6 +229,10 @@ export function loadObjectReturnType(
         listType = (listType as TypeDef<TypeDefKind.List>).typeDef
       }
 
+      if (listType.kind === TypeDefKind.Enum) {
+        return module.enums[(listType as TypeDef<TypeDefKind.Enum>).name]
+      }
+
       return module.objects[(listType as TypeDef<TypeDefKind.Object>).name]
     }
     case TypeDefKind.Object:
@@ -300,6 +304,12 @@ export async function loadResult(
         if (_property.kind === TypeDefKind.Object) {
           referencedObject =
             module.objects[(_property as TypeDef<TypeDefKind.Object>).name]
+        }
+
+        // If the original type is a enum, we use it as the referenced object.
+        if (_property.kind === TypeDefKind.Enum) {
+          referencedObject =
+            module.enums[(_property as TypeDef<TypeDefKind.Enum>).name]
         }
       }
 
