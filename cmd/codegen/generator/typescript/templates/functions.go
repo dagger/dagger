@@ -63,6 +63,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ConvertID":                 commonFunc.ConvertID,
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
+		"IsListOfEnum":              commonFunc.IsListOfEnum,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
 		"ToUpperCase":               commonFunc.ToUpperCase,
