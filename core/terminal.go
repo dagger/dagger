@@ -42,7 +42,7 @@ func (container *Container) Terminal(
 	// progress output with the terminal
 	_, err := container.Evaluate(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
