@@ -653,7 +653,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 	if err := addMount(ContainerMount{Source: container.FS, Target: "/"}); err != nil {
 		return nil, nil, 0, err
 	}
-	if err := addMount(ContainerMount{Source: container.Meta, Target: buildkit.MetaMountDestPath, SourcePath: buildkit.MetaMountDestPath}); err != nil {
+	if err := addMount(ContainerMount{Source: container.Meta, Target: buildkit.MetaMountDestPath}); err != nil {
 		return nil, nil, 0, err
 	}
 	for _, mount := range container.Mounts {
