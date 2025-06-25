@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed a deadlock caused by concurrent schema introspection and modification
+time: 2025-06-25T15:16:00.098153675-04:00
+custom:
+    Author: vito
+    PR: "10643"
