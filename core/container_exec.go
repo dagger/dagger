@@ -435,6 +435,9 @@ func (container *Container) usedClientID(ctx context.Context) (string, error) {
 }
 
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
+	if container.Meta == nil {
+		return "", ErrNoCommand
+	}
 	file := NewFile(
 		container.Meta,
 		filePath,
