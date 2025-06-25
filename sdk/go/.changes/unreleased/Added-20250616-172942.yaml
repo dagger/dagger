@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    Allow multi-line arrays in arg pragmas like `ignore`
-time: 2025-06-16T17:29:42.384937496+01:00
-custom:
-    Author: jedevc
-    PR: "10594"
