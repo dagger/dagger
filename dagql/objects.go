@@ -163,7 +163,6 @@ func (class Class[T]) TypeName() string {
 
 func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 	class.fieldsL.Lock()
-	defer class.fieldsL.Unlock()
 	f := &Field[T]{
 		Spec: &spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
@@ -172,6 +171,11 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 	}
 	f.CacheSpec = cacheSpec
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	class.fieldsL.Unlock()
+
+	// Invalidate cache after releasing the lock to avoid Class[...].fieldsL and
+	// *Server.schemaLock deadlock if the schema is concurrently introspected and
+	// updated (via Extend)
 	if class.invalidateSchemaCache != nil {
 		class.invalidateSchemaCache()
 	}
