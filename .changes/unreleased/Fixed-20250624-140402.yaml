@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed the `plain` progress format being way more verbose than intended.
-time: 2025-06-24T14:04:02.700130241-04:00
-custom:
-    Author: vito
-    PR: "10636"
