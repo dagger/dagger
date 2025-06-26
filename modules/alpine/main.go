@@ -250,13 +250,21 @@ func (m *Alpine) withPkgs(
 	for _, pkg := range alpinePkgs {
 		ctr = ctr.WithDirectory("/", pkg.dir)
 
-		if pkg.name == "busybox" {
+		if pkg.name == "busybox" || pkg.name == "busybox-full" {
 			// We copy apko and don't run scripts, but with a special exception for busybox,
-			// whose symlinks are usually installed by a script. We just manually
-			// install them at the end if busybox is installed.
+			// whose symlinks are usually installed by a script.
 			installBusyboxSymlinks = true
+
+			// Run now to install basic symlinks for things like `sh`, `ls`, etc.
+			// This is load-bearing for the corner case of the engine having custom CA certs that
+			// it will try to install in this container if/when the ca-certificates package is
+			// installed.
+			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
 		}
 	}
+
+	// run again at the end to ensure all symlinks are installed, including those
+	// normally only created after /etc/busybox-paths.d/busybox is updated
 	if installBusyboxSymlinks {
 		ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
 	}
