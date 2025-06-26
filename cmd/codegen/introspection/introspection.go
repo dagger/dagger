@@ -238,6 +238,16 @@ func (r TypeRef) IsList() bool {
 	return false
 }
 
+func (r TypeRef) IsEnum() bool {
+	ref := r
+
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+
+	return ref.Kind == TypeKindEnum
+}
+
 func (r TypeRef) IsVoid() bool {
 	ref := r
 	if r.Kind == TypeKindNonNull {

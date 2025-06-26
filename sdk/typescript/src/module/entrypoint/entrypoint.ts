@@ -7,7 +7,7 @@ import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
-import { register } from "./register.js"
+import { Register } from "./register.js"
 
 export async function entrypoint(files: string[]) {
   // Start a Dagger session to get the call context
@@ -24,7 +24,7 @@ export async function entrypoint(files: string[]) {
       let result: any
 
       if (parentName === "") {
-        result = await register(files, scanResult)
+        result = await new Register(scanResult).run()
       } else {
         // Invocation
         const fnName = await fnCall.name()
