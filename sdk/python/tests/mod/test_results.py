@@ -9,7 +9,7 @@ import typing_extensions
 import dagger
 from dagger import Doc, Name, dag
 from dagger.mod import Module
-from dagger.mod._exceptions import FatalError
+from dagger.mod._exceptions import RegistrationError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -382,7 +382,7 @@ async def test_constructor_with_init_var():
     assert await mod.get_result("Foo", {}, "", {"foo": "rab", "bar": "oof"}) == {
         "foo": "raboof",
     }
-    with pytest.raises(FatalError):
+    with pytest.raises(RegistrationError):
         await mod.get_result("Foo", {}, "bar", {})
 
 
