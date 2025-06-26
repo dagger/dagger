@@ -1363,6 +1363,11 @@ export class Test {
 				require.Equal(t, "Active status", statusEnum.Get("members.0.description").String())
 				require.Equal(t, "Inactive status", statusEnum.Get("members.1.description").String())
 				require.Equal(t, "Weird status", statusEnum.Get("members.2.description").String())
+
+				constructor := mod.Get("objects.#.asObject|#(name=Test).constructor")
+				require.Len(t, constructor.Get("args").Array(), 1)
+				require.Equal(t, "status", constructor.Get("args.0.name").String())
+				require.Equal(t, `"INACTIVE"`, constructor.Get("args.0.defaultValue").String())
 			})
 		}
 	})

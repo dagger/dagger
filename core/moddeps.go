@@ -225,7 +225,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 // deps.
 func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
 	for _, mod := range d.Mods {
-		modType, ok, _, err := mod.ModTypeFor(ctx, typeDef, false)
+		modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", mod.Name(), err)
 		}
