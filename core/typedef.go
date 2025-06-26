@@ -547,7 +547,7 @@ func (typeDef *TypeDef) WithEnumValue(name, value, desc string, sourceMap *Sourc
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
-	if err := typeDef.validateEnumMember(name, name); err != nil {
+	if err := typeDef.validateEnumMember(value, value); err != nil {
 		return nil, err
 	}
 
@@ -1093,7 +1093,7 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 }
 
 func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
-	if enumValue.Value == "" {
+	if enumValue.Value == "" || enumValue.Value == enumValue.Name {
 		return nil
 	}
 

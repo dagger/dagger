@@ -1151,6 +1151,9 @@ const (
 
 	// Inactive status
 	Inactive Status = "INACTIVE value"
+
+	// Weird status
+	WEIRD Status = "WEIRD"
 )
 
 func New(
@@ -1197,6 +1200,9 @@ class Status(enum.Enum):
     INACTIVE = "INACTIVE value"
     """Inactive status"""
 
+    WEIRD = "WEIRD"
+    """Weird status"""
+
 
 @dagger.object_type
 class Test:
@@ -1241,6 +1247,11 @@ export class Status {
    * Inactive status
    */
   static readonly Inactive: string = "INACTIVE"
+
+  /**
+   * Weird status
+   */
+  static readonly WEIRD: string = "WEIRD"
 }
 
 @object()
@@ -1336,18 +1347,22 @@ export class Test {
 				mod := inspectModule(ctx, t, modGen)
 				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
 				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
-				require.Len(t, statusEnum.Get("members").Array(), 2)
+				require.Len(t, statusEnum.Get("members").Array(), 3)
 				require.Equal(t, "ACTIVE", statusEnum.Get("members.0.name").String())
 				require.Equal(t, "INACTIVE", statusEnum.Get("members.1.name").String())
+				require.Equal(t, "WEIRD", statusEnum.Get("members.2.name").String())
 				if tc.supportsMembers {
 					require.Equal(t, "ACTIVE value", statusEnum.Get("members.0.value").String())
 					require.Equal(t, "INACTIVE value", statusEnum.Get("members.1.value").String())
+					require.Equal(t, "WEIRD", statusEnum.Get("members.2.value").String())
 				} else {
 					require.Equal(t, "ACTIVE", statusEnum.Get("members.0.value").String())
 					require.Equal(t, "INACTIVE", statusEnum.Get("members.1.value").String())
+					require.Equal(t, "WEIRD", statusEnum.Get("members.2.value").String())
 				}
 				require.Equal(t, "Active status", statusEnum.Get("members.0.description").String())
 				require.Equal(t, "Inactive status", statusEnum.Get("members.1.description").String())
+				require.Equal(t, "Weird status", statusEnum.Get("members.2.description").String())
 			})
 		}
 	})

@@ -384,10 +384,6 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 		return nil, err
 	}
 
-	if args.Value == args.Name {
-		args.Value = ""
-	}
-
 	supports, err := supportEnumMembers(ctx)
 	if err != nil {
 		return nil, err
@@ -395,7 +391,6 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	if !supports {
 		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
 	}
-
 	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
 }
 
