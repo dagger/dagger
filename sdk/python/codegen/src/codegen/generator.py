@@ -191,6 +191,9 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         import warnings  # noqa: F401
         from collections.abc import Callable
         from dataclasses import dataclass
+        import opentelemetry.trace
+        import opentelemetry.context
+        from opentelemetry.trace.span import TraceState
 
         from typing_extensions import Self
 
