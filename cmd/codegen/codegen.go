@@ -17,8 +17,8 @@ import (
 func Generate(ctx context.Context, cfg generator.Config) (err error) {
 	logsW := os.Stdout
 
-	if cfg.ModuleName != "" {
-		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleName)
+	if cfg.ModuleConfig  != nil && cfg.ModuleConfig.ModuleName != "" {
+		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleConfig.ModuleName)
 	} else {
 		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
 	}
@@ -33,7 +33,7 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 		introspectionSchema = resp.Schema
 		introspectionSchemaVersion = resp.SchemaVersion
 	} else {
-		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, cfg.Dag)
+		introspectionSchema, introspectionSchemaVersion, err = introspection.Introspect(ctx, cfg.Dag)
 		if err != nil {
 			return err
 		}
@@ -51,8 +51,8 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 
 		for _, cmd := range generated.PostCommands {
 			cmd.Dir = cfg.OutputDir
-			if cfg.ModuleName != "" {
-				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleSourcePath)
+			if cfg.ModuleConfig.ModuleName != "" {
+				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -97,7 +97,7 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, in
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
-	if cfg.ClientOnly {
+	if cfg.ClientConfig != nil {
 		return gen.GenerateClient(ctx, introspectionSchema, introspectionSchemaVersion)
 	}
 

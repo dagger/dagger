@@ -63,8 +63,8 @@ func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspe
 	mfs := memfs.New()
 
 	target := ClientGenFile
-	if g.Config.ModuleName != "" {
-		target = filepath.Join(g.Config.ModuleSourcePath, "sdk/src/api", ClientGenFile)
+	if g.Config.ModuleConfig != nil && g.Config.ModuleConfig.ModuleName !="" {
+		target = filepath.Join(g.Config.ModuleConfig.ModuleSourcePath, "sdk/src/api", ClientGenFile)
 	}
 
 	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {

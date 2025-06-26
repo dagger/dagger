@@ -374,7 +374,7 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
 		// Path to the module's context directory.
-		funcs.cfg.ModuleParentPath,
+		funcs.cfg.ModuleConfig.ModuleParentPath,
 		// Path from the context directory to the target path.
 		path,
 	)
@@ -385,15 +385,15 @@ func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 }
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {
-	return funcs.cfg.ClientOnly
+	return funcs.cfg.ClientConfig != nil
 }
 
 func (funcs typescriptTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
-	return funcs.cfg.ModuleDependencies
+	return funcs.cfg.ClientConfig.ModuleDependencies
 }
 
 func (funcs typescriptTemplateFuncs) HasLocalDependencies() bool {
-	for _, dep := range funcs.cfg.ModuleDependencies {
+	for _, dep := range funcs.cfg.ClientConfig.ModuleDependencies {
 		if dep.Kind == "LOCAL_SOURCE" {
 			return true
 		}
