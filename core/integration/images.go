@@ -12,7 +12,8 @@ const (
 	alpineArm    = "arm64v8/alpine"
 	alpineAmd    = "amd64/alpine"
 
-	nodeImage = "node:22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	nodeImage   = "node:22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	pythonImage = "ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:271c5b860d1a57fa505a169c1f9042d74822816049396655d759c14b6c3b8768"
 
 	// TODO: use these
 	// registryImage   = "registry:2"

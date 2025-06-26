@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -342,6 +343,29 @@ main()
 						WithExec([]string{"npm", "install"})
 				},
 				callCmd: []string{"tsx", "index.ts"},
+			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.test().hello()
+        print("result:", res)
+
+anyio.run(main)
+`, defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
 			},
 		}
 
@@ -1616,5 +1640,20 @@ func withTypeScriptSetup(content string) func(*dagger.Container) *dagger.Contain
 			WithExec([]string{"npm", "pkg", "set", "type=module"}).
 			WithExec([]string{"npm", "install", "-D", "typescript"}).
 			WithNewFile("index.ts", content)
+	}
+}
+
+func withPythonSetup(content, outputDir string) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithExec([]string{"uv", "init"}).
+			WithNewFile("main.py", content).
+			WithExec([]string{"uv", "add", "dagger-io"}).
+			WithExec([]string{"tee", "-a", "pyproject.toml"}, dagger.ContainerWithExecOpts{
+				Stdin: fmt.Sprintf(`
+[tool.uv.sources]
+dagger-io = { path = "%s", editable = true }
+`, filepath.Join(outputDir)),
+			})
 	}
 }

@@ -137,6 +137,9 @@ type PythonSdk struct {
 	// It's assumed that this is the case if there's no pyproject.toml file.
 	IsInit bool
 
+	// True if dagger.json has any module dependencies
+	HasDeps bool
+
 	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
@@ -351,6 +354,11 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 		if m.Discovery.SdkHasFile("dist/") {
 			src = src.WithoutDirectory("dist")
 		}
+		if !m.Discovery.ClientGen {
+			src = src.
+				WithoutDirectory("src/dagger/provision").
+				WithoutDirectory("src/dagger/_engine")
+		}
 		m.AddDirectory(m.VendorPath, src)
 	}
 
@@ -513,5 +521,11 @@ func (m *PythonSdk) GenerateClient(
 	if err != nil {
 		return nil, err
 	}
+	// Skip codegen if there's no dependencies since it'll be the same
+	// as the published library, even if vendored.
+	if !m.HasDeps {
+		introspectionJSON = nil
+	}
+	m.Discovery.ClientGen = true
 	return m.WithSDK(introspectionJSON).ContextDir, nil
 }
