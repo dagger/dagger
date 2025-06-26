@@ -1098,6 +1098,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Span",
+			"p": "Dagger/Span.html",
+			"d": "<p>An OpenTelemetry span.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SpanId",
+			"p": "Dagger/SpanId.html",
+			"d": "<p>The <code>SpanID</code> scalar type represents an identifier for an object of type Span.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Terminal",
 			"p": "Dagger/Terminal.html",
 			"d": "<p>An interactive terminal that clients can connect to.</p>",
@@ -1693,6 +1713,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadSpanFromID",
+			"p": "Dagger/Client.html#method_loadSpanFromID",
+			"d": "<p>Load a Span from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadTerminalFromID",
 			"p": "Dagger/Client.html#method_loadTerminalFromID",
 			"d": "<p>Load a Terminal from its ID.</p>"
@@ -1717,6 +1743,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::reveal",
+			"p": "Dagger/Client.html#method_reveal",
+			"d": "<p>Returns a span that reveals its child spans and hides itself.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::secret",
 			"p": "Dagger/Client.html#method_secret",
 			"d": "<p>Creates a new secret.</p>"
@@ -1732,6 +1764,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::span",
+			"p": "Dagger/Client.html#method_span",
+			"d": "<p>Create a new OpenTelemetry span.</p>"
 		},
 		{
 			"t": "M",
@@ -4180,6 +4218,60 @@
 			"n": "Dagger\\SourceMap::module",
 			"p": "Dagger/SourceMap.html#method_module",
 			"d": "<p>The module dependency this was declared in.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::end",
+			"p": "Dagger/Span.html#method_end",
+			"d": "<p>End the OpenTelemetry span, with an optional error.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::id",
+			"p": "Dagger/Span.html#method_id",
+			"d": "<p>A unique identifier for this Span.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::internalId",
+			"p": "Dagger/Span.html#method_internalId",
+			"d": "<p>Returns the internal ID of the span.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::name",
+			"p": "Dagger/Span.html#method_name",
+			"d": "<p>The name of the span.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::start",
+			"p": "Dagger/Span.html#method_start",
+			"d": "<p>Start a new instance of the span.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::withActor",
+			"p": "Dagger/Span.html#method_withActor",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::withInternal",
+			"p": "Dagger/Span.html#method_withInternal",
+			"d": "<p>Returns a new span with the internal attribute set to true.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::withPassthrough",
+			"p": "Dagger/Span.html#method_withPassthrough",
+			"d": "<p>Returns a new span with the passthrough attribute set to true.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Span::withReveal",
+			"p": "Dagger/Span.html#method_withReveal",
+			"d": "<p>Returns a new span with the reveal attribute set to true.</p>"
 		},
 		{
 			"t": "M",

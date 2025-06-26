@@ -775,6 +775,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSpanFromID">loadSpanFromID</a>(<abbr title="Dagger\SpanId|Dagger\Span">Span</abbr> $id)
+        
+                                            <p><p>Load a Span from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -815,6 +825,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_reveal">reveal</a>()
+        
+                                            <p><p>Returns a span that reveals its child spans and hides itself.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -841,6 +861,16 @@
                     <a href="#method_sourceMap">sourceMap</a>(string $filename, int $line, int $column)
         
                                             <p><p>Creates source map metadata.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_span">span</a>(string $name, string|null $key = &#039;&#039;)
+        
+                                            <p><p>Create a new OpenTelemetry span.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -3565,8 +3595,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadTerminalFromID">
+                    <h3 id="method_loadSpanFromID">
         <div class="location">at line 689</div>
+        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+    <strong>loadSpanFromID</strong>(<abbr title="Dagger\SpanId|Dagger\Span">Span</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Span from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\SpanId|Dagger\Span">Span</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadTerminalFromID">
+        <div class="location">at line 699</div>
         <code>                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
     <strong>loadTerminalFromID</strong>(<abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $id)
         </code>
@@ -3608,7 +3680,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTypeDefFromID">
-        <div class="location">at line 699</div>
+        <div class="location">at line 709</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>loadTypeDefFromID</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $id)
         </code>
@@ -3650,7 +3722,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 709</div>
+        <div class="location">at line 719</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -3682,7 +3754,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 718</div>
+        <div class="location">at line 728</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -3743,8 +3815,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_reveal">
+        <div class="location">at line 755</div>
+        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+    <strong>reveal</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Returns a span that reveals its child spans and hides itself.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 745</div>
+        <div class="location">at line 764</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -3791,7 +3895,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 760</div>
+        <div class="location">at line 779</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -3838,7 +3942,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 771</div>
+        <div class="location">at line 790</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -3889,8 +3993,55 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_span">
+        <div class="location">at line 802</div>
+        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+    <strong>span</strong>(string $name, string|null $key = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new OpenTelemetry span.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 783</div>
+        <div class="location">at line 815</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -3922,7 +4073,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 792</div>
+        <div class="location">at line 824</div>
         <code>                    string
     <strong>version</strong>()
         </code>

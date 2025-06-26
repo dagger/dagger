@@ -389,7 +389,9 @@
 <abbr title="Dagger\Port">Port</abbr>::experimentalSkipHealthcheck</a>() &mdash; <em>Method in class <a href="Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a></em></dt>
                     <dd><p>Skip the health check when run as a service.</p></dd><dt><a href="Dagger/Service.html#method_endpoint">
 <abbr title="Dagger\Service">Service</abbr>::endpoint</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
-                    <dd><p>Retrieves an endpoint that clients can use to reach this container.</p></dd>        </dl><h2 id="letterF">F</h2>
+                    <dd><p>Retrieves an endpoint that clients can use to reach this container.</p></dd><dt><a href="Dagger/Span.html#method_end">
+<abbr title="Dagger\Span">Span</abbr>::end</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>End the OpenTelemetry span, with an optional error.</p></dd>        </dl><h2 id="letterF">F</h2>
         <dl id="indexF"><dt><a href="Dagger/Client.html#method_file">
 <abbr title="Dagger\Client">Client</abbr>::file</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Creates a file with the specified contents.</p></dd><dt><a href="Dagger/Client.html#method_function">
@@ -589,7 +591,11 @@
 <abbr title="Dagger\Socket">Socket</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Socket.</p></dd><dt><a href="Dagger/SourceMap.html#method_id">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this SourceMap.</p></dd><dt><a href="Dagger/Terminal.html#method_id">
+                    <dd><p>A unique identifier for this SourceMap.</p></dd><dt><a href="Dagger/Span.html#method_id">
+<abbr title="Dagger\Span">Span</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this Span.</p></dd><dt><a href="Dagger/Span.html#method_internalId">
+<abbr title="Dagger\Span">Span</abbr>::internalId</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>Returns the internal ID of the span.</p></dd><dt><a href="Dagger/Terminal.html#method_id">
 <abbr title="Dagger\Terminal">Terminal</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Terminal.</p></dd><dt><a href="Dagger/TypeDef.html#method_id">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
@@ -692,7 +698,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadSocketFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Socket from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSourceMapFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadSourceMapFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a SourceMap from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadTerminalFromID">
+                    <dd><p>Load a SourceMap from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSpanFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadSpanFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a Span from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadTerminalFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadTerminalFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Terminal from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -796,7 +804,9 @@
 <abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></em></dt>
                     <dd><p>The name of the scalar.</p></dd><dt><a href="Dagger/Secret.html#method_name">
 <abbr title="Dagger\Secret">Secret</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></em></dt>
-                    <dd><p>The name of this secret.</p></dd>        </dl><h2 id="letterO">O</h2>
+                    <dd><p>The name of this secret.</p></dd><dt><a href="Dagger/Span.html#method_name">
+<abbr title="Dagger\Span">Span</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>The name of the span.</p></dd>        </dl><h2 id="letterO">O</h2>
         <dl id="indexO"><dt><a href="Dagger/Env.html#method_output">
 <abbr title="Dagger\Env">Env</abbr>::output</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>retrieve an output value by name</p></dd><dt><a href="Dagger/Env.html#method_outputs">
@@ -847,7 +857,9 @@
                     <dd></dd><dt><a href="Dagger/Client/QueryBuilder.html"><abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Client.html">Dagger\Client</a></em></dt>
                     <dd></dd>        </dl><h2 id="letterR">R</h2>
         <dl id="indexR"><dt><a href="Dagger/Attribute/ReturnsListOfType.html"><abbr title="Dagger\Attribute\ReturnsListOfType">ReturnsListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Client/AbstractClient.html#method_runQuery">
+                    <dd></dd><dt><a href="Dagger/Client.html#method_reveal">
+<abbr title="Dagger\Client">Client</abbr>::reveal</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Returns a span that reveals its child spans and hides itself.</p></dd><dt><a href="Dagger/Client/AbstractClient.html#method_runQuery">
 <abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr>::runQuery</a>() &mdash; <em>Method in class <a href="Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Container.html#method_rootfs">
 <abbr title="Dagger\Container">Container</abbr>::rootfs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -874,7 +886,9 @@
 <abbr title="Dagger\Client">Client</abbr>::setSecret</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Sets a secret given a user defined name to its plaintext and returns the secret.</p></dd><dt><a href="Dagger/Client.html#method_sourceMap">
 <abbr title="Dagger\Client">Client</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Creates source map metadata.</p></dd><dt><a href="Dagger/Client/QueryBuilder.html#method_setArgument">
+                    <dd><p>Creates source map metadata.</p></dd><dt><a href="Dagger/Client.html#method_span">
+<abbr title="Dagger\Client">Client</abbr>::span</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Create a new OpenTelemetry span.</p></dd><dt><a href="Dagger/Client/QueryBuilder.html#method_setArgument">
 <abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr>::setArgument</a>() &mdash; <em>Method in class <a href="Dagger/Client/QueryBuilder.html"><abbr title="Dagger\Client\QueryBuilder">QueryBuilder</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Container.html#method_stderr">
 <abbr title="Dagger\Container">Container</abbr>::stderr</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -952,7 +966,11 @@
                     <dd><p>A Unix or TCP/IP socket that can be mounted into a container.</p></dd><dt><a href="Dagger/SocketId.html"><abbr title="Dagger\SocketId">SocketId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>SocketID</code> scalar type represents an identifier for an object of type Socket.</p></dd><dt><a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Source location information.</p></dd><dt><a href="Dagger/SourceMapId.html"><abbr title="Dagger\SourceMapId">SourceMapId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>SourceMapID</code> scalar type represents an identifier for an object of type SourceMap.</p></dd><dt><a href="Dagger/Terminal.html#method_sync">
+                    <dd><p>The <code>SourceMapID</code> scalar type represents an identifier for an object of type SourceMap.</p></dd><dt><a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An OpenTelemetry span.</p></dd><dt><a href="Dagger/Span.html#method_start">
+<abbr title="Dagger\Span">Span</abbr>::start</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>Start a new instance of the span.</p></dd><dt><a href="Dagger/SpanId.html"><abbr title="Dagger\SpanId">SpanId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>SpanID</code> scalar type represents an identifier for an object of type Span.</p></dd><dt><a href="Dagger/Terminal.html#method_sync">
 <abbr title="Dagger\Terminal">Terminal</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a></em></dt>
                     <dd><p>Forces evaluation of the pipeline in the engine.</p></dd>        </dl><h2 id="letterT">T</h2>
         <dl id="indexT"><dt><a href="Dagger/Binding.html#method_typeName">
@@ -1256,7 +1274,15 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Remove the provided dependencies from the module source's dependency list.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
 <abbr title="Dagger\Service">Service</abbr>::withHostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
-                    <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
+                    <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/Span.html#method_withActor">
+<abbr title="Dagger\Span">Span</abbr>::withActor</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/Span.html#method_withInternal">
+<abbr title="Dagger\Span">Span</abbr>::withInternal</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>Returns a new span with the internal attribute set to true.</p></dd><dt><a href="Dagger/Span.html#method_withPassthrough">
+<abbr title="Dagger\Span">Span</abbr>::withPassthrough</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>Returns a new span with the passthrough attribute set to true.</p></dd><dt><a href="Dagger/Span.html#method_withReveal">
+<abbr title="Dagger\Span">Span</abbr>::withReveal</a>() &mdash; <em>Method in class <a href="Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></em></dt>
+                    <dd><p>Returns a new span with the reveal attribute set to true.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withConstructor</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.</p></dd><dt><a href="Dagger/TypeDef.html#method_withEnum">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withEnum</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
