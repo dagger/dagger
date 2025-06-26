@@ -62,7 +62,6 @@ func customProxyTests(
 	httpServer := nginxWithCerts(c, nginxWithCertsOpts{
 		serverCert: httpServerCert,
 		serverKey:  httpServerKey,
-		dhParam:    certGen.dhParam,
 		dnsName:    httpServerAlias,
 		msg:        "whatup",
 	})
@@ -79,7 +78,6 @@ func customProxyTests(
 	noproxyHTTPServer := nginxWithCerts(c, nginxWithCertsOpts{
 		serverCert: noproxyHTTPServerCert,
 		serverKey:  noproxyHTTPServerKey,
-		dhParam:    certGen.dhParam,
 		dnsName:    noproxyHTTPServerAlias,
 		msg:        "whatup",
 	})
@@ -122,7 +120,7 @@ refresh_pattern .               0       20%     4320
 
 http_port 3128
 ssl_bump bump all
-https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem tls-dh=/etc/squid/dhparam.pem
+https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem
 
 http_access deny !Safe_ports
 http_access deny CONNECT !SSL_ports
@@ -153,7 +151,6 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 		WithExec([]string{"update-ca-certificates"}).
 		WithMountedFile("/etc/squid/server.pem", squidCert).
 		WithMountedFile("/etc/squid/serverkey.pem", squidKey).
-		WithMountedFile("/etc/squid/dhparam.pem", certGen.dhParam).
 		WithExec([]string{"chmod", "u+s", "/usr/lib/squid/basic_getpwnam_auth"}).
 		WithMountedCache("/var/log/squidaccess", squidLogsVolume).
 		WithExposedPort(3128).
