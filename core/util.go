@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -16,6 +17,7 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/mod/semver"
 
@@ -26,7 +28,13 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type Evaluatable interface {
+	dagql.Typed
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
+
 type HasPBDefinitions interface {
+	// PBDefinitions returns all the buildkit definitions that are part of a core type
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
@@ -66,6 +74,23 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
 		return nil, nil
 	}
+}
+
+type Digestable interface {
+	// Digest returns a content-digest of an object.
+	Digest() (digest.Digest, error)
+}
+
+func DigestOf(v any) (digest.Digest, error) {
+	if v, ok := v.(Digestable); ok {
+		return v.Digest()
+	}
+
+	vs, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return digest.FromBytes(vs), nil
 }
 
 func absPath(workDir string, containerPath string) string {

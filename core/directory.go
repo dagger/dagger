@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -530,8 +532,82 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 	return dir, nil
 }
 
+func copyFile(srcPath, dstPath string) (err error) {
+	srcStat, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	srcPerm := srcStat.Mode().Perm()
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(dstPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcPerm)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(dstPath)
+		}
+	}()
+	defer func() {
+		if dst != nil {
+			dst.Close()
+		}
+	}()
+	_, err = io.Copy(dst, src)
+	if err != nil {
+		return err
+	}
+	err = dst.Close()
+	if err != nil {
+		return err
+	}
+	dst = nil
+
+	modTime := srcStat.ModTime()
+	return os.Chtimes(dstPath, modTime, modTime)
+}
+
+func isDir(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return fi.Mode().IsDir(), nil
+}
+
+type hack interface {
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
+
+func getRefOrEvaluate(ctx context.Context, ref bkcache.ImmutableRef, t hack) (bkcache.ImmutableRef, error) {
+	if ref != nil {
+		return ref, nil
+	}
+	res, err := t.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cacheRef, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	if cacheRef == nil {
+		return nil, nil
+	}
+	return cacheRef.CacheRef(ctx)
+}
+
 func (dir *Directory) WithFile(
 	ctx context.Context,
+	srv *dagql.Server,
 	destPath string,
 	src *File,
 	permissions *int,
@@ -539,37 +615,82 @@ func (dir *Directory) WithFile(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
-	destSt, err := dir.State()
+	srcCacheRef, err := getRefOrEvaluate(ctx, src.Result, src)
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, err := src.State()
+	dirCacheRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:         destSt,
-		DestDir:      path.Join(dir.Dir, path.Dir(destPath)),
-		DestFileName: path.Base(destPath),
-		Src:          srcSt,
-		SrcDir:       path.Dir(src.File),
-		SrcFileName:  path.Base(src.File),
-		Permissions:  permissions,
-		Owner:        owner,
-	})); err != nil {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	dir.Services.Merge(src.Services)
-
+	destPath = path.Join(dir.Dir, destPath)
+	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, src.File)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(dirRoot string) error {
+		destPath, err := containerdfs.RootPath(dirRoot, destPath)
+		if err != nil {
+			return err
+		}
+		destIsDir, err := isDir(destPath)
+		if err != nil {
+			return err
+		}
+		if destIsDir {
+			_, srcFilename := filepath.Split(src.File)
+			destPath = path.Join(destPath, srcFilename)
+		}
+		destPathDir, _ := filepath.Split(destPath)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, srcCacheRef, nil, func(srcRoot string) error {
+			srcPath, err := containerdfs.RootPath(srcRoot, src.File)
+			if err != nil {
+				return err
+			}
+			return copyFile(srcPath, destPath)
+		})
+		if err != nil {
+			return err
+		}
+		if permissions != nil {
+			if err := os.Chmod(destPath, os.FileMode(*permissions)); err != nil {
+				return fmt.Errorf("failed to set chmod %s: err", destPath)
+			}
+		}
+		if owner != nil {
+			if err := os.Chown(destPath, owner.UID, owner.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: err", destPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
 // TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
 func (dir *Directory) WithFiles(
 	ctx context.Context,
+	srv *dagql.Server,
 	destDir string,
 	src []*File,
 	permissions *int,
@@ -581,6 +702,7 @@ func (dir *Directory) WithFiles(
 	for _, file := range src {
 		dir, err = dir.WithFile(
 			ctx,
+			srv,
 			path.Join(destDir, path.Base(file.File)),
 			file,
 			permissions,
@@ -753,28 +875,57 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 
-	st, err := dir.State()
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var action *llb.FileAction
-	for _, path := range paths {
-		path = filepath.Join(dir.Dir, path)
-		if action == nil {
-			action = llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
-		} else {
-			action = action.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("without %s", strings.Join(paths, ","))))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, nil, func(root string) error {
+		for _, p := range paths {
+			p = path.Join(dir.Dir, p)
+			var matches []string
+			if strings.Contains(p, "*") {
+				matches, err = fscopy.ResolveWildcards(root, p, true)
+				if err != nil {
+					return err
+				}
+			} else {
+				matches = []string{p}
+			}
+			for _, m := range matches {
+				fullPath, err := containerdfs.RootPath(root, m)
+				if err != nil {
+					return err
+				}
+				err = os.RemoveAll(fullPath)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	}
-	err = dir.SetState(ctx, st.File(action))
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
@@ -833,22 +984,9 @@ func (dir *Directory) Root() (*Directory, error) {
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
 	dir = dir.Clone()
 
-	res, err := dir.Evaluate(ctx)
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var parentRef bkcache.ImmutableRef
-	if ref != nil {
-		parentRef, err = ref.CacheRef(ctx)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	query, err := CurrentQuery(ctx)

@@ -170,6 +170,24 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
+func (container *Container) WithoutInputs() *Container {
+	container = container.Clone()
+
+	container.FS = nil
+	container.FSResult = nil
+
+	container.Meta = nil
+	container.MetaResult = nil
+
+	for i, mount := range container.Mounts {
+		mount.Source = nil
+		mount.Result = nil
+		container.Mounts[i] = mount
+	}
+
+	return container
+}
+
 var _ dagql.OnReleaser = (*Container)(nil)
 
 func (container *Container) OnRelease(ctx context.Context) error {
@@ -659,7 +677,7 @@ func (container *Container) WithDirectory(ctx context.Context, subdir string, sr
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, destPath string, src *File, permissions *int, owner string) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, srv *dagql.Server, destPath string, src *File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(filepath.Clean(destPath))
@@ -669,17 +687,17 @@ func (container *Container) WithFile(ctx context.Context, destPath string, src *
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, file, src, permissions, ownership)
+		return dir.WithFile(ctx, srv, file, src, permissions, ownership)
 	})
 }
 
-func (container *Container) WithoutPaths(ctx context.Context, destPaths ...string) (*Container, error) {
+func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
 	container = container.Clone()
 
 	for _, destPath := range destPaths {
 		var err error
 		container, err = container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
-			return dir.Without(ctx, path.Base(destPath))
+			return dir.Without(ctx, srv, path.Base(destPath))
 		})
 		if err != nil {
 			return nil, err
@@ -688,7 +706,7 @@ func (container *Container) WithoutPaths(ctx context.Context, destPaths ...strin
 	return container, nil
 }
 
-func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
+func (container *Container) WithFiles(ctx context.Context, srv *dagql.Server, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(filepath.Clean(destDir))
@@ -698,7 +716,7 @@ func (container *Container) WithFiles(ctx context.Context, destDir string, src [
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, file, src, permissions, ownership)
+		return dir.WithFiles(ctx, srv, file, src, permissions, ownership)
 	})
 }
 
@@ -1213,6 +1231,12 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 	dir, mount, err := locatePath(container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
+	}
+
+	if mount == nil {
+		dir.Result = container.FSResult
+	} else {
+		dir.Result = mount.Result
 	}
 
 	dir, err = fn(dir)
@@ -1747,22 +1771,6 @@ type ContainerAsServiceArgs struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, error) {
-	if container.Meta == nil {
-		var err error
-		container, err = container.WithExec(ctx, ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
-	}, nil
-}
-
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
 	if len(args.Args) == 0 &&
 		len(container.Config.Cmd) == 0 &&
@@ -1783,21 +1791,17 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
+		Creator:                       trace.SpanContextFromContext(ctx),
+		Container:                     container,
+		Args:                          cmdargs,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NoInit:                        args.NoInit,
 	}, nil
 }
 
