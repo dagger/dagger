@@ -858,6 +858,23 @@ func NewObjectInstanceForID[T Typed](
 	}, nil
 }
 
+// TODO:
+func NewObjectInstanceForIDFromClass[T Typed](
+	self T,
+	class Class[T],
+	id *call.ID,
+) (ObjectInstance[T], error) {
+	inst, err := NewInstanceForID(self, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return objectInstance[T]{
+		instance: inst.(instance[T]),
+		Class:    class,
+	}, nil
+}
+
 func idToPath(id *call.ID) ast.Path {
 	path := ast.Path{}
 	if id == nil { // Query
@@ -973,6 +990,11 @@ func (s *Server) resolvePath(ctx context.Context, self ObjectValue, sel Selectio
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
+// TODO: cleanup
+type InterfaceValue interface {
+	UnderlyingObject(*call.ID) (string, Value, error)
+}
+
 func (s *Server) toSelectable(val Value) (ObjectValue, error) {
 	if sel, ok := val.(ObjectValue); ok {
 		// We always support returning something that's already Selectable, e.g. an
@@ -980,10 +1002,25 @@ func (s *Server) toSelectable(val Value) (ObjectValue, error) {
 		return sel, nil
 	}
 
-	class, ok := s.ObjectType(val.AstType().Name())
+	// TODO: cleanup this tragedy
+	className := val.AstType().Name()
+	class, ok := s.ObjectType(className)
+	if !ok {
+		var iface InterfaceValue
+		iface, ok = UnwrapAs[InterfaceValue](val)
+		if ok {
+			var err error
+			className, val, err = iface.UnderlyingObject(val.ID())
+			if err != nil {
+				return nil, fmt.Errorf("to selectable iface conversion: %w", err)
+			}
+			class, ok = s.ObjectType(className)
+		}
+	}
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.AstType().Name())
 	}
+
 	return class.New(val)
 }
 

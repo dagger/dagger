@@ -189,7 +189,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
 					}
-					return dagql.NewInstanceForCurrentID(ctx, &InterfaceAnnotatedValue{
+					return dagql.NewObjectInstanceForCurrentID(ctx, dag, &InterfaceAnnotatedValue{
 						TypeDef:        iface,
 						Fields:         inst.Fields,
 						UnderlyingType: objType,

@@ -496,7 +496,9 @@ func (r objectInstance[T]) preselect(ctx context.Context, s *Server, sel Selecto
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		// TODO:
+		// return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		return nil, fmt.Errorf("Select: %s has no such field: %q, fields: %+v", r.Class.TypeName(), sel.Field, r.Class.fields)
 	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the

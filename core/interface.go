@@ -25,7 +25,7 @@ type InterfaceType struct {
 var _ ModType = (*InterfaceType)(nil)
 
 type loadedIfaceImpl struct {
-	val     dagql.Value
+	val     dagql.ObjectValue
 	valType ModType
 }
 
@@ -39,7 +39,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 	}
 
 	// TODO: this seems expensive
-	fromID := func(id *call.ID) (dagql.Value, error) {
+	fromID := func(id *call.ID) (dagql.ObjectValue, error) {
 		loadedImpl, err := iface.loadImpl(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("load interface implementation: %w", err)
@@ -330,7 +330,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to get object return type for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
-				return wrapIface(dagql.CurrentID(ctx), ifaceReturnType, objReturnType, res)
+				return wrapIface(dagql.CurrentID(ctx), ifaceReturnType, objReturnType, res, dag)
 			},
 			CacheSpec: dagql.CacheSpec{
 				GetCacheConfig: func(
@@ -395,19 +395,20 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	return nil
 }
 
-func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType, res dagql.Value) (dagql.Value, error) {
+func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType, res dagql.Value, srv *dagql.Server) (dagql.Value, error) {
 	switch underlyingType := underlyingType.(type) {
 	case *InterfaceType, *ModuleObjectType:
-		switch typedVal := res.Unwrap().(type) {
-		case *ModuleObject:
-			return dagql.NewInstanceForID(&InterfaceAnnotatedValue{
+		switch res := res.(type) {
+		case dagql.Instance[*ModuleObject]:
+			return dagql.NewObjectInstanceForID(&InterfaceAnnotatedValue{
 				TypeDef:        ifaceType.typeDef,
 				IfaceType:      ifaceType,
-				Fields:         typedVal.Fields,
+				Fields:         res.Self().Fields,
 				UnderlyingType: underlyingType,
-			}, curID)
-		case *InterfaceAnnotatedValue:
+			}, srv, curID)
+		case dagql.Instance[*InterfaceAnnotatedValue]:
 			return res, nil
+
 		default:
 			return nil, fmt.Errorf("unexpected object return type %T for %s", res, ifaceType.typeDef.Name)
 		}
@@ -423,6 +424,7 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 		if enum.Len() == 0 {
 			return res, nil
 		}
+
 		ret := dagql.DynamicInstanceArrayOutput{}
 		for i := 1; i <= enum.Len(); i++ {
 			item, err := res.NthValue(i)
@@ -433,7 +435,7 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 				ret.Elem = item.Unwrap()
 			}
 			nthID := curID.SelectNth(i)
-			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item)
+			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item, srv)
 			if err != nil {
 				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
 			}
@@ -451,6 +453,29 @@ type InterfaceAnnotatedValue struct {
 	IfaceType      *InterfaceType
 	Fields         map[string]any
 	UnderlyingType ModType
+}
+
+// TODO:
+var _ dagql.InterfaceValue = (*InterfaceAnnotatedValue)(nil)
+
+func (iface *InterfaceAnnotatedValue) UnderlyingObject(id *call.ID) (string, dagql.Value, error) {
+	userModObjType, ok := iface.UnderlyingType.(*ModuleObjectType)
+	if !ok {
+		return "", nil, fmt.Errorf("unhandled underlying type %T for interface value %s", iface.UnderlyingType, iface.TypeDef.Name)
+	}
+
+	obj := &ModuleObject{
+		Module:  userModObjType.mod,
+		TypeDef: userModObjType.typeDef,
+		Fields:  iface.Fields,
+	}
+	inst, err := dagql.NewInstanceForID(obj, id)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create module object instance for interface value %s: %w", iface.TypeDef.Name, err)
+	}
+
+	return userModObjType.typeDef.Name, inst, nil
+
 }
 
 var _ dagql.Typed = (*InterfaceAnnotatedValue)(nil)
