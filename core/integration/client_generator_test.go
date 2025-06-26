@@ -38,29 +38,32 @@ func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, 
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withGoSetup(`package main
-import (
-  "context"
-  "fmt"
+						With(withGoSetup(fmt.Sprintf(`package main
 
-  "test.com/test/dagger"
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
-  if err != nil {
-    panic(err)
-  }
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-  if err != nil {
-    panic(err)
-  }
+	res, err := dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println("result:", res)
-}`, defaultGenDir))
+	fmt.Println("result:", res)
+}
+`, alpineImage), defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -71,17 +74,19 @@ func main() {
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(fmt.Sprintf(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
-    await connection(async () => {
-      const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+  await connection(async () => {
+    const res = await dag.container().from("%s").withExec(["echo", "-n", "hello"]).stdout()
 
-      console.log("result:", res)
-    })
+    console.log("result:", res)
+  })
 }
 
-main()`))
+main()
+`, alpineImage)),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -144,30 +149,31 @@ main()`))
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(withGoSetup(`package main
-		
-		import (
-			"context"
-			"fmt"
-		
-			"test.com/test/dagger"
-		)
-		
-		func main() {
-			ctx := context.Background()
-		
-			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  panic(err)
-      }
-		
-			res, err := dag.Hello().Hello(ctx)
-			if err != nil {
-				panic(err)
-			}
-		
-			fmt.Println("result:", res)
-		}
-		`, defaultGenDir))
+
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := dag.Hello().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`, defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -187,15 +193,16 @@ main()`))
 						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
-    await connection(async () => {
-      const res = await dag.hello().hello()
+  await connection(async () => {
+    const res = await dag.hello().hello()
 
-      console.log("result:", res)
-    })
+    console.log("result:", res)
+  })
 }
 
 main()
-`))
+`),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -281,30 +288,31 @@ main()
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(withGoSetup(`package main
-		
-		import (
-			"context"
-			"fmt"
-		
-			"test.com/test/dagger"
-		)
-		
-		func main() {
-			ctx := context.Background()
-		
-			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  panic(err)
-      }
-		
-			res, err := dag.Test().Hello(ctx)
-			if err != nil {
-				panic(err)
-			}
-		
-			fmt.Println("result:", res)
-		}
-		`, defaultGenDir))
+
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := dag.Test().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`, defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -318,15 +326,16 @@ main()
 						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
-    await connection(async () => {
-      const res = await dag.test().hello()
+  await connection(async () => {
+    const res = await dag.test().hello()
 
-      console.log("result:", res)
-    })
+    console.log("result:", res)
+  })
 }
 
 main()
-`))
+`),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -347,13 +356,14 @@ main()
 					WithWorkdir("/work/dep").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(sdkSource("go", `package main
-		
-		type Test struct{}
-		
-		func (t *Test) Hello() string {
-			return "hello"
-		}`,
-					)).
+
+type Test struct{}
+
+func (t *Test) Hello() string {
+	return "hello"
+}
+`),
+					).
 					WithWorkdir("/work").
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
@@ -398,41 +408,43 @@ main()
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
-						WithNewFile(".dagger/main.go", `package main
-		
+						WithNewFile(".dagger/main.go", fmt.Sprintf(`package main
+
 import "context"
 
 type Test struct{}
-		
-func (t *Test) Hello(ctx context.Context) (string, error) {
-	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-}
-					`).
-						With(withGoSetup(`package main
-		
-import (
-  "context"
-  "fmt"
 
-  "test.com/test/dagger"
+func (t *Test) Hello(ctx context.Context) (string, error) {
+	return dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+}
+`, alpineImage),
+						).
+						With(withGoSetup(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
-  if err != nil {
-    panic(err)
-  }
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  res, err := dag.Test().Hello(ctx)
-  if err != nil {
-    panic(err)
-  }
+	res, err := dag.Test().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println("result:", res)
+	fmt.Println("result:", res)
 }
-		`, defaultGenDir))
+`, defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -444,16 +456,17 @@ func main() {
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
-						WithNewFile(".dagger/src/index.ts", `import { dag, object, func } from '@dagger.io/dagger'
+						WithNewFile(".dagger/src/index.ts", fmt.Sprintf(`import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
 export class Test {
   @func()
   async hello(): Promise<string> {
-    return dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+    return dag.container().from("%s").withExec(["echo", "-n", "hello"]).stdout()
   }
 }
-				`).
+`, alpineImage),
+						).
 						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
@@ -465,7 +478,8 @@ async function main() {
 }
 
 main()
-`))
+`),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -527,30 +541,31 @@ func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						With(withGoSetup(`package main
-		
-		import (
-			"context"
-			"fmt"
-		
-			"test.com/test/dagger"
-		)
-		
-		func main() {
-			ctx := context.Background()
-		
-			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  panic(err)
-      }
-		
-			res, err := dag.Hello().Hello(ctx)
-			if err != nil {
-				panic(err)
-			}
-		
-			fmt.Println("result:", res)
-		}
-		`, defaultGenDir))
+
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := dag.Hello().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`, defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.WithoutDirectory("dagger")
@@ -564,15 +579,16 @@ func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
 						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
-    await connection(async () => {
-      const res = await dag.hello().hello()
+  await connection(async () => {
+    const res = await dag.hello().hello()
 
-      console.log("result:", res)
-    })
+    console.log("result:", res)
+  })
 }
 
 main()
-`))
+`),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -642,37 +658,39 @@ main()
 						With(daggerNonNestedExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
 						WithNewFile(".dagger/main.go", `package main
 
-			type Test struct{}
+type Test struct{}
 
-			func (t *Test) Hello() string {
-				return "hello"
-			}
-						`).
+func (t *Test) Hello() string {
+	return "hello"
+}
+`,
+						).
 						With(withGoSetup(`package main
 
-			import (
-				"context"
-				"fmt"
+import (
+	"context"
+	"fmt"
 
-				"test.com/test/dagger"
-			)
+	"test.com/test/dagger"
+)
 
-			func main() {
-				ctx := context.Background()
+func main() {
+	ctx := context.Background()
 
-				dag, err := dagger.Connect(ctx)
-				if err != nil {
-					panic(err)
-				}
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-				res, err := dag.Test().Hello(ctx)
-				if err != nil {
-					panic(err)
-				}
+	res, err := dag.Test().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-				fmt.Println("result:", res)
-			}
-			`, defaultGenDir))
+	fmt.Println("result:", res)
+}
+`, defaultGenDir),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Remove generated files so they can be regenerated using dagger develop
@@ -687,26 +705,28 @@ main()
 						With(daggerNonNestedExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
 						WithNewFile(".dagger/src/index.ts", `import { object, func } from '@dagger.io/dagger'
 
-		@object()
-		export class Test {
-		@func()
-		hello(): string {
-			return 'hello'
-		}
-		}
-					`).
+@object()
+export class Test {
+  @func()
+  hello(): string {
+    return 'hello'
+  }
+}
+`,
+						).
 						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
 
-		async function main() {
-			await connection(async () => {
-				const res = await dag.test().hello()
+async function main() {
+  await connection(async () => {
+    const res = await dag.test().hello()
 
-				console.log("result:", res)
-			})
-		}
+    console.log("result:", res)
+  })
+}
 
-		main()
-		`))
+main()
+`),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					// Remove generated files so they can be regenerated using dagger develop
@@ -778,27 +798,29 @@ func (ClientGeneratorTest) TestOutputDir(ctx context.Context, t *testctx.T) {
 				return ctr.
 					With(withGoSetup(fmt.Sprintf(`package main
 import (
-  "context"
-  "fmt"
+	"context"
+	"fmt"
 
-  "test.com/test/%s"
+	"test.com/test/%s"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	res, err := dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"]).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println("result:", res)
-}`, outputDir), "./"+outputDir))
+	fmt.Println("result:", res)
+}
+`, outputDir, alpineImage), "./"+outputDir),
+					)
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr
@@ -813,17 +835,19 @@ func main() {
 			generator: "typescript",
 			setup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
-					With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+					With(withTypeScriptSetup(fmt.Sprintf(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
   await connection(async () => {
-    const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+    const res = await dag.container().from("%s").withExec(["echo", "-n", "hello"]).stdout()
 
     console.log("result:", res)
   })
 }
 
-main()`))
+main()
+`, alpineImage)),
+					)
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
@@ -902,27 +926,28 @@ main()`))
 				callCmd:   []string{"go", "run", "."},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withGoSetup(`package main
+						With(withGoSetup(fmt.Sprintf(`package main
 import (
-  "context"
-  "fmt"
+	"context"
+	"fmt"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  dag, err := Connect(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	dag, err := Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	res, err := dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println("result:", res)
-}`, "."))
+	fmt.Println("result:", res)
+}`, alpineImage), "."),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -934,17 +959,19 @@ func main() {
 				outputDir: ".",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(fmt.Sprintf(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
   await connection(async () => {
-    const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+    const res = await dag.container().from("%s").withExec(["echo", "-n", "hello"]).stdout()
 
     console.log("result:", res)
   })
 }
 
-main()`))
+main()
+`, alpineImage)),
+						)
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
@@ -1108,16 +1135,17 @@ import (
 type Generator struct{}
 
 func (g *Generator) RequiredClientGenerationFiles() []string{
-  return []string{}
+	return []string{}
 }
 
 func (g *Generator) GenerateClient(
-  ctx context.Context,
-  modSource *dagger.ModuleSource,
-  introspectionJSON *dagger.File,
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
 ) (*dagger.Directory, error) {
-  return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
-}`,
+	return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
+}
+`,
 		},
 		{
 			generatorSDK: "typescript",
@@ -1138,7 +1166,8 @@ export class Generator {
   ): Directory {
     return dag.directory().withNewFile("hello.txt", "hello world")
   }
-}`,
+}
+`,
 		},
 	}
 
@@ -1175,24 +1204,26 @@ func (ClientGeneratorTest) TestGlobalClient(ctx context.Context, t *testctx.T) {
 			With(nonNestedDevEngine(c)).
 			With(daggerNonNestedExec("init")).
 			With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
-			With(withGoSetup(`package main
+			With(withGoSetup(fmt.Sprintf(`package main
 import (
-  "context"
-  "fmt"
+	"context"
+	"fmt"
 
-  "test.com/test/dagger/dag"
+	"test.com/test/dagger/dag"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-  if err != nil {
-    panic(err)
-  }
+	res, err := dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println("result:", res)
-}`, defaultGenDir)).
+	fmt.Println("result:", res)
+}
+`, alpineImage), defaultGenDir),
+			).
 			With(daggerClientInstall("go"))
 
 		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
@@ -1217,26 +1248,27 @@ func (ClientGeneratorTest) TestClientCommands(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	mainGoFile := `package main
-import (
-  "context"
-  "fmt"
 
-  dagger "test.com/test/dagger"
+import (
+	"context"
+	"fmt"
+
+	dagger "test.com/test/dagger"
 	dagger2 "test.com/test/dagger2"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  dag, err := dagger.Connect(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
 
-  res, err := dag.Hello().Hello(ctx)
-  if err != nil {
-	  panic(err)
-  }
+	res, err := dag.Hello().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
 
 	dag2, err := dagger2.Connect(ctx)
 	if err != nil {
@@ -1248,9 +1280,10 @@ func main() {
 		panic(err)
 	}
 
-  fmt.Println("result dag1:", res)
+	fmt.Println("result dag1:", res)
 	fmt.Println("result dag2:", res2)
-}`
+}
+`
 
 	moduleSrc := c.Container().
 		From(golangImage).
@@ -1332,7 +1365,8 @@ func main() {
 	}
 
 	fmt.Println(result)
-}`, defaultGenDir))
+}`, defaultGenDir),
+					)
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr
@@ -1353,7 +1387,9 @@ async function main() {
   })
 }
 
-main()`))
+main()
+`),
+					)
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
@@ -1401,33 +1437,33 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		With(daggerNonNestedExec("init")).
 		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 		With(withGoSetup(`package main
-		
-		import (
-			"context"
-			"fmt"
-			"os"
-		
-			"test.com/test/dagger"
-		)
-		
-		func main() {
-			ctx := context.Background()
-		
-			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  fmt.Println(err)
-				os.Exit(0)
-      }
-		
-			res, err := dag.Hello().Hello(ctx)
-			if err != nil {
-				panic(err)
-			}
-		
-			fmt.Println("result:", res)
-		}
-		`,
-			defaultGenDir)).
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"test.com/test/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(0)
+	}
+
+	res, err := dag.Hello().Hello(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`, defaultGenDir),
+		).
 		With(daggerClientInstall("go")).
 		WithExec([]string{"apk", "add", "jq"}).
 		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
