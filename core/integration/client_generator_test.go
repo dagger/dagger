@@ -95,6 +95,29 @@ main()
 				},
 				callCmd: []string{"tsx", "index.ts"},
 			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(fmt.Sprintf(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.container().from_("%s").with_exec(["echo", "-n", "hello"]).stdout()
+        print("result:", res)
+
+anyio.run(main)
+`, alpineImage), defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+				callCmd: []string{"uv", "run", "main.py"},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -214,6 +237,33 @@ main()
 					return ctr.WithoutFile("dagger.json")
 				},
 				isolateCallCmd: []string{"tsx", "index.ts"},
+			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.hello().hello()
+        print("result:", res)
+
+anyio.run(main)
+`, defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+				isolateSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+				isolateCallCmd: []string{"uv", "run", "main.py"},
 			},
 		}
 
@@ -511,6 +561,39 @@ main()
 				},
 				callCmd: []string{"tsx", "index.ts"},
 			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(daggerExec("init", "--name=test", "--sdk=python", "--source=.dagger")).
+						WithNewFile(".dagger/src/main/__init__.py", fmt.Sprintf(`import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def hello(self) -> str:
+        return await dagger.dag.container().from_("%s").with_exec(["echo", "-n", "hello"]).stdout()
+`, alpineImage),
+						).
+						With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.test().hello()
+        print("result:", res)
+
+anyio.run(main)
+`, defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -620,6 +703,29 @@ main()
 						WithoutDirectory("dagger")
 				},
 				callCmd: []string{"tsx", "index.ts"},
+			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.hello().hello()
+        print("result:", res)
+
+anyio.run(main)
+`, defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithoutDirectory("dagger")
+				},
 			},
 		}
 
@@ -761,6 +867,40 @@ main()
 				},
 				callCmd: []string{"tsx", "index.ts"},
 			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(daggerNonNestedExec("init", "--name=test", "--sdk=python", "--source=.dagger")).
+						WithNewFile(".dagger/src/main/__init__.py", `import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def hello(self) -> str:
+        return "hello"
+`,
+						).
+						With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.test().hello()
+        print("result:", res)
+
+anyio.run(main)
+`, defaultGenDir),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					// Remove generated files so they can be regenerated using dagger develop
+					return ctr.WithoutDirectory("dagger")
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -881,6 +1021,33 @@ main()
 		}
 	}
 
+	pythonTestSetup := func(outputDir string) testSetup {
+		return testSetup{
+			outputDir: outputDir,
+			baseImage: pythonImage,
+			generator: "python",
+			callCmd:   []string{"uv", "run", "main.py"},
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					With(withPythonSetup(fmt.Sprintf(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.container().from_("%s").with_exec(["echo", "-n", "hello"]).stdout()
+        print("result:", res)
+
+anyio.run(main)
+`, alpineImage), outputDir),
+					)
+			},
+			postSetup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr
+			},
+		}
+	}
+
 	type testCase struct {
 		name      string
 		outputDir string
@@ -908,6 +1075,7 @@ main()
 			for _, ts := range []testSetup{
 				goTestSetup(tc.outputDir),
 				tsTestSetup(tc.outputDir),
+				pythonTestSetup(tc.outputDir),
 			} {
 				t.Run(ts.generator, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
@@ -1002,6 +1170,30 @@ main()
 						WithExec([]string{"npm", "install"})
 				},
 				callCmd: []string{"tsx", "index.ts"},
+			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				outputDir: ".",
+				callCmd:   []string{"uv", "run", "main.py"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(fmt.Sprintf(`import anyio
+import dagger
+from dagger import connect
+
+async def main():
+    async with connect():
+        res = await dagger.dag.container().from_("%s").with_exec(["echo", "-n", "hello"]).stdout()
+        print("result:", res)
+
+anyio.run(main)
+`, alpineImage), "."),
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
 			},
 		}
 
@@ -1191,6 +1383,26 @@ export class Generator {
     return dag.directory().withNewFile("hello.txt", "hello world")
   }
 }
+`,
+		},
+		{
+			generatorSDK: "python",
+			// Omit `dev` from signature to verify that it works if it's not defined.
+			generatorSource: `import dagger
+
+@dagger.object_type
+class Generator:
+    @dagger.function
+    def required_client_generation_files(self) -> list[str]:
+        return []
+
+    @dagger.function
+    def generate_client(
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
+    ) -> dagger.Directory:
+        return dagger.dag.directory().with_new_file("hello.txt", "hello world")
 `,
 		},
 	}
@@ -1421,6 +1633,30 @@ main()
 			},
 			callCmd:  []string{"tsx", "index.ts"},
 			expected: "[ 'file1.txt' ]\n",
+		},
+		{
+			baseImage: pythonImage,
+			generator: "python",
+			callCmd:   []string{"uv", "run", "main.py"},
+			setup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr.
+					With(withPythonSetup(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        result = await dag.host().directory("files").entries()
+        print(result)
+
+anyio.run(main)
+`, defaultGenDir),
+					)
+			},
+			postSetup: func(ctr *dagger.Container) *dagger.Container {
+				return ctr
+			},
+			expected: "['file1.txt']\n",
 		},
 	}
 
