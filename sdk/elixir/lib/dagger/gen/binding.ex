@@ -299,6 +299,13 @@ defimpl Jason.Encoder, for: Dagger.Binding do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Binding do
+  def encode(binding, _encoder) do
+    {:ok, id} = Dagger.Binding.id(binding)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Binding do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_binding_from_id(Dagger.Global.dag(), id)}

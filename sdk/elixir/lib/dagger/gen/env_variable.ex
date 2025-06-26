@@ -56,6 +56,13 @@ defimpl Jason.Encoder, for: Dagger.EnvVariable do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.EnvVariable do
+  def encode(env_variable, _encoder) do
+    {:ok, id} = Dagger.EnvVariable.id(env_variable)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.EnvVariable do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_env_variable_from_id(Dagger.Global.dag(), id)}
