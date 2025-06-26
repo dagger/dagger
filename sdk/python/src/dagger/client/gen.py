@@ -4,6 +4,9 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import opentelemetry.context
+import opentelemetry.trace
+from opentelemetry.trace.span import TraceState
 from typing_extensions import Self
 
 from dagger.client._core import Arg
