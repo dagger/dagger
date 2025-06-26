@@ -18,7 +18,7 @@ import (
 func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	customCACertTests(ctx, t, c,
+	customCACertTests(ctx, t, c, "",
 		caCertsTest{"alpine basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
@@ -532,6 +532,14 @@ export class Test {
 			require.NoError(t, err)
 		}},
 	)
+	customCACertTests(ctx, t, c, "orbstack-root.crt",
+		caCertsTest{"orbstack ignored", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			_, err := c.Container().From(alpineImage).
+				WithExec([]string{"stat", "/usr/local/share/ca-certificates/orbstack-root.crt"}).
+				Sync(ctx)
+			requireErrOut(t, err, "No such file or directory")
+		}},
+	)
 }
 
 type caCertsTest struct {
@@ -548,6 +556,7 @@ func customCACertTests(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
+	caCertFileName string, // if empty, a default is used
 	tests ...caCertsTest,
 ) {
 	t.Helper()
@@ -563,9 +572,12 @@ func customCACertTests(
 		redirectHTTPToHTTPS: true,
 	})
 
+	if caCertFileName == "" {
+		caCertFileName = "dagger-test-custom-ca.crt"
+	}
 	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
+			WithMountedFile("/usr/local/share/ca-certificates/"+caCertFileName, certGen.caRootCert).
 			WithServiceBinding("server", serverCtr.AsService())
 	})
 	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)

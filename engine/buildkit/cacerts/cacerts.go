@@ -13,6 +13,11 @@ import (
 
 const (
 	EngineCustomCACertsDir = "/usr/local/share/ca-certificates"
+
+	// OrbStack automatically installs this custom CA cert, but we don't want to automatically
+	// install it in every Dagger container, so we ignore it if found.
+	// https://docs.orbstack.dev/features/https#between-containers
+	OrbstackCACertName = "orbstack-root.crt"
 )
 
 // Installer is an implementation of installing+uninstalling custom CA certs for a container,
@@ -38,6 +43,10 @@ func NewInstaller(
 	dirEnts, err := os.ReadDir(EngineCustomCACertsDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
+	}
+
+	if len(dirEnts) == 1 && dirEnts[0].Name() == OrbstackCACertName {
+		return noopInstaller{}, nil
 	}
 	if len(dirEnts) == 0 {
 		return noopInstaller{}, nil
