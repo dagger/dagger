@@ -1,42 +1,45 @@
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: ./viztest X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✘ .nestedSpans(fail: true): String! X.Xs
+● viztest: Viztest! X.Xs
+▼ .nestedSpans(fail: true): String! X.Xs ERROR
 ! oh no
-│ ✘ custom span X.Xs
-│ ! oh no
-│ │ ✔ container: Container! X.Xs
-│ │ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
-│ │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ ✔ .stdout: String! X.Xs
-│ │
-│ │ ✔ sub span X.Xs
-│ │ │ ✔ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
-│ │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ │ ✔ .stdout: String! X.Xs
-│ │
-│ │ ✔ sub span X.Xs
-│ │ │ ✔ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
-│ │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ │ ✔ .stdout: String! X.Xs
-│ │
-│ │ ✘ another sub span X.Xs
-│ │ ! oh no
-│ │ │ ✘ sub span X.Xs
-│ │ │ ! oh no
+╰─▼ custom span X.Xs ERROR
+  ! oh no
+  ├─● container: Container! X.Xs
+  ├─$ .from(address: "alpine"): Container! X.Xs CACHED
+  ├─▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  ├─▼ .stdout: String! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  │
+  ├─▼ sub span X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  │  
+  ├─▼ sub span X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+  │  
+  ╰─▼ another sub span X.Xs ERROR
+    ! oh no
+    ╰─✘ sub span X.Xs ERROR
+      ! oh no
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -5,47 +5,53 @@ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 
 Expected stderr:
 
-✔ connect X.Xs
-│ ✔ starting engine X.Xs
-│ ✔ connecting to engine X.Xs
-│ ✔ starting session X.Xs
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: ./viztest X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-✔ load module X.Xs
-│ ✔ finding module configuration X.Xs
-│ ✔ initializing module X.Xs
-│ ✔ inspecting module metadata X.Xs
-│ ✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-✔ viztest: Viztest! X.Xs
-✔ .nestedSpans: String! X.Xs
-│ ✔ custom span X.Xs
-│ │ ✔ container: Container! X.Xs
-│ │ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+● viztest: Viztest! X.Xs
+▼ .nestedSpans: String! X.Xs
+┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+├─▼ custom span X.Xs
+│ ├─● container: Container! X.Xs
+│ ├─$ .from(address: "alpine"): Container! X.Xs CACHED
+│ ├─▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ ✔ .stdout: String! X.Xs
+│ ├─▼ .stdout: String! X.Xs
+│ │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 │ │
-│ │ ✔ sub span X.Xs
-│ │ │ ✔ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ ├─▼ sub span X.Xs
+│ │ ├─▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ │ ✔ .stdout: String! X.Xs
-│ │
-│ │ ✔ sub span X.Xs
-│ │ │ ✔ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ │ ╰─▼ .stdout: String! X.Xs
+│ │   ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│ │  
+│ ├─▼ sub span X.Xs
+│ │ ├─▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ │ ✔ .stdout: String! X.Xs
-│ │
-│ │ ✔ another sub span X.Xs
-│ │ │ ✔ sub span X.Xs
-│ │ │ │ ✔ Container.withExec(args: ["echo", "im even deeper: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
-│ │ │ │ ┃ im even deeper: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ │ │ ✔ .stdout: String! X.Xs
-│
-│ ✔ Container.withExec(args: ["echo", "hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ │ ╰─▼ .stdout: String! X.Xs
+│ │   ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│ │  
+│ ╰─▼ another sub span X.Xs
+│   ╰─▼ sub span X.Xs
+│     ├─▼ Container.withExec(args: ["echo", "im even deeper: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│     │ ┃ im even deeper: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│     ╰─▼ .stdout: String! X.Xs
+│       ┃ im even deeper: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│      
+├─▼ Container.withExec(args: ["echo", "hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
 │ ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ ✔ .stdout: String! X.Xs
+╰─▼ .stdout: String! X.Xs
+  ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

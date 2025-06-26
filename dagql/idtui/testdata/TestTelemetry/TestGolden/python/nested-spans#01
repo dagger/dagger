@@ -1,0 +1,44 @@
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: ./viztest/python X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● python: Python! X.Xs
+▼ .nestedSpans(fail: true): String! X.Xs ERROR
+! oh no
+╰─▼ custom span X.Xs ERROR
+  ! ValueError: oh no
+  ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├─▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX
+  ├─▼ .stdout: String! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX
+  │
+  ├─▼ sub span X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX
+  │  
+  ├─▼ sub span X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX
+  │  
+  ╰─▼ another sub span X.Xs ERROR
+    ! ValueError: oh no
+    ╰─✘ sub span X.Xs ERROR
+      ! ValueError: oh no
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
