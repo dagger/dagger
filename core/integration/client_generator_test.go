@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, 
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withGoSetup(`package main
+						With(withGoSetup(fmt.Sprintf(`package main
 import (
   "context"
   "fmt"
@@ -54,13 +55,13 @@ func main() {
     panic(err)
   }
 
-  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+  res, err := dag.Container().From("%s").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
   if err != nil {
     panic(err)
   }
 
   fmt.Println("result:", res)
-}`, defaultGenDir))
+}`, alpineImage), defaultGenDir))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
@@ -71,23 +72,46 @@ func main() {
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(fmt.Sprintf(`import { connection, dag } from "@dagger.io/client"
 
 async function main() {
     await connection(async () => {
-      const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+      const res = await dag.container().from("%s").withExec(["echo", "-n", "hello"]).stdout()
 
       console.log("result:", res)
     })
 }
 
-main()`))
+main()`, alpineImage)))
 				},
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
 						WithExec([]string{"npm", "install"})
 				},
 				callCmd: []string{"tsx", "index.ts"},
+			},
+			{
+				baseImage: pythonImage,
+				generator: "python",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withPythonSetup(fmt.Sprintf(`import anyio
+import dagger
+from dagger import dag
+
+async def main():
+    async with dagger.connection():
+        res = await dag.container().from_("%s").with_exec(["echo", "-n", "hello"]).stdout()
+        print("result:", res)
+
+if __name__ == "__main__":
+    anyio.run(main)
+`, alpineImage), defaultGenDir))
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+				callCmd: []string{"uv", "run", "main.py"},
 			},
 		}
 
@@ -1358,5 +1382,20 @@ func withTypeScriptSetup(content string) func(*dagger.Container) *dagger.Contain
 			WithExec([]string{"npm", "pkg", "set", "type=module"}).
 			WithExec([]string{"npm", "install", "-D", "typescript"}).
 			WithNewFile("index.ts", content)
+	}
+}
+
+func withPythonSetup(content, outputDir string) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithExec([]string{"uv", "init"}).
+			WithNewFile("main.py", content).
+			WithExec([]string{"uv", "add", "dagger-io"}).
+			WithExec([]string{"tee", "-a", "pyproject.toml"}, dagger.ContainerWithExecOpts{
+				Stdin: fmt.Sprintf(`
+[tool.uv.sources]
+dagger-io = { path = "%s", editable = true }
+		 `, filepath.Join(outputDir)),
+			})
 	}
 }
