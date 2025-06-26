@@ -125,18 +125,21 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.Value, ids map[digest.Digest]*resource.ID) error {
 	switch value := value.(type) {
 	case dagql.Instance[*InterfaceAnnotatedValue]:
-		/* TODO: FIX? Or not possible?
-		mod, ok := value.Self.UnderlyingType.SourceMod().(*Module)
+		mod, ok := value.Self().UnderlyingType.SourceMod().(*Module)
 		if !ok {
-			return fmt.Errorf("unexpected source mod type %T", value.Self.UnderlyingType.SourceMod())
+			return fmt.Errorf("unexpected source mod type %T", value.Self().UnderlyingType.SourceMod())
 		}
-		return value.Self.UnderlyingType.CollectCoreIDs(ctx, &ModuleObject{
+
+		obj, err := dagql.NewInstanceForID(&ModuleObject{
 			Module:  mod,
-			TypeDef: value.Self.UnderlyingType.TypeDef().AsObject.Value,
-			Fields:  value.Self.Fields,
-		}, ids)
-		*/
-		panic("CollectCoreIDs: unexpected interface value type for collecting IDs, should not be called on InterfaceAnnotatedValue")
+			TypeDef: value.Self().UnderlyingType.TypeDef().AsObject.Value,
+			Fields:  value.Self().Fields,
+		}, value.ID())
+		if err != nil {
+			return fmt.Errorf("create module object from interface value: %w", err)
+		}
+
+		return value.Self().UnderlyingType.CollectCoreIDs(ctx, obj, ids)
 
 	case dagql.Instance[*ModuleObject]:
 		loadedImpl, err := iface.loadImpl(ctx, value.ID())
@@ -420,7 +423,7 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 		if enum.Len() == 0 {
 			return res, nil
 		}
-		ret := dagql.DynamicArrayOutput{}
+		ret := dagql.DynamicInstanceArrayOutput{}
 		for i := 1; i <= enum.Len(); i++ {
 			item, err := res.NthValue(i)
 			if err != nil {
@@ -429,13 +432,12 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 			if ret.Elem == nil { // set the return type
 				ret.Elem = item.Unwrap()
 			}
-			// TODO: losing Instance IDs here, similar to other comment
 			nthID := curID.SelectNth(i)
 			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item)
 			if err != nil {
 				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
 			}
-			ret.Values = append(ret.Values, val.Unwrap())
+			ret.Values = append(ret.Values, val)
 		}
 		return dagql.NewInstanceForID(&ret, curID)
 
@@ -495,6 +497,18 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for field %q", name)
 		}
+
+		curID := dagql.CurrentID(ctx)
+		fieldID := curID.Append(
+			field.TypeDef.ToType(),
+			field.Name,
+			curID.View(),
+			curID.Module(),
+			0,
+			"",
+		)
+		ctx := dagql.ContextWithID(ctx, fieldID)
+
 		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert arg %q: %w", name, err)
