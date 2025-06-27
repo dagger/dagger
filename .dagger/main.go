@@ -66,7 +66,7 @@ func New(
 		if strings.HasPrefix(module, "core/integration/") {
 			continue
 		}
-		if strings.HasPrefix(module, "dagql/idtui/viztest/broken") {
+		if strings.HasPrefix(module, "dagql/idtui/viztest/") {
 			continue
 		}
 		if strings.HasPrefix(module, "modules/evaluator/") {
