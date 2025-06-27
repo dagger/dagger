@@ -220,23 +220,14 @@ func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struc
 }
 
 func (s *querySchema) statusStart(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
-	started := parent.Self.Start(ctx)
-	var inst dagql.Instance[*core.Status]
-	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
-		Field: "status",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString(started.Name)},
-			{Name: "key", Value: dagql.NewString(started.InternalID())},
-		},
-	})
-	if err != nil {
-		return dagql.ID[*core.Status]{}, err
-	}
-	return dagql.NewID[*core.Status](inst.ID()), nil
+	return s.selectStatus(ctx, parent.Self.Start(ctx))
 }
 
 func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
-	started := parent.Self.Display(ctx)
+	return s.selectStatus(ctx, parent.Self.Display(ctx))
+}
+
+func (s *querySchema) selectStatus(ctx context.Context, started *core.Status) (dagql.ID[*core.Status], error) {
 	var inst dagql.Instance[*core.Status]
 	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
 		Field: "status",
