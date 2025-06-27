@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"dagger.io/dagger/telemetry"
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -242,10 +243,13 @@ func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args s
 		if err != nil {
 			parent.Span.SetStatus(codes.Error, fmt.Sprintf("failed to load error: %v", err))
 		} else {
-			parent.Span.SetStatus(codes.Error, dagErr.Self.Message)
+			// use telemetry.End which also provides origin tracking
+			telemetry.End(parent.Span, func() error { return dagErr.Self })
 		}
+	} else {
+		// use telemetry.End so the status gets set to OK
+		telemetry.End(parent.Span, func() error { return nil })
 	}
-	parent.Span.End()
 	return dagql.Null[core.Void](), nil
 }
 

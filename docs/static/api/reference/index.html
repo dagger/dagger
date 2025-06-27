@@ -89,7 +89,7 @@
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
-              <li><a href="#query-loadSpanFromID">loadSpanFromID</a></li>
+              <li><a href="#query-loadStatusFromID">loadStatusFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-module">module</a></li>
@@ -98,7 +98,7 @@
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
-              <li><a href="#query-span">span</a></li>
+              <li><a href="#query-status">status</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -205,8 +205,8 @@
               <li><a href="#definition-SocketID">SocketID</a></li>
               <li><a href="#definition-SourceMap">SourceMap</a></li>
               <li><a href="#definition-SourceMapID">SourceMapID</a></li>
-              <li><a href="#definition-Span">Span</a></li>
-              <li><a href="#definition-SpanID">SpanID</a></li>
+              <li><a href="#definition-Status">Status</a></li>
+              <li><a href="#definition-StatusID">StatusID</a></li>
               <li><a href="#definition-String">String</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
               <li><a href="#definition-TerminalID">TerminalID</a></li>
@@ -3479,18 +3479,18 @@
               </div>
             </div>
           </section>
-          <section id="query-loadSpanFromID" class="operation operation-query" data-traverse-target="query-loadSpanFromID">
+          <section id="query-loadStatusFromID" class="operation operation-query" data-traverse-target="query-loadStatusFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
             </div>
             <h2 class="operation-heading ">
-              <code>loadSpanFromID</code>
+              <code>loadStatusFromID</code>
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Load a Span from its ID.</p>
+                  <p>Load a Status from its ID.</p>
                 </div>
               </div>
             </div>
@@ -3499,7 +3499,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-Span"><code>Span!</code></a>
+                    <a href="#definition-Status"><code>Status!</code></a>
                   </p>
                 </div>
                 <div class="operation-arguments test doc-copy-section">
@@ -3514,7 +3514,7 @@
                     <tbody>
                       <tr>
                         <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-StatusID"><code>StatusID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3758,7 +3758,7 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Returns a span that reveals its child spans and hides itself.</p>
+                  <p>Returns a status that reveals its child statuses and hides itself.</p>
                 </div>
               </div>
             </div>
@@ -3767,7 +3767,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-Span"><code>Span!</code></a>
+                    <a href="#definition-Status"><code>Status!</code></a>
                   </p>
                 </div>
               </div>
@@ -3971,18 +3971,18 @@
               </div>
             </div>
           </section>
-          <section id="query-span" class="operation operation-query" data-traverse-target="query-span">
+          <section id="query-status" class="operation operation-query" data-traverse-target="query-status">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
             </div>
             <h2 class="operation-heading ">
-              <code>span</code>
+              <code>status</code>
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Create a new OpenTelemetry span.</p>
+                  <p>Create a new status indicator.</p>
                 </div>
               </div>
             </div>
@@ -3991,7 +3991,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-Span"><code>Span!</code></a>
+                    <a href="#definition-Status"><code>Status!</code></a>
                   </p>
                 </div>
                 <div class="operation-arguments test doc-copy-section">
@@ -4008,7 +4008,7 @@
                         <td>
                           <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
-                        <td> Name of the span. </td>
+                        <td> A display name for the status. </td>
                       </tr>
                       <tr>
                         <td>
@@ -11075,16 +11075,16 @@
               </div>
             </div>
           </section>
-          <section id="definition-Span" class="definition definition-object" data-traverse-target="definition-Span">
+          <section id="definition-Status" class="definition definition-object" data-traverse-target="definition-Status">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
             </div>
-            <h2 class="definition-heading">Span</h2>
+            <h2 class="definition-heading">Status</h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>An OpenTelemetry span.</p>
+                  <p>A status indicator to show to the user.</p>
                 </div>
                 <div class="definition-properties doc-copy-section">
                   <h5>Fields</h5>
@@ -11097,8 +11097,8 @@
                     </thead>
                     <tbody>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Span-end" href="#Span-end"><code>end</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
-                        <td> End the OpenTelemetry span, with an optional error. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-end" href="#Status-end"><code>end</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
+                        <td> Mark the status as complete, with an optional error. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11113,25 +11113,24 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-id" href="#Span-id"><code>id</code></a> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span> </td>
-                        <td> A unique identifier for this Span. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-id" href="#Status-id"><code>id</code></a> - <span class="property-type"><a href="#definition-StatusID"><code>StatusID!</code></a></span> </td>
+                        <td> A unique identifier for this Status. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-internalId" href="#Span-internalId"><code>internalId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Returns the internal ID of the span. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-internalId" href="#Status-internalId"><code>internalId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Returns the internal ID of the status. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-name" href="#Span-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the span. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-name" href="#Status-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The display name of the status. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-start" href="#Span-start"><code>start</code></a> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span> </td>
-                        <td> Start a new instance of the span. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-start" href="#Status-start"><code>start</code></a> - <span class="property-type"><a href="#definition-StatusID"><code>StatusID!</code></a></span> </td>
+                        <td> Start a new instance of the status. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Span-withActor" href="#Span-withActor"><code>withActor</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
-                        <td>
-                        </td>
+                        <td data-property-name=""><a class="property-name" id="Status-withActorEmoji" href="#Status-withActorEmoji"><code>withActorEmoji</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
+                        <td> Set an emoji representing the actor of the status. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11146,16 +11145,19 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-withInternal" href="#Span-withInternal"><code>withInternal</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
-                        <td> Returns a new span with the internal attribute set to true. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-withPassthrough" href="#Status-withPassthrough"><code>withPassthrough</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
+                        <td> Hide the status itself, and reveal its children. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-withPassthrough" href="#Span-withPassthrough"><code>withPassthrough</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
-                        <td> Returns a new span with the passthrough attribute set to true. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-withReceivedMessage" href="#Status-withReceivedMessage"><code>withReceivedMessage</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
+                        <td>
+                          <p>Indicates that the status represents a received message.</p>
+                          <p>The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.</p>
+                        </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-withReveal" href="#Span-withReveal"><code>withReveal</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
-                        <td> Returns a new span with the reveal attribute set to true. </td>
+                        <td data-property-name=""><a class="property-name" id="Status-withReveal" href="#Status-withReveal"><code>withReveal</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
+                        <td> Ensure the status is visible without having to expand its parents. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -11163,16 +11165,16 @@
               </div>
             </div>
           </section>
-          <section id="definition-SpanID" class="definition definition-scalar" data-traverse-target="definition-SpanID">
+          <section id="definition-StatusID" class="definition definition-scalar" data-traverse-target="definition-StatusID">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
             </div>
-            <h2 class="definition-heading">SpanID</h2>
+            <h2 class="definition-heading">StatusID</h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>The <code>SpanID</code> scalar type represents an identifier for an object of type Span.</p>
+                  <p>The <code>StatusID</code> scalar type represents an identifier for an object of type Status.</p>
                 </div>
               </div>
             </div>

@@ -1,7 +1,3 @@
-Expected stdout:
-
-done
-
 Expected stderr:
 
 ▼ connect X.Xs
@@ -18,33 +14,31 @@ Expected stderr:
 ● parsing command line arguments X.Xs
 
 ● typescript: Typescript! X.Xs
-▼ .nestedSpans: String! X.Xs
-┃ done
-╰─▼ custom span X.Xs
+▼ .nestedStatuses(fail: true): String! X.Xs ERROR
+! oh no
+╰─▼ custom status X.Xs ERROR
+  ! oh no
   ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
   ├─▼ .withExec(args: ["echo", "outer: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
   │ ┃ outer: XXXX-XX-XXTXX:XX:XX.XXXZ
   ├─▼ .stdout: String! X.Xs
   │ ┃ outer: XXXX-XX-XXTXX:XX:XX.XXXZ
   │
-  ├─▼ sub span X.Xs
+  ├─▼ sub status X.Xs
   │ ├─▼ Container.withExec(args: ["echo", "sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
   │ │ ┃ sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ
   │ ╰─▼ .stdout: String! X.Xs
   │   ┃ sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ
   │  
-  ├─▼ sub span X.Xs
+  ├─▼ sub status X.Xs
   │ ├─▼ Container.withExec(args: ["echo", "sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
   │ │ ┃ sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ
   │ ╰─▼ .stdout: String! X.Xs
   │   ┃ sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ
   │  
-  ╰─▼ another sub span X.Xs
-    ╰─▼ sub span X.Xs
-      ├─▼ Container.withExec(args: ["echo", "im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
-      │ ┃ im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ
-      ╰─▼ .stdout: String! X.Xs
-        ┃ im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ
-
+  ╰─▼ another sub status X.Xs ERROR
+    ! oh no
+    ╰─✘ sub status X.Xs ERROR
+      ! oh no
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
