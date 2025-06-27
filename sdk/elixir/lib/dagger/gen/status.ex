@@ -16,6 +16,26 @@ defmodule Dagger.Status do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Start and immediately finish the status, so that it just gets displayed to the user.
+  """
+  @spec display(t()) :: {:ok, Dagger.Status.t()} | {:error, term()}
+  def display(%__MODULE__{} = status) do
+    query_builder =
+      status.query_builder |> QB.select("display")
+
+    with {:ok, id} <- Client.execute(status.client, query_builder) do
+      {:ok,
+       %Dagger.Status{
+         query_builder:
+           QB.query()
+           |> QB.select("loadStatusFromID")
+           |> QB.put_arg("id", id),
+         client: status.client
+       }}
+    end
+  end
+
+  @doc """
   Mark the status as complete, with an optional error.
   """
   @spec end_(t(), [{:error, Dagger.ErrorID.t() | nil}]) :: :ok | {:error, term()}

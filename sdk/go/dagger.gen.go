@@ -10128,6 +10128,7 @@ type Status struct {
 	query  *querybuilder.Selection
 	client graphql.Client
 
+	display    *StatusID
 	end        *Void
 	id         *StatusID
 	internalId *string
@@ -10187,6 +10188,19 @@ func (r *Status) Run(ctx context.Context, cb func(context.Context) error) error 
 		endErr = status.End(ctx)
 	}
 	return errors.Join(err, endErr)
+}
+
+// Start and immediately finish the status, so that it just gets displayed to the user.
+func (r *Status) Display(ctx context.Context) (*Status, error) {
+	q := r.query.Select("display")
+
+	var id StatusID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Status{
+		query: q.Root().Select("loadStatusFromID").Arg("id", id),
+	}, nil
 }
 
 // StatusEndOpts contains options for Status.End

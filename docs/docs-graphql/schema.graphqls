@@ -3824,6 +3824,11 @@ scalar SourceMapID
 
 """A status indicator to show to the user."""
 type Status {
+  """
+  Start and immediately finish the status, so that it just gets displayed to the user.
+  """
+  display: StatusID!
+
   """Mark the status as complete, with an optional error."""
   end(error: ErrorID): Void
 
