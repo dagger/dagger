@@ -9721,6 +9721,20 @@ class SourceMap(Type):
 class Status(Type):
     """A status indicator to show to the user."""
 
+    async def display(self) -> Self:
+        """Start and immediately finish the status, so that it just gets
+        displayed to the user.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "display", _args)
+
     async def end(self, *, error: Error | None = None) -> Void | None:
         """Mark the status as complete, with an optional error.
 

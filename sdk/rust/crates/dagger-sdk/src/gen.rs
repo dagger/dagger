@@ -10046,6 +10046,11 @@ pub struct StatusEndOpts {
     pub error: Option<ErrorId>,
 }
 impl Status {
+    /// Start and immediately finish the status, so that it just gets displayed to the user.
+    pub async fn display(&self) -> Result<StatusId, DaggerError> {
+        let query = self.selection.select("display");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Mark the status as complete, with an optional error.
     ///
     /// # Arguments

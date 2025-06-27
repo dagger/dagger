@@ -9036,6 +9036,7 @@ export class SourceMap extends BaseClient {
  */
 export class Status extends BaseClient {
   private readonly _id?: StatusID = undefined
+  private readonly _display?: StatusID = undefined
   private readonly _end?: Void = undefined
   private readonly _internalId?: string = undefined
   private readonly _name?: string = undefined
@@ -9047,6 +9048,7 @@ export class Status extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: StatusID,
+    _display?: StatusID,
     _end?: Void,
     _internalId?: string,
     _name?: string,
@@ -9055,6 +9057,7 @@ export class Status extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._display = _display
     this._end = _end
     this._internalId = _internalId
     this._name = _name
@@ -9074,6 +9077,17 @@ export class Status extends BaseClient {
     const response: Awaited<StatusID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Start and immediately finish the status, so that it just gets displayed to the user.
+   */
+  display = async (): Promise<Status> => {
+    const ctx = this._ctx.select("display")
+
+    const response: Awaited<StatusID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadStatusFromID(response)
   }
 
   /**

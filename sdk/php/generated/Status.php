@@ -14,6 +14,15 @@ namespace Dagger;
 class Status extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Start and immediately finish the status, so that it just gets displayed to the user.
+     */
+    public function display(): StatusId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('display');
+        return new \Dagger\StatusId((string)$this->queryLeaf($leafQueryBuilder, 'display'));
+    }
+
+    /**
      * Mark the status as complete, with an optional error.
      */
     public function end(ErrorId|Error|null $error = null): void
