@@ -44,13 +44,13 @@ func (v *Viztest) Encapsulate(ctx context.Context) error {
 func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 1: UNSET span under ERROR span - should hoist
 	(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "failing outer span")
+		ctx, span := dag.Status("failing outer span").Context(ctx)
 		defer telemetry.End(span, func() error { return rerr })
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := dag.Status("unset middle span").Context(ctx)
 			defer span.End() // UNSET
 			(func() (rerr error) {
-				ctx, span := Tracer().Start(ctx, "failing inner span")
+				ctx, span := dag.Status("failing inner span").Context(ctx)
 				defer telemetry.End(span, func() error { return rerr })
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
@@ -62,13 +62,13 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 
 	// Scenario 2: UNSET span under OK span - should NOT hoist
 	(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "succeeding outer span")
+		ctx, span := dag.Status("succeeding outer span").Context(ctx)
 		defer telemetry.End(span, func() error { return rerr })
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := dag.Status("unset middle span").Context(ctx)
 			defer span.End() // UNSET
 			(func() (rerr error) {
-				ctx, span := Tracer().Start(ctx, "failing inner span")
+				ctx, span := dag.Status("failing inner span").Context(ctx)
 				defer telemetry.End(span, func() error { return rerr })
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
@@ -114,34 +114,33 @@ func (*Viztest) ManyLines(n int) {
 }
 
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
-	ctx, span := dag.Span("custom span").Context(ctx)
+	ctx, span := dag.Status("custom span").Context(ctx)
 	defer span.End(ctx)
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
 func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 	func() {
-		_, span := Tracer().Start(ctx, "custom span")
-		span.End()
+		ctx, status := dag.Status("custom span").Context(ctx)
+		status.End(ctx)
 	}()
 	func() {
-		_, span := Tracer().Start(ctx, "revealed span",
-			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
-		span.End()
+		ctx, status := dag.Status("revealed span").WithReveal().Context(ctx)
+		status.End(ctx)
 	}()
 	func() {
-		ctx, span := Tracer().Start(ctx, "revealed message",
-			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)),
-			trace.WithAttributes(attribute.String("dagger.io/ui.actor.emoji", "😊")),
-			trace.WithAttributes(attribute.String("dagger.io/ui.message", "received")),
-		)
+		ctx, span := dag.Status("revealed message").
+			WithReveal().
+			WithActor("😊").
+			WithMessage("received").
+			Context(ctx)
 		span.End()
 		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String("dagger.io/content.type", "text/markdown"))
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
 	}()
 	func() {
-		_, span := Tracer().Start(ctx, "revealed span")
+		_, span := dag.Status("revealed span").Context(ctx)
 		span.End()
 	}()
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
@@ -163,24 +162,24 @@ func (v *Viztest) NestedSpans(ctx context.Context,
 	// +default=false
 	fail bool,
 ) (res string, rerr error) {
-	err := dag.Span("custom span").Run(ctx, func(ctx context.Context) error {
+	err := dag.Status("custom span").Run(ctx, func(ctx context.Context) error {
 		if _, err := v.Echo(ctx, "outer: "+time.Now().String()); err != nil {
 			return err
 		}
-		if err := dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
+		if err := dag.Status("sub span").Run(ctx, func(ctx context.Context) error {
 			_, err := v.Echo(ctx, "sub 1: "+time.Now().String())
 			return err
 		}); err != nil {
 			return err
 		}
-		if err := dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
+		if err := dag.Status("sub span").Run(ctx, func(ctx context.Context) error {
 			_, err := v.Echo(ctx, "sub 2: "+time.Now().String())
 			return err
 		}); err != nil {
 			return err
 		}
-		return dag.Span("another sub span").Run(ctx, func(ctx context.Context) error {
-			return dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
+		return dag.Status("another sub span").Run(ctx, func(ctx context.Context) error {
+			return dag.Status("sub span").Run(ctx, func(ctx context.Context) error {
 				if fail {
 					return errors.New("oh no")
 				} else {
@@ -203,7 +202,7 @@ func (*Viztest) ManySpans(
 	delayMs int,
 ) {
 	for i := 1; i <= n; i++ {
-		ctx, span := dag.Span(fmt.Sprintf("span %d", i)).Context(ctx)
+		ctx, span := dag.Status(fmt.Sprintf("span %d", i)).Context(ctx)
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
 		span.End(ctx)
 	}

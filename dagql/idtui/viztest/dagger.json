@@ -1,6 +1,6 @@
 {
   "name": "viztest",
-  "engineVersion": "v0.18.10",
+  "engineVersion": "v0.18.12-250626223947-3332f01a3cf8",
   "sdk": {
     "source": "go"
   },
