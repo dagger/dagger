@@ -119,7 +119,7 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 			unknownCollectIDs(v, ids)
 			continue
 		}
-		modType, ok, _, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
 		}
@@ -181,7 +181,7 @@ type Callable interface {
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
 	mod := t.mod
 	if field, ok := t.typeDef.FieldByName(name); ok {
-		fieldType, ok, _, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("get field return type: %w", err)
 		}
@@ -233,7 +233,7 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 			// missing field
 			continue
 		}
-		fieldType, ok, _, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
+		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
@@ -412,7 +412,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-			modType, ok, _, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
 			}

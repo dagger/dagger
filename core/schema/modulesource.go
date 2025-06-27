@@ -2107,8 +2107,12 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	for _, enum := range initialized.EnumDefs {
 		mod, err = mod.WithEnum(ctx, enum)
 		if err != nil {
-			return nil, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
+			return nil, fmt.Errorf("failed to add enum to module %q: %w", modName, err)
 		}
+	}
+	err = mod.Patch()
+	if err != nil {
+		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 	return mod, nil
 }

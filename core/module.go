@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -239,50 +241,45 @@ func (mod *Module) CacheConfigForCall(
 	return &cacheCfg, nil
 }
 
-func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, local bool, err error) {
+func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		modType, ok = mod.modTypeForPrimitive(typeDef)
 	case TypeDefKindList:
-		modType, ok, local, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
+		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForObject(typeDef)
-		local = true
 	case TypeDefKindInterface:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForInterface(typeDef)
-		local = true
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = nil, false
 		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
 	case TypeDefKindEnum:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForEnum(typeDef)
-		local = true
 	default:
-		return nil, false, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
-
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to get mod type: %w", err)
+		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
 	}
-
 	if !ok {
-		return nil, false, false, nil
+		return nil, false, nil
 	}
 
 	if typeDef.Optional {
@@ -292,7 +289,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		}
 	}
 
-	return modType, true, local, nil
+	return modType, true, nil
 }
 
 func (mod *Module) modTypeFromDeps(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -312,19 +309,19 @@ func (mod *Module) modTypeForPrimitive(typedef *TypeDef) (ModType, bool) {
 	return &PrimitiveType{typedef}, true
 }
 
-func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, bool, error) {
-	underlyingType, ok, local, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
+func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	underlyingType, ok, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to get underlying type: %w", err)
+		return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
 	}
 	if !ok {
-		return nil, false, false, nil
+		return nil, false, nil
 	}
 
 	return &ListType{
 		Elem:       typedef.AsList.Value.ElementTypeDef,
 		Underlying: underlyingType,
-	}, true, local, nil
+	}, true, nil
 }
 
 func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
@@ -422,7 +419,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 	}
 
-	for _, fn := range obj.Functions {
+	for fn := range obj.functions() {
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
@@ -528,22 +525,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			field.SourceMap = mod.namespaceSourceMap(modPath, field.SourceMap)
 		}
 
-		for _, fn := range obj.Functions {
-			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
-				return err
-			}
-			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
-
-			for _, arg := range fn.Args {
-				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
-					return err
-				}
-				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
-			}
-		}
-
-		if obj.Constructor.Valid {
-			fn := obj.Constructor.Value
+		for fn := range obj.functions() {
 			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
@@ -627,6 +609,65 @@ func (mod *Module) modulePath() string {
 	return mod.Source.Self.SourceSubpath
 }
 
+// Patch is called after all types have been loaded - here we can update any
+// definitions as required, and attempt to resolve references.
+func (mod *Module) Patch() error {
+	// patch a function's default arguments so that the default value
+	// correctly matches the Name, not the OriginalName (simplifies a lot of
+	// code downstream, and makes type introspection make sense)
+	patchFunctionEnumDefaults := func(fn *Function) error {
+		for _, arg := range fn.Args {
+			if arg.DefaultValue == nil {
+				continue
+			}
+			if arg.TypeDef.Kind != TypeDefKindEnum {
+				continue
+			}
+			enum, ok := mod.modTypeForEnum(arg.TypeDef)
+			if !ok {
+				continue
+			}
+
+			var val string
+			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
+			dec.UseNumber()
+			if err := dec.Decode(&val); err != nil {
+				return fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			}
+
+			found := false
+			for _, member := range enum.TypeDef().AsEnum.Value.Members {
+				if val == member.OriginalName {
+					val = member.Name
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("enum name %q not found", val)
+			}
+
+			res, err := json.Marshal(val)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = JSON(res)
+		}
+		return nil
+	}
+	for _, obj := range mod.ObjectDefs {
+		for fn := range obj.AsObject.Value.functions() {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	for _, obj := range mod.InterfaceDefs {
+		for _, fn := range obj.AsInterface.Value.Functions {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	return nil
+}
+
 /*
 Mod is a module in loaded into the server's DAG of modules; it's the vertex type of the DAG.
 It's an interface so we can abstract over user modules and core and treat them the same.
@@ -645,7 +686,7 @@ type Mod interface {
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
-	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, bool, error)
+	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
 
 	// TypeDefs gets the TypeDefs exposed by this module (not including
 	// dependencies) from the given unified schema. Implicitly, TypeDefs
@@ -799,6 +840,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
+		// XXX: apply with defaults correctly!
 		if err := mod.validateTypeDef(ctx, def); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}

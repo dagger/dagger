@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -82,7 +83,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		spec.Directives = append(spec.Directives, fn.SourceMap.TypeDirective())
 	}
 	for _, arg := range fn.Args {
-		modType, ok, local, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
+		modType, ok, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
 		if err != nil {
 			return spec, fmt.Errorf("failed to get typedef for arg %q: %w", arg.Name, err)
 		}
@@ -101,7 +102,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			}
 
 			var err error
-			defaultVal, err = modType.TypeDef().ToDefault(val, local)
+			defaultVal, err = input.Decoder().DecodeInput(val)
 			if err != nil {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
 			}
@@ -424,24 +425,6 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	return typed
 }
 
-func (typeDef *TypeDef) ToDefault(val any, local bool) (dagql.Input, error) {
-	var typed dagql.Input
-
-	if typeDef.Kind == TypeDefKindEnum {
-		typed = &ModuleEnum{
-			TypeDef: typeDef.AsEnum.Value,
-			Local:   local,
-		}
-		if typeDef.Optional {
-			typed = dagql.DynamicOptional{Elem: typed}
-		}
-	} else {
-		typed = typeDef.ToInput()
-	}
-
-	return typed.Decoder().DecodeInput(val)
-}
-
 func (typeDef *TypeDef) ToType() *ast.Type {
 	return typeDef.ToTyped().Type()
 }
@@ -547,7 +530,7 @@ func (typeDef *TypeDef) WithEnumValue(name, value, desc string, sourceMap *Sourc
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
-	if err := typeDef.validateEnumMember(name, name); err != nil {
+	if err := typeDef.validateEnumMember(value, value); err != nil {
 		return nil, err
 	}
 
@@ -656,6 +639,21 @@ type ObjectTypeDef struct {
 	// The original name of the object as provided by the SDK that defined it, used
 	// when invoking the SDK so it doesn't need to think as hard about case conversions
 	OriginalName string
+}
+
+func (obj ObjectTypeDef) functions() iter.Seq[*Function] {
+	return func(yield func(*Function) bool) {
+		if obj.Constructor.Valid {
+			if !yield(obj.Constructor.Value) {
+				return
+			}
+		}
+		for _, objFn := range obj.Functions {
+			if !yield(objFn) {
+				return
+			}
+		}
+	}
 }
 
 func (*ObjectTypeDef) Type() *ast.Type {
@@ -1093,7 +1091,7 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 }
 
 func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
-	if enumValue.Value == "" {
+	if enumValue.Value == "" || enumValue.Value == enumValue.Name {
 		return nil
 	}
 

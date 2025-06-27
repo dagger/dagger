@@ -1047,6 +1047,9 @@ const (
 
 	// Inactive status
 	Inactive Status = "there"
+
+	// Weird status
+	WEIRD Status = "WEIRD"
 )
 
 func New(
@@ -1079,6 +1082,7 @@ class Status(dagger.Enum):
 
     ACTIVE = "here", "Active status"
     INACTIVE = "there", "Inactive status"
+    WEIRD = "WEIRD", "Weird status"
 
 
 @dagger.object_type
@@ -1096,6 +1100,7 @@ class Test:
         class MockEnum(dagger.Enum):
             ACTIVE = "here"
             INACTIVE = "there"
+            WEIRD = "WEIRD"
             INVALID = "INVALID"
 
         return MockEnum(status)
@@ -1144,6 +1149,9 @@ const (
 
 	// Inactive status
 	Inactive Status = "there"
+
+	// Weird status
+	WEIRD Status = "WEIRD"
 )
 
 type Dep struct{}
