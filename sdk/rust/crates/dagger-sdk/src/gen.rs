@@ -10087,8 +10087,9 @@ impl Status {
         let query = self.selection.select("start");
         query.execute(self.graphql_client.clone()).await
     }
-    pub fn with_actor(&self, actor: impl Into<String>) -> Status {
-        let mut query = self.selection.select("withActor");
+    /// Set an emoji representing the actor of the status.
+    pub fn with_actor_emoji(&self, actor: impl Into<String>) -> Status {
+        let mut query = self.selection.select("withActorEmoji");
         query = query.arg("actor", actor.into());
         Status {
             proc: self.proc.clone(),
@@ -10096,16 +10097,7 @@ impl Status {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns a new status with the internal attribute set to true.
-    pub fn with_internal(&self) -> Status {
-        let query = self.selection.select("withInternal");
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Returns a new status with the passthrough attribute set to true.
+    /// Hide the status itself, and reveal its children.
     pub fn with_passthrough(&self) -> Status {
         let query = self.selection.select("withPassthrough");
         Status {
@@ -10114,7 +10106,17 @@ impl Status {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns a new status with the reveal attribute set to true.
+    /// Indicates that the status represents a received message.
+    /// The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
+    pub fn with_received_message(&self) -> Status {
+        let query = self.selection.select("withReceivedMessage");
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Ensure the status is visible without having to expand its parents.
     pub fn with_reveal(&self) -> Status {
         let query = self.selection.select("withReveal");
         Status {

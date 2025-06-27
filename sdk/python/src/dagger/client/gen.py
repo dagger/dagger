@@ -9822,27 +9822,32 @@ class Status(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "start", _args)
 
-    def with_actor(self, actor: str) -> Self:
+    def with_actor_emoji(self, actor: str) -> Self:
+        """Set an emoji representing the actor of the status."""
         _args = [
             Arg("actor", actor),
         ]
-        _ctx = self._select("withActor", _args)
-        return Status(_ctx)
-
-    def with_internal(self) -> Self:
-        """Returns a new status with the internal attribute set to true."""
-        _args: list[Arg] = []
-        _ctx = self._select("withInternal", _args)
+        _ctx = self._select("withActorEmoji", _args)
         return Status(_ctx)
 
     def with_passthrough(self) -> Self:
-        """Returns a new status with the passthrough attribute set to true."""
+        """Hide the status itself, and reveal its children."""
         _args: list[Arg] = []
         _ctx = self._select("withPassthrough", _args)
         return Status(_ctx)
 
+    def with_received_message(self) -> Self:
+        """Indicates that the status represents a received message.
+
+        The message body must be sent as logs, so that it can be streamed. The
+        name of the status is ignored.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withReceivedMessage", _args)
+        return Status(_ctx)
+
     def with_reveal(self) -> Self:
-        """Returns a new status with the reveal attribute set to true."""
+        """Ensure the status is visible without having to expand its parents."""
         _args: list[Arg] = []
         _ctx = self._select("withReveal", _args)
         return Status(_ctx)

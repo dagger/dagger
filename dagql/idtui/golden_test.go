@@ -78,7 +78,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "nested-calls"},
 		{Function: "path-args", Args: []string{"--file", "golden_test.go", "--dir", "."}},
 		{
-			Function: "custom-span",
+			Function: "custom-status",
 			Env: []string{
 				"OTEL_RESOURCE_ATTRIBUTES=foo=bar,fizz=buzz",
 			},
@@ -91,8 +91,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.Contains(t, attrs, attribute.String("fizz", "buzz"))
 			},
 		},
-		{Function: "nested-spans"},
-		{Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
+		{Function: "nested-statuses"},
+		{Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
@@ -103,7 +103,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
-		{Function: "revealed-spans"},
+		{Function: "revealed-statuses"},
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
@@ -153,18 +153,18 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true},
-		{Module: "./viztest/python", Function: "custom-span"},
-		{Module: "./viztest/python", Function: "nested-spans"},
-		{Module: "./viztest/python", Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
+		{Module: "./viztest/python", Function: "custom-status"},
+		{Module: "./viztest/python", Function: "nested-statuses"},
+		{Module: "./viztest/python", Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
 
 		// TypeScript SDK tests
 		{Module: "./viztest/typescript", Function: "pending", Fail: true},
-		{Module: "./viztest/typescript", Function: "custom-span"},
+		{Module: "./viztest/typescript", Function: "custom-status"},
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
-		{Module: "./viztest/typescript", Function: "nested-spans"},
-		{Module: "./viztest/typescript", Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
+		{Module: "./viztest/typescript", Function: "nested-statuses"},
+		{Module: "./viztest/typescript", Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {

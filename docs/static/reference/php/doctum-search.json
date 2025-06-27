@@ -1098,9 +1098,9 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\Span",
-			"p": "Dagger/Span.html",
-			"d": "<p>An OpenTelemetry span.</p>",
+			"n": "Dagger\\Status",
+			"p": "Dagger/Status.html",
+			"d": "<p>A status indicator to show to the user.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1108,9 +1108,9 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\SpanId",
-			"p": "Dagger/SpanId.html",
-			"d": "<p>The <code>SpanID</code> scalar type represents an identifier for an object of type Span.</p>",
+			"n": "Dagger\\StatusId",
+			"p": "Dagger/StatusId.html",
+			"d": "<p>The <code>StatusID</code> scalar type represents an identifier for an object of type Status.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1713,9 +1713,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::loadSpanFromID",
-			"p": "Dagger/Client.html#method_loadSpanFromID",
-			"d": "<p>Load a Span from its ID.</p>"
+			"n": "Dagger\\Client::loadStatusFromID",
+			"p": "Dagger/Client.html#method_loadStatusFromID",
+			"d": "<p>Load a Status from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1745,7 +1745,7 @@
 			"t": "M",
 			"n": "Dagger\\Client::reveal",
 			"p": "Dagger/Client.html#method_reveal",
-			"d": "<p>Returns a span that reveals its child spans and hides itself.</p>"
+			"d": "<p>Returns a status that reveals its child statuses and hides itself.</p>"
 		},
 		{
 			"t": "M",
@@ -1767,9 +1767,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::span",
-			"p": "Dagger/Client.html#method_span",
-			"d": "<p>Create a new OpenTelemetry span.</p>"
+			"n": "Dagger\\Client::status",
+			"p": "Dagger/Client.html#method_status",
+			"d": "<p>Create a new status indicator.</p>"
 		},
 		{
 			"t": "M",
@@ -4221,57 +4221,57 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::end",
-			"p": "Dagger/Span.html#method_end",
-			"d": "<p>End the OpenTelemetry span, with an optional error.</p>"
+			"n": "Dagger\\Status::end",
+			"p": "Dagger/Status.html#method_end",
+			"d": "<p>Mark the status as complete, with an optional error.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::id",
-			"p": "Dagger/Span.html#method_id",
-			"d": "<p>A unique identifier for this Span.</p>"
+			"n": "Dagger\\Status::id",
+			"p": "Dagger/Status.html#method_id",
+			"d": "<p>A unique identifier for this Status.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::internalId",
-			"p": "Dagger/Span.html#method_internalId",
-			"d": "<p>Returns the internal ID of the span.</p>"
+			"n": "Dagger\\Status::internalId",
+			"p": "Dagger/Status.html#method_internalId",
+			"d": "<p>Returns the internal ID of the status.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::name",
-			"p": "Dagger/Span.html#method_name",
-			"d": "<p>The name of the span.</p>"
+			"n": "Dagger\\Status::name",
+			"p": "Dagger/Status.html#method_name",
+			"d": "<p>The display name of the status.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::start",
-			"p": "Dagger/Span.html#method_start",
-			"d": "<p>Start a new instance of the span.</p>"
+			"n": "Dagger\\Status::start",
+			"p": "Dagger/Status.html#method_start",
+			"d": "<p>Start a new instance of the status.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::withActor",
-			"p": "Dagger/Span.html#method_withActor",
-			"d": null
+			"n": "Dagger\\Status::withActorEmoji",
+			"p": "Dagger/Status.html#method_withActorEmoji",
+			"d": "<p>Set an emoji representing the actor of the status.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::withInternal",
-			"p": "Dagger/Span.html#method_withInternal",
-			"d": "<p>Returns a new span with the internal attribute set to true.</p>"
+			"n": "Dagger\\Status::withPassthrough",
+			"p": "Dagger/Status.html#method_withPassthrough",
+			"d": "<p>Hide the status itself, and reveal its children.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::withPassthrough",
-			"p": "Dagger/Span.html#method_withPassthrough",
-			"d": "<p>Returns a new span with the passthrough attribute set to true.</p>"
+			"n": "Dagger\\Status::withReceivedMessage",
+			"p": "Dagger/Status.html#method_withReceivedMessage",
+			"d": "<p>Indicates that the status represents a received message.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Span::withReveal",
-			"p": "Dagger/Span.html#method_withReveal",
-			"d": "<p>Returns a new span with the reveal attribute set to true.</p>"
+			"n": "Dagger\\Status::withReveal",
+			"p": "Dagger/Status.html#method_withReveal",
+			"d": "<p>Ensure the status is visible without having to expand its parents.</p>"
 		},
 		{
 			"t": "M",

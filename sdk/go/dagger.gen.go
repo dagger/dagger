@@ -10289,8 +10289,9 @@ func (r *Status) Start(ctx context.Context) (*Status, error) {
 	}, nil
 }
 
-func (r *Status) WithActor(actor string) *Status {
-	q := r.query.Select("withActor")
+// Set an emoji representing the actor of the status.
+func (r *Status) WithActorEmoji(actor string) *Status {
+	q := r.query.Select("withActorEmoji")
 	q = q.Arg("actor", actor)
 
 	return &Status{
@@ -10299,17 +10300,7 @@ func (r *Status) WithActor(actor string) *Status {
 	}
 }
 
-// Returns a new status with the internal attribute set to true.
-func (r *Status) WithInternal() *Status {
-	q := r.query.Select("withInternal")
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// Returns a new status with the passthrough attribute set to true.
+// Hide the status itself, and reveal its children.
 func (r *Status) WithPassthrough() *Status {
 	q := r.query.Select("withPassthrough")
 
@@ -10319,7 +10310,19 @@ func (r *Status) WithPassthrough() *Status {
 	}
 }
 
-// Returns a new status with the reveal attribute set to true.
+// Indicates that the status represents a received message.
+//
+// The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
+func (r *Status) WithReceivedMessage() *Status {
+	q := r.query.Select("withReceivedMessage")
+
+	return &Status{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// Ensure the status is visible without having to expand its parents.
 func (r *Status) WithReveal() *Status {
 	q := r.query.Select("withReveal")
 

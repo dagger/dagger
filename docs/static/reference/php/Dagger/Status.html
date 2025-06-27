@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\Span | API</title>
+    <title>Dagger\Status | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_Span" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_Status" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Span</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Status</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>Span    
+        <h1>Status    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>Span</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Status</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>An OpenTelemetry span.</p></p>                    </div>
+            <p><p>A status indicator to show to the user.</p></p>                    </div>
             
         
     
@@ -148,7 +148,7 @@
                 <div class="col-md-8">
                     <a href="#method_end">end</a>(<abbr title="Dagger\Dagger\ErrorId|Dagger\Error|null">Error|null</abbr> $error = null)
         
-                                            <p><p>End the OpenTelemetry span, with an optional error.</p></p>                </div>
+                                            <p><p>Mark the status as complete, with an optional error.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,7 +158,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this Span.</p></p>                </div>
+                                            <p><p>A unique identifier for this Status.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -168,7 +168,7 @@
                 <div class="col-md-8">
                     <a href="#method_internalId">internalId</a>()
         
-                                            <p><p>Returns the internal ID of the span.</p></p>                </div>
+                                            <p><p>Returns the internal ID of the status.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,58 +178,57 @@
                 <div class="col-md-8">
                     <a href="#method_name">name</a>()
         
-                                            <p><p>The name of the span.</p></p>                </div>
+                                            <p><p>The display name of the status.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/SpanId.html"><abbr title="Dagger\SpanId">SpanId</abbr></a>
+                    <a href="../Dagger/StatusId.html"><abbr title="Dagger\StatusId">StatusId</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_start">start</a>()
         
-                                            <p><p>Start a new instance of the span.</p></p>                </div>
+                                            <p><p>Start a new instance of the status.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withActor">withActor</a>(string $actor)
+                    <a href="#method_withActorEmoji">withActorEmoji</a>(string $actor)
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>Set an emoji representing the actor of the status.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withInternal">withInternal</a>()
-        
-                                            <p><p>Returns a new span with the internal attribute set to true.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withPassthrough">withPassthrough</a>()
         
-                                            <p><p>Returns a new span with the passthrough attribute set to true.</p></p>                </div>
+                                            <p><p>Hide the status itself, and reveal its children.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withReceivedMessage">withReceivedMessage</a>()
+        
+                                            <p><p>Indicates that the status represents a received message.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withReveal">withReveal</a>()
         
-                                            <p><p>Returns a new span with the reveal attribute set to true.</p></p>                </div>
+                                            <p><p>Ensure the status is visible without having to expand its parents.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -339,7 +338,7 @@
             
 
         <div class="method-description">
-                            <p><p>End the OpenTelemetry span, with an optional error.</p></p>                        
+                            <p><p>Mark the status as complete, with an optional error.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -381,7 +380,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this Span.</p></p>                        
+                            <p><p>A unique identifier for this Status.</p></p>                        
         </div>
         <div class="tags">
             
@@ -413,7 +412,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns the internal ID of the span.</p></p>                        
+                            <p><p>Returns the internal ID of the status.</p></p>                        
         </div>
         <div class="tags">
             
@@ -445,7 +444,7 @@
             
 
         <div class="method-description">
-                            <p><p>The name of the span.</p></p>                        
+                            <p><p>The display name of the status.</p></p>                        
         </div>
         <div class="tags">
             
@@ -468,7 +467,7 @@
                     <div class="method-item">
                     <h3 id="method_start">
         <div class="location">at line 58</div>
-        <code>                    <a href="../Dagger/SpanId.html"><abbr title="Dagger\SpanId">SpanId</abbr></a>
+        <code>                    <a href="../Dagger/StatusId.html"><abbr title="Dagger\StatusId">StatusId</abbr></a>
     <strong>start</strong>()
         </code>
     </h3>
@@ -477,7 +476,7 @@
             
 
         <div class="method-description">
-                            <p><p>Start a new instance of the span.</p></p>                        
+                            <p><p>Start a new instance of the status.</p></p>                        
         </div>
         <div class="tags">
             
@@ -485,7 +484,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/SpanId.html"><abbr title="Dagger\SpanId">SpanId</abbr></a></td>
+            <td><a href="../Dagger/StatusId.html"><abbr title="Dagger\StatusId">StatusId</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -498,10 +497,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withActor">
-        <div class="location">at line 64</div>
-        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
-    <strong>withActor</strong>(string $actor)
+                    <h3 id="method_withActorEmoji">
+        <div class="location">at line 67</div>
+        <code>                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
+    <strong>withActorEmoji</strong>(string $actor)
         </code>
     </h3>
     <div class="details">    
@@ -509,8 +508,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>Set an emoji representing the actor of the status.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -528,39 +526,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withInternal">
-        <div class="location">at line 74</div>
-        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
-    <strong>withInternal</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Returns a new span with the internal attribute set to true.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td><a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -574,8 +540,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPassthrough">
-        <div class="location">at line 83</div>
-        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+        <div class="location">at line 77</div>
+        <code>                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
     <strong>withPassthrough</strong>()
         </code>
     </h3>
@@ -584,7 +550,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a new span with the passthrough attribute set to true.</p></p>                        
+                            <p><p>Hide the status itself, and reveal its children.</p></p>                        
         </div>
         <div class="tags">
             
@@ -592,7 +558,39 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td><a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withReceivedMessage">
+        <div class="location">at line 88</div>
+        <code>                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
+    <strong>withReceivedMessage</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Indicates that the status represents a received message.</p></p>                <p><p>The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -606,8 +604,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withReveal">
-        <div class="location">at line 92</div>
-        <code>                    <a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a>
+        <div class="location">at line 97</div>
+        <code>                    <a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a>
     <strong>withReveal</strong>()
         </code>
     </h3>
@@ -616,7 +614,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a new span with the reveal attribute set to true.</p></p>                        
+                            <p><p>Ensure the status is visible without having to expand its parents.</p></p>                        
         </div>
         <div class="tags">
             
@@ -624,7 +622,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Span.html"><abbr title="Dagger\Span">Span</abbr></a></td>
+            <td><a href="../Dagger/Status.html"><abbr title="Dagger\Status">Status</abbr></a></td>
             <td></td>
         </tr>
     </table>

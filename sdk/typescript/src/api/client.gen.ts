@@ -9129,21 +9129,17 @@ export class Status extends BaseClient {
 
     return new Client(ctx.copy()).loadStatusFromID(response)
   }
-  withActor = (actor: string): Status => {
-    const ctx = this._ctx.select("withActor", { actor })
-    return new Status(ctx)
-  }
 
   /**
-   * Returns a new status with the internal attribute set to true.
+   * Set an emoji representing the actor of the status.
    */
-  withInternal = (): Status => {
-    const ctx = this._ctx.select("withInternal")
+  withActorEmoji = (actor: string): Status => {
+    const ctx = this._ctx.select("withActorEmoji", { actor })
     return new Status(ctx)
   }
 
   /**
-   * Returns a new status with the passthrough attribute set to true.
+   * Hide the status itself, and reveal its children.
    */
   withPassthrough = (): Status => {
     const ctx = this._ctx.select("withPassthrough")
@@ -9151,7 +9147,17 @@ export class Status extends BaseClient {
   }
 
   /**
-   * Returns a new status with the reveal attribute set to true.
+   * Indicates that the status represents a received message.
+   *
+   * The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
+   */
+  withReceivedMessage = (): Status => {
+    const ctx = this._ctx.select("withReceivedMessage")
+    return new Status(ctx)
+  }
+
+  /**
+   * Ensure the status is visible without having to expand its parents.
    */
   withReveal = (): Status => {
     const ctx = this._ctx.select("withReveal")

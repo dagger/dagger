@@ -61,24 +61,18 @@ class Status extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\StatusId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
     }
 
-    public function withActor(string $actor): Status
+    /**
+     * Set an emoji representing the actor of the status.
+     */
+    public function withActorEmoji(string $actor): Status
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withActor');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withActorEmoji');
         $innerQueryBuilder->setArgument('actor', $actor);
         return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a new status with the internal attribute set to true.
-     */
-    public function withInternal(): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInternal');
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns a new status with the passthrough attribute set to true.
+     * Hide the status itself, and reveal its children.
      */
     public function withPassthrough(): Status
     {
@@ -87,7 +81,18 @@ class Status extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns a new status with the reveal attribute set to true.
+     * Indicates that the status represents a received message.
+     *
+     * The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
+     */
+    public function withReceivedMessage(): Status
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReceivedMessage');
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Ensure the status is visible without having to expand its parents.
      */
     public function withReveal(): Status
     {
