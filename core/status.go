@@ -12,8 +12,8 @@ import (
 type Status struct {
 	Name string `field:"true" doc:"The display name of the status."`
 
-	Actor       string
-	Internal    bool
+	ActorEmoji  string
+	Message     string
 	Reveal      bool
 	Passthrough bool
 
@@ -39,15 +39,15 @@ func (s Status) Clone() *Status {
 	return cp
 }
 
-func (s *Status) WithActor(actor string) *Status {
+func (s *Status) WithActorEmoji(actor string) *Status {
 	cp := s.Clone()
-	cp.Actor = actor
+	cp.ActorEmoji = actor
 	return cp
 }
 
-func (s *Status) WithInternal() *Status {
+func (s *Status) WithMessage(message string) *Status {
 	cp := s.Clone()
-	cp.Internal = true
+	cp.Message = message
 	return cp
 }
 
@@ -76,11 +76,11 @@ func (s *Status) InternalID() string {
 
 func (s *Status) Opts() []trace.SpanStartOption {
 	var opts []trace.SpanStartOption
-	if s.Actor != "" {
-		opts = append(opts, trace.WithAttributes(attribute.String("dagger.io/ui.actor", s.Actor)))
+	if s.ActorEmoji != "" {
+		opts = append(opts, trace.WithAttributes(attribute.String(telemetry.UIActorEmojiAttr, s.ActorEmoji)))
 	}
-	if s.Internal {
-		opts = append(opts, telemetry.Internal())
+	if s.Message != "" {
+		opts = append(opts, trace.WithAttributes(attribute.String(telemetry.UIMessageAttr, s.Message)))
 	}
 	if s.Reveal {
 		opts = append(opts, trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)))

@@ -82,16 +82,18 @@ func (s *querySchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Status]{
-		dagql.Func("withActor", s.statusWithActor),
-
-		dagql.Func("withInternal", s.statusWithInternal).
-			Doc(`Returns a new status with the internal attribute set to true.`),
-
 		dagql.Func("withPassthrough", s.statusWithPassthrough).
-			Doc(`Returns a new status with the passthrough attribute set to true.`),
+			Doc(`Hide the status itself, and reveal its children.`),
 
 		dagql.Func("withReveal", s.statusWithReveal).
-			Doc(`Returns a new status with the reveal attribute set to true.`),
+			Doc(`Ensure the status is visible without having to expand its parents.`),
+
+		dagql.Func("withActorEmoji", s.statusWithActorEmoji).
+			Doc(`Set an emoji representing the actor of the status.`),
+
+		dagql.Func("withReceivedMessage", s.statusWithReceivedMessage).
+			Doc(`Indicates that the status represents a received message.`,
+				`The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.`),
 
 		dagql.Func("internalId", s.statusInternalID).
 			Doc(`Returns the internal ID of the status.`),
@@ -251,14 +253,14 @@ func (s *querySchema) statusInternalID(ctx context.Context, parent *core.Status,
 	return parent.Span.SpanContext().SpanID().String(), nil
 }
 
-func (s *querySchema) statusWithActor(ctx context.Context, parent *core.Status, args struct {
+func (s *querySchema) statusWithActorEmoji(ctx context.Context, parent *core.Status, args struct {
 	Actor string
 }) (*core.Status, error) {
-	return parent.WithActor(args.Actor), nil
+	return parent.WithActorEmoji(args.Actor), nil
 }
 
-func (s *querySchema) statusWithInternal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
-	return parent.WithInternal(), nil
+func (s *querySchema) statusWithReceivedMessage(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
+	return parent.WithMessage("received"), nil
 }
 
 func (s *querySchema) statusWithReveal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
