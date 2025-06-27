@@ -257,14 +257,22 @@ func main() { //nolint:gocyclo
 		if os.Geteuid() > 0 {
 			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
 		}
+
 		// install CA certs in case the user has a custom engine w/ extra certs installed to
 		// /usr/local/share/ca-certificates
-		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
-			bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
-		} else {
-			//nolint:gosec // it thinks we're using untrusted input even though we're only using consts here...?
-			if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
-				bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+		// Ignore if there's only an OrbStack CA, which we don't care about
+		dirEnts, err := os.ReadDir(cacerts.EngineCustomCACertsDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read %s: %w", cacerts.EngineCustomCACertsDir, err)
+		}
+		if len(dirEnts) > 1 || (len(dirEnts) == 1 && dirEnts[0].Name() != cacerts.OrbstackCACertName) {
+			if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
+				bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
+			} else {
+				//nolint:gosec // it thinks we're using untrusted input even though we're only using consts here...?
+				if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
+					bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+				}
 			}
 		}
 
