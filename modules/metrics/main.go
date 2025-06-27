@@ -39,6 +39,7 @@ func (m *Metrics) Grafana() *dagger.Container {
 		WithMountedCache("/var/lib/grafana", dag.CacheVolume("grafana-"+grafanaVersion), dagger.ContainerWithMountedCacheOpts{
 			Owner: "grafana",
 		}).
+		WithMountedDirectory("/var/lib/grafana/dashboards", m.Config.Directory("grafana/dashboards")).
 		WithMountedDirectory("/etc/grafana/provisioning", m.Config.Directory("grafana/provisioning"))
 }
 
