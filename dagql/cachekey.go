@@ -167,6 +167,7 @@ func HashFrom(ins ...string) digest.Digest {
 	h := xxh3.New()
 	for _, in := range ins {
 		h.WriteString(in)
+		h.Write([]byte{0}) // separate all inputs with a null byte to help avoid collisions
 	}
 	return digest.NewDigest(XXH3, h)
 }
