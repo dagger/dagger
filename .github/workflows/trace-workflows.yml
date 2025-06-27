@@ -4,8 +4,6 @@ on:
   workflow_run:
     workflows:
       - "Alternative CI Runners 1"
-      - "Alternative CI Runners 2"
-      - "Alternative CI Runners 3"
       - "Benchmark"
       - "daggerverse-preview"
       - "docs"
