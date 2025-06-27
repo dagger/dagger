@@ -110,14 +110,8 @@ func (v *Viztest) CustomStatus(ctx context.Context) (res string, rerr error) {
 }
 
 func (v *Viztest) RevealedStatuses(ctx context.Context) (res string, rerr error) {
-	func() {
-		ctx, status := dag.Status("custom status").Context(ctx)
-		status.End(ctx)
-	}()
-	func() {
-		ctx, status := dag.Status("revealed status").WithReveal().Context(ctx)
-		status.End(ctx)
-	}()
+	dag.Status("custom status").Display(ctx)
+	dag.Status("revealed status").WithReveal().Display(ctx)
 	func() {
 		ctx, status := dag.Status("revealed message").
 			WithReveal().
@@ -129,10 +123,7 @@ func (v *Viztest) RevealedStatuses(ctx context.Context) (res string, rerr error)
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
 	}()
-	func() {
-		_, status := dag.Status("revealed status").Context(ctx)
-		status.End(ctx)
-	}()
+	dag.Status("not revealed status").Display(ctx)
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
