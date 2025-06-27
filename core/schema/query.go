@@ -102,6 +102,9 @@ func (s *querySchema) Install() {
 		dagql.NodeFuncWithCacheKey("start", s.statusStart, dagql.CachePerCall).
 			Doc(`Start a new instance of the status.`),
 
+		dagql.NodeFuncWithCacheKey("display", s.statusDisplay, dagql.CachePerCall).
+			Doc(`Start and immediately finish the status, so that it just gets displayed to the user.`),
+
 		dagql.Func("end", s.statusEnd).
 			Doc(`Mark the status as complete, with an optional error.`),
 	}.Install(s.srv)
@@ -218,6 +221,22 @@ func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struc
 
 func (s *querySchema) statusStart(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
 	started := parent.Self.Start(ctx)
+	var inst dagql.Instance[*core.Status]
+	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "status",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(started.Name)},
+			{Name: "key", Value: dagql.NewString(started.InternalID())},
+		},
+	})
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return dagql.NewID[*core.Status](inst.ID()), nil
+}
+
+func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	started := parent.Self.Display(ctx)
 	var inst dagql.Instance[*core.Status]
 	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
 		Field: "status",

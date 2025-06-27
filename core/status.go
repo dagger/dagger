@@ -63,6 +63,13 @@ func (s *Status) WithReveal() *Status {
 	return cp
 }
 
+func (s *Status) Display(ctx context.Context) *Status {
+	status := s.Start(ctx)
+	// UNSET should be ok, it's not like failure is even possible
+	status.Span.End()
+	return status
+}
+
 func (s *Status) Start(ctx context.Context) *Status {
 	return s.Query.StartSpan(ctx, s)
 }
