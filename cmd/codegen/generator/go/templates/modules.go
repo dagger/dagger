@@ -1178,6 +1178,11 @@ func parsePragmaComment(comment string) (data map[string]any, rest string) {
 	data = map[string]any{}
 	lastEnd := 0
 	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
+		// Skip matches that start before we've finished processing
+		if v[0] < lastEnd {
+			continue
+		}
+
 		var key string
 		if v[2] != -1 {
 			key = comment[v[2]:v[3]]
