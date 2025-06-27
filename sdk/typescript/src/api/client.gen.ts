@@ -1319,7 +1319,7 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
-export type ClientSpanOpts = {
+export type ClientStatusOpts = {
   key?: string
 }
 
@@ -1405,14 +1405,14 @@ export type SocketID = string & { __SocketID: never }
  */
 export type SourceMapID = string & { __SourceMapID: never }
 
-export type SpanEndOpts = {
+export type StatusEndOpts = {
   error?: Error
 }
 
 /**
- * The `SpanID` scalar type represents an identifier for an object of type Span.
+ * The `StatusID` scalar type represents an identifier for an object of type Status.
  */
-export type SpanID = string & { __SpanID: never }
+export type StatusID = string & { __StatusID: never }
 
 /**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
@@ -8381,11 +8381,11 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a Span from its ID.
+   * Load a Status from its ID.
    */
-  loadSpanFromID = (id: SpanID): Span => {
-    const ctx = this._ctx.select("loadSpanFromID", { id })
-    return new Span(ctx)
+  loadStatusFromID = (id: StatusID): Status => {
+    const ctx = this._ctx.select("loadStatusFromID", { id })
+    return new Status(ctx)
   }
 
   /**
@@ -8437,11 +8437,11 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Returns a span that reveals its child spans and hides itself.
+   * Returns a status that reveals its child statuses and hides itself.
    */
-  reveal = (): Span => {
+  reveal = (): Status => {
     const ctx = this._ctx.select("reveal")
-    return new Span(ctx)
+    return new Status(ctx)
   }
 
   /**
@@ -8482,12 +8482,12 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a new OpenTelemetry span.
-   * @param name Name of the span.
+   * Create a new status indicator.
+   * @param name A display name for the status.
    */
-  span = (name: string, opts?: ClientSpanOpts): Span => {
-    const ctx = this._ctx.select("span", { name, ...opts })
-    return new Span(ctx)
+  status = (name: string, opts?: ClientStatusOpts): Status => {
+    const ctx = this._ctx.select("status", { name, ...opts })
+    return new Status(ctx)
   }
 
   /**
@@ -9032,25 +9032,25 @@ export class SourceMap extends BaseClient {
 }
 
 /**
- * An OpenTelemetry span.
+ * A status indicator to show to the user.
  */
-export class Span extends BaseClient {
-  private readonly _id?: SpanID = undefined
+export class Status extends BaseClient {
+  private readonly _id?: StatusID = undefined
   private readonly _end?: Void = undefined
   private readonly _internalId?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _start?: SpanID = undefined
+  private readonly _start?: StatusID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: SpanID,
+    _id?: StatusID,
     _end?: Void,
     _internalId?: string,
     _name?: string,
-    _start?: SpanID,
+    _start?: StatusID,
   ) {
     super(ctx)
 
@@ -9062,24 +9062,24 @@ export class Span extends BaseClient {
   }
 
   /**
-   * A unique identifier for this Span.
+   * A unique identifier for this Status.
    */
-  id = async (): Promise<SpanID> => {
+  id = async (): Promise<StatusID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SpanID> = await ctx.execute()
+    const response: Awaited<StatusID> = await ctx.execute()
 
     return response
   }
 
   /**
-   * End the OpenTelemetry span, with an optional error.
+   * Mark the status as complete, with an optional error.
    */
-  end = async (opts?: SpanEndOpts): Promise<void> => {
+  end = async (opts?: StatusEndOpts): Promise<void> => {
     if (this._end) {
       return
     }
@@ -9090,7 +9090,7 @@ export class Span extends BaseClient {
   }
 
   /**
-   * Returns the internal ID of the span.
+   * Returns the internal ID of the status.
    */
   internalId = async (): Promise<string> => {
     if (this._internalId) {
@@ -9105,7 +9105,7 @@ export class Span extends BaseClient {
   }
 
   /**
-   * The name of the span.
+   * The display name of the status.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -9120,45 +9120,45 @@ export class Span extends BaseClient {
   }
 
   /**
-   * Start a new instance of the span.
+   * Start a new instance of the status.
    */
-  start = async (): Promise<Span> => {
+  start = async (): Promise<Status> => {
     const ctx = this._ctx.select("start")
 
-    const response: Awaited<SpanID> = await ctx.execute()
+    const response: Awaited<StatusID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadSpanFromID(response)
+    return new Client(ctx.copy()).loadStatusFromID(response)
   }
-  withActor = (actor: string): Span => {
+  withActor = (actor: string): Status => {
     const ctx = this._ctx.select("withActor", { actor })
-    return new Span(ctx)
+    return new Status(ctx)
   }
 
   /**
-   * Returns a new span with the internal attribute set to true.
+   * Returns a new status with the internal attribute set to true.
    */
-  withInternal = (): Span => {
+  withInternal = (): Status => {
     const ctx = this._ctx.select("withInternal")
-    return new Span(ctx)
+    return new Status(ctx)
   }
 
   /**
-   * Returns a new span with the passthrough attribute set to true.
+   * Returns a new status with the passthrough attribute set to true.
    */
-  withPassthrough = (): Span => {
+  withPassthrough = (): Status => {
     const ctx = this._ctx.select("withPassthrough")
-    return new Span(ctx)
+    return new Status(ctx)
   }
 
   /**
-   * Returns a new span with the reveal attribute set to true.
+   * Returns a new status with the reveal attribute set to true.
    */
-  withReveal = (): Span => {
+  withReveal = (): Status => {
     const ctx = this._ctx.select("withReveal")
-    return new Span(ctx)
+    return new Status(ctx)
   }
 
-  public async run<T>(fn: (span: Span) => Promise<T>) {
+  public async run<T>(fn: (span: Status) => Promise<T>) {
     const started = await this.start()
     const spanIdHex = await started.internalId()
 
@@ -9178,11 +9178,11 @@ export class Span extends BaseClient {
   }
 
   /**
-   * Call the provided function with current Span.
+   * Call the provided function with current Status.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with = (arg: (param: Span) => Span) => {
+  with = (arg: (param: Status) => Status) => {
     return arg(this)
   }
 }

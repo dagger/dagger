@@ -937,14 +937,14 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Load a Span from its ID.
+  Load a Status from its ID.
   """
-  @spec load_span_from_id(t(), Dagger.SpanID.t()) :: Dagger.Span.t()
-  def load_span_from_id(%__MODULE__{} = client, id) do
+  @spec load_status_from_id(t(), Dagger.StatusID.t()) :: Dagger.Status.t()
+  def load_status_from_id(%__MODULE__{} = client, id) do
     query_builder =
-      client.query_builder |> QB.select("loadSpanFromID") |> QB.put_arg("id", id)
+      client.query_builder |> QB.select("loadStatusFromID") |> QB.put_arg("id", id)
 
-    %Dagger.Span{
+    %Dagger.Status{
       query_builder: query_builder,
       client: client.client
     }
@@ -1018,14 +1018,14 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Returns a span that reveals its child spans and hides itself.
+  Returns a status that reveals its child statuses and hides itself.
   """
-  @spec reveal(t()) :: Dagger.Span.t()
+  @spec reveal(t()) :: Dagger.Status.t()
   def reveal(%__MODULE__{} = client) do
     query_builder =
       client.query_builder |> QB.select("reveal")
 
-    %Dagger.Span{
+    %Dagger.Status{
       query_builder: query_builder,
       client: client.client
     }
@@ -1086,17 +1086,17 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Create a new OpenTelemetry span.
+  Create a new status indicator.
   """
-  @spec span(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Span.t()
-  def span(%__MODULE__{} = client, name, optional_args \\ []) do
+  @spec status(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Status.t()
+  def status(%__MODULE__{} = client, name, optional_args \\ []) do
     query_builder =
       client.query_builder
-      |> QB.select("span")
+      |> QB.select("status")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("key", optional_args[:key])
 
-    %Dagger.Span{
+    %Dagger.Status{
       query_builder: query_builder,
       client: client.client
     }

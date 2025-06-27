@@ -59,7 +59,7 @@ func (s *querySchema) Install() {
 
 	dagql.Fields[*core.Query]{
 		dagql.Func("reveal", s.reveal).
-			Doc(`Returns a span that reveals its child spans and hides itself.`),
+			Doc(`Returns a status that reveals its child statuses and hides itself.`),
 
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
@@ -74,33 +74,33 @@ func (s *querySchema) Install() {
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
 
-		dagql.Func("span", s.span).
-			Doc(`Create a new OpenTelemetry span.`).
+		dagql.Func("status", s.status).
+			Doc(`Create a new status indicator.`).
 			Args(
-				dagql.Arg("name").Doc("Name of the span."),
+				dagql.Arg("name").Doc("A display name for the status."),
 			),
 	}.Install(s.srv)
 
-	dagql.Fields[*core.Span]{
-		dagql.Func("withActor", s.spanWithActor),
+	dagql.Fields[*core.Status]{
+		dagql.Func("withActor", s.statusWithActor),
 
-		dagql.Func("withInternal", s.spanWithInternal).
-			Doc(`Returns a new span with the internal attribute set to true.`),
+		dagql.Func("withInternal", s.statusWithInternal).
+			Doc(`Returns a new status with the internal attribute set to true.`),
 
-		dagql.Func("withPassthrough", s.spanWithPassthrough).
-			Doc(`Returns a new span with the passthrough attribute set to true.`),
+		dagql.Func("withPassthrough", s.statusWithPassthrough).
+			Doc(`Returns a new status with the passthrough attribute set to true.`),
 
-		dagql.Func("withReveal", s.spanWithReveal).
-			Doc(`Returns a new span with the reveal attribute set to true.`),
+		dagql.Func("withReveal", s.statusWithReveal).
+			Doc(`Returns a new status with the reveal attribute set to true.`),
 
-		dagql.Func("internalId", s.spanInternalID).
-			Doc(`Returns the internal ID of the span.`),
+		dagql.Func("internalId", s.statusInternalID).
+			Doc(`Returns the internal ID of the status.`),
 
-		dagql.NodeFuncWithCacheKey("start", s.spanStart, dagql.CachePerCall).
-			Doc(`Start a new instance of the span.`),
+		dagql.NodeFuncWithCacheKey("start", s.statusStart, dagql.CachePerCall).
+			Doc(`Start a new instance of the status.`),
 
-		dagql.Func("end", s.spanEnd).
-			Doc(`End the OpenTelemetry span, with an optional error.`),
+		dagql.Func("end", s.statusEnd).
+			Doc(`Mark the status as complete, with an optional error.`),
 	}.Install(s.srv)
 }
 
@@ -186,26 +186,26 @@ func (s *querySchema) schemaJSONFile(
 	return fileInst.WithDigest(dgst), nil
 }
 
-func (s *querySchema) span(ctx context.Context, parent *core.Query, args struct {
+func (s *querySchema) status(ctx context.Context, parent *core.Query, args struct {
 	Name string
 	Key  string `default:""`
-}) (*core.Span, error) {
+}) (*core.Status, error) {
 	query := parent
 	if args.Key != "" {
-		span, found := query.LookupSpan(args.Key)
+		status, found := query.LookupStatus(args.Key)
 		if !found {
-			return nil, fmt.Errorf("span not found: %s", args.Key)
+			return nil, fmt.Errorf("status not found: %s", args.Key)
 		}
-		return span, nil
+		return status, nil
 	}
-	return &core.Span{
+	return &core.Status{
 		Name:  args.Name,
 		Query: parent,
 	}, nil
 }
 
-func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struct{}) (*core.Span, error) {
-	return &core.Span{
+func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struct{}) (*core.Status, error) {
+	return &core.Status{
 		Name:        "reveal",
 		Reveal:      true,
 		Passthrough: true,
@@ -213,27 +213,27 @@ func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struc
 	}, nil
 }
 
-func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core.Span], args struct{}) (dagql.ID[*core.Span], error) {
+func (s *querySchema) statusStart(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
 	started := parent.Self.Start(ctx)
-	var inst dagql.Instance[*core.Span]
+	var inst dagql.Instance[*core.Status]
 	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
-		Field: "span",
+		Field: "status",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.NewString(started.Name)},
 			{Name: "key", Value: dagql.NewString(started.InternalID())},
 		},
 	})
 	if err != nil {
-		return dagql.ID[*core.Span]{}, err
+		return dagql.ID[*core.Status]{}, err
 	}
-	return dagql.NewID[*core.Span](inst.ID()), nil
+	return dagql.NewID[*core.Status](inst.ID()), nil
 }
 
-func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struct {
+func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args struct {
 	Error dagql.Optional[dagql.ID[*core.Error]]
 }) (dagql.Nullable[core.Void], error) {
 	if parent.Span == nil {
-		return dagql.Null[core.Void](), fmt.Errorf("span not started")
+		return dagql.Null[core.Void](), fmt.Errorf("status not started")
 	}
 	if args.Error.Valid {
 		dagErr, err := args.Error.Value.Load(ctx, s.srv)
@@ -247,24 +247,24 @@ func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struc
 	return dagql.Null[core.Void](), nil
 }
 
-func (s *querySchema) spanInternalID(ctx context.Context, parent *core.Span, args struct{}) (string, error) {
+func (s *querySchema) statusInternalID(ctx context.Context, parent *core.Status, args struct{}) (string, error) {
 	return parent.Span.SpanContext().SpanID().String(), nil
 }
 
-func (s *querySchema) spanWithActor(ctx context.Context, parent *core.Span, args struct {
+func (s *querySchema) statusWithActor(ctx context.Context, parent *core.Status, args struct {
 	Actor string
-}) (*core.Span, error) {
+}) (*core.Status, error) {
 	return parent.WithActor(args.Actor), nil
 }
 
-func (s *querySchema) spanWithInternal(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+func (s *querySchema) statusWithInternal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
 	return parent.WithInternal(), nil
 }
 
-func (s *querySchema) spanWithReveal(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+func (s *querySchema) statusWithReveal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
 	return parent.WithReveal(), nil
 }
 
-func (s *querySchema) spanWithPassthrough(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+func (s *querySchema) statusWithPassthrough(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
 	return parent.WithPassthrough(), nil
 }

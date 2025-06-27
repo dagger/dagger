@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SpanID` scalar type represents an identifier for an object of type Span.
+ * The `StatusID` scalar type represents an identifier for an object of type Status.
  */
-readonly class SpanId extends Client\AbstractId
+readonly class StatusId extends Client\AbstractId
 {
 }

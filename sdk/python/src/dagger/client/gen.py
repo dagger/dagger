@@ -239,9 +239,9 @@ class SourceMapID(Scalar):
     object of type SourceMap."""
 
 
-class SpanID(Scalar):
-    """The `SpanID` scalar type represents an identifier for an object of
-    type Span."""
+class StatusID(Scalar):
+    """The `StatusID` scalar type represents an identifier for an object
+    of type Status."""
 
 
 class TerminalID(Scalar):
@@ -8951,13 +8951,13 @@ class Client(Root):
         _ctx = self._select("loadSourceMapFromID", _args)
         return SourceMap(_ctx)
 
-    def load_span_from_id(self, id: SpanID) -> "Span":
-        """Load a Span from its ID."""
+    def load_status_from_id(self, id: StatusID) -> "Status":
+        """Load a Status from its ID."""
         _args = [
             Arg("id", id),
         ]
-        _ctx = self._select("loadSpanFromID", _args)
-        return Span(_ctx)
+        _ctx = self._select("loadStatusFromID", _args)
+        return Status(_ctx)
 
     def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
         """Load a Terminal from its ID."""
@@ -9019,11 +9019,11 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def reveal(self) -> "Span":
-        """Returns a span that reveals its child spans and hides itself."""
+    def reveal(self) -> "Status":
+        """Returns a status that reveals its child statuses and hides itself."""
         _args: list[Arg] = []
         _ctx = self._select("reveal", _args)
-        return Span(_ctx)
+        return Status(_ctx)
 
     def secret(
         self,
@@ -9100,21 +9100,21 @@ class Client(Root):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
-    def span(self, name: str, *, key: str | None = "") -> "Span":
-        """Create a new OpenTelemetry span.
+    def status(self, name: str, *, key: str | None = "") -> "Status":
+        """Create a new status indicator.
 
         Parameters
         ----------
         name:
-            Name of the span.
+            A display name for the status.
         key:
         """
         _args = [
             Arg("name", name),
             Arg("key", key, ""),
         ]
-        _ctx = self._select("span", _args)
-        return Span(_ctx)
+        _ctx = self._select("status", _args)
+        return Status(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -9718,11 +9718,11 @@ class SourceMap(Type):
 
 
 @typecheck
-class Span(Type):
-    """An OpenTelemetry span."""
+class Status(Type):
+    """A status indicator to show to the user."""
 
     async def end(self, *, error: Error | None = None) -> Void | None:
-        """End the OpenTelemetry span, with an optional error.
+        """Mark the status as complete, with an optional error.
 
         Returns
         -------
@@ -9743,8 +9743,8 @@ class Span(Type):
         _ctx = self._select("end", _args)
         await _ctx.execute()
 
-    async def id(self) -> SpanID:
-        """A unique identifier for this Span.
+    async def id(self) -> StatusID:
+        """A unique identifier for this Status.
 
         Note
         ----
@@ -9752,9 +9752,9 @@ class Span(Type):
 
         Returns
         -------
-        SpanID
-            The `SpanID` scalar type represents an identifier for an object of
-            type Span.
+        StatusID
+            The `StatusID` scalar type represents an identifier for an object
+            of type Status.
 
         Raises
         ------
@@ -9765,10 +9765,10 @@ class Span(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SpanID)
+        return await _ctx.execute(StatusID)
 
     async def internal_id(self) -> str:
-        """Returns the internal ID of the span.
+        """Returns the internal ID of the status.
 
         Returns
         -------
@@ -9789,7 +9789,7 @@ class Span(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """The name of the span.
+        """The display name of the status.
 
         Returns
         -------
@@ -9810,7 +9810,7 @@ class Span(Type):
         return await _ctx.execute(str)
 
     async def start(self) -> Self:
-        """Start a new instance of the span.
+        """Start a new instance of the status.
 
         Raises
         ------
@@ -9827,32 +9827,32 @@ class Span(Type):
             Arg("actor", actor),
         ]
         _ctx = self._select("withActor", _args)
-        return Span(_ctx)
+        return Status(_ctx)
 
     def with_internal(self) -> Self:
-        """Returns a new span with the internal attribute set to true."""
+        """Returns a new status with the internal attribute set to true."""
         _args: list[Arg] = []
         _ctx = self._select("withInternal", _args)
-        return Span(_ctx)
+        return Status(_ctx)
 
     def with_passthrough(self) -> Self:
-        """Returns a new span with the passthrough attribute set to true."""
+        """Returns a new status with the passthrough attribute set to true."""
         _args: list[Arg] = []
         _ctx = self._select("withPassthrough", _args)
-        return Span(_ctx)
+        return Status(_ctx)
 
     def with_reveal(self) -> Self:
-        """Returns a new span with the reveal attribute set to true."""
+        """Returns a new status with the reveal attribute set to true."""
         _args: list[Arg] = []
         _ctx = self._select("withReveal", _args)
-        return Span(_ctx)
+        return Status(_ctx)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.token = None
         self.started = None
 
-    async def __aenter__(self) -> "Span":
+    async def __aenter__(self) -> "Status":
         # Fetch the actual span ID created by the engine
         started = await self.start()
         span_id_hex = await started.internal_id()
@@ -9899,8 +9899,8 @@ class Span(Type):
             opentelemetry.context.detach(self.token)
         return void
 
-    def with_(self, cb: Callable[["Span"], "Span"]) -> "Span":
-        """Call the provided callable with current Span.
+    def with_(self, cb: Callable[["Status"], "Status"]) -> "Status":
+        """Call the provided callable with current Status.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
@@ -10402,8 +10402,8 @@ __all__ = [
     "SocketID",
     "SourceMap",
     "SourceMapID",
-    "Span",
-    "SpanID",
+    "Status",
+    "StatusID",
     "Terminal",
     "TerminalID",
     "TypeDef",
