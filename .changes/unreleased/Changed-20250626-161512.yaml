@@ -1,9 +1,0 @@
-kind: Changed
-body: |
-  Ignore default OrbStack CA cert for automatic installation.
-
-  OrbStack users were by default ending up with a custom CA in their engine and automatically installed in each container, adding overhead. We now ignore that CA cert by default to improve performance in the default case.
-time: 2025-06-26T16:15:12.022089779-07:00
-custom:
-  Author: sipsma
-  PR: "10648"
