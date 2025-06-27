@@ -266,8 +266,8 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
-// The `SpanID` scalar type represents an identifier for an object of type Span.
-type SpanID string
+// The `StatusID` scalar type represents an identifier for an object of type Status.
+type StatusID string
 
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
@@ -9274,12 +9274,12 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	}
 }
 
-// Load a Span from its ID.
-func (r *Client) LoadSpanFromID(id SpanID) *Span {
-	q := r.query.Select("loadSpanFromID")
+// Load a Status from its ID.
+func (r *Client) LoadStatusFromID(id StatusID) *Status {
+	q := r.query.Select("loadStatusFromID")
 	q = q.Arg("id", id)
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
@@ -9358,11 +9358,11 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// Returns a span that reveals its child spans and hides itself.
-func (r *Client) Reveal() *Span {
+// Returns a status that reveals its child statuses and hides itself.
+func (r *Client) Reveal() *Status {
 	q := r.query.Select("reveal")
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
@@ -9422,14 +9422,14 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
-// SpanOpts contains options for Client.Span
-type SpanOpts struct {
+// StatusOpts contains options for Client.Status
+type StatusOpts struct {
 	Key string
 }
 
-// Create a new OpenTelemetry span.
-func (r *Client) Span(name string, opts ...SpanOpts) *Span {
-	q := r.query.Select("span")
+// Create a new status indicator.
+func (r *Client) Status(name string, opts ...StatusOpts) *Status {
+	q := r.query.Select("status")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `key` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Key) {
@@ -9438,7 +9438,7 @@ func (r *Client) Span(name string, opts ...SpanOpts) *Span {
 	}
 	q = q.Arg("name", name)
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
@@ -10123,33 +10123,33 @@ func (r *SourceMap) Module(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// An OpenTelemetry span.
-type Span struct {
+// A status indicator to show to the user.
+type Status struct {
 	query  *querybuilder.Selection
 	client graphql.Client
 
 	end        *Void
-	id         *SpanID
+	id         *StatusID
 	internalId *string
 	name       *string
-	start      *SpanID
+	start      *StatusID
 }
-type WithSpanFunc func(r *Span) *Span
+type WithStatusFunc func(r *Status) *Status
 
-// With calls the provided function with current Span.
+// With calls the provided function with current Status.
 //
 // This is useful for reusability and readability by not breaking the calling chain.
-func (r *Span) With(f WithSpanFunc) *Span {
+func (r *Status) With(f WithStatusFunc) *Status {
 	return f(r)
 }
 
-func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
-	return &Span{
+func (r *Status) WithGraphQLQuery(q *querybuilder.Selection) *Status {
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
 }
-func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
+func (r *Status) Context(ctx context.Context) (context.Context, *Status) {
 	started, err := r.Start(ctx)
 	if err != nil {
 		panic(err)
@@ -10171,8 +10171,8 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 		TraceState: spanCtx.TraceState(),
 	})), started
 }
-func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
-	ctx, span := r.Context(ctx)
+func (r *Status) Run(ctx context.Context, cb func(context.Context) error) error {
+	ctx, status := r.Context(ctx)
 	err := cb(ctx)
 	var endErr error
 	if err != nil {
@@ -10180,22 +10180,22 @@ func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 			query:  querybuilder.Query().Client(r.client),
 			client: r.client,
 		}
-		endErr = span.End(ctx, SpanEndOpts{
+		endErr = status.End(ctx, StatusEndOpts{
 			Error: errClient.Error(err.Error()),
 		})
 	} else {
-		endErr = span.End(ctx)
+		endErr = status.End(ctx)
 	}
 	return errors.Join(err, endErr)
 }
 
-// SpanEndOpts contains options for Span.End
-type SpanEndOpts struct {
+// StatusEndOpts contains options for Status.End
+type StatusEndOpts struct {
 	Error *Error
 }
 
-// End the OpenTelemetry span, with an optional error.
-func (r *Span) End(ctx context.Context, opts ...SpanEndOpts) error {
+// Mark the status as complete, with an optional error.
+func (r *Status) End(ctx context.Context, opts ...StatusEndOpts) error {
 	if r.end != nil {
 		return nil
 	}
@@ -10210,31 +10210,31 @@ func (r *Span) End(ctx context.Context, opts ...SpanEndOpts) error {
 	return q.Execute(ctx)
 }
 
-// A unique identifier for this Span.
-func (r *Span) ID(ctx context.Context) (SpanID, error) {
+// A unique identifier for this Status.
+func (r *Status) ID(ctx context.Context) (StatusID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SpanID
+	var response StatusID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Span) XXX_GraphQLType() string {
-	return "Span"
+func (r *Status) XXX_GraphQLType() string {
+	return "Status"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Span) XXX_GraphQLIDType() string {
-	return "SpanID"
+func (r *Status) XXX_GraphQLIDType() string {
+	return "StatusID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Span) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *Status) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -10242,7 +10242,7 @@ func (r *Span) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *Span) MarshalJSON() ([]byte, error) {
+func (r *Status) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -10250,8 +10250,8 @@ func (r *Span) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Returns the internal ID of the span.
-func (r *Span) InternalID(ctx context.Context) (string, error) {
+// Returns the internal ID of the status.
+func (r *Status) InternalID(ctx context.Context) (string, error) {
 	if r.internalId != nil {
 		return *r.internalId, nil
 	}
@@ -10263,8 +10263,8 @@ func (r *Span) InternalID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The name of the span.
-func (r *Span) Name(ctx context.Context) (string, error) {
+// The display name of the status.
+func (r *Status) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -10276,54 +10276,54 @@ func (r *Span) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Start a new instance of the span.
-func (r *Span) Start(ctx context.Context) (*Span, error) {
+// Start a new instance of the status.
+func (r *Status) Start(ctx context.Context) (*Status, error) {
 	q := r.query.Select("start")
 
-	var id SpanID
+	var id StatusID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
-	return &Span{
-		query: q.Root().Select("loadSpanFromID").Arg("id", id),
+	return &Status{
+		query: q.Root().Select("loadStatusFromID").Arg("id", id),
 	}, nil
 }
 
-func (r *Span) WithActor(actor string) *Span {
+func (r *Status) WithActor(actor string) *Status {
 	q := r.query.Select("withActor")
 	q = q.Arg("actor", actor)
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
 }
 
-// Returns a new span with the internal attribute set to true.
-func (r *Span) WithInternal() *Span {
+// Returns a new status with the internal attribute set to true.
+func (r *Status) WithInternal() *Status {
 	q := r.query.Select("withInternal")
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
 }
 
-// Returns a new span with the passthrough attribute set to true.
-func (r *Span) WithPassthrough() *Span {
+// Returns a new status with the passthrough attribute set to true.
+func (r *Status) WithPassthrough() *Status {
 	q := r.query.Select("withPassthrough")
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}
 }
 
-// Returns a new span with the reveal attribute set to true.
-func (r *Span) WithReveal() *Span {
+// Returns a new status with the reveal attribute set to true.
+func (r *Status) WithReveal() *Status {
 	q := r.query.Select("withReveal")
 
-	return &Span{
+	return &Status{
 		query:  q,
 		client: r.client,
 	}

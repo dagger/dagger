@@ -67,9 +67,9 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
 				{{- end }}
 			{{- end }}
 
-{{- if eq .Name "Span" }}
+{{- if eq .Name "Status" }}
 
-  public async run<T>(fn: (span: Span) => Promise<T>) {
+  public async run<T>(fn: (span: Status) => Promise<T>) {
     const started = await this.start()
     const spanIdHex = await started.internalId()
 

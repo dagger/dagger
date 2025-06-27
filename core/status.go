@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type Span struct {
-	Name string `field:"true" doc:"The name of the span."`
+type Status struct {
+	Name string `field:"true" doc:"The display name of the status."`
 
 	Actor       string
 	Internal    bool
@@ -22,60 +22,59 @@ type Span struct {
 	Span trace.Span
 }
 
-func (*Span) Type() *ast.Type {
+func (*Status) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "Span",
+		NamedType: "Status",
 		NonNull:   true,
 	}
 }
 
-func (*Span) TypeDescription() string {
-	// TODO: rename to Task and come up with a nice description
-	return "An OpenTelemetry span."
+func (*Status) TypeDescription() string {
+	return "A status indicator to show to the user."
 }
 
-func (s Span) Clone() *Span {
+func (s Status) Clone() *Status {
 	cp := &s
 	cp.Query = cp.Query.Clone()
 	return cp
 }
 
-func (s *Span) WithActor(actor string) *Span {
+func (s *Status) WithActor(actor string) *Status {
 	cp := s.Clone()
 	cp.Actor = actor
 	return cp
 }
 
-func (s *Span) WithInternal() *Span {
+func (s *Status) WithInternal() *Status {
 	cp := s.Clone()
 	cp.Internal = true
 	return cp
 }
 
-func (s *Span) WithPassthrough() *Span {
+func (s *Status) WithPassthrough() *Status {
 	cp := s.Clone()
 	cp.Passthrough = true
 	return cp
 }
 
-func (s *Span) WithReveal() *Span {
+func (s *Status) WithReveal() *Status {
 	cp := s.Clone()
 	cp.Reveal = true
 	return cp
 }
 
-func (s *Span) Start(ctx context.Context) *Span {
+func (s *Status) Start(ctx context.Context) *Status {
 	return s.Query.StartSpan(ctx, s)
 }
 
-func (s *Span) InternalID() string {
+func (s *Status) InternalID() string {
 	if s.Span == nil {
 		return ""
 	}
 	return s.Span.SpanContext().SpanID().String()
 }
 
-func (s *Span) Opts() []trace.SpanStartOption {
+func (s *Status) Opts() []trace.SpanStartOption {
 	var opts []trace.SpanStartOption
 	if s.Actor != "" {
 		opts = append(opts, trace.WithAttributes(attribute.String("dagger.io/ui.actor", s.Actor)))

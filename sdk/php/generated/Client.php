@@ -684,13 +684,13 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a Span from its ID.
+     * Load a Status from its ID.
      */
-    public function loadSpanFromID(SpanId|Span $id): Span
+    public function loadStatusFromID(StatusId|Status $id): Status
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSpanFromID');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadStatusFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -750,12 +750,12 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Returns a span that reveals its child spans and hides itself.
+     * Returns a status that reveals its child statuses and hides itself.
      */
-    public function reveal(): Span
+    public function reveal(): Status
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reveal');
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -797,16 +797,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Create a new OpenTelemetry span.
+     * Create a new status indicator.
      */
-    public function span(string $name, ?string $key = ''): Span
+    public function status(string $name, ?string $key = ''): Status
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('span');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('status');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $key) {
         $innerQueryBuilder->setArgument('key', $key);
         }
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

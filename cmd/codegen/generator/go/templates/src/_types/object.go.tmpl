@@ -33,8 +33,8 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
-{{- if eq .Name "Span" }}
-func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
+{{- if eq .Name "Status" }}
+func (r *Status) Context(ctx context.Context) (context.Context, *Status) {
 	started, err := r.Start(ctx)
 	if err != nil {
 		panic(err)
@@ -58,8 +58,8 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 }
 
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
-func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
-	ctx, span := r.Context(ctx)
+func (r *Status) Run(ctx context.Context, cb func(context.Context) error) error {
+	ctx, status := r.Context(ctx)
 	err := cb(ctx)
 	var endErr error
 	if err != nil {
@@ -68,19 +68,19 @@ func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 			client: r.client,
 		}
 		{{- if $supportsVoid }}
-		endErr = span.End(ctx, SpanEndOpts{
+		endErr = status.End(ctx, StatusEndOpts{
 			Error: errClient.Error(err.Error()),
 		})
 		{{- else }}
-		_, endErr = span.End(ctx, SpanEndOpts{
+		_, endErr = status.End(ctx, StatusEndOpts{
 			Error: errClient.Error(err.Error()),
 		})
 		{{- end }}
 	} else {
 		{{- if $supportsVoid }}
-		endErr = span.End(ctx)
+		endErr = status.End(ctx)
 		{{- else }}
-		_, endErr = span.End(ctx)
+		_, endErr = status.End(ctx)
 		{{- end }}
 	}
 	return errors.Join(err, endErr)

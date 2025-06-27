@@ -220,7 +220,7 @@ func isIntrospection(id *call.ID) bool {
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
 // for example span and error APIs.
 func isMeta(id *call.ID) bool {
-	if anyReturns(id, "Error") || anyReturns(id, "Span") {
+	if anyReturns(id, "Error") || anyReturns(id, "Status") {
 		return true
 	}
 	switch id.Field() {

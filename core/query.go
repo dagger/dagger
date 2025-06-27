@@ -27,7 +27,7 @@ import (
 type Query struct {
 	Server
 
-	spans  map[string]*Span
+	spans  map[string]*Status
 	spansL *sync.Mutex
 }
 
@@ -138,7 +138,7 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 func NewRoot(srv Server) *Query {
 	return &Query{
 		Server: srv,
-		spans:  map[string]*Span{},
+		spans:  map[string]*Status{},
 		spansL: new(sync.Mutex),
 	}
 }
@@ -162,7 +162,7 @@ func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
 }
 
-func (q *Query) StartSpan(ctx context.Context, s *Span) *Span {
+func (q *Query) StartSpan(ctx context.Context, s *Status) *Status {
 	started := s.Clone()
 	_, started.Span = Tracer(ctx).Start(ctx, s.Name, s.Opts()...)
 	q.spansL.Lock()
@@ -171,7 +171,7 @@ func (q *Query) StartSpan(ctx context.Context, s *Span) *Span {
 	return started
 }
 
-func (q *Query) LookupSpan(spanID string) (*Span, bool) {
+func (q *Query) LookupStatus(spanID string) (*Status, bool) {
 	q.spansL.Lock()
 	span, found := q.spans[spanID]
 	q.spansL.Unlock()

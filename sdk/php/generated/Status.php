@@ -9,12 +9,12 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An OpenTelemetry span.
+ * A status indicator to show to the user.
  */
-class Span extends Client\AbstractObject implements Client\IdAble
+class Status extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * End the OpenTelemetry span, with an optional error.
+     * Mark the status as complete, with an optional error.
      */
     public function end(ErrorId|Error|null $error = null): void
     {
@@ -26,16 +26,16 @@ class Span extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this Span.
+     * A unique identifier for this Status.
      */
-    public function id(): SpanId
+    public function id(): StatusId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SpanId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\StatusId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Returns the internal ID of the span.
+     * Returns the internal ID of the status.
      */
     public function internalId(): string
     {
@@ -44,7 +44,7 @@ class Span extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The name of the span.
+     * The display name of the status.
      */
     public function name(): string
     {
@@ -53,45 +53,45 @@ class Span extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Start a new instance of the span.
+     * Start a new instance of the status.
      */
-    public function start(): SpanId
+    public function start(): StatusId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
-        return new \Dagger\SpanId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
+        return new \Dagger\StatusId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
     }
 
-    public function withActor(string $actor): Span
+    public function withActor(string $actor): Status
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withActor');
         $innerQueryBuilder->setArgument('actor', $actor);
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a new span with the internal attribute set to true.
+     * Returns a new status with the internal attribute set to true.
      */
-    public function withInternal(): Span
+    public function withInternal(): Status
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInternal');
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a new span with the passthrough attribute set to true.
+     * Returns a new status with the passthrough attribute set to true.
      */
-    public function withPassthrough(): Span
+    public function withPassthrough(): Status
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPassthrough');
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns a new span with the reveal attribute set to true.
+     * Returns a new status with the reveal attribute set to true.
      */
-    public function withReveal(): Span
+    public function withReveal(): Status
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReveal');
-        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

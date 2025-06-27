@@ -420,10 +420,10 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
-// Load a Span from its ID.
-func LoadSpanFromID(id dagger.SpanID) *dagger.Span {
+// Load a Status from its ID.
+func LoadStatusFromID(id dagger.StatusID) *dagger.Status {
 	client := initClient()
-	return client.LoadSpanFromID(id)
+	return client.LoadStatusFromID(id)
 }
 
 // Load a Terminal from its ID.
@@ -450,8 +450,8 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 	return client.ModuleSource(refString, opts...)
 }
 
-// Returns a span that reveals its child spans and hides itself.
-func Reveal() *dagger.Span {
+// Returns a status that reveals its child statuses and hides itself.
+func Reveal() *dagger.Status {
 	client := initClient()
 	return client.Reveal()
 }
@@ -476,10 +476,10 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	return client.SourceMap(filename, line, column)
 }
 
-// Create a new OpenTelemetry span.
-func Span(name string, opts ...dagger.SpanOpts) *dagger.Span {
+// Create a new status indicator.
+func Status(name string, opts ...dagger.StatusOpts) *dagger.Status {
 	client := initClient()
-	return client.Span(name, opts...)
+	return client.Status(name, opts...)
 }
 
 // Create a new TypeDef.

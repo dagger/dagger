@@ -829,7 +829,7 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
         self_name = self.type_name(t)
 
-        if self_name == "Span":
+        if self_name == "Status":
             yield textwrap.dedent(
                 f"""
                 def __init__(self, *args, **kwargs):
