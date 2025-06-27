@@ -210,7 +210,19 @@ public access to these traces without requiring an invitation to the organizatio
 
 To modify this default setting, navigate to the organization page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
 
-![public traces](/img/current_docs/api/public-traces.png)
+![public traces](/img/current_docs/configuration/public-traces.png)
+
+### Make an individual trace public
+
+Admin users can make an individual private trace public for sharing of links with users outside of your organization or who are not yet using Dagger Cloud. A confirmation step will verify your intention and the action is reversible. 
+
+![make trace public](/img/current_docs/configuration/make-trace-public.png)
+
+### Delete a trace
+
+Admin users can delete an individual trace. There is a confirmation step before deletion, but after deletion, the trace will not be recoverable. 
+
+![delete a trace](/img/current_docs/configuration/trace-delete.png)
 
 ## Modules
 
@@ -285,6 +297,8 @@ In Dagger Cloud, users can have one of two roles: `Admin` or `Member`. The Admin
 | View members of an org | ✓ | ✓ |
 | Invite new members to an org | ✓ |  |
 | Delete an existing member from an org | ✓ |  |
+| Make an individual trace public | ✓ |  |
+| Delete an individual trace | ✓ |  |
 
 You cannot change a member's role at this time. Please contact Dagger via the support messenger in Dagger Cloud if you need assistance.
 
