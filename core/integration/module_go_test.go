@@ -1182,6 +1182,35 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "", prop.Get("description").String())
 }
 
+func (GoSuite) TestPragmaParsing(ctx context.Context, t *testctx.T) {
+	// corner cases of pragma parsing
+
+	c := connect(ctx, t)
+
+	// corner cases where a +default pragma has a value that itself has a + in it
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct {}
+
+func (t *Test) Hello(
+	// +optional
+	// +default="blah+dagger-ci@dagger.io"
+	argWhereDefaultHasAPlusSign string,
+) string {
+	return argWhereDefaultHasAPlusSign
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `blah+dagger-ci@dagger.io`, out)
+}
+
 func (GoSuite) TestWeirdFields(ctx context.Context, t *testctx.T) {
 	// these are all cases that used to panic due to the disparity in the type spec and the ast
 
