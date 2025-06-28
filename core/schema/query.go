@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 
+	"dagger.io/dagger/telemetry"
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type querySchema struct {
@@ -57,6 +59,9 @@ func (s *querySchema) Install() {
 	dagql.Fields[Label]{}.Install(s.srv)
 
 	dagql.Fields[*core.Query]{
+		dagql.Func("reveal", s.reveal).
+			Doc(`Returns a status that reveals its child statuses and hides itself.`),
+
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
@@ -69,6 +74,39 @@ func (s *querySchema) Install() {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
+
+		dagql.Func("status", s.status).
+			Doc(`Create a new status indicator.`).
+			Args(
+				dagql.Arg("name").Doc("A display name for the status."),
+			),
+	}.Install(s.srv)
+
+	dagql.Fields[*core.Status]{
+		dagql.Func("withPassthrough", s.statusWithPassthrough).
+			Doc(`Hide the status itself, and reveal its children.`),
+
+		dagql.Func("withReveal", s.statusWithReveal).
+			Doc(`Ensure the status is visible without having to expand its parents.`),
+
+		dagql.Func("withActorEmoji", s.statusWithActorEmoji).
+			Doc(`Set an emoji representing the actor of the status.`),
+
+		dagql.Func("withReceivedMessage", s.statusWithReceivedMessage).
+			Doc(`Indicates that the status represents a received message.`,
+				`The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.`),
+
+		dagql.Func("internalId", s.statusInternalID).
+			Doc(`Returns the internal ID of the status.`),
+
+		dagql.NodeFuncWithCacheKey("start", s.statusStart, dagql.CachePerCall).
+			Doc(`Start a new instance of the status.`),
+
+		dagql.NodeFuncWithCacheKey("display", s.statusDisplay, dagql.CachePerCall).
+			Doc(`Start and immediately finish the status, so that it just gets displayed to the user.`),
+
+		dagql.Func("end", s.statusEnd).
+			Doc(`Mark the status as complete, with an optional error.`),
 	}.Install(s.srv)
 }
 
@@ -152,4 +190,97 @@ func (s *querySchema) schemaJSONFile(
 	}
 
 	return fileInst.WithDigest(dgst), nil
+}
+
+func (s *querySchema) status(ctx context.Context, parent *core.Query, args struct {
+	Name string
+	Key  string `default:""`
+}) (*core.Status, error) {
+	query := parent
+	if args.Key != "" {
+		status, found := query.LookupStatus(args.Key)
+		if !found {
+			return nil, fmt.Errorf("status not found: %s", args.Key)
+		}
+		return status, nil
+	}
+	return &core.Status{
+		Name:  args.Name,
+		Query: parent,
+	}, nil
+}
+
+func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struct{}) (*core.Status, error) {
+	return &core.Status{
+		Name:        "reveal",
+		Reveal:      true,
+		Passthrough: true,
+		Query:       parent,
+	}, nil
+}
+
+func (s *querySchema) statusStart(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	return s.selectStatus(ctx, parent.Self.Start(ctx))
+}
+
+func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	return s.selectStatus(ctx, parent.Self.Display(ctx))
+}
+
+func (s *querySchema) selectStatus(ctx context.Context, started *core.Status) (dagql.ID[*core.Status], error) {
+	var inst dagql.Instance[*core.Status]
+	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "status",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(started.Name)},
+			{Name: "key", Value: dagql.NewString(started.InternalID())},
+		},
+	})
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return dagql.NewID[*core.Status](inst.ID()), nil
+}
+
+func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args struct {
+	Error dagql.Optional[dagql.ID[*core.Error]]
+}) (dagql.Nullable[core.Void], error) {
+	if parent.Span == nil {
+		return dagql.Null[core.Void](), fmt.Errorf("status not started")
+	}
+	if args.Error.Valid {
+		dagErr, err := args.Error.Value.Load(ctx, s.srv)
+		if err != nil {
+			parent.Span.SetStatus(codes.Error, fmt.Sprintf("failed to load error: %v", err))
+		} else {
+			// use telemetry.End which also provides origin tracking
+			telemetry.End(parent.Span, func() error { return dagErr.Self })
+		}
+	} else {
+		// use telemetry.End so the status gets set to OK
+		telemetry.End(parent.Span, func() error { return nil })
+	}
+	return dagql.Null[core.Void](), nil
+}
+
+func (s *querySchema) statusInternalID(ctx context.Context, parent *core.Status, args struct{}) (string, error) {
+	return parent.Span.SpanContext().SpanID().String(), nil
+}
+
+func (s *querySchema) statusWithActorEmoji(ctx context.Context, parent *core.Status, args struct {
+	Actor string
+}) (*core.Status, error) {
+	return parent.WithActorEmoji(args.Actor), nil
+}
+
+func (s *querySchema) statusWithReceivedMessage(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
+	return parent.WithMessage("received"), nil
+}
+
+func (s *querySchema) statusWithReveal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
+	return parent.WithReveal(), nil
+}
+
+func (s *querySchema) statusWithPassthrough(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
+	return parent.WithPassthrough(), nil
 }

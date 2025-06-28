@@ -937,6 +937,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Status from its ID.
+  """
+  @spec load_status_from_id(t(), Dagger.StatusID.t()) :: Dagger.Status.t()
+  def load_status_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadStatusFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Status{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Terminal from its ID.
   """
   @spec load_terminal_from_id(t(), Dagger.TerminalID.t()) :: Dagger.Terminal.t()
@@ -1004,6 +1018,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Returns a status that reveals its child statuses and hides itself.
+  """
+  @spec reveal(t()) :: Dagger.Status.t()
+  def reveal(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("reveal")
+
+    %Dagger.Status{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Creates a new secret.
   """
   @spec secret(t(), String.t(), [{:cache_key, String.t() | nil}]) :: Dagger.Secret.t()
@@ -1052,6 +1080,23 @@ defmodule Dagger.Client do
       |> QB.put_arg("column", column)
 
     %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Create a new status indicator.
+  """
+  @spec status(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Status.t()
+  def status(%__MODULE__{} = client, name, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("status")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("key", optional_args[:key])
+
+    %Dagger.Status{
       query_builder: query_builder,
       client: client.client
     }

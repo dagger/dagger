@@ -8,11 +8,12 @@ inherited by futures objects and common types.
  * Do not make direct changes to the file.
  */
  {{- if IsBundle }}
-import { Context } from "./core.js"
+import { Context, runWithSpan } from "./core.js"
 {{- else if (not IsClientOnly)}}
 import { Context } from "../common/context.js"
+import { runWithSpan } from "../telemetry/index.js"
 {{- else }}
-import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
+import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct, runWithSpan } from "@dagger.io/dagger"
 {{- end }}
 
 {{ if IsClientOnly }}
@@ -24,7 +25,7 @@ async function serveModuleDependencies(client: Client): Promise<void> {
   {{- range $i, $dep := $dependencies -}}
     {{- if eq $dep.Kind "GIT_SOURCE" }}
   await client.moduleSource(
-      "{{ $dep.Source }}", 
+      "{{ $dep.Source }}",
       { refPin: "{{ $dep.Pin }}" },
     )
     .withName("{{ $dep.Name }}")
