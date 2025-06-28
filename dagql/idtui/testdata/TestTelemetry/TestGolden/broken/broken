@@ -5,22 +5,16 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module: ./viztest/broken-dep/broken X.Xs ERROR
+▼ load module: ./viztest/broken-dep/broken X.Xs
 ├─● finding module configuration X.Xs
-╰─▼ initializing module X.Xs ERROR
-  ╰─▼ ModuleSource.asModule: Module! X.Xs ERROR
-    ├─▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
-    │ ┃ # dagger/broken
-    │ ┃ ./main.go:6:6: undefined: ctx
-    │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-    │
-    ╰─✘ asModule getModDef X.Xs ERROR
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
 
-Error logs:
-
-▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+● broken: Broken! X.Xs
+✘ .broken: Void X.Xs ERROR
+! call function "Broken": process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
