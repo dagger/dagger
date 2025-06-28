@@ -132,7 +132,7 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		}
 	}
 	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
@@ -440,7 +440,7 @@ func (container *Container) Build(
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
-	secrets []dagql.Instance[*Secret],
+	secrets []dagql.ObjectInstance[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
 ) (*Container, error) {
@@ -1696,7 +1696,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Self.Hostname(ctx, svc.ID())
+	host, err := svc.Self().Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
 	}

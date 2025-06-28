@@ -1302,6 +1302,10 @@ jobs:
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
               if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
+              if: always()
         timeout-minutes: 30
     testdev-cgroupsv-2:
         runs-on:
@@ -1565,6 +1569,10 @@ jobs:
                 name: engine-logs-${{ runner.name }}-${{ github.job }}
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
+              if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
               if: always()
         timeout-minutes: 30
     testdev-cli-engine:
@@ -1830,6 +1838,10 @@ jobs:
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
               if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
+              if: always()
         timeout-minutes: 30
     testdev-client-generator:
         runs-on:
@@ -2093,6 +2105,10 @@ jobs:
                 name: engine-logs-${{ runner.name }}-${{ github.job }}
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
+              if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
               if: always()
         timeout-minutes: 30
     testdev-container:
@@ -2358,6 +2374,10 @@ jobs:
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
               if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
+              if: always()
         timeout-minutes: 30
     testdev-everything-else:
         runs-on:
@@ -2621,6 +2641,10 @@ jobs:
                 name: engine-logs-${{ runner.name }}-${{ github.job }}
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
+              if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
               if: always()
         timeout-minutes: 30
     testdev-interface:
@@ -2886,6 +2910,10 @@ jobs:
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
               if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
+              if: always()
         timeout-minutes: 30
     testdev-llm:
         runs-on:
@@ -3149,6 +3177,10 @@ jobs:
                 name: engine-logs-${{ runner.name }}-${{ github.job }}
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
+              if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
               if: always()
         timeout-minutes: 30
     testdev-module-runtimes:
@@ -3414,6 +3446,10 @@ jobs:
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
               if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
+              if: always()
         timeout-minutes: 30
     testdev-modules:
         runs-on:
@@ -3677,5 +3713,9 @@ jobs:
                 name: engine-logs-${{ runner.name }}-${{ github.job }}
                 overwrite: "true"
                 path: /tmp/actions-call-engine.log
+              if: always()
+            - name: Kernel logs
+              run: sudo dmesg || true
+              shell: bash
               if: always()
         timeout-minutes: 30

@@ -79,7 +79,7 @@ func ResourceTransferPostCall(
 	}
 	var namedSecrets []secretWithPlaintext
 	for _, secret := range secrets {
-		isNamed := secret.Self.Name != ""
+		isNamed := secret.Self().Name != ""
 		if !isNamed {
 			continue
 		}
