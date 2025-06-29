@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "dagger-engine" # A uniquely identifiable name for the provider
+    orgId: "1"
+    folder: "" # The folder in the Grafana UI where to place the dashboards
+    type: file
+    disableDeletion: false # When true, dashboards won't be deleted from Grafana if they're removed from the file system
+    editable: false # Whether the dashboards can be edited in the UI
+    options:
+      path: /var/lib/grafana/dashboards # This is the path inside the container where Grafana will look for dashboard JSON files.
