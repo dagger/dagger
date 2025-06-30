@@ -182,12 +182,24 @@ module.exports = {
             "ci/integrations/tekton",
           ],
         },
+        {
+          type: "category",
+          label: "Container Runtimes",
+          link: {
+            type: "doc",
+            id: "ci/integrations/container-runtimes",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "ci/integrations/kubernetes",
+            "ci/integrations/nerdctl",
+            "ci/integrations/openshift",
+            "ci/integrations/podman",
+          ],
+        },
         "ci/integrations/github",
         "ci/integrations/google-cloud-run",
-        "ci/integrations/kubernetes",
-        "ci/integrations/nerdctl",
-        "ci/integrations/openshift",
-        "ci/integrations/podman",
       ],
     },
     {
