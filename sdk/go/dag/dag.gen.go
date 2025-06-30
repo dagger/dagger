@@ -450,12 +450,6 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 	return client.ModuleSource(refString, opts...)
 }
 
-// Returns a status that reveals its child statuses and hides itself.
-func Reveal() *dagger.Status {
-	client := initClient()
-	return client.Reveal()
-}
-
 // Creates a new secret.
 func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()

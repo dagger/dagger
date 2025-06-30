@@ -59,9 +59,6 @@ func (s *querySchema) Install() {
 	dagql.Fields[Label]{}.Install(s.srv)
 
 	dagql.Fields[*core.Query]{
-		dagql.Func("reveal", s.reveal).
-			Doc(`Returns a status that reveals its child statuses and hides itself.`),
-
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
@@ -207,15 +204,6 @@ func (s *querySchema) status(ctx context.Context, parent *core.Query, args struc
 	return &core.Status{
 		Name:  args.Name,
 		Query: parent,
-	}, nil
-}
-
-func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struct{}) (*core.Status, error) {
-	return &core.Status{
-		Name:        "reveal",
-		Reveal:      true,
-		Passthrough: true,
-		Query:       parent,
 	}, nil
 }
 

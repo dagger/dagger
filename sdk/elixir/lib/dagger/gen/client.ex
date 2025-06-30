@@ -1018,20 +1018,6 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Returns a status that reveals its child statuses and hides itself.
-  """
-  @spec reveal(t()) :: Dagger.Status.t()
-  def reveal(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("reveal")
-
-    %Dagger.Status{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc """
   Creates a new secret.
   """
   @spec secret(t(), String.t(), [{:cache_key, String.t() | nil}]) :: Dagger.Secret.t()

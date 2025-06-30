@@ -9641,15 +9641,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns a status that reveals its child statuses and hides itself.
-    pub fn reveal(&self) -> Status {
-        let query = self.selection.select("reveal");
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Creates a new secret.
     ///
     /// # Arguments

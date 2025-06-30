@@ -9358,16 +9358,6 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// Returns a status that reveals its child statuses and hides itself.
-func (r *Client) Reveal() *Status {
-	q := r.query.Select("reveal")
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
-}
-
 // SecretOpts contains options for Client.Secret
 type SecretOpts struct {
 	// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
