@@ -625,18 +625,23 @@ func (dir *Directory) WithFile(
 		return nil, err
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	destPath = path.Join(dir.Dir, destPath)
-	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, src.File)))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, nil, func(dirRoot string) error {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(dirRoot string) error {
 		destPath, err := containerdfs.RootPath(dirRoot, destPath)
 		if err != nil {
 			return err
@@ -654,7 +659,7 @@ func (dir *Directory) WithFile(
 		if err != nil {
 			return err
 		}
-		err = MountRef(ctx, srcCacheRef, nil, func(srcRoot string) error {
+		err = MountRef(ctx, srcCacheRef, bkSessionGroup, func(srcRoot string) error {
 			srcPath, err := containerdfs.RootPath(srcRoot, src.File)
 			if err != nil {
 				return err
@@ -883,17 +888,22 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 		return nil, err
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("without %s", strings.Join(paths, ","))))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string) error {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
 		for _, p := range paths {
 			p = path.Join(dir.Dir, p)
 			var matches []string
@@ -989,18 +999,23 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 		return nil, err
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	linkName = path.Join(dir.Dir, linkName)
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
 	if err != nil {
 		return nil, err
 	}
-	err = MountRef(ctx, newRef, nil, func(root string) error {
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
 		linkDir, linkBasename := filepath.Split(linkName)
 		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
 		if err != nil {
