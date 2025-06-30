@@ -196,6 +196,7 @@ module.exports = {
             "ci/integrations/nerdctl",
             "ci/integrations/openshift",
             "ci/integrations/podman",
+            "ci/integrations/apple-container",
           ],
         },
         "ci/integrations/github",
