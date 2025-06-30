@@ -88,7 +88,10 @@ export async function invoke(
     if (!isConstructor(method)) {
       // Guard to catch if a user returned a float number but the function's return
       // type is set to `number` (integer).
-      if (method.returnType!.kind === TypeDefKind.Integer && isFloat(result)) {
+      if (
+        method.returnType!.kind === TypeDefKind.IntegerKind &&
+        isFloat(result)
+      ) {
         throw new Error(
           `cannot return float '${result}' if return type is 'number' (integer), please use 'float' as return type instead`,
         )

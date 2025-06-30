@@ -153,19 +153,19 @@ export async function loadValue(
   }
 
   switch (type.kind) {
-    case TypeDefKind.List:
+    case TypeDefKind.ListKind:
       return Promise.all(
         value.map(
           async (v: any) =>
             await loadValue(
               executor,
               v,
-              (type as TypeDef<TypeDefKind.List>).typeDef,
+              (type as TypeDef<TypeDefKind.ListKind>).typeDef,
             ),
         ),
       )
-    case TypeDefKind.Object: {
-      const objectType = (type as TypeDef<TypeDefKind.Object>).name
+    case TypeDefKind.ObjectKind: {
+      const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
 
       // Workaround to call get any object that has an id
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -178,23 +178,23 @@ export async function loadValue(
 
       return executor.buildClass(objectType, value)
     }
-    case TypeDefKind.Interface: {
-      const interfaceType = (type as TypeDef<TypeDefKind.Interface>).name
+    case TypeDefKind.InterfaceKind: {
+      const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
 
       return executor.buildInterface(interfaceType, value)
     }
-    case TypeDefKind.Enum: {
-      const enumType = (type as TypeDef<TypeDefKind.Enum>).name
+    case TypeDefKind.EnumKind: {
+      const enumType = (type as TypeDef<TypeDefKind.EnumKind>).name
 
       return executor.buildEnum(enumType, value)
     }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
-    case TypeDefKind.String:
-    case TypeDefKind.Integer:
-    case TypeDefKind.Boolean:
-    case TypeDefKind.Float:
-    case TypeDefKind.Void:
-    case TypeDefKind.Scalar:
+    case TypeDefKind.StringKind:
+    case TypeDefKind.IntegerKind:
+    case TypeDefKind.BooleanKind:
+    case TypeDefKind.FloatKind:
+    case TypeDefKind.VoidKind:
+    case TypeDefKind.ScalarKind:
       return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
@@ -221,24 +221,24 @@ export function loadObjectReturnType(
   }
 
   switch (retType.kind) {
-    case TypeDefKind.List: {
+    case TypeDefKind.ListKind: {
       // Loop until we find the original object type.
       // This way we handle the list of list (e.g Object[][][]...[])
       let listType = retType
-      while (listType.kind === TypeDefKind.List) {
-        listType = (listType as TypeDef<TypeDefKind.List>).typeDef
+      while (listType.kind === TypeDefKind.ListKind) {
+        listType = (listType as TypeDef<TypeDefKind.ListKind>).typeDef
       }
 
-      if (listType.kind === TypeDefKind.Enum) {
-        return module.enums[(listType as TypeDef<TypeDefKind.Enum>).name]
+      if (listType.kind === TypeDefKind.EnumKind) {
+        return module.enums[(listType as TypeDef<TypeDefKind.EnumKind>).name]
       }
 
-      return module.objects[(listType as TypeDef<TypeDefKind.Object>).name]
+      return module.objects[(listType as TypeDef<TypeDefKind.ObjectKind>).name]
     }
-    case TypeDefKind.Object:
-      return module.objects[(retType as TypeDef<TypeDefKind.Object>).name]
-    case TypeDefKind.Enum:
-      return module.enums[(retType as TypeDef<TypeDefKind.Enum>).name]
+    case TypeDefKind.ObjectKind:
+      return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+    case TypeDefKind.EnumKind:
+      return module.enums[(retType as TypeDef<TypeDefKind.EnumKind>).name]
     default:
       return object
   }
@@ -286,37 +286,39 @@ export async function loadResult(
         undefined
 
       // Handle nested objects
-      if (property.type.kind === TypeDefKind.Object) {
+      if (property.type.kind === TypeDefKind.ObjectKind) {
         referencedObject =
-          module.objects[(property.type as TypeDef<TypeDefKind.Object>).name]
+          module.objects[
+            (property.type as TypeDef<TypeDefKind.ObjectKind>).name
+          ]
       }
 
       // Handle list of nested objects
-      if (property.type.kind === TypeDefKind.List) {
+      if (property.type.kind === TypeDefKind.ListKind) {
         let _property = property.type
 
         // Loop until we find the original type.
-        while (_property.kind === TypeDefKind.List) {
-          _property = (_property as TypeDef<TypeDefKind.List>).typeDef
+        while (_property.kind === TypeDefKind.ListKind) {
+          _property = (_property as TypeDef<TypeDefKind.ListKind>).typeDef
         }
 
         // If the original type is an object, we use it as the referenced object.
-        if (_property.kind === TypeDefKind.Object) {
+        if (_property.kind === TypeDefKind.ObjectKind) {
           referencedObject =
-            module.objects[(_property as TypeDef<TypeDefKind.Object>).name]
+            module.objects[(_property as TypeDef<TypeDefKind.ObjectKind>).name]
         }
 
         // If the original type is a enum, we use it as the referenced object.
-        if (_property.kind === TypeDefKind.Enum) {
+        if (_property.kind === TypeDefKind.EnumKind) {
           referencedObject =
-            module.enums[(_property as TypeDef<TypeDefKind.Enum>).name]
+            module.enums[(_property as TypeDef<TypeDefKind.EnumKind>).name]
         }
       }
 
       // Handle enums
-      if (property.type.kind === TypeDefKind.Enum) {
+      if (property.type.kind === TypeDefKind.EnumKind) {
         referencedObject =
-          module.enums[(property.type as TypeDef<TypeDefKind.Enum>).name]
+          module.enums[(property.type as TypeDef<TypeDefKind.EnumKind>).name]
       }
 
       // If there's no referenced object, we use the current object.

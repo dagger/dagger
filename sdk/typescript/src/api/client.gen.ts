@@ -1088,7 +1088,7 @@ export type HostID = string & { __HostID: never }
  */
 export enum ImageLayerCompression {
   EstarGz = "EStarGZ",
-  Estargz = "EStarGZ",
+  Estargz = ImageLayerCompression.EstarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
@@ -1138,9 +1138,9 @@ function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
  */
 export enum ImageMediaTypes {
   Docker = "DockerMediaTypes",
-  DockerMediaTypes = "DockerMediaTypes",
+  DockerMediaTypes = ImageMediaTypes.Docker,
   Oci = "OCIMediaTypes",
-  OcimediaTypes = "OCIMediaTypes",
+  OcimediaTypes = ImageMediaTypes.Oci,
 }
 
 /**
@@ -1234,11 +1234,11 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  */
 export enum ModuleSourceKind {
   Dir = "DIR_SOURCE",
-  DirSource = "DIR_SOURCE",
+  DirSource = ModuleSourceKind.Dir,
   Git = "GIT_SOURCE",
-  GitSource = "GIT_SOURCE",
+  GitSource = ModuleSourceKind.Git,
   Local = "LOCAL_SOURCE",
-  LocalSource = "LOCAL_SOURCE",
+  LocalSource = ModuleSourceKind.Local,
 }
 
 /**
@@ -1692,7 +1692,7 @@ export enum TypeDefKind {
   /**
    * A boolean value.
    */
-  BooleanKind = "BOOLEAN_KIND",
+  BooleanKind = TypeDefKind.Boolean,
 
   /**
    * A GraphQL enum type and its values
@@ -1706,7 +1706,7 @@ export enum TypeDefKind {
    *
    * Always paired with an EnumTypeDef.
    */
-  EnumKind = "ENUM_KIND",
+  EnumKind = TypeDefKind.Enum,
 
   /**
    * A float value.
@@ -1716,7 +1716,7 @@ export enum TypeDefKind {
   /**
    * A float value.
    */
-  FloatKind = "FLOAT_KIND",
+  FloatKind = TypeDefKind.Float,
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -1726,7 +1726,7 @@ export enum TypeDefKind {
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
    */
-  InputKind = "INPUT_KIND",
+  InputKind = TypeDefKind.Input,
 
   /**
    * An integer value.
@@ -1736,7 +1736,7 @@ export enum TypeDefKind {
   /**
    * An integer value.
    */
-  IntegerKind = "INTEGER_KIND",
+  IntegerKind = TypeDefKind.Integer,
 
   /**
    * Always paired with an InterfaceTypeDef.
@@ -1750,7 +1750,7 @@ export enum TypeDefKind {
    *
    * A named type of functions that can be matched+implemented by other objects+interfaces.
    */
-  InterfaceKind = "INTERFACE_KIND",
+  InterfaceKind = TypeDefKind.Interface,
 
   /**
    * Always paired with a ListTypeDef.
@@ -1764,7 +1764,7 @@ export enum TypeDefKind {
    *
    * A list of values all having the same type.
    */
-  ListKind = "LIST_KIND",
+  ListKind = TypeDefKind.List,
 
   /**
    * Always paired with an ObjectTypeDef.
@@ -1778,7 +1778,7 @@ export enum TypeDefKind {
    *
    * A named type defined in the GraphQL schema, with fields and functions.
    */
-  ObjectKind = "OBJECT_KIND",
+  ObjectKind = TypeDefKind.Object,
 
   /**
    * A scalar value of any basic kind.
@@ -1788,7 +1788,7 @@ export enum TypeDefKind {
   /**
    * A scalar value of any basic kind.
    */
-  ScalarKind = "SCALAR_KIND",
+  ScalarKind = TypeDefKind.Scalar,
 
   /**
    * A string value.
@@ -1798,7 +1798,7 @@ export enum TypeDefKind {
   /**
    * A string value.
    */
-  StringKind = "STRING_KIND",
+  StringKind = TypeDefKind.String,
 
   /**
    * A special kind used to signify that no value is returned.
@@ -1812,7 +1812,7 @@ export enum TypeDefKind {
    *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
-  VoidKind = "VOID_KIND",
+  VoidKind = TypeDefKind.Void,
 }
 
 /**

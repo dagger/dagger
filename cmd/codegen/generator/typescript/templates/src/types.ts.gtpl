@@ -41,7 +41,7 @@ export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }}
 			{{- $mainFieldName := "" }}
 			{{- range $idx, $field := slice $fields }}
 				{{- $fieldName := ($field.Name | FormatEnum) }}
-				{{- $fullFieldName := print ($field.Name | FormatEnum) }}
+				{{- $fullFieldName := printf "%s.%s" $enumName ($field.Name | FormatEnum) }}
 
 				{{- /* Get the enum value from the directive or the field name. */ -}}
 				{{- $fieldValue := "" }}
@@ -51,7 +51,7 @@ export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }}
 						{{- $fieldValue = $field.Name }}
 					{{- end }}
 					{{- $fieldValue = $fieldValue | printf "%q" }}
-					{{- $mainFieldName = $fieldValue }}
+					{{- $mainFieldName = $fullFieldName }}
 				{{- else }}
 					{{- $fieldValue = $mainFieldName }}
 				{{- end }}

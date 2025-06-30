@@ -197,7 +197,7 @@ export class Register {
       return undefined
     }
 
-    if (arg.type!.kind !== TypeDefKind.Enum) {
+    if (arg.type!.kind !== TypeDefKind.EnumKind) {
       return arg.defaultValue
     }
 
@@ -234,17 +234,17 @@ export class Register {
  */
 function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
   switch (type.kind) {
-    case TypeDefKind.Scalar:
+    case TypeDefKind.ScalarKind:
       return dag.typeDef().withScalar((type as ScalarTypeDef).name)
-    case TypeDefKind.Object:
+    case TypeDefKind.ObjectKind:
       return dag.typeDef().withObject((type as ObjectTypeDef).name)
-    case TypeDefKind.List:
+    case TypeDefKind.ListKind:
       return dag.typeDef().withListOf(addTypeDef((type as ListTypeDef).typeDef))
-    case TypeDefKind.Void:
+    case TypeDefKind.VoidKind:
       return dag.typeDef().withKind(type.kind).withOptional(true)
-    case TypeDefKind.Enum:
+    case TypeDefKind.EnumKind:
       return dag.typeDef().withEnum((type as EnumTypeDef).name)
-    case TypeDefKind.Interface:
+    case TypeDefKind.InterfaceKind:
       return dag.typeDef().withInterface((type as InterfaceTypeDef).name)
     default:
       return dag.typeDef().withKind(type.kind)
@@ -259,10 +259,10 @@ function addSourceMap(object: Locatable): SourceMap {
 
 function isPrimitiveType(type: ScannerTypeDef<TypeDefKind>): boolean {
   return (
-    type.kind === TypeDefKind.Boolean ||
-    type.kind === TypeDefKind.Integer ||
-    type.kind === TypeDefKind.String ||
-    type.kind === TypeDefKind.Float ||
-    type.kind === TypeDefKind.Enum
+    type.kind === TypeDefKind.BooleanKind ||
+    type.kind === TypeDefKind.IntegerKind ||
+    type.kind === TypeDefKind.StringKind ||
+    type.kind === TypeDefKind.FloatKind ||
+    type.kind === TypeDefKind.EnumKind
   )
 }

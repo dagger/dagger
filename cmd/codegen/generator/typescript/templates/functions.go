@@ -311,19 +311,17 @@ func (funcs typescriptTemplateFuncs) sortInputFields(s []introspection.InputValu
 }
 
 func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
-	slices.SortStableFunc(s, func(x, y introspection.EnumValue) int {
+	copy := slices.Clone(s)
+
+	slices.SortStableFunc(copy, func(x, y introspection.EnumValue) int {
 		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
 	})
-	s = slices.CompactFunc(s, func(x, y introspection.EnumValue) bool {
+
+	copy = slices.CompactFunc(copy, func(x, y introspection.EnumValue) bool {
 		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
 	})
 
-	// Remove enums without values that may exist
-	s = slices.DeleteFunc(s, func(x introspection.EnumValue) bool {
-		return x.Name == "" && x.Directives.EnumValue() == ""
-	})
-
-	return s
+	return copy
 }
 
 func (funcs typescriptTemplateFuncs) extractEnumValue(enum introspection.EnumValue) string {

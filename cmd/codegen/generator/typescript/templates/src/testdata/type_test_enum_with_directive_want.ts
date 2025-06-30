@@ -4,7 +4,7 @@
  */
 export enum ImageLayerCompression {
   EstarGz = "EStarGZ",
-  Estargz = "EStarGZ",
+  Estargz = ImageLayerCompression.EstarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",

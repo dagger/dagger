@@ -170,25 +170,25 @@ class InterfaceWrapper {
         // If the function is returning an IDable, we don't need to execute it
         // since it will be resolved later.
         if (
-          fct.returnType!.kind === TypeDefKind.Interface ||
-          fct.returnType!.kind === TypeDefKind.Object
+          fct.returnType!.kind === TypeDefKind.InterfaceKind ||
+          fct.returnType!.kind === TypeDefKind.ObjectKind
         ) {
           return this
         }
 
         // If the function is returning a list, we may need to load the sub-objects
-        if (fct.returnType!.kind === TypeDefKind.List) {
-          const listTypeDef = (fct.returnType as TypeDef<TypeDefKind.List>)
+        if (fct.returnType!.kind === TypeDefKind.ListKind) {
+          const listTypeDef = (fct.returnType as TypeDef<TypeDefKind.ListKind>)
             .typeDef
 
           // If the list is an object or an interface, then we need to load the sub-objects.
           if (
-            listTypeDef.kind === TypeDefKind.Object ||
-            listTypeDef.kind === TypeDefKind.Interface
+            listTypeDef.kind === TypeDefKind.ObjectKind ||
+            listTypeDef.kind === TypeDefKind.InterfaceKind
           ) {
             const typedef = listTypeDef as
-              | TypeDef<TypeDefKind.Object>
-              | TypeDef<TypeDefKind.Interface>
+              | TypeDef<TypeDefKind.ObjectKind>
+              | TypeDef<TypeDefKind.InterfaceKind>
 
             // Resolves the call to get the list of IDs to load
             const ids = await this._ctx

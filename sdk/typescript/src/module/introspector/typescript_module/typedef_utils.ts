@@ -3,17 +3,17 @@ import { IntrospectionError } from "../../../common/errors/index.js"
 import { TypeDef } from "../typedef.js"
 
 export function isTypeDefResolved(typeDef: TypeDef<TypeDefKind>): boolean {
-  if (typeDef.kind !== TypeDefKind.List) {
+  if (typeDef.kind !== TypeDefKind.ListKind) {
     return true
   }
 
-  const arrayTypeDef = typeDef as TypeDef<TypeDefKind.List>
+  const arrayTypeDef = typeDef as TypeDef<TypeDefKind.ListKind>
 
   if (arrayTypeDef.typeDef === undefined) {
     return false
   }
 
-  if (arrayTypeDef.typeDef.kind === TypeDefKind.List) {
+  if (arrayTypeDef.typeDef.kind === TypeDefKind.ListKind) {
     return isTypeDefResolved(arrayTypeDef.typeDef)
   }
 
@@ -28,8 +28,8 @@ export function resolveTypeDef(
     return reference
   }
 
-  if (typeDef.kind === TypeDefKind.List) {
-    const listTypeDef = typeDef as TypeDef<TypeDefKind.List>
+  if (typeDef.kind === TypeDefKind.ListKind) {
+    const listTypeDef = typeDef as TypeDef<TypeDefKind.ListKind>
 
     listTypeDef.typeDef = resolveTypeDef(listTypeDef.typeDef, reference)
     return listTypeDef

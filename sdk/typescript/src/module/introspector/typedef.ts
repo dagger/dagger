@@ -11,7 +11,7 @@ export type BaseTypeDef = {
  * Extends the base type def if it's an object to add its name.
  */
 export type ObjectTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Object
+  kind: TypeDefKind.ObjectKind
   name: string
 }
 
@@ -19,7 +19,7 @@ export type ObjectTypeDef = BaseTypeDef & {
  * Extends the base type def if it's an enum to add its name.
  */
 export type EnumTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Enum
+  kind: TypeDefKind.EnumKind
   name: string
 }
 
@@ -27,7 +27,7 @@ export type EnumTypeDef = BaseTypeDef & {
  * Extends the base type def if it's an interface to add its name
  */
 export type InterfaceTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Interface
+  kind: TypeDefKind.InterfaceKind
   name: string
 }
 
@@ -35,7 +35,7 @@ export type InterfaceTypeDef = BaseTypeDef & {
  * Extends the base typedef if it's a scalar to add its name and real type.
  */
 export type ScalarTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Scalar
+  kind: TypeDefKind.ScalarKind
   name: string
 }
 
@@ -43,7 +43,7 @@ export type ScalarTypeDef = BaseTypeDef & {
  * Extends the base if it's a list to add its subtype.
  */
 export type ListTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.List
+  kind: TypeDefKind.ListKind
   typeDef: TypeDef<TypeDefKind>
 }
 
@@ -56,14 +56,14 @@ export type ListTypeDef = BaseTypeDef & {
  * If it's a type of kind list, it transforms the BaseTypeDef into a ListTypeDef.
  */
 export type TypeDef<T extends BaseTypeDef["kind"]> =
-  T extends TypeDefKind.Scalar
+  T extends TypeDefKind.ScalarKind
     ? ScalarTypeDef
-    : T extends TypeDefKind.Object
+    : T extends TypeDefKind.ObjectKind
       ? ObjectTypeDef
-      : T extends TypeDefKind.List
+      : T extends TypeDefKind.ListKind
         ? ListTypeDef
-        : T extends TypeDefKind.Enum
+        : T extends TypeDefKind.EnumKind
           ? EnumTypeDef
-          : T extends TypeDefKind.Interface
+          : T extends TypeDefKind.InterfaceKind
             ? InterfaceTypeDef
             : BaseTypeDef
