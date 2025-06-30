@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,6 +22,7 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -421,7 +423,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withExec", s.withExec).
+		dagql.NodeFuncWithCacheKey("withExec", s.withExec, s.withExecCacheKey).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -463,6 +465,26 @@ func (s *containerSchema) Install() {
 				),
 			),
 
+		dagql.Func("stdout", s.stdout).
+			View(AllVersion).
+			Doc(`The buffered standard output stream of the last executed command`,
+				`Returns an error if no command was executed`),
+		dagql.NodeFunc("stdout", s.stdoutLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
+
+		dagql.Func("stderr", s.stderr).
+			View(AllVersion).
+			Doc(`The buffered standard error stream of the last executed command`,
+				`Returns an error if no command was executed`),
+		dagql.NodeFunc("stderr", s.stderrLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
+
+		dagql.Func("exitCode", s.exitCode).
+			Doc(`The exit code of the last executed command`,
+				`Returns an error if no command was executed`),
+
 		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
@@ -472,26 +494,6 @@ func (s *containerSchema) Install() {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
-
-		dagql.Func("stdout", s.stdout(false)).
-			View(AllVersion).
-			Doc(`The buffered standard output stream of the last executed command`,
-				`Returns an error if no command was executed`),
-		dagql.Func("stdout", s.stdout(true)).
-			View(BeforeVersion("v0.12.0")).
-			Extend(),
-
-		dagql.Func("stderr", s.stderr(false)).
-			View(AllVersion).
-			Doc(`The buffered standard error stream of the last executed command`,
-				`Returns an error if no command was executed`),
-		dagql.Func("stderr", s.stderr(true)).
-			View(BeforeVersion("v0.12.0")).
-			Extend(),
-
-		dagql.Func("exitCode", s.exitCode).
-			Doc(`The exit code of the last executed command`,
-				`Returns an error if no command was executed`),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
 			Doc(`Retrieves this container plus the given OCI anotation.`).
@@ -879,9 +881,51 @@ type containerExecArgs struct {
 	// If the container has an entrypoint, ignore it for this exec rather than
 	// calling it with args
 	SkipEntrypoint *bool `default:"false"`
+
+	ExecMD dagql.SerializedString[*buildkit.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+
+	ContainerDagOpInternalArgs
 }
 
-func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+var _ core.Digestable = containerExecArgs{}
+
+func (args containerExecArgs) Digest() (digest.Digest, error) {
+	var inputs []string
+
+	clone := args
+	clone.ExecMD.Self = nil
+	res, err := json.Marshal(clone)
+	if err != nil {
+		panic(err)
+	}
+	inputs = append(inputs, digest.FromBytes(res).String())
+
+	if args.ExecMD.Self != nil {
+		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
+	}
+
+	return dagql.HashFrom(inputs...), nil
+}
+
+func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
+	parent.Self = parent.Self.Clone()
+	if !args.IsDagOp {
+		st := core.MetaMountState(ctx, args.Stdin)
+		def, err := st.Marshal(ctx, llb.Platform(parent.Self.Platform.Spec()))
+		if err != nil {
+			return inst, err
+		}
+		parent.Self.Meta = def.ToPB()
+
+		inst, err = DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
+		if err != nil {
+			return inst, err
+		}
+
+		inst.Self.ImageRef = ""
+		return inst, nil
+	}
+
 	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
@@ -889,16 +933,97 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
-		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
+		expandedArg, err := expandEnvVar(ctx, parent.Self, arg, args.Expand)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 
 		expandedArgs[i] = expandedArg
 	}
 	args.Args = expandedArgs
 
-	return parent.WithExec(ctx, args.ContainerExecOpts)
+	var md *buildkit.ExecutionMetadata
+	if args.ExecMD.Self != nil {
+		md = args.ExecMD.Self
+	}
+
+	ctr, err := parent.Self.WithExec(ctx, args.ContainerExecOpts, md)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
+}
+
+func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	argDigest, err := args.Digest()
+	if err != nil {
+		return nil, err
+	}
+	cacheCfg.Digest = dagql.HashFrom(
+		parent.ID().Digest().String(),
+		string(argDigest),
+	)
+	return &cacheCfg, nil
+}
+
+func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.Stdout(ctx)
+}
+
+func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (string, error) {
+	out, err := parent.Self.Stdout(ctx)
+	if errors.Is(err, core.ErrNoCommand) {
+		var ctr dagql.Instance[*core.Container]
+		if err := s.srv.Select(ctx, parent, &ctr, dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{},
+				},
+				{
+					Name:  "useEntrypoint",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		}); err != nil {
+			return "", err
+		}
+		return ctr.Self.Stdout(ctx)
+	}
+	return out, err
+}
+
+func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.Stderr(ctx)
+}
+
+func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (string, error) {
+	out, err := parent.Self.Stderr(ctx)
+	if errors.Is(err, core.ErrNoCommand) {
+		var ctr dagql.Instance[*core.Container]
+		if err := s.srv.Select(ctx, parent, &ctr, dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{},
+				},
+				{
+					Name:  "useEntrypoint",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		}); err != nil {
+			return "", err
+		}
+		return ctr.Self.Stderr(ctx)
+	}
+	return out, err
+}
+
+func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
+	return parent.ExitCode(ctx)
 }
 
 type containerWithSymlinkArgs struct {
@@ -925,52 +1050,6 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance
 		return inst, err
 	}
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
-}
-
-func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
-	if useEntrypoint {
-		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-			out, err := parent.Stdout(ctx)
-			if errors.Is(err, core.ErrNoCommand) {
-				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-					UseEntrypoint: true,
-				})
-				if err != nil {
-					return "", err
-				}
-				return ctr.Stdout(ctx)
-			}
-			return out, err
-		}
-	}
-	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-		return parent.Stdout(ctx)
-	}
-}
-
-func (s *containerSchema) stderr(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
-	if useEntrypoint {
-		return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-			out, err := parent.Stderr(ctx)
-			if errors.Is(err, core.ErrNoCommand) {
-				ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
-					UseEntrypoint: true,
-				})
-				if err != nil {
-					return "", err
-				}
-				return ctr.Stderr(ctx)
-			}
-			return out, err
-		}
-	}
-	return func(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-		return parent.Stderr(ctx)
-	}
-}
-
-func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
-	return parent.ExitCode(ctx)
 }
 
 type containerGpuArgs struct {

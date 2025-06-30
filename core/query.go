@@ -9,6 +9,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -108,6 +109,9 @@ type Server interface {
 
 	// Gets the buildkit cache manager
 	BuildkitCache() bkcache.Manager
+
+	// Gets the buildkit session manager
+	BuildkitSession() *bksession.Manager
 
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.

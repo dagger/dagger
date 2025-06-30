@@ -309,7 +309,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	ctr, err := bkcontainer.NewContainer(
 		context.WithoutCancel(ctx),
 		c.Worker.CacheManager(),
-		c.Worker.execWorker(
+		c.Worker.ExecWorker(
 			trace.SpanContextFromContext(ctx),
 			req.ExecutionMetadata,
 		), // also implements Executor

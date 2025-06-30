@@ -121,6 +121,7 @@ func (e *DaggerEngine) Container(
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
+	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
 
 	return ctr, nil
 }
