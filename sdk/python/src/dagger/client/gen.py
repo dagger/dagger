@@ -9019,12 +9019,6 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def reveal(self) -> "Status":
-        """Returns a status that reveals its child statuses and hides itself."""
-        _args: list[Arg] = []
-        _ctx = self._select("reveal", _args)
-        return Status(_ctx)
-
     def secret(
         self,
         uri: str,

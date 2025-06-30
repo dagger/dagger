@@ -3582,9 +3582,6 @@ type Query {
     requireKind: ModuleSourceKind
   ): ModuleSource!
 
-  """Returns a status that reveals its child statuses and hides itself."""
-  reveal: Status!
-
   """Creates a new secret."""
   secret(
     """The URI of the secret store"""

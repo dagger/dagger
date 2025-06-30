@@ -1743,12 +1743,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::reveal",
-			"p": "Dagger/Client.html#method_reveal",
-			"d": "<p>Returns a status that reveals its child statuses and hides itself.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::secret",
 			"p": "Dagger/Client.html#method_secret",
 			"d": "<p>Creates a new secret.</p>"

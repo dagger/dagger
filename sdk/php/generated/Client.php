@@ -750,15 +750,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Returns a status that reveals its child statuses and hides itself.
-     */
-    public function reveal(): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reveal');
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Creates a new secret.
      */
     public function secret(string $uri, ?string $cacheKey = null): Secret

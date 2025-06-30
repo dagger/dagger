@@ -8437,14 +8437,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Returns a status that reveals its child statuses and hides itself.
-   */
-  reveal = (): Status => {
-    const ctx = this._ctx.select("reveal")
-    return new Status(ctx)
-  }
-
-  /**
    * Creates a new secret.
    * @param uri The URI of the secret store
    * @param opts.cacheKey If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
