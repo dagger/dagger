@@ -132,9 +132,9 @@ func (s *gitSchema) Install() {
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
 			),
-		dagql.NodeFunc("commit", s.fetchCommit).
+		dagql.NodeFunc("commit", DagOpWrapper(s.srv, s.fetchCommit)).
 			Doc(`The resolved commit id at this ref.`),
-		dagql.NodeFunc("ref", s.fetchRef).
+		dagql.NodeFunc("ref", DagOpWrapper(s.srv, s.fetchRef)).
 			Doc(`The resolved ref name at this ref.`),
 	}.Install(s.srv)
 }
@@ -647,10 +647,6 @@ func (s *gitSchema) fetchCommit(
 	parent dagql.Instance[*core.GitRef],
 	args RawDagOpInternalArgs,
 ) (dagql.String, error) {
-	if !args.IsDagOp {
-		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
-	}
-
 	commit, _, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
@@ -663,10 +659,6 @@ func (s *gitSchema) fetchRef(
 	parent dagql.Instance[*core.GitRef],
 	args RawDagOpInternalArgs,
 ) (dagql.String, error) {
-	if !args.IsDagOp {
-		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
-	}
-
 	_, ref, err := parent.Self.Resolve(ctx)
 	if err != nil {
 		return "", err
