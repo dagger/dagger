@@ -27,7 +27,7 @@ Expected stderr:
   ╰─▼ [4/4] RUN echo im failing && false X.Xs ERROR
     ┃ im failing
     ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-● .withExec(args: ["echo", "hey"]): Container! X.Xs
+○ .withExec(args: ["echo", "hey"]): Container! X.Xs
 ✘ .stdout: String! X.Xs ERROR
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
 

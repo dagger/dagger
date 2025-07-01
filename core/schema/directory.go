@@ -595,6 +595,6 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
-func (s *directorySchema) withSymlinkPath(ctx context.Context, val dagql.Instance[*core.Directory], _ directoryWithSymlinkArgs) (string, error) {
-	return val.Self.Dir, nil
+func (s *directorySchema) withSymlinkPath(ctx context.Context, dir *core.Directory, _ directoryWithSymlinkArgs) (string, error) {
+	return dir.Dir, nil
 }

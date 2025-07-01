@@ -908,16 +908,15 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
-	parent.Self = parent.Self.Clone()
+	ctr := parent.Self.Clone()
 	if !args.IsDagOp {
-		parent.Self.Meta = nil
-		inst, err := DagOpContainer(ctx, s.srv, parent, args, s.withExec)
+		ctr.Meta = nil
+		ctr, err := DagOpContainer(ctx, s.srv, ctr, args, s.withExec)
 		if err != nil {
 			return inst, err
 		}
-
-		inst.Self.ImageRef = ""
-		return inst, nil
+		ctr.ImageRef = ""
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 	}
 
 	if args.SkipEntrypoint != nil {
@@ -1895,8 +1894,8 @@ type containerAsTarballArgs struct {
 	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container], _ containerAsTarballArgs) (string, error) {
-	return val.ID().Call().Digest + ".tar", nil
+func (s *containerSchema) asTarballPath(ctx context.Context, val *core.Container, _ containerAsTarballArgs) (string, error) {
+	return "container.tar", nil
 }
 
 func (s *containerSchema) asTarball(
