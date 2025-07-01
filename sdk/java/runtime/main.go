@@ -312,6 +312,26 @@ func (m *JavaSdk) generateCode(
 		Directory(ModSourceDirPath), nil
 }
 
+func (m *JavaSdk) ModuleTypeDefsObject(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Module, error) {
+	return dag.Module().
+			WithDescription("MyJavaModule example").
+			WithObject(
+				dag.TypeDef().WithObject("MyJavaModule").
+					WithFunction(
+						dag.Function("containerEcho", dag.TypeDef().WithObject("Container")).
+							WithArg("stringArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+					WithFunction(
+						dag.Function("print", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
+							WithArg("stringArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+					WithFunction(
+						dag.Function("base", dag.TypeDef().WithObject("Container")))),
+		nil
+}
+
 func (m *JavaSdk) ModuleTypeDefs(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,

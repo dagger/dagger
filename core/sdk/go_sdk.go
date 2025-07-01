@@ -40,6 +40,10 @@ func (sdk *goSDK) HasModuleTypeDefs() bool {
 	return true
 }
 
+func (sdk *goSDK) HasModuleTypeDefsObject() bool {
+	return false
+}
+
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
@@ -217,6 +221,14 @@ func (sdk *goSDK) Codegen(
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
 	}, nil
+}
+
+func (sdk *goSDK) TypeDefsObject(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	return
 }
 
 func (sdk *goSDK) TypeDefs(
