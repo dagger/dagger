@@ -863,17 +863,17 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 		return nil, err
 	}
 	err = MountRef(ctx, newRef, nil, func(root string) error {
-		fullLinkName, err := containerdfs.RootPath(root, linkName)
+		linkDir, linkBasename := filepath.Split(linkName)
+		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
 		if err != nil {
 			return err
 		}
-
-		linkNameDirPath, _ := filepath.Split(fullLinkName)
-		err = os.MkdirAll(filepath.Dir(linkNameDirPath), 0755)
+		err = os.MkdirAll(resolvedLinkDir, 0755)
 		if err != nil {
 			return err
 		}
-		return os.Symlink(target, fullLinkName)
+		resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
+		return os.Symlink(target, resolvedLinkName)
 	})
 	if err != nil {
 		return nil, err

@@ -1543,4 +1543,28 @@ func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "data", s)
 	})
+
+	t.Run("symlink follows symlinks in dir path but not basename", func(ctx context.Context, t *testctx.T) {
+		s, err := c.Directory().
+			WithNewDirectory("dir1").
+			WithSymlink("dir1", "dir2").
+			WithSymlink("file", "dir2/symlink").
+			WithoutFile("dir2").
+			WithNewFile("dir1/file", "data").
+			File("/dir1/symlink").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	t.Run("symlink errors rather when symlink already exists", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().
+			WithSymlink("target", "symlink").
+			WithSymlink("newtarget", "symlink").
+			Sync(ctx)
+
+		require.Error(t, err)
+		require.Regexp(t, "symlink newtarget /var/lib/dagger/worker/cachemounts/.*/symlink: file exists", err.Error())
+	})
 }
