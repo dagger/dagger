@@ -2277,16 +2277,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
 	}
 
-	// get the typedefs container dedicated to get the module's definition.
-	// this will fall back to the runtime container if `moduleTypeDefs` is not defined.
-	typeDefs, err := runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module runtime: %w", err)
-	}
-
-	// construct a special function with no object or function name, which tells
-	// the SDK to return the module's definition (in terms of objects, fields and
-	// functions)
+	var initialized *core.Module
 
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
@@ -2310,53 +2301,70 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	var initialized *core.Module
-	err = (func() (rerr error) {
-		ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-		defer telemetry.End(span, func() error { return rerr })
-		getModDefFn, err := core.NewModFunction(
-			ctx,
-			mod,
-			nil,
-			typeDefs,
-			core.NewFunction("", &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
-			}))
+	if runtimeImpl.HasModuleTypeDefsObject() {
+		var resultInst dagql.ObjectResult[*core.Module]
+		resultInst, err = runtimeImpl.TypeDefsObject(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
-			return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
-		result, err := getModDefFn.Call(ctx, &core.CallOpts{
-			Cache:          true,
-			SkipSelfSchema: true,
-			Server:         dag,
-			// Don't include the digest for the current call (which is a bunch of module source stuff, including
-			// APIs that are cached per-client when local sources are involved) in the cache key of this
-			// function call. That would needlessly invalidate the cache more than is needed, similar to how
-			// we want to scope the codegen cache keys by the content digested source instance above.
-			SkipCallDigestCacheKey: true,
-		})
+		initialized = resultInst.Self()
+	} else {
+		// get the typedefs container dedicated to get the module's definition.
+		// this will fall back to the runtime container if `moduleTypeDefs` is not defined.
+		typeDefs, err := runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
-			return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
-		if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
-			postCall := postCallRes.GetPostCall()
+
+		// construct a special function with no object or function name, which tells
+		// the SDK to return the module's definition (in terms of objects, fields and
+		// functions)
+
+		err = (func() (rerr error) {
+			ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
+			defer telemetry.End(span, func() error { return rerr })
+			getModDefFn, err := core.NewModFunction(
+				ctx,
+				mod,
+				nil,
+				typeDefs,
+				core.NewFunction("", &core.TypeDef{
+					Kind:     core.TypeDefKindObject,
+					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
+				}))
+			if err != nil {
+				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+			}
+			result, err := getModDefFn.Call(ctx, &core.CallOpts{
+				Cache:          true,
+				SkipSelfSchema: true,
+				Server:         dag,
+				// Don't include the digest for the current call (which is a bunch of module source stuff, including
+				// APIs that are cached per-client when local sources are involved) in the cache key of this
+				// function call. That would needlessly invalidate the cache more than is needed, similar to how
+				// we want to scope the codegen cache keys by the content digested source instance above.
+				SkipCallDigestCacheKey: true,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+			}
+			postCall := result.GetPostCall()
 			if postCall != nil {
 				if err := postCall(ctx); err != nil {
 					return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
 				}
 			}
-		}
 
-		resultInst, ok := result.(dagql.Result[*core.Module])
-		if !ok {
-			return fmt.Errorf("expected Module result, got %T", result)
+			resultInst, ok := result.(dagql.Result[*core.Module])
+			if !ok {
+				return fmt.Errorf("expected Module result, got %T", result)
+			}
+			initialized = resultInst.Self()
+			return nil
+		})()
+		if err != nil {
+			return nil, err
 		}
-		initialized = resultInst.Self()
-		return nil
-	})()
-	if err != nil {
-		return nil, err
 	}
 
 	// update the module's types with what was returned from the call above

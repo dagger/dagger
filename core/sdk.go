@@ -178,6 +178,8 @@ type Runtime interface {
 	*/
 	HasModuleTypeDefs() bool
 
+	HasModuleTypeDefsObject() bool
+
 	/*
 		TypeDefs returns a container that is used to execute module code
 		to retrieve the types defined by the module.
@@ -202,6 +204,16 @@ type Runtime interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 	) (dagql.ObjectResult[*Container], error)
+
+	TypeDefsObject(
+		context.Context,
+
+		// Current module dependencies.
+		*ModDeps,
+
+		// Current instance of the module source.
+		dagql.ObjectResult[*ModuleSource],
+	) (dagql.ObjectResult[*Module], error)
 }
 
 /*
