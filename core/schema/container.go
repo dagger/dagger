@@ -917,7 +917,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 		}
 		parent.Self.Meta = def.ToPB()
 
-		inst, err = DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
+		inst, err = DagOpContainer(ctx, s.srv, parent, args, s.withExec)
 		if err != nil {
 			return inst, err
 		}

@@ -188,7 +188,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		return DagOpContainer(ctx, srv, self, args, nil, fn)
+		return DagOpContainer(ctx, srv, self, args, fn)
 	}
 }
 
@@ -197,7 +197,6 @@ func DagOpContainer[A any](
 	srv *dagql.Server,
 	self dagql.Instance[*core.Container],
 	args A,
-	data any,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
 ) (inst dagql.Instance[*core.Container], _ error) {
 	argDigest, err := core.DigestOf(args)
