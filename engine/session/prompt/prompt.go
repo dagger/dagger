@@ -68,7 +68,7 @@ func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*Bo
 		}
 	}
 
-	var confirm bool = req.GetDefault()
+	confirm := req.GetDefault()
 	if p.promptHandler != nil {
 		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &confirm); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
@@ -94,7 +94,7 @@ func (p PromptAttachable) PromptString(ctx context.Context, req *StringRequest) 
 	promptMutex.Lock()
 	defer promptMutex.Unlock()
 
-	var response string = req.GetDefault()
+	response := req.GetDefault()
 	if p.promptHandler != nil {
 		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &response); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
