@@ -569,7 +569,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, s.asTarballPath)).
+		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, WithPathFn(s.asTarballPath))).
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			Args(
 				dagql.Arg("platformVariants").Doc(

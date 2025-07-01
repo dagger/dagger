@@ -52,13 +52,13 @@ type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val dagql.Instance
 func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		return DagOpFile(ctx, srv, self, args, "", fn, pfn)
+		return DagOpFile(ctx, srv, self, args, "", fn, opts...)
 	}
 }
 
@@ -74,19 +74,20 @@ func DagOpFile[T dagql.Typed, A any](
 	args A,
 	data string,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) (inst dagql.Instance[*core.File], _ error) {
+	o := getOpts(opts...)
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
 	filename := "file"
-	if pfn != nil {
+	if o.pfn != nil {
 		// NOTE: if set, the path function must be *somewhat* stable -
 		// since it becomes part of the op, then any changes to this
 		// invalidate the cache
-		filename, err = pfn(ctx, self, args)
+		filename, err = o.pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}
@@ -109,14 +110,34 @@ func DagOpFile[T dagql.Typed, A any](
 func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		return DagOpDirectory(ctx, srv, self, args, "", fn, pfn)
+		return DagOpDirectory(ctx, srv, self, args, "", fn, opts...)
 	}
+}
+
+type DagOpOpts[T dagql.Typed, A any] struct {
+	pfn PathFunc[T, A]
+}
+
+type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])
+
+func WithPathFn[T dagql.Typed, A any](pfn PathFunc[T, A]) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.pfn = pfn
+	}
+}
+
+func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
+	var o DagOpOpts[T, A]
+	for _, optFn := range opts {
+		optFn(&o)
+	}
+	return &o
 }
 
 // NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
@@ -129,16 +150,18 @@ func DagOpDirectory[T dagql.Typed, A any](
 	args A,
 	data string,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
-	pfn PathFunc[T, A],
+	opts ...DagOpOptsFn[T, A],
 ) (inst dagql.Instance[*core.Directory], _ error) {
+	o := getOpts(opts...)
+
 	deps, err := extractLLBDependencies(ctx, self.Self)
 	if err != nil {
 		return inst, err
 	}
 
 	filename := "/"
-	if pfn != nil {
-		filename, err = pfn(ctx, self, args)
+	if o.pfn != nil {
+		filename, err = o.pfn(ctx, self, args)
 		if err != nil {
 			return inst, err
 		}

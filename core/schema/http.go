@@ -144,7 +144,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		resp.Header.Get("Last-Modified"),
 	)))
 
-	inst, err = DagOpFile(ctxDagOp, s.srv, parent, args, snap.ID(), s.http, s.httpPath)
+	inst, err = DagOpFile(ctxDagOp, s.srv, parent, args, snap.ID(), s.http, WithPathFn(s.httpPath))
 	if err != nil {
 		return inst, err
 	}
