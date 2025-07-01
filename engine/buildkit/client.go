@@ -875,13 +875,7 @@ func (c *Client) OpenPipe(
 	}
 
 	// grpc service client
-	pipeClient := pipe.NewPipeClient(caller.Conn())
-	if err != nil {
-		return nil, fmt.Errorf("open terminal error: %w", err)
-	}
-
-	// grpc rpc client
-	pipeIOClient, err := pipeClient.IO(ctx)
+	pipeIOClient, err := pipe.NewPipeClient(caller.Conn()).IO(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pipe: %w", err)
 	}
