@@ -1,6 +1,9 @@
 syntax = "proto3";
 
-option go_package = "session";
+// TODO: breaking client<->server compat
+// package dagger.git;
+
+option go_package = "git";
 
 service Git {
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);

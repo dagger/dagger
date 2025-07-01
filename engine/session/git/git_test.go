@@ -1,4 +1,4 @@
-package session
+package git
 
 import (
 	"context"
@@ -171,7 +171,7 @@ sleep 31
 		From("golang:1.21").
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y", "git"}).
-		WithExec([]string{"mkdir", "-p", "/app/session"}).
+		WithExec([]string{"mkdir", "-p", "/app/git"}).
 		WithWorkdir("/app").
 		// create go.mod so that below main() can test our proto handling
 		WithNewFile("/app/go.mod", `
@@ -185,9 +185,9 @@ require (
 )
 `).
 		// Mount git implementation as the session pkg
-		WithMountedFile("/app/session/git.pb.go", client.Host().File("./git.pb.go")).
-		WithMountedFile("/app/session/git.go", client.Host().File("./git.go")).
-		WithNewFile("/app/session/package.go", `package session`).
+		WithMountedFile("/app/git/git.pb.go", client.Host().File("./git.pb.go")).
+		WithMountedFile("/app/git/git.go", client.Host().File("./git.go")).
+		WithNewFile("/app/git/package.go", `package git`).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file
@@ -202,7 +202,7 @@ import (
     "fmt"
     "io/ioutil"
 
-    "testapp/session"
+    "testapp/git"
 )
 
 func main() {
@@ -211,12 +211,12 @@ func main() {
         panic(err)
     }
 
-        var request session.GitCredentialRequest
+        var request git.GitCredentialRequest
     if err := json.Unmarshal(data, &request); err != nil {
         panic(err)
     }
 
-    s := session.NewGitAttachable(context.Background())
+    s := git.NewGitAttachable(context.Background())
     response, err := s.GetCredential(context.Background(), &request)
     if err != nil {
         panic(err)

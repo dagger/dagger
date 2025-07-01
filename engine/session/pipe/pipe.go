@@ -1,4 +1,4 @@
-package session
+package pipe
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	fmt "fmt"
 	io "io"
 
-	"github.com/dagger/dagger/engine/session/ctxio"
 	"github.com/moby/buildkit/util/grpcerrors"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -37,8 +36,8 @@ func (p PipeAttachable) Register(srv *grpc.Server) {
 func (p PipeAttachable) IO(srv Pipe_IOServer) error {
 	ctx := p.rootCtx
 	pio := &PipeIO{GRPC: srv}
-	go io.Copy(pio, ctxio.NewReader(ctx, p.stdin))
-	_, err := io.Copy(p.stdout, ctxio.NewReader(ctx, pio))
+	go io.Copy(pio, newCtxReader(ctx, p.stdin))
+	_, err := io.Copy(p.stdout, newCtxReader(ctx, pio))
 	return err
 }
 

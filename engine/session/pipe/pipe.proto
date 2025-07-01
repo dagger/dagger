@@ -1,6 +1,9 @@
 syntax = "proto3";
 
-option go_package = "session";
+// TODO: breaking client<->server compat
+// package dagger.pipe;
+
+option go_package = "pipe";
 
 service Pipe {
   rpc IO(stream Data) returns (stream Data);

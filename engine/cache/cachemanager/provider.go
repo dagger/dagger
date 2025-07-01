@@ -8,12 +8,13 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
-	"github.com/dagger/dagger/engine/session"
 	"github.com/moby/buildkit/util/bklog"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+const InstrumentationLibrary = "dagger.io/engine.magicache"
 
 const otelMagicacheDigestKey = "dagger.io/magicache.digest"
 const otelMagicacheSize = "dagger.io/magicache.size"
@@ -24,7 +25,7 @@ type layerProvider struct {
 }
 
 func (p *layerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
-	ctx, span := telemetry.Tracer(ctx, session.InstrumentationLibrary).
+	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
 		Start(ctx, "magicache layer download")
 	span.SetAttributes(
 		attribute.String(otelMagicacheDigestKey, desc.Digest.String()),
@@ -53,7 +54,7 @@ type cacheMountProvider struct {
 }
 
 func (p *cacheMountProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
-	ctx, span := telemetry.Tracer(ctx, session.InstrumentationLibrary).
+	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
 		Start(ctx, "magicache cachemount download")
 	span.SetAttributes(
 		attribute.String(otelMagicacheDigestKey, desc.Digest.String()),

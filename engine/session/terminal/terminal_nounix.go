@@ -1,7 +1,7 @@
 //go:build !unix
 // +build !unix
 
-package session
+package terminal
 
 import (
 	context "context"

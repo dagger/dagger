@@ -30,7 +30,11 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/session/pipe"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/terminal"
 )
 
 const (
@@ -500,7 +504,7 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
-) (*session.ListenResponse, func() error, error) {
+) (*h2c.ListenResponse, func() error, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -515,7 +519,7 @@ func (c *Client) ListenHostToContainer(
 
 	conn := clientCaller.Conn()
 
-	tunnelClient := session.NewTunnelListenerClient(conn)
+	tunnelClient := h2c.NewTunnelListenerClient(conn)
 
 	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
@@ -524,7 +528,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	err = listener.Send(&session.ListenRequest{
+	err = listener.Send(&h2c.ListenRequest{
 		Addr:     hostListenAddr,
 		Protocol: proto,
 	})
@@ -588,7 +592,7 @@ func (c *Client) ListenHostToContainer(
 						}
 
 						sendL.Lock()
-						err = listener.Send(&session.ListenRequest{
+						err = listener.Send(&h2c.ListenRequest{
 							ConnId: connID,
 							Data:   data[:n],
 						})
@@ -627,7 +631,7 @@ func (c *Client) ListenHostToContainer(
 	}, nil
 }
 
-func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*session.CredentialInfo, error) {
+func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*git.CredentialInfo, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -637,7 +641,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := session.NewGitClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
+	response, err := git.NewGitClient(caller.Conn()).GetCredential(ctx, &git.GitCredentialRequest{
 		Protocol: protocol,
 		Host:     host,
 		Path:     path,
@@ -647,9 +651,9 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 
 	switch result := response.Result.(type) {
-	case *session.GitCredentialResponse_Credential:
+	case *git.GitCredentialResponse_Credential:
 		return result.Credential, nil
-	case *session.GitCredentialResponse_Error:
+	case *git.GitCredentialResponse_Error:
 		return nil, fmt.Errorf("git credential error: %s", result.Error.Message)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
@@ -663,7 +667,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
 
-	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
 		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
 		PersistentKey: "allow_llm:" + moduleRepoURL,
 		Default:       false, // TODO: default to true?
@@ -684,7 +688,7 @@ func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, 
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
 
-	response, err := session.NewPromptClient(caller.Conn()).PromptString(ctx, &session.StringRequest{
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptString(ctx, &prompt.StringRequest{
 		Prompt:  question,
 		Default: "The user did not respond.",
 	})
@@ -694,7 +698,7 @@ func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, 
 	return response.Response, nil
 }
 
-func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
+func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -704,18 +708,18 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, e
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := session.NewGitClient(caller.Conn()).GetConfig(ctx, &session.GitConfigRequest{})
+	response, err := git.NewGitClient(caller.Conn()).GetConfig(ctx, &git.GitConfigRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query git config: %w", err)
 	}
 
 	switch result := response.Result.(type) {
-	case *session.GitConfigResponse_Config:
+	case *git.GitConfigResponse_Config:
 		return result.Config.Entries, nil
-	case *session.GitConfigResponse_Error:
+	case *git.GitConfigResponse_Error:
 		// if git is not found, ignore that error
-		if result.Error.Type == session.NO_GIT {
-			return []*session.GitConfigEntry{}, nil
+		if result.Error.Type == git.NO_GIT {
+			return []*git.GitConfigEntry{}, nil
 		}
 
 		return nil, fmt.Errorf("git config error: %s", result.Error.Message)
@@ -740,7 +744,7 @@ func (c *Client) OpenTerminal(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
-	terminalClient := session.NewTerminalClient(caller.Conn())
+	terminalClient := terminal.NewTerminalClient(caller.Conn())
 
 	term, err := terminalClient.Session(ctx)
 	if err != nil {
@@ -756,7 +760,7 @@ func (c *Client) OpenTerminal(
 		stdinR, stdinW   = io.Pipe()
 	)
 
-	forwardFD := func(r io.ReadCloser, fn func([]byte) *session.SessionRequest) error {
+	forwardFD := func(r io.ReadCloser, fn func([]byte) *terminal.SessionRequest) error {
 		defer r.Close()
 		b := make([]byte, 2048)
 		for {
@@ -774,15 +778,15 @@ func (c *Client) OpenTerminal(
 		}
 	}
 
-	go forwardFD(stdoutR, func(stdout []byte) *session.SessionRequest {
-		return &session.SessionRequest{
-			Msg: &session.SessionRequest_Stdout{Stdout: stdout},
+	go forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
+		return &terminal.SessionRequest{
+			Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
 		}
 	})
 
-	go forwardFD(stderrR, func(stderr []byte) *session.SessionRequest {
-		return &session.SessionRequest{
-			Msg: &session.SessionRequest_Stderr{Stderr: stderr},
+	go forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
+		return &terminal.SessionRequest{
+			Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
 		}
 	})
 
@@ -796,8 +800,8 @@ func (c *Client) OpenTerminal(
 	}
 
 	switch msg := res.GetMsg().(type) {
-	case *session.SessionResponse_Ready:
-	case *session.SessionResponse_Resize:
+	case *terminal.SessionResponse_Ready:
+	case *terminal.SessionResponse_Resize:
 		// FIXME: only here to handle the first message from olde clients that
 		// don't sent a ready message
 		resizeCh <- bkgw.WinSize{
@@ -822,14 +826,14 @@ func (c *Client) OpenTerminal(
 				return
 			}
 			switch msg := res.GetMsg().(type) {
-			case *session.SessionResponse_Stdin:
+			case *terminal.SessionResponse_Stdin:
 				_, err := stdinW.Write(msg.Stdin)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
 					errCh <- err
 					return
 				}
-			case *session.SessionResponse_Resize:
+			case *terminal.SessionResponse_Resize:
 				resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
@@ -851,8 +855,8 @@ func (c *Client) OpenTerminal(
 			defer stderrW.Close()
 			defer term.CloseSend()
 
-			err := term.Send(&session.SessionRequest{
-				Msg: &session.SessionRequest_Exit{Exit: int32(exitCode)},
+			err := term.Send(&terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Exit{Exit: int32(exitCode)},
 			})
 			if err != nil {
 				return fmt.Errorf("failed to close terminal: %w", err)
@@ -871,7 +875,7 @@ func (c *Client) OpenPipe(
 	}
 
 	// grpc service client
-	pipeClient := session.NewPipeClient(caller.Conn())
+	pipeClient := pipe.NewPipeClient(caller.Conn())
 	if err != nil {
 		return nil, fmt.Errorf("open terminal error: %w", err)
 	}
@@ -882,7 +886,7 @@ func (c *Client) OpenPipe(
 		return nil, fmt.Errorf("failed to open pipe: %w", err)
 	}
 	// io.ReadWriter wrapper
-	return &session.PipeIO{GRPC: pipeIOClient}, nil
+	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
 }
 
 // like sync.OnceValue but accepts an arg

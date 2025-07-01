@@ -1,4 +1,4 @@
-package session
+package prompt
 
 import (
 	context "context"

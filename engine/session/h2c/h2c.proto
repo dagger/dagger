@@ -1,6 +1,9 @@
 syntax = "proto3";
 
-option go_package = "session";
+// TODO: breaking client<->server compat
+// package dagger.h2c;
+
+option go_package = "h2c";
 
 service TunnelListener {
   rpc Listen(stream ListenRequest) returns (stream ListenResponse);

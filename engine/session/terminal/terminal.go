@@ -1,4 +1,4 @@
-package session
+package terminal
 
 import (
 	context "context"

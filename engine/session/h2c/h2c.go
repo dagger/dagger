@@ -1,4 +1,4 @@
-package session
+package h2c
 
 import (
 	context "context"

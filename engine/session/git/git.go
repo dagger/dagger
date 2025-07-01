@@ -1,4 +1,4 @@
-package session
+package git
 
 import (
 	"bufio"
