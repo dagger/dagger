@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"slices"
@@ -15,7 +16,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	bkcache "github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
@@ -356,7 +356,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
 	exec := worker.Executor()
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
-		Meta: meta,
+		Meta:  meta,
+		Stdin: io.NopCloser(strings.NewReader(opts.Stdin)),
+		// Stdout/Stderr are setup in Worker.setupStdio
 	}, nil)
 
 	for i, ref := range p.OutputRefs {
@@ -449,18 +451,6 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", err
 	}
 	return string(content), nil
-}
-
-func MetaMountState(ctx context.Context, stdin string) llb.State {
-	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
-	if stdin != "" {
-		meta = meta.Mkfile(buildkit.MetaMountStdinPath, 0o666, []byte(stdin))
-	}
-
-	return llb.Scratch().File(meta,
-		buildkit.WithTracePropagation(ctx),
-		buildkit.WithPassthrough(),
-	)
 }
 
 func loadSecretEnv(ctx context.Context, g bksession.Group, sm *bksession.Manager, secretenv []*pb.SecretEnv) ([]string, error) {

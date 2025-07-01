@@ -49,7 +49,6 @@ const (
 	// MetaMountDestPath is the special path that the shim writes metadata to.
 	MetaMountDestPath     = "/.dagger_meta_mount"
 	MetaMountExitCodePath = "exitCode"
-	MetaMountStdinPath    = "stdin"
 	MetaMountStdoutPath   = "stdout"
 	MetaMountStderrPath   = "stderr"
 	MetaMountClientIDPath = "clientID"

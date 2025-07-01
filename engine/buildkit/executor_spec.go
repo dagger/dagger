@@ -556,18 +556,6 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 		return nil
 	}
 
-	stdinPath := filepath.Join(state.metaMount.Source, MetaMountStdinPath)
-	stdinFile, err := os.Open(stdinPath)
-	switch {
-	case err == nil:
-		state.cleanups.Add("close container stdin file", stdinFile.Close)
-		state.procInfo.Stdin = stdinFile
-	case os.IsNotExist(err):
-		// no stdin to send
-	default:
-		return fmt.Errorf("open stdin file: %w", err)
-	}
-
 	var stdoutWriters []io.Writer
 	if state.procInfo.Stdout != nil {
 		stdoutWriters = append(stdoutWriters, state.procInfo.Stdout)
