@@ -547,3 +547,8 @@ func (*Viztest) CallFailingDep(ctx context.Context) error {
 func (*Viztest) CallBubblingDep(ctx context.Context) error {
 	return dag.Dep().BubblingFunction(ctx)
 }
+
+func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
+	dag.Dep().GetFiles(ctx)
+	return nil
+}
