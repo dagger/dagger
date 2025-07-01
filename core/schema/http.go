@@ -41,7 +41,7 @@ type httpArgs struct {
 	FSDagOpInternalArgs
 }
 
-func (s *httpSchema) httpPath(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (string, error) {
+func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
 	if args.Name != nil {
 		return *args.Name, nil
 	}
@@ -71,7 +71,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 	}
 
-	filename, err := s.httpPath(ctx, parent, args)
+	filename, err := s.httpPath(ctx, parent.Self, args)
 	if err != nil {
 		return inst, err
 	}
@@ -137,21 +137,23 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 	defer snap.Release(context.WithoutCancel(ctx))
 
 	// also mixin the checksum
-	ctxDagOp := dagql.ContextWithID(ctx, dagql.CurrentID(ctx).WithDigest(dagql.HashFrom(
+	newID := dagql.CurrentID(ctx).WithDigest(dagql.HashFrom(
 		filename,
 		fmt.Sprint(permissions),
 		dgst.String(),
 		resp.Header.Get("Last-Modified"),
-	)))
+	))
+	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	inst, err = DagOpFile(ctxDagOp, s.srv, parent, args, snap.ID(), s.http, WithPathFn(s.httpPath))
+	file, err := DagOpFile(ctxDagOp, s.srv, parent.Self, args, snap.ID(), s.http, WithPathFn(s.httpPath))
 	if err != nil {
 		return inst, err
 	}
 
 	// evaluate now! so that the snapshot definitely lives long enough
-	if _, err := inst.Self.Evaluate(ctx); err != nil {
+	if _, err := file.Evaluate(ctx); err != nil {
 		return inst, err
 	}
-	return inst, nil
+
+	return dagql.NewInstanceForID(s.srv, parent, file, newID)
 }
