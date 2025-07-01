@@ -64,6 +64,14 @@ func TestTelemetry(t *testing.T) {
 }
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
+	// setup a git repo so function call tests can pick up the right metadata
+	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
+	if co, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to initialize viztest git repo: %v: (%s)", err, co)
+	}
+	t.Cleanup(func() {
+		exec.Command("rm", "-rf", ".git").Run()
+	})
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -159,6 +167,29 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
+		{
+			Function: "trace-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Dep.getFiles" {
+						require.Equal(t, "TraceFunctionCalls", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Contains(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "github.com/dagger/dagger/viztest")
+						require.Equal(t, "getFiles", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Contains(t, s.ExtraAttributes[telemetry.ModuleRefAttr], "github.com/dagger/dagger/viztest")
+						depCalled = true
+					} else if s.Name == "Viztest.traceFunctionCalls" {
+						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Contains(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "")
+						require.Equal(t, "traceFunctionCalls", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Contains(t, s.ExtraAttributes[telemetry.ModuleRefAttr], "github.com/dagger/dagger/viztest")
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled && depCalled)
+			},
+		},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {

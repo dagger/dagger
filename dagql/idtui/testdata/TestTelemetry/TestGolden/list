@@ -1,5 +1,6 @@
 Expected stdout:
 
+.git/
 debug.go
 demos/
 frontend.go
@@ -37,6 +38,7 @@ Expected stderr:
 ▼ .list(
 │ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
 │ ): String! X.Xs
+┃ .git/
 ┃ debug.go
 ┃ demos/
 ┃ frontend.go
