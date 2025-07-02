@@ -26,6 +26,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -528,11 +529,14 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
 	}
 
-	// FIXME: ew, this is a terrible way to pass this around
-	//nolint:staticcheck
-	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
+	// FIXME: this is a terrible way to pass this around
+	solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
 		llbID, ok := secretNameToLLBID[name]
 		if !ok {
+			if optional {
+				// set to a purposely invalid name, so we don't get something else
+				return "notfound:" + identity.NewID(), nil
+			}
 			return "", fmt.Errorf("secret not found: %s", name)
 		}
 		return llbID, nil
