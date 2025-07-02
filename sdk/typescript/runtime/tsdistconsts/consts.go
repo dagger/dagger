@@ -9,7 +9,7 @@ const (
 	bunImageDigest     = "sha256:c1cc397e0be452c54f37cbcdfaa747eff93c993723af7d91658764d0fdfe5873"
 	DefaultBunImageRef = "oven/bun:" + DefaultBunVersion + "-alpine@" + bunImageDigest
 
-	DefaultDenoVersion  = "2.2.4"
-	denoImageDigest     = "sha256:1d8c91cb71602ac152c1a7e49654aaa9f6c9dbe8c82e43221adf913f89683987"
+	DefaultDenoVersion  = "2.4.0"
+	denoImageDigest     = "sha256:fcf215ca621c2834157dcb8a8c8c48b64d273b542b4fc8baee1b5c6de50b326c"
 	DefaultDenoImageRef = "denoland/deno:alpine-" + DefaultDenoVersion + "@" + denoImageDigest
 )
