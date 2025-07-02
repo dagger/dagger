@@ -16,22 +16,22 @@ Expected stderr:
 ● viztest: Viztest! X.Xs
 ▼ .failEncapsulated: Void X.Xs ERROR
 ! i failed on the outside
-├─▼ failing outer span X.Xs ERROR
+├─▼ failing outer status X.Xs ERROR
 │ ! outer failure
 │ ╰─▼ unset middle span X.Xs
-│   ╰─▼ failing inner span X.Xs ERROR
+│   ╰─▼ failing inner status X.Xs ERROR
 │     ┃ this should be hoisted - ancestor failed
 │     ! inner failure
 │    
-╰─▼ succeeding outer span X.Xs
+╰─▼ succeeding outer status X.Xs
   ╰─▼ unset middle span X.Xs
-    ╰─▼ failing inner span X.Xs ERROR
+    ╰─▼ failing inner status X.Xs ERROR
       ┃ this should NOT be hoisted - ancestor succeeded
       ! inner failure
 
 Error logs:
 
-▼ failing inner span X.Xs ERROR
+▼ failing inner status X.Xs ERROR
 this should be hoisted - ancestor failed
 ! inner failure
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	bkcache "github.com/moby/buildkit/cache"
@@ -26,6 +27,9 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	spans  map[string]*Status
+	spansL *sync.Mutex
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -136,7 +140,11 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 }
 
 func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+	return &Query{
+		Server: srv,
+		spans:  map[string]*Status{},
+		spansL: new(sync.Mutex),
+	}
 }
 
 func (*Query) Type() *ast.Type {
@@ -156,6 +164,22 @@ func (q Query) Clone() *Query {
 
 func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
+}
+
+func (q *Query) StartSpan(ctx context.Context, s *Status) *Status {
+	started := s.Clone()
+	_, started.Span = Tracer(ctx).Start(ctx, s.Name, s.Opts()...)
+	q.spansL.Lock()
+	q.spans[started.InternalID()] = started
+	q.spansL.Unlock()
+	return started
+}
+
+func (q *Query) LookupStatus(spanID string) (*Status, bool) {
+	q.spansL.Lock()
+	span, found := q.spans[spanID]
+	q.spansL.Unlock()
+	return span, found
 }
 
 func (q *Query) NewContainer(platform Platform) *Container {

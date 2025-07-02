@@ -1517,6 +1517,39 @@ impl SourceMapId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct StatusId(pub String);
+impl From<&str> for StatusId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for StatusId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<StatusId> for Status {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<StatusId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<StatusId> for StatusId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<StatusId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<StatusId, DaggerError>(self) })
+    }
+}
+impl StatusId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TerminalId(pub String);
 impl From<&str> for TerminalId {
     fn from(value: &str) -> Self {
@@ -8416,6 +8449,11 @@ pub struct QuerySecretOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub cache_key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryStatusOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
+}
 impl Query {
     /// Constructs a cache volume for a given cache key.
     ///
@@ -9500,6 +9538,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Status from its ID.
+    pub fn load_status_from_id(&self, id: impl IntoID<StatusId>) -> Status {
+        let mut query = self.selection.select("loadStatusFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Terminal from its ID.
     pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
         let mut query = self.selection.select("loadTerminalFromID");
@@ -9650,6 +9704,39 @@ impl Query {
         query = query.arg("line", line);
         query = query.arg("column", column);
         SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a new status indicator.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A display name for the status.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn status(&self, name: impl Into<String>) -> Status {
+        let mut query = self.selection.select("status");
+        query = query.arg("name", name.into());
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a new status indicator.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A display name for the status.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn status_opts<'a>(&self, name: impl Into<String>, opts: QueryStatusOpts<'a>) -> Status {
+        let mut query = self.selection.select("status");
+        query = query.arg("name", name.into());
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        Status {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -9936,6 +10023,103 @@ impl SourceMap {
     pub async fn module(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("module");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Status {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct StatusEndOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub error: Option<ErrorId>,
+}
+impl Status {
+    /// Start and immediately finish the status, so that it just gets displayed to the user.
+    pub async fn display(&self) -> Result<StatusId, DaggerError> {
+        let query = self.selection.select("display");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Mark the status as complete, with an optional error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn end(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("end");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Mark the status as complete, with an optional error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn end_opts(&self, opts: StatusEndOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("end");
+        if let Some(error) = opts.error {
+            query = query.arg("error", error);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Status.
+    pub async fn id(&self) -> Result<StatusId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the internal ID of the status.
+    pub async fn internal_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("internalId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The display name of the status.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Start a new instance of the status.
+    pub async fn start(&self) -> Result<StatusId, DaggerError> {
+        let query = self.selection.select("start");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Set an emoji representing the actor of the status.
+    pub fn with_actor_emoji(&self, actor: impl Into<String>) -> Status {
+        let mut query = self.selection.select("withActorEmoji");
+        query = query.arg("actor", actor.into());
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Hide the status itself, and reveal its children.
+    pub fn with_passthrough(&self) -> Status {
+        let query = self.selection.select("withPassthrough");
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Indicates that the status represents a received message.
+    /// The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
+    pub fn with_received_message(&self) -> Status {
+        let query = self.selection.select("withReceivedMessage");
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Ensure the status is visible without having to expand its parents.
+    pub fn with_reveal(&self) -> Status {
+        let query = self.selection.select("withReveal");
+        Status {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]
