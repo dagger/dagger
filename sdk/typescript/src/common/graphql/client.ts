@@ -61,7 +61,6 @@ export function createGQLClient(port: number, token: string): GraphQLClient {
     fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7),
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
-      Connection: "close",
     },
     // Inject trace parent into the request headers so it can be correctly linked
     requestMiddleware: async (req) => {
