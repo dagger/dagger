@@ -53,6 +53,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type daggerSession struct {
@@ -236,7 +237,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 ) error {
 	slog.ExtraDebug("initializing new session", "session", clientMetadata.SessionID)
 	defer slog.ExtraDebug("initialized new session", "session", clientMetadata.SessionID)
@@ -433,7 +434,7 @@ type ClientInitOpts struct {
 func (srv *Server) initializeDaggerClient(
 	ctx context.Context,
 	client *daggerClient,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit+session attachable state for the client
@@ -499,7 +500,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit job: %w", err)
 	}
 	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", buildkit.Infallible(client.job.CloseProgress))
+	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
 
 	client.job.SessionID = client.buildkitSession.ID()
 	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
@@ -731,7 +732,7 @@ func (srv *Server) getOrInitClient(
 	}
 
 	// cleanup to do if this method fails
-	failureCleanups := &buildkit.Cleanups{}
+	failureCleanups := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, failureCleanups.Run())
