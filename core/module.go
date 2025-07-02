@@ -832,7 +832,6 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		// XXX: apply with defaults correctly!
 		if err := mod.validateTypeDef(ctx, def); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
