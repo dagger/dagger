@@ -54,7 +54,7 @@ export class DaggerOtelConfigurator {
    */
   async close() {
     if (this.sdk) {
-      this.sdk.shutdown()
+      await this.sdk.shutdown()
     }
   }
 
