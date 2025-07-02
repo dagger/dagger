@@ -1106,6 +1106,46 @@ class Test:
         return MockEnum(status)
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `import { object, func } from "@dagger.io/dagger"
+
+/**
+ * Enum for Status
+ */
+export enum Status {
+  /**
+	 * Active status
+	 */
+  Active = "here",
+
+  /**
+   * Inactive status
+   */
+  Inactive = "there",
+}
+
+@object()
+export class Test {
+  @func()
+	status: Status
+
+	constructor(status: Status = Status.Active) {
+	  this.status = status
+	}
+
+  @func()
+	fromStatus(status: Status): string {
+	  return status as string
+	}
+
+  @func()
+	toStatus(status: string): Status {
+	  return status as Status
+	}
+}
+`,
+		},
 	}
 
 	for _, tc := range tcs {
@@ -1234,6 +1274,32 @@ class Test:
         status = await dag.dep().active()
         status = await dag.dep().invert(status)
         return str(status)
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { dag, object, func, DepStatus } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  status: DepStatus
+
+  constructor() {
+    this.status = DepStatus.Here
+  }
+
+  @func()
+  active(): string {
+    return this.status as string
+  }
+
+  @func()
+  async inactive(): Promise<string> {
+    const status = await dag.dep().active()
+    const inverted = await dag.dep().invert(status)
+    return inverted as string
+  }
+}
 `,
 		},
 	}

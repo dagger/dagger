@@ -1230,7 +1230,7 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
-				supportsMembers: false,
+				supportsMembers: true,
 				source: `import { func, object, enumType } from "@dagger.io/dagger"
 
 /**
@@ -1241,12 +1241,12 @@ export class Status {
   /**
    * Active status
    */
-  static readonly Active: string = "ACTIVE"
+  static readonly Active: string = "ACTIVE value"
 
   /**
    * Inactive status
    */
-  static readonly Inactive: string = "INACTIVE"
+  static readonly Inactive: string = "INACTIVE value"
 
   /**
    * Weird status
@@ -1474,7 +1474,7 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
-				supportsMembers: false,
+				supportsMembers: true,
 				source: `import { dag, func, object, DepStatus } from "@dagger.io/dagger"
 
 @object()

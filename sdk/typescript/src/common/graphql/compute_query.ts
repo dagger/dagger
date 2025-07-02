@@ -17,6 +17,7 @@ export type QueryTree = {
 export type Metadata = {
   [key: string]: {
     is_enum?: boolean
+    value_to_name?: (value: any) => string
   }
 }
 
@@ -30,7 +31,10 @@ function buildArgs(args: any): string {
   const formatValue = (key: string, value: string) => {
     // Special treatment for enumeration, they must be inserted without quotes
     if (metadata[key]?.is_enum) {
-      return JSON.stringify(value).replace(/['"]+/g, "")
+      return JSON.stringify(metadata[key].value_to_name?.(value)).replace(
+        /['"]+/g,
+        "",
+      )
     }
 
     return JSON.stringify(value).replace(

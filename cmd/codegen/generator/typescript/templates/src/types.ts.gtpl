@@ -25,6 +25,8 @@ export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.S
 
 	{{- /* Generate enum */ -}}
 	{{- if IsEnum . }}
+		{{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
+		{{- $enumName := .Name }}
 		{{- if .Description }}
 			{{- /* Split comment string into a slice of one line per element. */ -}}
 			{{- $desc := CommentToLines .Description }}
@@ -34,21 +36,74 @@ export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.S
 				{{- end }}
  */
 		{{- end }}
-export enum {{ .Name }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-		{{- $sortedEnumValues := SortEnumFields .EnumValues }}
-		{{- range $sortedEnumValues }}
-			{{- if .Description }}
-				{{- /* Split comment string into a slice of one line per element. */ -}}
-				{{- $desc := CommentToLines .Description }}
+export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+		{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue }}
+			{{- $mainFieldName := "" }}
+			{{- range $idx, $field := slice $fields }}
+				{{- $fieldName := ($field.Name | FormatEnum) }}
+				{{- $fullFieldName := printf "%s.%s" $enumName ($field.Name | FormatEnum) }}
+
+				{{- /* Get the enum value from the directive or the field name. */ -}}
+				{{- $fieldValue := "" }}
+				{{- if eq $idx 0 }}
+					{{- $fieldValue = $field.Directives.EnumValue }}
+					{{- if not $fieldValue }}
+						{{- $fieldValue = $field.Name }}
+					{{- end }}
+					{{- $fieldValue = $fieldValue | printf "%q" }}
+					{{- $mainFieldName = $fullFieldName }}
+				{{- else }}
+					{{- $fieldValue = $mainFieldName }}
+				{{- end }}
+
+			  {{- if .Description }}
+				  {{- /* Split comment string into a slice of one line per element. */ -}}
+				  {{- $desc := CommentToLines .Description }}
 
   /**
-				{{- range $desc }}
+				  {{- range $desc }}
    * {{ . }}
-				{{- end }}
+				  {{- end }}
    */
+
+			  {{- end }}
+  {{ $fieldName }} = {{ $fieldValue }}, {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 			{{- end }}
-  {{ .Name | FormatEnum }} = "{{ .Name }}", {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-		{{- end }}
+	{{- end }}
+}
+
+/**
+ * Utility function to convert a {{ .Name }} value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function {{ .Name | PascalCase }}ValueToName(value: {{ .Name }}): string {
+  switch (value) {
+	{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue -}}
+		{{- $field := index $fields 0 }}
+		{{- $fieldName := ($field.Name | FormatEnum) }}
+    case {{ $enumName }}.{{ $fieldName }}:
+      return "{{ $field.Name }}"
+	{{- end }}
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a {{ $enumName }} name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function {{ $enumName | PascalCase }}NameToValue(name: string): {{ $enumName }} {
+  switch (name) {
+	{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue -}}
+		{{- $field := index $fields 0 }}
+		{{- $fieldName := ($field.Name | FormatEnum) }}
+    case "{{ $field.Name }}":
+      return {{ $enumName }}.{{ $fieldName }}
+	{{- end }}
+    default:
+      return name as {{ $enumName }}
+  }
 }
 	{{- end }}
 
