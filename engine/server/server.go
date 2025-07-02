@@ -170,7 +170,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[digest.Digest, dagql.Typed]
+	baseDagqlCache cache.Cache[digest.Digest, dagql.AnyResult]
 
 	//
 	// session+client state
@@ -214,7 +214,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
+		baseDagqlCache: cache.NewCache[digest.Digest, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
 	}

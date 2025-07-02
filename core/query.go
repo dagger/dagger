@@ -192,7 +192,7 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load source mod: %w", err)
 		}
-		deps = deps.Append(mod.Self)
+		deps = deps.Append(mod.Self())
 	}
 	return deps, nil
 }

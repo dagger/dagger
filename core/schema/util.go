@@ -21,13 +21,13 @@ type Evaluatable interface {
 }
 
 func Syncer[T Evaluatable]() dagql.Field[T] {
-	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[T], _ struct{}) (dagql.ID[T], error) {
-		_, err := self.Self.Evaluate(ctx)
+	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], _ struct{}) (res dagql.Result[dagql.ID[T]], _ error) {
+		_, err := self.Self().Evaluate(ctx)
 		if err != nil {
-			var zero dagql.ID[T]
-			return zero, err
+			return res, err
 		}
-		return dagql.NewID[T](self.ID()), nil
+		id := dagql.NewID[T](self.ID())
+		return dagql.NewInstanceForCurrentID(ctx, id)
 	})
 }
 
@@ -39,8 +39,8 @@ func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
 	return ts
 }
 
-func collectIDInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.Instance[T], error) {
-	ts := make([]dagql.Instance[T], len(ids))
+func collectIDObjectInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.ObjectResult[T], error) {
+	ts := make([]dagql.ObjectResult[T], len(ids))
 	for i, id := range ids {
 		inst, err := id.Load(ctx, srv)
 		if err != nil {

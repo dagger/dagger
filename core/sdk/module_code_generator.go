@@ -17,16 +17,16 @@ type codeGeneratorModule struct {
 func (sdk *codeGeneratorModule) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.Instance[*core.ModuleSource],
+	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	var inst dagql.Instance[*core.GeneratedCode]
+	var inst dagql.Result[*core.GeneratedCode]
 	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
 		Field: "codegen",
 		Args: []dagql.NamedInput{
@@ -43,5 +43,5 @@ func (sdk *codeGeneratorModule) Codegen(
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
 	}
-	return inst.Self, nil
+	return inst.Self(), nil
 }
