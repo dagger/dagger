@@ -1,6 +1,6 @@
 import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
-import fetch from "node-fetch"
+import nodeFetch from "node-fetch"
 import {
   RequestInfo as NodeFetchRequestInfo,
   RequestInit as NodeFetchRequestInit,
@@ -22,7 +22,18 @@ const createFetchWithTimeout =
     }, timeout)
 
     try {
-      return (await fetch(input as NodeFetchRequestInfo, {
+      // Edge case for Deno that doesn't work as expected with node-fetch and would
+      // rather rely on its native fetch implementation
+      // See: https://github.com/dagger/dagger/issues/10546
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (typeof (globalThis as any).Deno !== "undefined") {
+        return await fetch(input as RequestInfo, {
+          ...(init as RequestInit),
+          signal: controller.signal,
+        })
+      }
+
+      return (await nodeFetch(input as NodeFetchRequestInfo, {
         ...(init as NodeFetchRequestInit),
         signal: controller.signal,
       })) as unknown as Response
@@ -50,6 +61,7 @@ export function createGQLClient(port: number, token: string): GraphQLClient {
     fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7),
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
+      Connection: "close",
     },
     // Inject trace parent into the request headers so it can be correctly linked
     requestMiddleware: async (req) => {
