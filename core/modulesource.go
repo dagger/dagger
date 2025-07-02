@@ -113,8 +113,9 @@ type ModuleSource struct {
 	// ConfigDependencies are the dependencies as read from the module's dagger.json
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
+
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+	Dependencies dagql.ObjectInstanceArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -126,7 +127,7 @@ type ModuleSource struct {
 
 	OriginalSubpath string
 
-	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
+	ContextDirectory dagql.ObjectResult[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
@@ -166,15 +167,8 @@ func (src ModuleSource) Clone() *ModuleSource {
 	src.ConfigDependencies = make([]*modules.ModuleConfigDependency, len(origConfigDependencies))
 	copy(src.ConfigDependencies, origConfigDependencies)
 	origDependencies := src.Dependencies
-	src.Dependencies = make([]dagql.Instance[*ModuleSource], len(origDependencies))
-	for i, dep := range origDependencies {
-		src.Dependencies[i] = dep
-		src.Dependencies[i].Self = dep.Self.Clone()
-	}
-
-	if src.ContextDirectory.Self != nil {
-		src.ContextDirectory.Self = src.ContextDirectory.Self.Clone()
-	}
+	src.Dependencies = make([]dagql.ObjectResult[*ModuleSource], len(origDependencies))
+	copy(src.Dependencies, origDependencies)
 
 	if src.Local != nil {
 		src.Local = src.Local.Clone()
@@ -193,18 +187,18 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var pbDefs []*pb.Definition
-	if src.ContextDirectory.Self != nil {
-		defs, err := src.ContextDirectory.Self.PBDefinitions(ctx)
+	if src.ContextDirectory.Self() != nil {
+		defs, err := src.ContextDirectory.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		pbDefs = append(pbDefs, defs...)
 	}
 	for _, dep := range src.Dependencies {
-		if dep.Self == nil {
+		if dep.Self() == nil {
 			continue
 		}
-		defs, err := dep.Self.PBDefinitions(ctx)
+		defs, err := dep.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -275,10 +269,10 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 	inputs = append(inputs, src.IncludePaths...)
 
 	for _, dep := range src.Dependencies {
-		if dep.Self == nil {
+		if dep.Self() == nil {
 			continue
 		}
-		inputs = append(inputs, dep.Self.Digest)
+		inputs = append(inputs, dep.Self().Digest)
 	}
 
 	for _, client := range src.ConfigClients {
@@ -295,7 +289,7 @@ func (src *ModuleSource) LoadContext(
 	dag *dagql.Server,
 	path string,
 	ignore []string,
-) (inst dagql.Instance[*Directory], err error) {
+) (inst dagql.ObjectResult[*Directory], err error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -490,21 +484,18 @@ type GitModuleSource struct {
 	Pin    string
 
 	// The full git repo for the module source without any include filtering
-	UnfilteredContextDir dagql.Instance[*Directory]
+	UnfilteredContextDir dagql.ObjectResult[*Directory]
 }
 
 func (src GitModuleSource) Clone() *GitModuleSource {
-	if src.UnfilteredContextDir.Self != nil {
-		src.UnfilteredContextDir.Self = src.UnfilteredContextDir.Self.Clone()
-	}
 	return &src
 }
 
 func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	if src.UnfilteredContextDir.Self == nil {
+	if src.UnfilteredContextDir.Self() == nil {
 		return nil, nil
 	}
-	return src.UnfilteredContextDir.Self.PBDefinitions(ctx)
+	return src.UnfilteredContextDir.Self().PBDefinitions(ctx)
 }
 
 type SchemeType int
@@ -544,7 +535,7 @@ func ResolveDepToSource(
 	depSrcRef string,
 	depPin string,
 	depName string,
-) (inst dagql.Instance[*ModuleSource], err error) {
+) (inst dagql.ObjectResult[*ModuleSource], err error) {
 	// sanity checks
 	if parentSrc != nil {
 		if parentSrc.SourceRootSubpath == "" {
@@ -768,13 +759,13 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltype
 	case ModuleSourceKindGit:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CoreDirStatFS{
-			dir: fs.src.Git.UnfilteredContextDir.Self,
+			dir: fs.src.Git.UnfilteredContextDir.Self(),
 			bk:  fs.bk,
 		}.Stat(ctx, path)
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CoreDirStatFS{
-			dir: fs.src.ContextDirectory.Self,
+			dir: fs.src.ContextDirectory.Self(),
 			bk:  fs.bk,
 		}.Stat(ctx, path)
 	default:

@@ -10,7 +10,7 @@ import (
 )
 
 type CacheKeyType = digest.Digest
-type CacheValueType = Typed
+type CacheValueType = AnyResult
 
 type CacheResult = cache.Result[CacheKeyType, CacheValueType]
 
@@ -41,7 +41,7 @@ type CacheCallOpts struct {
 	Telemetry TelemetryFunc
 }
 
-type TelemetryFunc func(context.Context) (context.Context, func(Typed, bool, error))
+type TelemetryFunc func(context.Context) (context.Context, func(AnyResult, bool, error))
 
 func (o CacheCallOpts) SetCacheCallOpt(opts *CacheCallOpts) {
 	*opts = o
@@ -130,7 +130,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 
 		telemetryCtx, done := o.Telemetry(ctx)
 		defer func() {
-			var val Typed
+			var val AnyResult
 			var cached bool
 			if res != nil {
 				val = res.Result()

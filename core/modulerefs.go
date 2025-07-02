@@ -245,7 +245,7 @@ func (p *ParsedGitRefString) GetGitRefAndModVersion(
 	ctx context.Context,
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
-) (inst dagql.Instance[*GitRef], _ string, rerr error) {
+) (inst dagql.ObjectResult[*GitRef], _ string, rerr error) {
 	commitRef := pinCommitRef
 	var modVersion string
 	if p.hasVersion {
@@ -298,7 +298,7 @@ func (p *ParsedGitRefString) GetGitRefAndModVersion(
 		}
 	}
 
-	var gitRef dagql.Instance[*GitRef]
+	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",

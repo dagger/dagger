@@ -17,13 +17,13 @@ type runtimeModule struct {
 func (sdk *runtimeModule) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.Instance[*core.ModuleSource],
-) (inst dagql.Instance[*core.Container], rerr error) {
+	source dagql.ObjectResult[*core.ModuleSource],
+) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self.Name(), err)
+		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst,

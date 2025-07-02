@@ -1194,7 +1194,7 @@ func (DirectorySuite) TestDirectMerge(ctx context.Context, t *testctx.T) {
 	for fileName, inode := range fileNameToInode {
 		out, err := ctr.WithExec([]string{"stat", "-c", "%i", fileName}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, inode, strings.TrimSpace(out))
+		require.Equal(t, inode, strings.TrimSpace(out), "file %s should have inode %s", fileName, inode)
 	}
 }
 

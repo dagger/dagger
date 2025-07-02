@@ -8,6 +8,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 // Derefable is a type that wraps another type.
@@ -16,6 +17,12 @@ import (
 // sparingly, since wrapping interfaces explodes very quickly.
 type Derefable interface {
 	Deref() (Typed, bool)
+}
+
+// DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
+type DerefableResult interface {
+	Derefable
+	DerefToResult(constructor *call.ID, postCall cache.PostCallFunc) (AnyResult, bool)
 }
 
 // Optional wraps a type and allows it to be null.
@@ -234,10 +241,24 @@ func (n Nullable[T]) Type() *ast.Type {
 	return &nullable
 }
 
-var _ Derefable = Nullable[Typed]{}
+var _ DerefableResult = Nullable[Typed]{}
 
 func (n Nullable[T]) Deref() (Typed, bool) {
 	return n.Value, n.Valid
+}
+
+func (n Nullable[T]) DerefToResult(
+	constructor *call.ID,
+	postCall cache.PostCallFunc,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	return Result[T]{
+		constructor: constructor,
+		self:        n.Value,
+		postCall:    postCall,
+	}, true
 }
 
 func (n Nullable[T]) MarshalJSON() ([]byte, error) {
@@ -268,10 +289,24 @@ func (n DynamicNullable) Type() *ast.Type {
 	return &cp
 }
 
-var _ Derefable = DynamicNullable{}
+var _ DerefableResult = DynamicNullable{}
 
 func (n DynamicNullable) Deref() (Typed, bool) {
 	return n.Value, n.Valid
+}
+
+func (n DynamicNullable) DerefToResult(
+	constructor *call.ID,
+	postCall cache.PostCallFunc,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	return Result[Typed]{
+		constructor: constructor,
+		self:        n.Value,
+		postCall:    postCall,
+	}, true
 }
 
 func (n DynamicNullable) MarshalJSON() ([]byte, error) {
