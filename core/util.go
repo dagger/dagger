@@ -7,9 +7,11 @@ import (
 	"io/fs"
 	"maps"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
@@ -353,3 +355,12 @@ func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
 var (
 	enumView = AfterVersion("v0.18.11")
 )
+
+func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
+	linkDir, linkBasename := filepath.Split(containerPath)
+	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(resolvedLinkDir, linkBasename), nil
+}

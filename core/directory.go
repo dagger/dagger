@@ -916,7 +916,7 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 				matches = []string{p}
 			}
 			for _, m := range matches {
-				fullPath, err := containerdfs.RootPath(root, m)
+				fullPath, err := RootPathWithoutFinalSymlink(root, m)
 				if err != nil {
 					return err
 				}
