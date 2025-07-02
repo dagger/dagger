@@ -1,4 +1,4 @@
-package buildkit
+package cleanups
 
 import (
 	"errors"
