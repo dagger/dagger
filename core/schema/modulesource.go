@@ -479,7 +479,7 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	localSrc.Digest = localSrc.CalcDigest().String()
 
-	return dagql.NewInstanceForCurrentID(ctx, localSrc)
+	return dagql.NewResultForCurrentID(ctx, localSrc)
 }
 
 func (s *moduleSourceSchema) gitModuleSource(
@@ -639,7 +639,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
-	inst, err = dagql.NewInstanceForCurrentID(ctx, gitSrc)
+	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -762,7 +762,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, err
 	}
 
-	inst, err = dagql.NewInstanceForCurrentID(ctx, dirSrc)
+	inst, err = dagql.NewResultForCurrentID(ctx, dirSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -2024,7 +2024,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
-	tmpModInst, err := dagql.NewInstanceForID(mod, dagql.CurrentID(ctx).WithDigest(
+	tmpModInst, err := dagql.NewResultForID(mod, dagql.CurrentID(ctx).WithDigest(
 		dagql.HashFrom(
 			srcInstContentHashed.ID().Digest().String(),
 			"modInit",
@@ -2199,7 +2199,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	inst, err = dagql.NewInstanceForCurrentID(ctx, mod)
+	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}

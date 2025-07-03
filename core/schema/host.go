@@ -294,7 +294,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewObjectInstanceForCurrentID(ctx, s.srv,
+	dir, err := dagql.NewObjectResultForCurrentID(ctx, s.srv,
 		core.NewDirectory(localPB, "/", query.Platform(), nil),
 	)
 	if err != nil {
@@ -347,7 +347,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	dgst := dagql.HashFrom(accessor)
 
 	sock := &core.Socket{IDDigest: dgst}
-	inst, err = dagql.NewInstanceForCurrentID(ctx, sock)
+	inst, err = dagql.NewResultForCurrentID(ctx, sock)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}

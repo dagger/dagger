@@ -69,7 +69,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view View) (AnyResult, error) {
 					id := NewDynamicID[T](self.ID(), opts.Typed)
-					return NewInstanceForCurrentID(ctx, id)
+					return NewResultForCurrentID(ctx, id)
 				},
 			},
 		)
@@ -863,7 +863,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)
 			}
 
-			return NewInstanceForCurrentID(ctx, res)
+			return NewResultForCurrentID(ctx, res)
 		},
 	}
 
@@ -1530,7 +1530,7 @@ func getField(
 				return nil, true, nil
 			}
 
-			retVal, err := NewInstanceForCurrentID(ctx, t)
+			retVal, err := NewResultForCurrentID(ctx, t)
 			if err != nil {
 				return nil, false, fmt.Errorf("get field %q: %w", name, err)
 			}

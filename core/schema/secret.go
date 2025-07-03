@@ -84,7 +84,7 @@ func (s *secretSchema) secret(
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
-	i, err = dagql.NewObjectInstanceForCurrentID(ctx, s.srv, secret)
+	i, err = dagql.NewObjectResultForCurrentID(ctx, s.srv, secret)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -181,7 +181,7 @@ func (s *secretSchema) setSecret(
 		Name:      args.Name,
 		Plaintext: []byte(args.Plaintext),
 	}
-	secret, err := dagql.NewObjectInstanceForID(secretVal, s.srv, callID)
+	secret, err := dagql.NewObjectResultForID(secretVal, s.srv, callID)
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
@@ -206,7 +206,7 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core
 		return res, fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, dagql.NewString(name))
+	return dagql.NewResultForCurrentID(ctx, dagql.NewString(name))
 }
 
 func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (res dagql.Result[dagql.String], _ error) {
@@ -223,7 +223,7 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.
 		return res, fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, dagql.NewString(name))
+	return dagql.NewResultForCurrentID(ctx, dagql.NewString(name))
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (res dagql.Result[dagql.String], _ error) {
@@ -240,5 +240,5 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 		return res, err
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, dagql.NewString(string(plaintext)))
+	return dagql.NewResultForCurrentID(ctx, dagql.NewString(string(plaintext)))
 }

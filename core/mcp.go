@@ -723,7 +723,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 				}
 				if output.ExpectedType == "String" {
 					var err error
-					output.Value, err = dagql.NewInstanceForCurrentID(ctx, dagql.String(argStr))
+					output.Value, err = dagql.NewResultForCurrentID(ctx, dagql.String(argStr))
 					if err != nil {
 						return nil, fmt.Errorf("failed to create String instance for %s: %w", name, err)
 					}

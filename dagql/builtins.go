@@ -134,31 +134,31 @@ func (d DynamicArrayOutput) SetField(val reflect.Value) error {
 	return nil
 }
 
-type DynamicInstanceArrayOutput struct {
+type DynamicResultArrayOutput struct {
 	Elem   Typed
 	Values []AnyResult
 }
 
-var _ Typed = DynamicInstanceArrayOutput{}
+var _ Typed = DynamicResultArrayOutput{}
 
-func (d DynamicInstanceArrayOutput) Type() *ast.Type {
+func (d DynamicResultArrayOutput) Type() *ast.Type {
 	return &ast.Type{
 		Elem:    d.Elem.Type(),
 		NonNull: true,
 	}
 }
 
-var _ Enumerable = DynamicInstanceArrayOutput{}
+var _ Enumerable = DynamicResultArrayOutput{}
 
-func (d DynamicInstanceArrayOutput) Element() Typed {
+func (d DynamicResultArrayOutput) Element() Typed {
 	return d.Elem
 }
 
-func (d DynamicInstanceArrayOutput) Len() int {
+func (d DynamicResultArrayOutput) Len() int {
 	return len(d.Values)
 }
 
-func (d DynamicInstanceArrayOutput) Nth(i int) (Typed, error) {
+func (d DynamicResultArrayOutput) Nth(i int) (Typed, error) {
 	val, err := d.NthValue(i, nil)
 	if err != nil {
 		return nil, err
@@ -166,18 +166,18 @@ func (d DynamicInstanceArrayOutput) Nth(i int) (Typed, error) {
 	return val.Unwrap(), nil
 }
 
-func (d DynamicInstanceArrayOutput) NthValue(i int, _ *call.ID) (AnyResult, error) {
+func (d DynamicResultArrayOutput) NthValue(i int, _ *call.ID) (AnyResult, error) {
 	if i < 1 || i > len(d.Values) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
 }
 
-func (d DynamicInstanceArrayOutput) MarshalJSON() ([]byte, error) {
+func (d DynamicResultArrayOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Values)
 }
 
-func (d DynamicInstanceArrayOutput) SetField(val reflect.Value) error {
+func (d DynamicResultArrayOutput) SetField(val reflect.Value) error {
 	if val.Kind() != reflect.Slice {
 		return fmt.Errorf("expected slice, got %v", val.Kind())
 	}

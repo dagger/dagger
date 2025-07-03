@@ -2370,7 +2370,7 @@ func TestCustomDigest(t *testing.T) {
 	dagql.Fields[*CoolInt]{}.Install(srv)
 	dagql.Fields[Query]{
 		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
-			inst, err = dagql.NewInstanceForCurrentID(ctx, &CoolInt{Val: args.Val})
+			inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
 			if err != nil {
 				return inst, err
 			}
@@ -2380,7 +2380,7 @@ func TestCustomDigest(t *testing.T) {
 		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
 		dagql.NodeFuncWithCacheKey("modInt",
 			func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
-				inst, err = dagql.NewInstanceForCurrentID(ctx, &CoolInt{Val: args.Val})
+				inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
 				if err != nil {
 					return inst, err
 				}
@@ -2515,7 +2515,7 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("basic selection", func(t *testing.T) {
 		// Create a test object and wrap it as a dagql.Object
-		testObj, err := dagql.NewInstanceForID(&TestObject{Value: 42, Text: "hello"}, call.New().Append(
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"}, call.New().Append(
 			(TestObject{}).Type(), "fake", "", nil, 0, "",
 		))
 		require.NoError(t, err)
@@ -2544,7 +2544,7 @@ func TestServerSelect(t *testing.T) {
 	t.Run("chained selection", func(t *testing.T) {
 		// Create nested objects
 		innerObj := &TestObject{Value: 100, Text: "nested value"}
-		nestedObj, err := dagql.NewInstanceForID(&NestedObject{
+		nestedObj, err := dagql.NewResultForID(&NestedObject{
 			Name:  "nested",
 			Inner: innerObj,
 		}, call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""))
@@ -2569,7 +2569,7 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("null result", func(t *testing.T) {
 		// Create an object with a null field
-		testObj, err := dagql.NewInstanceForID(&TestObject{Value: 42, Text: "hello", NullableField: nil},
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello", NullableField: nil},
 			call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""),
 		)
 		require.NoError(t, err)
@@ -2672,7 +2672,7 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("error cases", func(t *testing.T) {
 		// Create a test object
-		testObj, err := dagql.NewInstanceForID(&TestObject{Value: 42, Text: "hello"},
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"},
 			call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""),
 		)
 		require.NoError(t, err)
@@ -2765,7 +2765,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Type: dagql.Int(0),
 			},
 			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
-				return dagql.NewInstanceForCurrentID(ctx, dagql.Int(self.Self().Value))
+				return dagql.NewResultForCurrentID(ctx, dagql.Int(self.Self().Value))
 			},
 		},
 		dagql.Field[*TestObject]{
@@ -2774,7 +2774,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Type: dagql.String(""),
 			},
 			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
-				return dagql.NewInstanceForCurrentID(ctx, dagql.String(self.Self().Text))
+				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Text))
 			},
 		},
 		dagql.Field[*TestObject]{
@@ -2784,9 +2784,9 @@ func InstallTestTypes(srv *dagql.Server) {
 			},
 			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
 				if self.Self().NullableField == nil {
-					return dagql.NewInstanceForCurrentID(ctx, dagql.Null[dagql.String]())
+					return dagql.NewResultForCurrentID(ctx, dagql.Null[dagql.String]())
 				}
-				return dagql.NewInstanceForCurrentID(ctx, dagql.String(*self.Self().NullableField))
+				return dagql.NewResultForCurrentID(ctx, dagql.String(*self.Self().NullableField))
 			},
 		},
 	)
@@ -2804,7 +2804,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Type: dagql.String(""),
 			},
 			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
-				return dagql.NewInstanceForCurrentID(ctx, dagql.String(self.Self().Name))
+				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Name))
 			},
 		},
 		dagql.Field[*NestedObject]{
@@ -2813,7 +2813,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Type: &TestObject{},
 			},
 			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
-				return dagql.NewInstanceForCurrentID(ctx, self.Self().Inner)
+				return dagql.NewResultForCurrentID(ctx, self.Self().Inner)
 			},
 		},
 	)
@@ -2845,7 +2845,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 			Type: dagql.String(""),
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return dagql.NewInstanceForCurrentID(ctx, dagql.String("hello world!"))
+			return dagql.NewResultForCurrentID(ctx, dagql.String("hello world!"))
 		},
 		dagql.CacheSpec{},
 	)
@@ -2859,7 +2859,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 			Type: classOther.Typed(),
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return dagql.NewInstanceForCurrentID(ctx, &points.Point{X: 100, Y: 200})
+			return dagql.NewResultForCurrentID(ctx, &points.Point{X: 100, Y: 200})
 		},
 		dagql.CacheSpec{},
 	)

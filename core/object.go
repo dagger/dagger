@@ -45,7 +45,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 
 	switch value := value.(type) {
 	case map[string]any:
-		return dagql.NewInstanceForCurrentID(ctx, &ModuleObject{
+		return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
@@ -343,7 +343,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-				return dagql.NewInstanceForCurrentID(ctx, &ModuleObject{
+				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 					Module:  mod,
 					TypeDef: objDef,
 					Fields:  map[string]any{},

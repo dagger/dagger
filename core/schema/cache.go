@@ -57,7 +57,7 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult
 	var inst dagql.Result[*core.CacheVolume]
 
 	if args.Namespace != "" {
-		return dagql.NewInstanceForCurrentID(ctx, core.NewCache(args.Namespace+":"+args.Key))
+		return dagql.NewResultForCurrentID(ctx, core.NewCache(args.Namespace+":"+args.Key))
 	}
 
 	m, err := parent.Self().CurrentModule(ctx)

@@ -538,7 +538,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return res, fmt.Errorf("failed to build container: %w", err)
 	}
-	return dagql.NewInstanceForCurrentID(ctx, built)
+	return dagql.NewResultForCurrentID(ctx, built)
 }
 
 type directoryTerminalArgs struct {
@@ -597,7 +597,7 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, dir)
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 }
 
 func (s *directorySchema) withSymlinkPath(ctx context.Context, dir *core.Directory, _ directoryWithSymlinkArgs) (string, error) {

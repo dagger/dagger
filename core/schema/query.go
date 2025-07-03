@@ -146,7 +146,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	fileInst, err := dagql.NewInstanceForCurrentID(ctx, f)
+	fileInst, err := dagql.NewResultForCurrentID(ctx, f)
 	if err != nil {
 		return inst, err
 	}

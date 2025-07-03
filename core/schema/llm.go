@@ -76,7 +76,7 @@ func (s llmSchema) Install() {
 				return res, err
 			}
 			id := dagql.NewID[*core.LLM](inst.ID())
-			return dagql.NewInstanceForCurrentID(ctx, id)
+			return dagql.NewResultForCurrentID(ctx, id)
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).

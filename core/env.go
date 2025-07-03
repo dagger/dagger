@@ -441,7 +441,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 				return nil, err
 			}
 
-			return dagql.NewInstanceForCurrentID(ctx, env.WithInput(name, obj, description))
+			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
 		},
 		dagql.CacheSpec{},
 	)
@@ -469,7 +469,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			name := args["name"].(dagql.String).String()
 			desc := args["description"].(dagql.String).String()
 
-			return dagql.NewInstanceForCurrentID(ctx, env.WithOutput(name, targetType, desc))
+			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
 		},
 		dagql.CacheSpec{},
 	)

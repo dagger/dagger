@@ -134,7 +134,7 @@ func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.AnyR
 			return fmt.Errorf("unexpected source mod type %T", innerVal.UnderlyingType.SourceMod())
 		}
 
-		obj, err := dagql.NewInstanceForID(&ModuleObject{
+		obj, err := dagql.NewResultForID(&ModuleObject{
 			Module:  mod,
 			TypeDef: innerVal.UnderlyingType.TypeDef().AsObject.Value,
 			Fields:  innerVal.Fields,
@@ -403,14 +403,14 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 	case *InterfaceType, *ModuleObjectType:
 		switch res := res.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
-			return dagql.NewObjectInstanceForID(&InterfaceAnnotatedValue{
+			return dagql.NewObjectResultForID(&InterfaceAnnotatedValue{
 				TypeDef:        ifaceType.typeDef,
 				IfaceType:      ifaceType,
 				Fields:         res.Self().Fields,
 				UnderlyingType: underlyingType,
 			}, srv, curID)
 		case dagql.Result[*ModuleObject]:
-			return dagql.NewObjectInstanceForID(&InterfaceAnnotatedValue{
+			return dagql.NewObjectResultForID(&InterfaceAnnotatedValue{
 				TypeDef:        ifaceType.typeDef,
 				IfaceType:      ifaceType,
 				Fields:         res.Self().Fields,
@@ -437,7 +437,7 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 			return res, nil
 		}
 
-		ret := dagql.DynamicInstanceArrayOutput{}
+		ret := dagql.DynamicResultArrayOutput{}
 		for i := 1; i <= enum.Len(); i++ {
 			item, err := res.NthValue(i)
 			if err != nil {
@@ -453,7 +453,7 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 			}
 			ret.Values = append(ret.Values, val)
 		}
-		return dagql.NewInstanceForID(&ret, curID)
+		return dagql.NewResultForID(&ret, curID)
 
 	default:
 		return res, nil

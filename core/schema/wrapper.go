@@ -63,7 +63,7 @@ func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectInstanceForCurrentID(ctx, srv, file)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 	}
 }
 
@@ -120,7 +120,7 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectInstanceForCurrentID(ctx, srv, dir)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 }
 
@@ -192,7 +192,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectInstanceForCurrentID(ctx, srv, ctr)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}
 }
 

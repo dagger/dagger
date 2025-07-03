@@ -392,7 +392,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		discardGitDir = !args.KeepGitDir.Value.Bool()
 	}
 
-	inst, err = dagql.NewInstanceForCurrentID(ctx, &core.GitRepository{
+	inst, err = dagql.NewResultForCurrentID(ctx, &core.GitRepository{
 		Backend: &core.RemoteGitRepository{
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,
@@ -456,7 +456,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewInstanceForCurrentID(ctx, result)
+	inst, err = dagql.NewResultForCurrentID(ctx, result)
 	if err != nil {
 		return inst, err
 	}
@@ -613,14 +613,14 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, dir)
+		return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 	}
 
 	dir, err := DagOpDirectory(ctx, s.srv, parent.Self(), args, "", s.tree)
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewObjectInstanceForCurrentID(ctx, s.srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 	if err != nil {
 		return inst, err
 	}

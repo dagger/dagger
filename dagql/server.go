@@ -784,17 +784,17 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
-// NewInstanceForCurrentID creates a new Instance that's set to the current ID from
+// NewResultForCurrentID creates a new Instance that's set to the current ID from
 // the given self value.
-func NewInstanceForCurrentID[T Typed](
+func NewResultForCurrentID[T Typed](
 	ctx context.Context,
 	self T,
 ) (Result[T], error) {
-	return NewInstanceForID(self, CurrentID(ctx))
+	return NewResultForID(self, CurrentID(ctx))
 }
 
-// NewInstanceForID creates a new Instance with the given ID and self value.
-func NewInstanceForID[T Typed](
+// NewResultForID creates a new Instance with the given ID and self value.
+func NewResultForID[T Typed](
 	self T,
 	id *call.ID,
 ) (res Result[T], _ error) {
@@ -808,15 +808,15 @@ func NewInstanceForID[T Typed](
 	}, nil
 }
 
-func NewObjectInstanceForCurrentID[T Typed](
+func NewObjectResultForCurrentID[T Typed](
 	ctx context.Context,
 	srv *Server,
 	self T,
 ) (ObjectResult[T], error) {
-	return NewObjectInstanceForID(self, srv, CurrentID(ctx))
+	return NewObjectResultForID(self, srv, CurrentID(ctx))
 }
 
-func NewObjectInstanceForID[T Typed](
+func NewObjectResultForID[T Typed](
 	self T,
 	srv *Server,
 	id *call.ID,
@@ -830,7 +830,7 @@ func NewObjectInstanceForID[T Typed](
 		return res, fmt.Errorf("not a Class: %T", objType)
 	}
 
-	inst, err := NewInstanceForID(self, id)
+	inst, err := NewResultForID(self, id)
 	if err != nil {
 		return res, err
 	}
@@ -979,7 +979,7 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		className := obj.Type().Name()
 		class, ok = s.ObjectType(className)
 		if ok {
-			val, err = NewInstanceForID(obj, val.ID())
+			val, err = NewResultForID(obj, val.ID())
 			if err != nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
 			}

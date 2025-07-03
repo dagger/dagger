@@ -155,7 +155,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, svc)
+		return dagql.NewObjectResultForCurrentID(ctx, s.srv, svc)
 	}
 
 	// load the withExec parent
@@ -194,7 +194,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, svc)
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, svc)
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
@@ -289,7 +289,7 @@ func (s *serviceSchema) hostname(ctx context.Context, parent dagql.ObjectResult[
 		return res, err
 	}
 	str := dagql.NewString(hn)
-	return dagql.NewInstanceForCurrentID(ctx, str)
+	return dagql.NewResultForCurrentID(ctx, str)
 }
 
 func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, args struct {
@@ -303,7 +303,7 @@ func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectResult[*co
 	if err != nil {
 		return res, fmt.Errorf("failed to get service ports: %w", err)
 	}
-	return dagql.NewInstanceForCurrentID(ctx, dagql.Array[core.Port](ports))
+	return dagql.NewResultForCurrentID(ctx, dagql.Array[core.Port](ports))
 }
 
 type serviceEndpointArgs struct {
@@ -316,7 +316,7 @@ func (s *serviceSchema) endpoint(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return res, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, dagql.NewString(str))
+	return dagql.NewResultForCurrentID(ctx, dagql.NewString(str))
 }
 
 func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[core.ServiceID], _ error) {
@@ -332,7 +332,7 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 	}
 
 	id := dagql.NewID[*core.Service](parent.ID())
-	return dagql.NewInstanceForCurrentID(ctx, id)
+	return dagql.NewResultForCurrentID(ctx, id)
 }
 
 type serviceStopArgs struct {
@@ -344,7 +344,7 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 		return res, err
 	}
 	id := dagql.NewID[*core.Service](parent.ID())
-	return dagql.NewInstanceForCurrentID(ctx, id)
+	return dagql.NewResultForCurrentID(ctx, id)
 }
 
 type UpArgs struct {
@@ -405,5 +405,5 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	// wait for the request to be canceled
 	<-ctx.Done()
 
-	return dagql.NewInstanceForCurrentID(ctx, void)
+	return dagql.NewResultForCurrentID(ctx, void)
 }

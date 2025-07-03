@@ -352,7 +352,7 @@ func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err != nil {
 		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: failed to decode input: %w", err)
 	}
-	return dagql.NewInstanceForCurrentID(ctx, input)
+	return dagql.NewResultForCurrentID(ctx, input)
 }
 
 func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -479,7 +479,7 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 	if err != nil {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: failed to decode input: %w", err)
 	}
-	return dagql.NewInstanceForCurrentID(ctx, input)
+	return dagql.NewResultForCurrentID(ctx, input)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

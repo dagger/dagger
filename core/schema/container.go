@@ -768,7 +768,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		return dagql.NewInstanceForCurrentID(ctx, ctr)
+		return dagql.NewResultForCurrentID(ctx, ctr)
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -917,7 +917,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		}
 
 		ctr.ImageRef = ""
-		return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, ctr)
+		return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
 	}
 
 	if args.SkipEntrypoint != nil {
@@ -945,7 +945,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, ctr)
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
 }
 
 func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
@@ -1043,7 +1043,7 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, ctr)
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
 }
 
 type containerGpuArgs struct {
@@ -2028,7 +2028,7 @@ func (s *containerSchema) asTarball(
 	}
 	bkref = nil
 	f.Result = snap
-	fileInst, err := dagql.NewObjectInstanceForCurrentID(ctx, s.srv, f)
+	fileInst, err := dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	if err != nil {
 		return inst, err
 	}
@@ -2287,7 +2287,7 @@ func (s *containerSchema) terminalLegacy(
 		return res, err
 	}
 
-	return dagql.NewInstanceForCurrentID[*core.TerminalLegacy](ctx, nil)
+	return dagql.NewResultForCurrentID[*core.TerminalLegacy](ctx, nil)
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {

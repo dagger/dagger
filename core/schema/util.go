@@ -27,7 +27,7 @@ func Syncer[T Evaluatable]() dagql.Field[T] {
 			return res, err
 		}
 		id := dagql.NewID[T](self.ID())
-		return dagql.NewInstanceForCurrentID(ctx, id)
+		return dagql.NewResultForCurrentID(ctx, id)
 	})
 }
 

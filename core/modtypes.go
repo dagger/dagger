@@ -44,14 +44,14 @@ func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (da
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
 	input := t.Def.ToInput()
 	if value == nil {
-		return dagql.NewInstanceForCurrentID(ctx, input)
+		return dagql.NewResultForCurrentID(ctx, input)
 	}
 
 	retVal, err := input.Decoder().DecodeInput(value)
 	if err != nil {
 		return nil, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, retVal)
+	return dagql.NewResultForCurrentID(ctx, retVal)
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -78,13 +78,13 @@ type ListType struct {
 var _ ModType = &ListType{}
 
 func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
-	arr := dagql.DynamicInstanceArrayOutput{
+	arr := dagql.DynamicResultArrayOutput{
 		Elem: t.Elem.ToTyped(),
 	}
 	if value == nil {
 		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
 		// return an empty array, _not_ nil
-		return dagql.NewInstanceForCurrentID(ctx, arr)
+		return dagql.NewResultForCurrentID(ctx, arr)
 	}
 	list, ok := value.([]any)
 	if !ok {
@@ -104,7 +104,7 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 		}
 		arr.Values = append(arr.Values, t)
 	}
-	return dagql.NewInstanceForCurrentID(ctx, arr)
+	return dagql.NewResultForCurrentID(ctx, arr)
 }
 
 func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -185,7 +185,7 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		nullable.Value = val.Unwrap()
 		nullable.Valid = true
 	}
-	return dagql.NewInstanceForCurrentID(ctx, nullable)
+	return dagql.NewResultForCurrentID(ctx, nullable)
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

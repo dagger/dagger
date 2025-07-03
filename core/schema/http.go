@@ -68,7 +68,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 
 		f := core.NewFile(nil, args.DagOpPath, parent.Self().Platform(), nil)
 		f.Result = snap
-		return dagql.NewObjectInstanceForCurrentID(ctx, s.srv, f)
+		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	}
 
 	filename, err := s.httpPath(ctx, parent.Self(), args)
@@ -155,5 +155,5 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, err
 	}
 
-	return dagql.NewObjectInstanceForID(file, s.srv, newID)
+	return dagql.NewObjectResultForID(file, s.srv, newID)
 }
