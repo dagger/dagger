@@ -4632,6 +4632,38 @@
                         <td data-property-name=""><a class="property-name" id="Container-labels" href="#Container-labels"><code>labels</code></a> - <span class="property-type"><a href="#definition-Label"><code>[Label!]!</code></a></span> </td>
                         <td> Retrieves the list of labels passed to container. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-load" href="#Container-load"><code>load</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void!</code></a></span> </td>
+                        <td> Exports the container to the host's container store </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of image to export to in the host&#39;s store</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>platformVariants</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>[ContainerID!]</code></a></span></h6>
+                                <p>Identifiers for other platform specific containers.</p>
+                                <p>Used for multi-platform image.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
+                                <p>Force each layer of the exported image to use the specified compression algorithm.</p>
+                                <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <p>Use the specified media types for the exported image&#39;s layers.</p>
+                                <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-mounts" href="#Container-mounts"><code>mounts</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> Retrieves the list of paths where a directory is mounted. </td>

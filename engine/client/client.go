@@ -49,12 +49,14 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -100,6 +102,8 @@ type Params struct {
 
 	Stdin  io.Reader
 	Stdout io.Writer
+
+	ImageLoader *imageload.Loader
 }
 
 type Client struct {
@@ -286,6 +290,16 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
+	if c.ImageLoader == nil {
+		loaderBackend := driver.ImageLoader()
+		if loaderBackend != nil {
+			c.ImageLoader, err = loaderBackend.Loader(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -381,6 +395,14 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	}
 	if c.Params.PromptHandler != nil {
 		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
+	}
+
+	if loader := c.Params.ImageLoader; loader != nil {
+		attachable, err := store.NewImageLoaderAttachable(loader)
+		if err != nil {
+			return err
+		}
+		attachables = append(attachables, attachable)
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")
@@ -490,16 +512,18 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	}
 
 	return &BuildkitSessionServer{
-		Server:     srv,
-		MethodURLs: methodURLs,
-		Conn:       conn,
+		Server:      srv,
+		Attachables: attachables,
+		MethodURLs:  methodURLs,
+		Conn:        conn,
 	}
 }
 
 type BuildkitSessionServer struct {
 	*grpc.Server
-	MethodURLs []string
-	Conn       net.Conn
+	MethodURLs  []string
+	Conn        net.Conn
+	Attachables []bksession.Attachable
 }
 
 func (srv *BuildkitSessionServer) Run(ctx context.Context) {
@@ -565,6 +589,15 @@ func (c *Client) Close() (rerr error) {
 			c.sessionSrv.Stop()
 			return nil
 		})
+		for _, attachable := range c.sessionSrv.Attachables {
+			closeable, ok := attachable.(io.Closer)
+			if !ok {
+				continue
+			}
+			c.eg.Go(func() error {
+				return closeable.Close()
+			})
+		}
 	}
 	if c.bkClient != nil {
 		c.eg.Go(c.bkClient.Close)

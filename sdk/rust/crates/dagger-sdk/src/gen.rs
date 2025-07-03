@@ -1921,6 +1921,21 @@ pub struct ContainerImportOpts<'a> {
     pub tag: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerLoadOpts {
+    /// Force each layer of the exported image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the exported image's layers.
+    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+    /// Identifiers for other platform specific containers.
+    /// Used for multi-platform image.
+    #[builder(setter(into, strip_option), default)]
+    pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
     /// Force each layer of the published image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
@@ -2663,6 +2678,41 @@ impl Container {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// Exports the container to the host's container store
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn load(&self, name: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("load");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exports the container to the host's container store
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn load_opts(
+        &self,
+        name: impl Into<String>,
+        opts: ContainerLoadOpts,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("load");
+        query = query.arg("name", name.into());
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
+        }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {

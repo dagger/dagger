@@ -306,6 +306,29 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Exports the container to the host's container store
+     */
+    public function load(
+        string $name,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('load');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'load');
+    }
+
+    /**
      * Retrieves the list of paths where a directory is mounted.
      */
     public function mounts(): array

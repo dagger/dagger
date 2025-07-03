@@ -5207,3 +5207,164 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	require.NotEqual(t, out1, out3) // make sure the call to read from /dev/random was re-run
 	require.Len(t, out3, 132)
 }
+
+func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
+	require.NoError(t, err)
+
+	dockerc = dockerc.
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"})
+
+	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
+		imageName := "foobar:docker-image"
+		_, err = dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | load "` + imageName + `"`}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = dockerc.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
+		require.NoError(t, err)
+
+		out, err := dockerc.WithExec([]string{"docker", "run", imageName, "ls", "/foo"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/foo\n", out)
+	})
+
+	t.Run("docker-container driver", func(ctx context.Context, t *testctx.T) {
+		alt := dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
+
+		imageName := "foobar:docker-container"
+		_, err = alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | load "` + imageName + `"`}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
+		require.NoError(t, err)
+
+		out, err := alt.WithExec([]string{"docker", "run", imageName, "ls", "/foo"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/foo\n", out)
+	})
+
+	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
+		alt := dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
+
+		imageName := "foobar:tcp"
+		_, err = alt.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
+			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | load "` + imageName + `"`}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
+		require.NoError(t, err)
+
+		out, err := alt.WithExec([]string{"docker", "run", imageName, "ls", "/foo"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/foo\n", out)
+	})
+}
+
+func (ContainerSuite) TestLoadContainerd(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	nerdctl := nerdctlSetup(ctx, t, "provisioner", c, "v2.1.2")
+	nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
+	require.NoError(t, err)
+
+	nerdctl = nerdctl.
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		// NOTE: piggy-back on the docker provisioning until we get a proper containerd driver
+		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
+		WithoutFile("/usr/local/bin/docker")
+
+	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
+		alt := nerdctl.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
+
+		imageName := "foobar:tcp"
+		_, err = alt.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
+			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | load "` + imageName + `"`}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = alt.WithExec([]string{"nerdctl", "inspect", imageName}).Sync(ctx)
+		require.NoError(t, err)
+
+		out, err := alt.WithExec([]string{"nerdctl", "run", imageName, "ls", "/foo"}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/foo\n", out)
+	})
+}
+
+func (ContainerSuite) TestLoadNone(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
+	require.NoError(t, err)
+
+	dockerc = dockerc.
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"})
+
+	alt := dockerc.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
+
+	imageName := "foobar:latest"
+	out, err := alt.WithExec([]string{
+		"dagger", "shell", "-c",
+		`container | from "alpine" | with-exec touch,foo | load "` + imageName + `"`,
+	}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "client has no supported api for loading image")
+
+	out, err = dockerc.WithExec([]string{"docker", "inspect", imageName}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "No such object")
+}
+
+func (ContainerSuite) TestLoadInNested(ctx context.Context, t *testctx.T) {
+	// this shouldn't be possible! we shouldn't allow access to the external client.
+	c := connect(ctx, t)
+	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
+	require.NoError(t, err)
+
+	dockerc = dockerc.
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
+
+	out, err := dockerc.WithWorkdir("/src/test").
+		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Try(ctx context.Context) error {
+	return dag.Container().
+		From("alpine").
+		WithExec([]string{"touch", "/foo"}).
+		Load(ctx, "foobar:latest")
+}
+
+		`).
+		WithExec([]string{"dagger", "call", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "client has no supported api for loading image")
+
+	out, err = dockerc.WithExec([]string{"docker", "inspect", "foobar:latest"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "No such object")
+}
