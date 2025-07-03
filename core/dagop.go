@@ -96,9 +96,6 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
-
-	// Data is any additional data that should be passed to the dagop.
-	Data string
 }
 
 func (op FSDagOp) Name() string {
@@ -110,15 +107,10 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op FSDagOp) Digest() (digest.Digest, error) {
-	opData, err := json.Marshal(op.Data)
-	if err != nil {
-		return "", err
-	}
 	return digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
 		op.Path,
-		string(opData),
 	}, "\x00")), nil
 }
 
