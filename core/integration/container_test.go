@@ -310,6 +310,38 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		})
 	})
 
+	t.Run("with unknown build secrets", func(ctx context.Context, t *testctx.T) {
+		dockerfile := `FROM golang:1.18.2-alpine
+WORKDIR /src
+RUN --mount=type=secret,id=my-secret echo "foofoo" > /secret 
+CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
+`
+
+		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
+			src := contextDir.WithNewFile("Dockerfile", dockerfile)
+
+			stdout, err := c.Container().
+				Build(src).
+				WithExec(nil).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "foofoo")
+			require.Contains(t, stdout, "FOOFOO")
+		})
+
+		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
+			src := contextDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+
+			stdout, err := c.Container().
+				Build(src).
+				WithExec(nil).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "foofoo")
+			require.Contains(t, stdout, "FOOFOO")
+		})
+	})
+
 	t.Run("prevent duplicate secret transform", func(ctx context.Context, t *testctx.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 

@@ -167,8 +167,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 	// handle secret translation
 	gw := newFilterGateway(c, req)
-	if v := ctx.Value("secret-translator"); v != nil {
-		gw.secretTranslator = v.(func(string) (string, error))
+	if v := SecretTranslatorFromContext(ctx); v != nil {
+		gw.secretTranslator = v
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
@@ -931,7 +931,7 @@ type filteringGateway struct {
 	// secretTranslator is a function to convert secret ids. Frontends may
 	// attempt to access secrets by raw IDs, but they may be keyed differently
 	// in the secret store.
-	secretTranslator func(string) (string, error)
+	secretTranslator SecretTranslator
 
 	// client is the top-most client that is owning the filtering process
 	client *Client
@@ -977,7 +977,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 				}
 
 				for _, secret := range execOp.ExecOp.GetSecretenv() {
-					secret.ID, err = gw.secretTranslator(secret.ID)
+					secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
 					if err != nil {
 						return err
 					}
@@ -987,7 +987,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 						continue
 					}
 					secret := mount.SecretOpt
-					secret.ID, err = gw.secretTranslator(secret.ID)
+					secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
 					if err != nil {
 						return err
 					}
@@ -1051,6 +1051,22 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 	default:
 		return &bkfrontend.Result{}, nil
 	}
+}
+
+type secretTranslatorKey struct{}
+
+type SecretTranslator func(name string, optional bool) (string, error)
+
+func WithSecretTranslator(ctx context.Context, s SecretTranslator) context.Context {
+	return context.WithValue(ctx, secretTranslatorKey{}, s)
+}
+
+func SecretTranslatorFromContext(ctx context.Context) SecretTranslator {
+	v := ctx.Value(secretTranslatorKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(SecretTranslator)
 }
 
 func ToEntitlementStrings(ents entitlements.Set) []string {
