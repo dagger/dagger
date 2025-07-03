@@ -900,7 +900,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 	}
 	defer detach()
 
-	return repo.Directory.mount(ctx, func(root string) error {
+	return mountLLB(ctx, repo.Directory.LLB, func(root string) error {
 		src, err := fs.RootPath(root, repo.Directory.Dir)
 		if err != nil {
 			return err
