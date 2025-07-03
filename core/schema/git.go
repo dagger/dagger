@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/dagger/dagger/core"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/moby/buildkit/executor/oci"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
@@ -71,6 +73,8 @@ func (s *gitSchema) Install() {
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFuncWithCacheKey("head", s.head, dagql.CachePerSession).
 			Doc(`Returns details for HEAD.`),
+		dagql.NodeFuncWithCacheKey("latest", s.latest, dagql.CachePerSession).
+			Doc(`Returns details for the latest semver tag.`),
 		dagql.NodeFuncWithCacheKey("ref", s.ref, dagql.CachePerSession).
 			Doc(`Returns details of a ref.`).
 			Args(
@@ -489,6 +493,21 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.Instance[*core.GitRep
 	return s.ref(ctx, parent, refArgs{Name: "HEAD"})
 }
 
+func (s *gitSchema) latest(ctx context.Context, parent dagql.Instance[*core.GitRepository], args struct{}) (inst dagql.Instance[*core.GitRef], _ error) {
+	tags, err := parent.Self.Tags(ctx, []string{"refs/tags/v*"}, "-version:refname")
+	if err != nil {
+		return inst, err
+	}
+	tags = slices.DeleteFunc(tags, func(tag string) bool {
+		return !semver.IsValid(tag)
+	})
+	if len(tags) == 0 {
+		return inst, fmt.Errorf("no valid semver tags found")
+	}
+	tag := tags[0]
+	return s.ref(ctx, parent, refArgs{Name: "refs/tags/" + tag})
+}
+
 type commitArgs struct {
 	ID string
 }
@@ -527,7 +546,7 @@ func (s *gitSchema) tags(ctx context.Context, parent dagql.Instance[*core.GitRep
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Self.Tags(ctx, patterns)
+	res, err := parent.Self.Tags(ctx, patterns, "")
 	return dagql.NewStringArray(res...), err
 }
 
@@ -546,7 +565,7 @@ func (s *gitSchema) branches(ctx context.Context, parent dagql.Instance[*core.Gi
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Self.Branches(ctx, patterns)
+	res, err := parent.Self.Branches(ctx, patterns, "")
 	return dagql.NewStringArray(res...), err
 }
 

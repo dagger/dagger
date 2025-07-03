@@ -5905,6 +5905,14 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns details for the latest semver tag.
+   */
+  latest = (): GitRef => {
+    const ctx = this._ctx.select("latest")
+    return new GitRef(ctx)
+  }
+
+  /**
    * Returns details of a ref.
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
    */
