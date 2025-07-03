@@ -583,11 +583,7 @@ func isDir(path string) (bool, error) {
 	return fi.Mode().IsDir(), nil
 }
 
-type hack interface {
-	Evaluate(context.Context) (*buildkit.Result, error)
-}
-
-func getRefOrEvaluate(ctx context.Context, ref bkcache.ImmutableRef, t hack) (bkcache.ImmutableRef, error) {
+func getRefOrEvaluate(ctx context.Context, ref bkcache.ImmutableRef, t Evaluatable) (bkcache.ImmutableRef, error) {
 	if ref != nil {
 		return ref, nil
 	}
