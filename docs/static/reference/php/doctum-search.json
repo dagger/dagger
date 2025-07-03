@@ -3301,6 +3301,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::latest",
+			"p": "Dagger/GitRepository.html#method_latest",
+			"d": "<p>Returns details for the latest semver tag.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::ref",
 			"p": "Dagger/GitRepository.html#method_ref",
 			"d": "<p>Returns details of a ref.</p>"

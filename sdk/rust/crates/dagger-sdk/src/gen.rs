@@ -6995,6 +6995,15 @@ impl GitRepository {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns details for the latest semver tag.
+    pub fn latest(&self) -> GitRef {
+        let query = self.selection.select("latest");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns details of a ref.
     ///
     /// # Arguments
