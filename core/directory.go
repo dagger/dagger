@@ -1035,7 +1035,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 	return dir, nil
 }
 
-func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
+func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -1044,37 +1044,19 @@ func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return err
 	}
 	defer detach()
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		tmp, err := os.MkdirTemp("", "mount")
+	return mountLLB(ctx, dir.LLB, func(root string) error {
+		src, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(tmp)
-		return f(tmp)
-	}
-	return ref.Mount(ctx, f)
+		return f(src)
+	})
 }
 
 func validateFileName(file string) error {
