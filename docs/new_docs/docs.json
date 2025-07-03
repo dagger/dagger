@@ -1,0 +1,134 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Dagger",
+  "colors": {
+    "primary": "#1a1833",
+    "light": "#f8f4ef",
+    "dark": "#1a1833"
+  },
+  "favicon": "/favicon.png",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "installation",
+              "use-cases",
+              "ide-setup"
+            ]
+          },
+          {
+            "group": "Quickstart",
+            "pages": [
+              "quickstart/index",
+              "quickstart/ai-agent/index"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples",
+              "videos"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Dagger Cloud",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cloud/index",
+              "cloud/organization",
+              "cloud/observability",
+              "cloud/module-catalog"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Extending Dagger",
+        "groups": [
+          {
+            "group": "Extending Dagger",
+            "pages": [
+              "extending/index",
+              "extending/arguments",
+              "extending/return-values"
+            ]
+          }
+        ]
+      },
+  
+      {
+        "tab": "Reference",
+        "icon": "code",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "reference/cli/index"
+            ]
+          },
+          {
+            "group": "API Documentation",
+            "pages": [
+              "reference/api/graphql-api",
+              "reference/api/core-types",
+              "reference/api/function-registry"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Documentation",
+          "href": "https://docs.dagger.io",
+          "icon": "book-open-cover"
+        },
+        {
+          "anchor": "Community",
+          "href": "https://dagger.io/community",
+          "icon": "slack"
+        },
+        {
+          "anchor": "Blog",
+          "href": "https://dagger.io/blog",
+          "icon": "newspaper"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "mailto:support@dagger.io"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Try Dagger Cloud",
+      "href": "https://dagger.io/cloud"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/dagger_id",
+      "github": "https://github.com/dagger",
+      "linkedin": "https://linkedin.com/company/dagger"
+    }
+  }
+}
