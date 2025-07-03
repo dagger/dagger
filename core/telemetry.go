@@ -155,10 +155,6 @@ func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectRes
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
 func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, self dagql.AnyObjectResult) {
-	if res == nil {
-		return
-	}
-
 	// Keep track of which effects were already installed prior to the call so we
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
