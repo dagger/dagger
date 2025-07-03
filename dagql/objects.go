@@ -337,12 +337,6 @@ func (o Result[T]) AstType() *ast.Type {
 	return o.self.Type()
 }
 
-/*
-func (o instance[T]) Type() *ast.Type {
-	return o.self.Type()
-}
-*/
-
 // ID returns the ID of the instance.
 func (r Result[T]) ID() *call.ID {
 	return r.constructor
