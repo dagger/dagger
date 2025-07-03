@@ -51,7 +51,11 @@ import (
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/session/pipe"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -88,11 +92,11 @@ type Params struct {
 	Interactive        bool
 	InteractiveCommand []string
 
-	WithTerminal session.WithTerminalFunc
+	WithTerminal terminal.WithTerminalFunc
 
 	AllowedLLMModules []string
 
-	PromptHandler session.PromptHandler
+	PromptHandler prompt.PromptHandler
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -355,16 +359,16 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
-		session.NewTunnelListenerAttachable(ctx),
+		h2c.NewTunnelListenerAttachable(ctx),
 		// terminal
-		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
+		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
-		session.NewGitAttachable(ctx),
-		// pipe
+		git.NewGitAttachable(ctx),
 	}
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
-		attachables = append(attachables, session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout))
+		// pipe
+		attachables = append(attachables, pipe.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout))
 	}
 
 	// filesync
@@ -376,7 +380,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	}
 	if c.Params.PromptHandler != nil {
-		attachables = append(attachables, session.NewPromptAttachable(c.Params.PromptHandler))
+		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")
