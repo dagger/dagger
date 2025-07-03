@@ -1987,6 +1987,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::load",
+			"p": "Dagger/Container.html#method_load",
+			"d": "<p>Exports the container to the host's container store</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::mounts",
 			"p": "Dagger/Container.html#method_mounts",
 			"d": "<p>Retrieves the list of paths where a directory is mounted.</p>"

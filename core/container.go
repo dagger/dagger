@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -1466,18 +1467,20 @@ func (container *Container) Export(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
-) error {
+	tar bool,
+	leaseID string,
+) (*specs.Descriptor, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
+		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	if mediaTypes == "" {
@@ -1489,9 +1492,14 @@ func (container *Container) Export(
 	}
 
 	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
+		"tar":                           strconv.FormatBool(tar),
 		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
 	}
+
+	// HACK: these properties are implemented in our buildkit fork
+	opts["store"] = "export"
+	opts["lease"] = leaseID
+
 	if forcedCompression != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
@@ -1507,18 +1515,18 @@ func (container *Container) Export(
 		}
 		st, err := variant.FSState()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformSpec := variant.Platform.Spec()
 		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformString := variant.Platform.Format()
 		if _, ok := inputByPlatform[platformString]; ok {
-			return fmt.Errorf("duplicate platform %q", platformString)
+			return nil, fmt.Errorf("duplicate platform %q", platformString)
 		}
 		inputByPlatform[platformString] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
@@ -1543,17 +1551,34 @@ func (container *Container) Export(
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
-		return errors.New("no containers to export")
+		return nil, errors.New("no containers to export")
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
-	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
-	return err
+	resp, err := bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
+	if err != nil {
+		return nil, err
+	}
+	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
+	if !ok {
+		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)
+	}
+	rawDesc, err := base64.StdEncoding.DecodeString(encodedDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+
+	var desc specs.Descriptor
+	err = json.Unmarshal(rawDesc, &desc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+	return &desc, nil
 }
 
 func (container *Container) Import(

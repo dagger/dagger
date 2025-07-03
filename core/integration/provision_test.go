@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -221,7 +222,52 @@ func dockerSetup(ctx context.Context, t *testctx.T, name string, dag *dagger.Cli
 	return dockerc
 }
 
+func nerdctlSetup(ctx context.Context, t *testctx.T, name string, dag *dagger.Client, nerdctlVersion string) *dagger.Container {
+	// build nerdctl from scratch (annoying, but there *is no upstream package*)
+	base := dag.
+		Git("https://github.com/containerd/nerdctl.git").
+		Tag(nerdctlVersion).
+		Tree().
+		DockerBuild().
+		WithMountedCache("/run/containerd", dag.CacheVolume(name+"-run-containerd")).
+		WithMountedCache("/var/lib/containerd", dag.CacheVolume(name+"-containerd")).
+		WithMountedCache("/var/lib/buildkit", dag.CacheVolume(name+"-buildkit")).
+		WithMountedCache("/var/lib/containerd-stargz-grpc", dag.CacheVolume(name+"-containerd-stargz-grpc")).
+		WithMountedCache("/var/lib/nerdctl", dag.CacheVolume(name+"-nerdctl"))
+
+	svc := base.AsService(dagger.ContainerAsServiceOpts{
+		Args:                     []string{"containerd"},
+		InsecureRootCapabilities: true,
+	})
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+
+	ctr := base.WithServiceBinding("containerd", svc)
+
+	t.Cleanup(func() {
+		opts := dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny, InsecureRootCapabilities: true}
+		_, err := ctr.
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithExec([]string{"sh", "-c", "nerdctl rm -f $(nerdctl ps -aq)"}, opts).
+			WithExec([]string{"sh", "-c", "ctr image rm $(ctr image ls -q)"}, opts).
+			WithExec([]string{"sh", "-c", "ctr content rm $(ctr content ls -q)"}, opts).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	return ctr
+}
+
 func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
+	return doLoadEngine(ctx, dag, ctr, "docker", engineTag)
+}
+func nerdctlLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
+	return doLoadEngine(ctx, dag, ctr, "nerdctl", engineTag)
+}
+func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, engineTag string) (*dagger.Container, error) {
 	var tarPath string
 	if v, ok := os.LookupEnv("_DAGGER_TESTS_ENGINE_TAR"); ok {
 		tarPath = v
@@ -230,20 +276,17 @@ func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Conta
 	}
 	out, err := ctr.
 		WithMountedFile("engine.tar", dag.Host().File(tarPath)).
-		WithExec([]string{"docker", "image", "load", "-i", "engine.tar"}).
+		WithExec([]string{cli, "image", "load", "-i", "engine.tar"}).
 		Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
-	_, imageID, ok := strings.Cut(out, "Loaded image ID: sha256:")
-	if !ok {
-		_, imageID, ok = strings.Cut(out, "Loaded image: sha256:") // podman
-		if !ok {
-			return nil, fmt.Errorf("unexpected output from docker load: %s", out)
-		}
+	result := regexp.MustCompile("sha256:([0-9a-f]+)").FindStringSubmatch(out)
+	if len(result) == 0 {
+		return nil, fmt.Errorf("unexpected output from docker load: %s", out)
 	}
-	imageID = strings.TrimSpace(imageID)
-	_, err = ctr.WithExec([]string{"docker", "tag", imageID, engineTag}).Sync(ctx)
+	imageID := result[1]
+	_, err = ctr.WithExec([]string{cli, "tag", imageID, engineTag}).Sync(ctx)
 	if err != nil {
 		return nil, err
 	}

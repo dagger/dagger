@@ -11,7 +11,9 @@ require (
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
-	github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20250519134855-c1734e1f6155
+	// XXX: replace before merge
+	// github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20250519134855-c1734e1f6155
+	github.com/moby/buildkit => github.com/jedevc/buildkit v0.8.2-0.20250702153345-4eaf5b2e5121
 )
 
 require (
@@ -219,6 +221,7 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
+	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240819160327-2d926c5d788a // indirect

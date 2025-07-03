@@ -394,6 +394,35 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Exports the container to the host's container store
+  """
+  @spec load(t(), String.t(), [
+          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: :ok | {:error, term()}
+  def load(%__MODULE__{} = container, name, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("load")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg(
+        "platformVariants",
+        if(optional_args[:platform_variants],
+          do: Enum.map(optional_args[:platform_variants], &Dagger.ID.id!/1),
+          else: nil
+        )
+      )
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    case Client.execute(container.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  @doc """
   Retrieves the list of paths where a directory is mounted.
   """
   @spec mounts(t()) :: {:ok, [String.t()]} | {:error, term()}

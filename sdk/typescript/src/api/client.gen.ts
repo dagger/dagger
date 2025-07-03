@@ -204,6 +204,29 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
+export type ContainerLoadOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   *
+   * Used for multi-platform image.
+   */
+  platformVariants?: Container[]
+
+  /**
+   * Force each layer of the exported image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the exported image's layers.
+   *
+   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -1956,6 +1979,7 @@ export class Container extends BaseClient {
   private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
+  private readonly _load?: Void = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
   private readonly _stderr?: string = undefined
@@ -1976,6 +2000,7 @@ export class Container extends BaseClient {
     _export?: string,
     _imageRef?: string,
     _label?: string,
+    _load?: Void,
     _platform?: Platform,
     _publish?: string,
     _stderr?: string,
@@ -1993,6 +2018,7 @@ export class Container extends BaseClient {
     this._export = _export
     this._imageRef = _imageRef
     this._label = _label
+    this._load = _load
     this._platform = _platform
     this._publish = _publish
     this._stderr = _stderr
@@ -2323,6 +2349,38 @@ export class Container extends BaseClient {
     const response: Awaited<labels[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
+  }
+
+  /**
+   * Exports the container to the host's container store
+   * @param name Name of image to export to in the host's store
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+   *
+   * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
+   *
+   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   */
+  load = async (name: string, opts?: ContainerLoadOpts): Promise<void> => {
+    if (this._load) {
+      return
+    }
+
+    const metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
+    const ctx = this._ctx.select("load", {
+      name,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    await ctx.execute()
   }
 
   /**
