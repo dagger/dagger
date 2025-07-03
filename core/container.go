@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -1479,26 +1480,33 @@ func (container *Container) Publish(
 	return ref, nil
 }
 
+type ExportOpts struct {
+	Dest              string
+	PlatformVariants  []*Container
+	ForcedCompression ImageLayerCompression
+	MediaTypes        ImageMediaTypes
+	Tar               bool
+	LeaseID           string
+}
+
 func (container *Container) Export(
 	ctx context.Context,
-	dest string,
-	platformVariants []*Container,
-	forcedCompression ImageLayerCompression,
-	mediaTypes ImageMediaTypes,
-) error {
+	opts ExportOpts,
+) (*specs.Descriptor, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
+		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	mediaTypes := opts.MediaTypes
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
 		// have been capable of pulling them since 2018:
@@ -1507,37 +1515,43 @@ func (container *Container) Export(
 		mediaTypes = OCIMediaTypes
 	}
 
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
+	bkopts := map[string]string{
+		"tar":                           strconv.FormatBool(opts.Tar),
 		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
 	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+
+	if !opts.Tar {
+		bkopts["store"] = "export"
+		bkopts["lease"] = opts.LeaseID
+	}
+
+	if opts.ForcedCompression != "" {
+		bkopts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(opts.ForcedCompression))
+		bkopts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
 
-	variants := append([]*Container{container}, platformVariants...)
+	variants := append([]*Container{container}, opts.PlatformVariants...)
 	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
 		st, err := variant.FSState()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformSpec := variant.Platform.Spec()
 		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformString := variant.Platform.Format()
 		if _, ok := inputByPlatform[platformString]; ok {
-			return fmt.Errorf("duplicate platform %q", platformString)
+			return nil, fmt.Errorf("duplicate platform %q", platformString)
 		}
 		inputByPlatform[platformString] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
@@ -1547,14 +1561,14 @@ func (container *Container) Export(
 		if len(variants) == 1 {
 			// single platform case
 			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
 			}
 		} else {
 			// multi platform case
 			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
 
@@ -1562,17 +1576,34 @@ func (container *Container) Export(
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
-		return errors.New("no containers to export")
+		return nil, errors.New("no containers to export")
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
-	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
-	return err
+	resp, err := bk.ExportContainerImage(ctx, inputByPlatform, opts.Dest, bkopts)
+	if err != nil {
+		return nil, err
+	}
+	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
+	if !ok {
+		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)
+	}
+	rawDesc, err := base64.StdEncoding.DecodeString(encodedDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+
+	var desc specs.Descriptor
+	err = json.Unmarshal(rawDesc, &desc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+	return &desc, nil
 }
 
 func (container *Container) Import(

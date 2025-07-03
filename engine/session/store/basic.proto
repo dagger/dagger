@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package dagger.store;
+
+option go_package = "store";
+
+service BasicStore {
+  rpc LoadTarball(stream Data) returns (LoadResponse);
+}
+
+message Data {
+  bytes data = 1;
+}
+
+message LoadResponse {}

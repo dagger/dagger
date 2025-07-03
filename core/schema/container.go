@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -14,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	bkcache "github.com/moby/buildkit/cache"
@@ -22,6 +26,7 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -568,6 +573,28 @@ func (s *containerSchema) Install() {
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
+
+		dagql.NodeFunc("load", s.load).
+			DoNotCache("Writes to the local host.").
+			Doc("Exports the container to the host's container store").
+			Args(
+				dagql.Arg("name").Doc("Name of image to export to in the host's store"),
+				dagql.Arg("platformVariants").Doc(
+					`Identifiers for other platform specific containers.`,
+					`Used for multi-platform image.`),
+				dagql.Arg("forcedCompression").Doc(
+					`Force each layer of the exported image to use the specified compression algorithm.`,
+					`If this is unset, then if a layer already has a compressed blob in the
+					engine's cache, that will be used (this can result in a mix of
+					compression algorithms for different layers). If this is unset and a
+					layer has no compressed blob in the engine's cache, then it will be
+					compressed using Gzip.`),
+				dagql.Arg("mediaTypes").Doc(
+					`Use the specified media types for the exported image's layers.`,
+					`Defaults to OCI, which is largely compatible with most recent
+					container runtimes, but Docker may be needed for older runtimes without
+					OCI support.`),
+			),
 
 		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, WithPathFn(s.asTarballPath))).
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
@@ -1884,12 +1911,15 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 		return "", err
 	}
 
-	err = parent.Export(
+	_, err = parent.Export(
 		ctx,
-		path,
-		variants,
-		args.ForcedCompression.Value,
-		args.MediaTypes,
+		core.ExportOpts{
+			Dest:              path,
+			PlatformVariants:  variants,
+			ForcedCompression: args.ForcedCompression.Value,
+			MediaTypes:        args.MediaTypes,
+			Tar:               true,
+		},
 	)
 	if err != nil {
 		return "", err
@@ -2063,6 +2093,147 @@ func (s *containerSchema) asTarball(
 		return inst, err
 	}
 	return fileInst, nil
+}
+
+type containerLoadArgs struct {
+	Name string
+
+	PlatformVariants  []core.ContainerID `default:"[]"`
+	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+}
+
+func (s *containerSchema) load(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerLoadArgs,
+) (_ core.Void, rerr error) {
+	refName, err := reference.ParseNormalizedNamed(args.Name)
+	if err != nil {
+		return core.Void{}, fmt.Errorf("failed to parse image address %s: %w", args.Name, err)
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return core.Void{}, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return core.Void{}, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	loader, err := bk.LoadImage(ctx, refName.String())
+	if err != nil {
+		return core.Void{}, err
+	}
+
+	if loader.ContentStore != nil {
+		platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
+		if err != nil {
+			return core.Void{}, err
+		}
+
+		// create and use a lease to write to our content store, prevents
+		// content being cleaned up while we're writing
+		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, loader.LeaseManager, leaseutil.MakeTemporary)
+		if err != nil {
+			return core.Void{}, err
+		}
+		defer leaseDone(context.WithoutCancel(leaseCtx))
+		leaseID, _ := leases.FromContext(leaseCtx)
+
+		// NB: buildkit loads the "export" ContentStore itself (it's not explicitly passed in)
+		desc, err := parent.Self().Export(ctx, core.ExportOpts{
+			PlatformVariants:  platformVariants,
+			ForcedCompression: args.ForcedCompression.Value,
+			MediaTypes:        args.MediaTypes,
+			LeaseID:           leaseID,
+		})
+		if err != nil {
+			return core.Void{}, err
+		}
+
+		// update the written content with gc labels (buildkit doesn't write them itself)
+		handler := images.ChildrenHandler(loader.ContentStore)
+		handler = images.SetChildrenMappedLabels(loader.ContentStore, handler, images.ChildGCLabels)
+		if err := images.WalkNotEmpty(ctx, handler, *desc); err != nil {
+			return core.Void{}, err
+		}
+
+		// create/update the image
+		img := images.Image{
+			Name:   refName.String(),
+			Target: *desc,
+		}
+		if _, err := loader.ImagesStore.Update(ctx, img); err != nil {
+			if !errors.Is(err, cerrdefs.ErrNotFound) {
+				return core.Void{}, err
+			}
+
+			if _, err = loader.ImagesStore.Create(ctx, img); err != nil {
+				return core.Void{}, err
+			}
+		}
+		return core.Void{}, nil
+	}
+
+	if dest := loader.Tarball; dest != nil {
+		defer func() {
+			// close dest if it wasn't already closed and set to nil
+			if dest != nil {
+				dest.Close()
+			}
+		}()
+
+		// create the tarball
+		var tarball dagql.ObjectResult[*core.File]
+		sel := dagql.Selector{
+			Field: "asTarball",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "mediaTypes",
+					Value: args.MediaTypes,
+				},
+			},
+		}
+		if args.PlatformVariants != nil {
+			sel.Args = append(sel.Args, dagql.NamedInput{
+				Name:  "platformVariants",
+				Value: dagql.ArrayInput[core.ContainerID](args.PlatformVariants),
+			})
+		}
+		if args.ForcedCompression.Valid {
+			sel.Args = append(sel.Args, dagql.NamedInput{
+				Name:  "forcedCompression",
+				Value: args.ForcedCompression,
+			})
+		}
+		err = s.srv.Select(ctx, parent, &tarball, sel)
+		if err != nil {
+			return core.Void{}, err
+		}
+
+		err = tarball.Self().Mount(ctx, func(path string) error {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			// stream in chunks *definitely* smaller than the max gRPC message size
+			buf := make([]byte, 3*1024*1024)
+			_, err = io.CopyBuffer(dest, f, buf)
+			if err != nil {
+				return err
+			}
+
+			err = dest.Close()
+			dest = nil
+			return err
+		})
+		return core.Void{}, err
+	}
+	return core.Void{}, errors.New("invalid load config")
 }
 
 type containerImportArgs struct {

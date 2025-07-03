@@ -12,6 +12,7 @@ import (
 
 	archiveexporter "github.com/containerd/containerd/images/archive"
 	"github.com/containerd/containerd/leases"
+	"github.com/dagger/dagger/util/ctrns"
 	"github.com/distribution/reference"
 	"github.com/moby/buildkit/cache"
 	cacheconfig "github.com/moby/buildkit/cache/config"
@@ -41,7 +42,9 @@ const (
 )
 
 const (
-	keyTar = "tar"
+	keyTar   = "tar"
+	keyStore = "store"
+	keyLease = "lease"
 )
 
 type Opt struct {
@@ -91,6 +94,10 @@ func (e *imageExporter) Resolve(ctx context.Context, id int, opt map[string]stri
 				return nil, errors.Wrapf(err, "non-bool value specified for %s", k)
 			}
 			i.tar = b
+		case keyStore:
+			i.storeID = v
+		case keyLease:
+			i.leaseID = v
 		default:
 			if i.meta == nil {
 				i.meta = make(map[string][]byte)
@@ -106,9 +113,11 @@ type imageExporterInstance struct {
 	id    int
 	attrs map[string]string
 
-	opts containerimage.ImageCommitOpts
-	tar  bool
-	meta map[string][]byte
+	opts    containerimage.ImageCommitOpts
+	tar     bool
+	storeID string
+	leaseID string
+	meta    map[string][]byte
 }
 
 func (e *imageExporterInstance) ID() int {
@@ -281,10 +290,18 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 		}
 		report(nil)
 	} else {
-		store := sessioncontent.NewCallerStore(caller, "export")
+		storeID := "export"
+		if e.storeID != "" {
+			storeID = e.storeID
+		}
+		store := sessioncontent.NewCallerStore(caller, storeID)
 		if err != nil {
 			return nil, nil, err
 		}
+		if e.leaseID != "" {
+			store = ctrns.ContentStoreWithLease(store, e.leaseID)
+		}
+
 		err := contentutil.CopyChain(ctx, store, mprovider, *desc)
 		if err != nil {
 			return nil, nil, err

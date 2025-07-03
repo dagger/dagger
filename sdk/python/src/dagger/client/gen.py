@@ -1298,6 +1298,63 @@ class Container(Type):
         _ctx = self._select("labels", _args)
         return await _ctx.execute_object_list(Label)
 
+    async def load(
+        self,
+        name: str,
+        *,
+        platform_variants: "list[Container] | None" = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> Void:
+        """Exports the container to the host's container store
+
+        Parameters
+        ----------
+        name:
+            Name of image to export to in the host's store
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the exported image to use the specified
+            compression algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Use the specified media types for the exported image's layers.
+            Defaults to OCI, which is largely compatible with most recent
+            container runtimes, but Docker may be needed for older runtimes
+            without OCI support.
+
+        Returns
+        -------
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg(
+                "platformVariants",
+                () if platform_variants is None else platform_variants,
+                (),
+            ),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("load", _args)
+        await _ctx.execute()
+
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
 

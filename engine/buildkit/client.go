@@ -8,6 +8,15 @@ import (
 	"net"
 	"sync"
 
+	"github.com/containerd/containerd"
+	contentapi "github.com/containerd/containerd/api/services/content/v1"
+	imagesapi "github.com/containerd/containerd/api/services/images/v1"
+	leasesapi "github.com/containerd/containerd/api/services/leases/v1"
+	"github.com/containerd/containerd/content"
+	contentproxy "github.com/containerd/containerd/content/proxy"
+	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
+	leasesproxy "github.com/containerd/containerd/leases/proxy"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -27,6 +36,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/engine"
@@ -34,6 +44,7 @@ import (
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 )
 
@@ -881,6 +892,64 @@ func (c *Client) OpenPipe(
 	}
 	// io.ReadWriter wrapper
 	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
+}
+
+func (c *Client) LoadImage(
+	ctx context.Context,
+	name string,
+) (*Loader, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
+		return &Loader{
+			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
+			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
+			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
+		}, nil
+	}
+
+	if callerSupports(caller, &store.BasicStore_serviceDesc) {
+		loadClient := store.NewBasicStoreClient(caller.Conn())
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageLoadTag, name)
+		tarballLoader, err := loadClient.LoadTarball(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
+		}
+		return &Loader{
+			Tarball: &store.TarballWriter{GRPC: tarballLoader},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
+	for _, method := range desc.Methods {
+		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, method.MethodName)) {
+			return false
+		}
+	}
+	for _, stream := range desc.Streams {
+		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, stream.StreamName)) {
+			return false
+		}
+	}
+	return true
+}
+
+type Loader struct {
+	Tarball io.WriteCloser
+
+	ContentStore content.Store
+	ImagesStore  images.Store
+	LeaseManager leases.Manager
 }
 
 // like sync.OnceValue but accepts an arg
