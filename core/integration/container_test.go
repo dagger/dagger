@@ -5175,3 +5175,14 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	require.NotEqual(t, out1, out3) // make sure the call to read from /dev/random was re-run
 	require.Len(t, out3, 132)
 }
+
+func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/sub").
+		WithNewFile("subdir/data", "contents")
+	exists, err := ctr.Exists(ctx, "subdir/data")
+	require.NoError(t, err)
+	require.Equal(t, true, exists)
+}
