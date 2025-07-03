@@ -58,7 +58,7 @@ func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		file, err := DagOpFile(ctx, srv, self.Self, args, "", fn, opts...)
+		file, err := DagOpFile(ctx, srv, self.Self, args, fn, opts...)
 		if err != nil {
 			return inst, err
 		}
@@ -76,7 +76,6 @@ func DagOpFile[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self T,
 	args A,
-	data string,
 	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
 	opts ...DagOpOptsFn[T, A],
 ) (*core.File, error) {
@@ -98,9 +97,8 @@ func DagOpFile[T dagql.Typed, A any](
 	}
 
 	return core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:   currentIDForFSDagOp(ctx, filename, data),
+		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-		Data: data,
 	}, deps)
 }
 
@@ -173,9 +171,8 @@ func DagOpDirectory[T dagql.Typed, A any](
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
 		// FIXME: using this in the cache key means we effectively disable
 		// buildkit content caching
-		ID:   currentIDForFSDagOp(ctx, filename, data),
+		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-		Data: data,
 	}, deps)
 }
 
@@ -262,20 +259,17 @@ func currentIDForRawDagOp(
 
 const (
 	FSDagOpPathArgName = "dagOpPath"
-	FSDagOpDataArgName = "dagOpData"
 )
 
 type FSDagOpInternalArgs struct {
 	DagOpInternalArgs
 
 	DagOpPath string `internal:"true" default:"" name:"dagOpPath"`
-	DagOpData string `internal:"true" default:"" name:"dagOpData"`
 }
 
 func currentIDForFSDagOp(
 	ctx context.Context,
 	path string,
-	data string,
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
 
@@ -288,11 +282,6 @@ func currentIDForFSDagOp(
 		WithArgument(call.NewArgument(
 			FSDagOpPathArgName,
 			call.NewLiteralString(path),
-			false,
-		)).
-		WithArgument(call.NewArgument(
-			FSDagOpDataArgName,
-			call.NewLiteralString(data),
 			false,
 		))
 }

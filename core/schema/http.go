@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -39,6 +40,7 @@ type httpArgs struct {
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 
 	FSDagOpInternalArgs
+	RefID string `internal:"true" default:"" name:"refID"`
 }
 
 func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args httpArgs) (string, error) {
@@ -60,7 +62,7 @@ func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args http
 func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query], args httpArgs) (inst dagql.Instance[*core.File], rerr error) {
 	if args.InDagOp() {
 		cache := parent.Self.BuildkitCache()
-		snap, err := cache.Get(ctx, args.DagOpData, nil)
+		snap, err := cache.Get(ctx, args.RefID, nil)
 		if err != nil {
 			return inst, err
 		}
@@ -137,15 +139,21 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.Instance[*core.Query
 	defer snap.Release(context.WithoutCancel(ctx))
 
 	// also mixin the checksum
-	newID := dagql.CurrentID(ctx).WithDigest(dagql.HashFrom(
-		filename,
-		fmt.Sprint(permissions),
-		dgst.String(),
-		resp.Header.Get("Last-Modified"),
-	))
+	newID := dagql.CurrentID(ctx).
+		WithArgument(call.NewArgument(
+			"refID",
+			call.NewLiteralString(snap.ID()),
+			false,
+		)).
+		WithDigest(dagql.HashFrom(
+			filename,
+			fmt.Sprint(permissions),
+			dgst.String(),
+			resp.Header.Get("Last-Modified"),
+		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	file, err := DagOpFile(ctxDagOp, s.srv, parent.Self, args, snap.ID(), s.http, WithPathFn(s.httpPath))
+	file, err := DagOpFile(ctxDagOp, s.srv, parent.Self, args, s.http, WithPathFn(s.httpPath))
 	if err != nil {
 		return inst, err
 	}
