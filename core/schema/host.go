@@ -154,7 +154,7 @@ func (s *hostSchema) Install() {
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
 			),
 
-		dagql.FuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Accesses a file on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
@@ -187,7 +187,7 @@ func (s *hostSchema) Install() {
 					`If ports are given and native is true, the ports are additive.`),
 			),
 
-		dagql.FuncWithCacheKey("service", s.service, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("service", s.service, dagql.CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			Args(
 				dagql.Arg("ports").Doc(
@@ -202,7 +202,7 @@ func (s *hostSchema) Install() {
 		dagql.Func("__internalService", s.internalService).
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
-		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
 			Deprecated(`setSecretFile is superceded by use of the secret API with file:// URIs`).
 			Doc(
 				`Sets a secret given a user-defined name and the file path on the host,
@@ -220,7 +220,7 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (inst dagql.Instance[*core.Secret], err error) {
+func (s *hostSchema) setSecretFile(ctx context.Context, host dagql.ObjectResult[*core.Host], args setSecretFileArgs) (inst dagql.Result[*core.Secret], err error) {
 	err = s.srv.Select(ctx, s.srv.Root(), &inst,
 		dagql.Selector{
 			Field: "secret",
@@ -240,7 +240,7 @@ type hostDirectoryArgs struct {
 	HostDirCacheConfig
 }
 
-func (s *hostSchema) directory(ctx context.Context, host dagql.Instance[*core.Host], args hostDirectoryArgs) (i dagql.Instance[*core.Directory], err error) {
+func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
 	args.Path = path.Clean(args.Path)
 	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
 		return i, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
@@ -294,7 +294,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.Instance[*core.Ho
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewInstanceForCurrentID(ctx, s.srv, host,
+	dir, err := dagql.NewObjectResultForCurrentID(ctx, s.srv,
 		core.NewDirectory(localPB, "/", query.Platform(), nil),
 	)
 	if err != nil {
@@ -314,7 +314,7 @@ type hostSocketArgs struct {
 
 func (s *hostSchema) socketCacheKey(
 	ctx context.Context,
-	host dagql.Instance[*core.Host],
+	host dagql.ObjectResult[*core.Host],
 	args hostSocketArgs,
 	cacheCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
@@ -325,7 +325,7 @@ func (s *hostSchema) socketCacheKey(
 	return cc, nil
 }
 
-func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host], args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
+func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSocketArgs) (inst dagql.Result[*core.Socket], err error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -347,7 +347,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.Instance[*core.Host]
 	dgst := dagql.HashFrom(accessor)
 
 	sock := &core.Socket{IDDigest: dgst}
-	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, host, sock)
+	inst, err = dagql.NewResultForCurrentID(ctx, sock)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -375,7 +375,7 @@ func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
-func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (i dagql.Instance[*core.File], err error) {
+func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {
 	fileDir, fileName := filepath.Split(args.Path)
 
 	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
@@ -422,7 +422,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 		return nil, err
 	}
 
-	svc := inst.Self
+	svc := inst.Self()
 
 	if svc.Container == nil {
 		return nil, errors.New("tunneling to non-Container services is not supported")
@@ -461,7 +461,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 
 	return &core.Service{
 		Creator:        trace.SpanContextFromContext(ctx),
-		TunnelUpstream: &inst,
+		TunnelUpstream: inst,
 		TunnelPorts:    ports,
 	}, nil
 }
@@ -471,7 +471,7 @@ type hostServiceArgs struct {
 	Ports []dagql.InputObject[core.PortForward]
 }
 
-func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (inst dagql.Instance[*core.Service], err error) {
+func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.Result[*core.Service], err error) {
 	if len(args.Ports) == 0 {
 		return inst, errors.New("no ports specified")
 	}
@@ -498,7 +498,7 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
 		}
 
-		var sockInst dagql.Instance[*core.Socket]
+		var sockInst dagql.Result[*core.Socket]
 		err = s.srv.Select(ctx, s.srv.Root(), &sockInst,
 			dagql.Selector{
 				Field: "host",
@@ -517,7 +517,7 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
 		}
 
-		if err := socketStore.AddIPSocket(sockInst.Self, clientMetadata.ClientID, args.Host, port); err != nil {
+		if err := socketStore.AddIPSocket(sockInst.Self(), clientMetadata.ClientID, args.Host, port); err != nil {
 			return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
 		}
 
@@ -556,7 +556,7 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 		if err != nil {
 			return nil, fmt.Errorf("failed to load socket: %w", err)
 		}
-		socks = append(socks, sockInst.Self)
+		socks = append(socks, sockInst.Self())
 	}
 
 	return &core.Service{

@@ -39,12 +39,12 @@ type cacheArgs struct {
 	Namespace string `internal:"true" default:""`
 }
 
-func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 	if args.Namespace != "" {
 		return &cacheCfg, nil
 	}
 
-	m, err := parent.Self.CurrentModule(ctx)
+	m, err := parent.Self().CurrentModule(ctx)
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return nil, err
 	}
@@ -53,14 +53,14 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Inst
 	return &cacheCfg, nil
 }
 
-func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs) (dagql.Instance[*core.CacheVolume], error) {
-	var inst dagql.Instance[*core.CacheVolume]
+func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {
+	var inst dagql.Result[*core.CacheVolume]
 
 	if args.Namespace != "" {
-		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(args.Namespace+":"+args.Key))
+		return dagql.NewResultForCurrentID(ctx, core.NewCache(args.Namespace+":"+args.Key))
 	}
 
-	m, err := parent.Self.CurrentModule(ctx)
+	m, err := parent.Self().CurrentModule(ctx)
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return inst, err
 	}
@@ -90,14 +90,14 @@ func namespaceFromModule(m *core.Module) string {
 		return "mainClient"
 	}
 
-	name := m.Source.Self.ModuleOriginalName
+	name := m.Source.Self().ModuleOriginalName
 
 	var symbolic string
-	switch m.Source.Self.Kind {
+	switch m.Source.Self().Kind {
 	case core.ModuleSourceKindLocal:
-		symbolic = m.Source.Self.SourceRootSubpath
+		symbolic = m.Source.Self().SourceRootSubpath
 	case core.ModuleSourceKindGit:
-		symbolic = m.Source.Self.Git.Symbolic
+		symbolic = m.Source.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
 		symbolic = m.Source.ID().Digest().String()
 	}

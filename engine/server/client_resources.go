@@ -74,7 +74,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
-			if secret.Self == nil {
+			if secret.Self() == nil {
 				continue
 			}
 			if id.Optional && !srcClient.secretStore.HasSecret(secret.ID().Digest()) {

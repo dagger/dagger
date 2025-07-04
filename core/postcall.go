@@ -74,12 +74,12 @@ func ResourceTransferPostCall(
 	}
 
 	type secretWithPlaintext struct {
-		inst      dagql.Instance[*Secret]
+		inst      dagql.ObjectResult[*Secret]
 		plaintext []byte
 	}
 	var namedSecrets []secretWithPlaintext
 	for _, secret := range secrets {
-		isNamed := secret.Self.Name != ""
+		isNamed := secret.Self().Name != ""
 		if !isNamed {
 			continue
 		}

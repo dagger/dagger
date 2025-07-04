@@ -70,9 +70,9 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	}, nil
 }
 
-func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[*core.EngineCache], args struct {
+func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectResult[*core.EngineCache], args struct {
 	Key string `default:""`
-}) (inst dagql.Instance[*core.EngineCacheEntrySet], _ error) {
+}) (inst dagql.Result[*core.EngineCacheEntrySet], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -101,7 +101,7 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[
 		return inst, fmt.Errorf("failed to load cache entries: %w", err)
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, entrySet)
+	return dagql.NewResultForCurrentID(ctx, entrySet)
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {
@@ -124,6 +124,6 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 	return void, nil
 }
 
-func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) ([]*core.EngineCacheEntry, error) {
+func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) (dagql.Array[*core.EngineCacheEntry], error) {
 	return parent.EntriesList, nil
 }

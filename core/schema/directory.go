@@ -235,7 +235,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithDirectory(ctx, args.Path, dir.Self, args.CopyFilter, nil)
+	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, nil)
 }
 
 type FilterArgs struct {
@@ -332,7 +332,7 @@ func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, 
 		return nil, err
 	}
 
-	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, nil)
+	return parent.WithFile(ctx, args.Path, file.Self(), args.Permissions, nil)
 }
 
 type WithFilesArgs struct {
@@ -348,7 +348,7 @@ func (s *directorySchema) withFiles(ctx context.Context, parent *core.Directory,
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, file.Self)
+		files = append(files, file.Self())
 	}
 
 	return parent.WithFiles(ctx, args.Path, files, args.Permissions, nil)
@@ -387,7 +387,7 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 	if err != nil {
 		return nil, err
 	}
-	return parent.Diff(ctx, dir.Self)
+	return parent.Diff(ctx, dir.Self())
 }
 
 type dirExportArgs struct {
@@ -432,8 +432,8 @@ type dirDockerBuildArgs struct {
 	NoInit     bool                               `default:"false"`
 }
 
-func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core.Directory], filename string) ([]byte, error) {
-	file, err := parent.Self.File(ctx, filename)
+func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
+	file, err := parent.Self().File(ctx, filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -450,8 +450,8 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core
 	return content, nil
 }
 
-func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Instance[*core.Directory], dockerfile string) (dagql.Instance[*core.Directory], error) {
-	var buildctxDir dagql.Instance[*core.Directory]
+func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*core.Directory], dockerfile string) (dagql.ObjectResult[*core.Directory], error) {
+	var buildctxDir dagql.ObjectResult[*core.Directory]
 
 	// use dockerfile specific .dockerfile if that exists
 	// https://docs.docker.com/build/concepts/context/#filename-and-location
@@ -495,10 +495,10 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Inst
 	return buildctxDir, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (res dagql.Result[*core.Container], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	platform := query.Platform()
 	if args.Platform.Valid {
@@ -507,26 +507,27 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 
 	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	ctr, err := core.NewContainer(platform)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	secretStore, err := query.Secrets(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret store: %w", err)
+		return res, fmt.Errorf("failed to get secret store: %w", err)
 	}
-	return ctr.Build(
+
+	built, err := ctr.Build(
 		ctx,
-		parent.Self,
-		buildctxDir.Self,
+		parent.Self(),
+		buildctxDir.Self(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -534,6 +535,10 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		secretStore,
 		args.NoInit,
 	)
+	if err != nil {
+		return res, fmt.Errorf("failed to build container: %w", err)
+	}
+	return dagql.NewResultForCurrentID(ctx, built)
 }
 
 type directoryTerminalArgs struct {
@@ -543,9 +548,9 @@ type directoryTerminalArgs struct {
 
 func (s *directorySchema) terminal(
 	ctx context.Context,
-	dir dagql.Instance[*core.Directory],
+	dir dagql.ObjectResult[*core.Directory],
 	args directoryTerminalArgs,
-) (dagql.Instance[*core.Directory], error) {
+) (res dagql.ObjectResult[*core.Directory], _ error) {
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
 	}
@@ -555,14 +560,14 @@ func (s *directorySchema) terminal(
 	if args.Container.Valid {
 		inst, err := args.Container.Value.Load(ctx, s.srv)
 		if err != nil {
-			return dir, err
+			return res, err
 		}
-		ctr = inst.Self
+		ctr = inst.Self()
 	}
 
-	err := dir.Self.Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
+	err := dir.Self().Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
 	if err != nil {
-		return dir, err
+		return res, err
 	}
 
 	return dir, nil
@@ -587,12 +592,12 @@ type directoryWithSymlinkArgs struct {
 	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Directory], _ error) {
-	dir, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
+func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	dir, err := parent.Self().WithSymlink(ctx, s.srv, args.Target, args.LinkName)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 }
 
 func (s *directorySchema) withSymlinkPath(ctx context.Context, dir *core.Directory, _ directoryWithSymlinkArgs) (string, error) {

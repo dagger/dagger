@@ -28,7 +28,7 @@ type ModDeps struct {
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
 	lazilyLoadedSchema         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Instance[*File]
+	lazilyLoadedSchemaJSONFile dagql.Result[*File]
 	loadSchemaErr              error
 	loadSchemaLock             sync.Mutex
 }
@@ -77,7 +77,7 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
-func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Instance[*File], _ error) {
+func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
 	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx, hiddenTypes)
 	if err != nil {
 		return inst, err
@@ -100,7 +100,7 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 
 func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 	loadedSchema *dagql.Server,
-	loadedSchemaJSONFile dagql.Instance[*File],
+	loadedSchemaJSONFile dagql.Result[*File],
 	rerr error,
 ) {
 	d.loadSchemaLock.Lock()
@@ -184,17 +184,17 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
 					Module:      ifaceType.mod.IDModule(),
 				},
-				func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-					inst, ok := self.(dagql.Instance[*ModuleObject])
+				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
 					}
-					return &InterfaceAnnotatedValue{
+					return dagql.NewObjectResultForCurrentID(ctx, dag, &InterfaceAnnotatedValue{
 						TypeDef:        iface,
-						Fields:         inst.Self.Fields,
+						Fields:         inst.Fields,
 						UnderlyingType: objType,
 						IfaceType:      ifaceType,
-					}, nil
+					})
 				},
 				dagql.CacheSpec{
 					GetCacheConfig: ifaceType.mod.CacheConfigForCall,

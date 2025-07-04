@@ -67,14 +67,14 @@ type ClientGenerator interface {
 		context.Context,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
+		dagql.ObjectResult[*ModuleSource],
 
 		// Current module dependencies.
 		*ModDeps,
 
 		// Output directory of the generated client.
 		string,
-	) (dagql.Instance[*Directory], error)
+	) (dagql.ObjectResult[*Directory], error)
 }
 
 /*
@@ -118,7 +118,7 @@ type CodeGenerator interface {
 		*ModDeps,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
+		dagql.ObjectResult[*ModuleSource],
 	) (*GeneratedCode, error)
 }
 
@@ -166,8 +166,8 @@ type Runtime interface {
 		*ModDeps,
 
 		// Current instance of the module source.
-		dagql.Instance[*ModuleSource],
-	) (dagql.Instance[*Container], error)
+		dagql.ObjectResult[*ModuleSource],
+	) (dagql.ObjectResult[*Container], error)
 }
 
 /*

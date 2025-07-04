@@ -193,6 +193,9 @@ func (id *ID) DisplaySelf() string {
 }
 
 func (id *ID) Display() string {
+	if id == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
 }
 
