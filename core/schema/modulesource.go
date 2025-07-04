@@ -1210,13 +1210,15 @@ func (s *moduleSourceSchema) moduleSourceLocalContextDirectoryPath(
 
 func (s *moduleSourceSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
@@ -1886,7 +1888,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	deps, err := s.loadDependencyModules(ctx, srcInst.Self)
 	if err != nil {
-		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
+		return genDirInst, err
 	}
 
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
@@ -1913,7 +1915,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		clientGeneratorConfig.Directory,
 	)
 	if err != nil {
-		return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
+		return genDirInst, err
 	}
 
 	// Merge the generated client to the current generated instance
