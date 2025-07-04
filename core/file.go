@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -388,6 +389,30 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	defer detach()
 
 	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
+}
+
+func (file *File) Mount(ctx context.Context, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return mountLLB(ctx, file.LLB, func(root string) error {
+		src, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+		return f(src)
+	})
 }
 
 // bkRef returns the buildkit reference from the solved def.

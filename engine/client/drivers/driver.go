@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+
+	"github.com/dagger/dagger/engine/client/imageload"
 )
 
 type Driver interface {
 	// Provision creates any underlying resources for a driver, and returns a
 	// Connector that can connect to it.
 	Provision(ctx context.Context, url *url.URL, opts *DriverOpts) (Connector, error)
+
+	// ImageLoader returns an optional associated image loader - not all
+	// drivers will have this!
+	ImageLoader() imageload.Backend
 }
 
 type Connector interface {

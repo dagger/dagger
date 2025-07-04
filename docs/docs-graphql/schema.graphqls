@@ -410,6 +410,38 @@ type Container {
   """Retrieves the list of labels passed to container."""
   labels: [Label!]!
 
+  """Exports the container to the host's container store"""
+  load(
+    """Name of image to export to in the host's store"""
+    name: String!
+
+    """
+    Identifiers for other platform specific containers.
+    
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!] = []
+
+    """
+    Force each layer of the exported image to use the specified compression algorithm.
+    
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers.
+    
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): Void!
+
   """Retrieves the list of paths where a directory is mounted."""
   mounts: [String!]!
 

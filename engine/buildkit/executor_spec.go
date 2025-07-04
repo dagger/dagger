@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"
 	"github.com/moby/buildkit/executor"
@@ -90,7 +91,7 @@ type execState struct {
 	rootMount executor.Mount
 	mounts    []executor.Mount
 
-	cleanups *Cleanups
+	cleanups *cleanups.Cleanups
 
 	spec             *specs.Spec
 	networkNamespace bknetwork.Namespace
@@ -125,7 +126,7 @@ func newExecState(
 		procInfo:    procInfo,
 		rootMount:   rootMount,
 		mounts:      mounts,
-		cleanups:    &Cleanups{},
+		cleanups:    &cleanups.Cleanups{},
 		startedOnce: &sync.Once{},
 		startedCh:   startedCh,
 		done:        make(chan struct{}),
@@ -175,7 +176,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
 	if cleanupBaseHosts != nil {
-		state.cleanups.Add("cleanup base hosts file", Infallible(cleanupBaseHosts))
+		state.cleanups.Add("cleanup base hosts file", cleanups.Infallible(cleanupBaseHosts))
 	}
 
 	if w.execMD == nil || w.execMD.SessionID == "" {
@@ -375,7 +376,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 	if err != nil {
 		return err
 	}
-	state.cleanups.Add("base OCI spec cleanup", Infallible(ociSpecCleanup))
+	state.cleanups.Add("base OCI spec cleanup", cleanups.Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
 	return nil
@@ -458,7 +459,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	}
 	state.spec.Mounts = filteredMounts
 
-	state.cleanups.Add("cleanup rootfs stubs", Infallible(executor.MountStubsCleaner(
+	state.cleanups.Add("cleanup rootfs stubs", cleanups.Infallible(executor.MountStubsCleaner(
 		ctx,
 		state.rootfsPath,
 		state.mounts,
@@ -687,7 +688,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		}
 		return nil
 	})
-	state.cleanups.Add("shutdown internal telemetry forwarder", Infallible(func() {
+	state.cleanups.Add("shutdown internal telemetry forwarder", cleanups.Infallible(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		switch err := otelSrv.Shutdown(shutdownCtx); {
@@ -789,7 +790,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 
 	state.cleanups.Add("close secret scrub stderr reader", stderrR.Close)
 	state.cleanups.Add("close secret scrub stdout reader", stdoutR.Close)
-	state.cleanups.Add("wait for secret scrubber pipes", Infallible(pipeWg.Wait))
+	state.cleanups.Add("wait for secret scrubber pipes", cleanups.Infallible(pipeWg.Wait))
 	state.cleanups.Add("close secret scrub stderr writer", stderrW.Close)
 	state.cleanups.Add("close secret scrub stdout writer", stdoutW.Close)
 
@@ -934,7 +935,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
-	state.cleanups.Add("cancel session server", Infallible(func() {
+	state.cleanups.Add("cancel session server", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
@@ -945,7 +946,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if err != nil {
 		return fmt.Errorf("listen for nested client: %w", err)
 	}
-	state.cleanups.Add("close nested client listener", IgnoreErrs(httpListener.Close, net.ErrClosed))
+	state.cleanups.Add("close nested client listener", cleanups.IgnoreErrs(httpListener.Close, net.ErrClosed))
 
 	tcpAddr, ok := httpListener.Addr().(*net.TCPAddr)
 	if !ok {
@@ -975,7 +976,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
 	// state.cleanups.ReAdd(stopSessionSrv)
 	state.cleanups.Add("close nested client http server", httpSrv.Close)
-	state.cleanups.Add("cancel nested client server pool", Infallible(func() {
+	state.cleanups.Add("cancel nested client server pool", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
 
@@ -1000,7 +1001,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 			rootMount: state.rootMount,
 			mounts:    state.mounts,
 
-			cleanups: &Cleanups{},
+			cleanups: &cleanups.Cleanups{},
 
 			spec:             &specs.Spec{},
 			networkNamespace: state.networkNamespace,
@@ -1130,7 +1131,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		cgroupSamplerCtx, cgroupSamplerCancel := context.WithCancelCause(context.WithoutCancel(ctx))
 		cgroupSamplerPool := pool.New()
 
-		state.cleanups.Add("cancel cgroup sampler", Infallible(func() {
+		state.cleanups.Add("cancel cgroup sampler", cleanups.Infallible(func() {
 			cgroupSamplerCancel(fmt.Errorf("container cleanup: %w", context.Canceled))
 			cgroupSamplerPool.Wait()
 		}))

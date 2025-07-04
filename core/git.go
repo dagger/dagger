@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
@@ -233,7 +234,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}
 	var opts []gitutil.Option
 
-	cleanups := buildkit.Cleanups{}
+	cleanups := cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			cleanups.Run()
@@ -899,7 +900,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 	}
 	defer detach()
 
-	return repo.Directory.mount(ctx, func(root string) error {
+	return mountLLB(ctx, repo.Directory.LLB, func(root string) error {
 		src, err := fs.RootPath(root, repo.Directory.Dir)
 		if err != nil {
 			return err

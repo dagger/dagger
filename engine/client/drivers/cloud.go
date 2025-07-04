@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/internal/cloud"
 )
 
@@ -77,6 +78,10 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 	}
 
 	return d.create(ctx, client)
+}
+
+func (d *daggerCloudDriver) ImageLoader() imageload.Backend {
+	return nil
 }
 
 func (d *daggerCloudDriver) create(ctx context.Context, client *cloud.Client) (*daggerCloudConnector, error) {
