@@ -1,0 +1,33 @@
+```go Go icon="golang" expandable
+package main
+
+import (
+	"context"
+	"fmt"
+	"dagger/dagger"
+)
+
+func main() {
+	ctx := context.Background()
+	
+	// Initialize Dagger client
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+	
+	// Use Dagger client
+	container := client.Container().
+		From("golang:1.20").
+		WithExec([]string{"go", "version"})
+	
+	// Get command output
+	output, err := container.Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
+	
+	fmt.Println(output)
+}
+```

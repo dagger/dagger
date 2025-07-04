@@ -4,7 +4,7 @@ title: "Build a Workflow"
 description: "Workflows often start simple, but eventually transform into a labyrinth of artisanal shell scripts and/or unmanageable YAML code. Dagger lets you replace those artisanal scripts and YAML with a modern API and cross-language scripting engine."
 ---
 
-import { IdeTip } from '/snippets/ide-tip.mdx';
+import IdeTip from '/snippets/ide-tip.mdx';
 
 This quickstart will guide you through building a workflow for an application using Dagger.
 
@@ -121,7 +121,7 @@ Replace the generated Dagger module files as described below.
 
 Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```go Go icon="golang"
+```go Go icon="golang" expandable
 package main
 
 import (
@@ -193,7 +193,7 @@ func (m *HelloDagger) BuildEnv(
 
 Replace the generated `.dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```python Python icon="python"
+```python Python icon="python" expandable
 import random
 from typing import Annotated
 
@@ -274,7 +274,7 @@ class HelloDagger:
 
 Replace the generated `.dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```typescript TypeScript icon="javascript"
+```typescript TypeScript icon="javascript" expandable
 import {
   dag,
   Container,
@@ -348,7 +348,7 @@ export class HelloDagger {
 
 Replace the generated `.dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```php PHP icon="php"
+```php PHP icon="php" expandable
 <?php
 
 declare(strict_types=1);
@@ -435,7 +435,7 @@ class HelloDagger
 
 Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```java Java icon="java"
+```java Java icon="java" expandable
 package io.dagger.modules.hellodagger;
 
 import static io.dagger.client.Dagger.dag;

@@ -1,0 +1,19 @@
+```python Python icon="python" expandable
+import sys
+import dagger
+
+async def main():
+    # Initialize Dagger client
+    async with dagger.Connection() as client:
+        # Use Dagger client
+        container = client.container().from_("python:3.11").with_exec(["python", "--version"])
+        
+        # Get command output
+        output = await container.stdout()
+        
+        print(output)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```

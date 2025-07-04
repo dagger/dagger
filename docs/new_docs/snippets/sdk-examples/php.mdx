@@ -1,0 +1,23 @@
+```php PHP icon="php" expandable
+<?php
+
+require_once 'vendor/autoload.php';
+
+use Dagger\Client;
+use Dagger\Container;
+
+// Initialize Dagger client
+$client = Client::connect();
+
+// Use Dagger client
+$output = $client
+    ->container()
+    ->from('php:8.1')
+    ->withExec(['php', '-v'])
+    ->stdout();
+
+echo $output;
+
+// Close the client
+$client->close();
+```
