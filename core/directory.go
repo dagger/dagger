@@ -15,6 +15,7 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -398,31 +399,56 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		permissions = 0o644
 	}
 
-	// be sure to create the file under the working directory
-	dest = path.Join(dir.Dir, dest)
-
-	st, err := dir.State()
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	parent, _ := path.Split(dest)
-	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)))
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
-	opts := []llb.MkfileOption{}
-	if ownership != nil {
-		opts = append(opts, ownership.Opt())
-	}
-
-	st = st.File(llb.Mkfile(dest, permissions, content, opts...))
-
-	err = dir.SetState(ctx, st)
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content))))))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+		if err != nil {
+			return err
+		}
+		destPathDir, _ := filepath.Split(resolvedDest)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if dst != nil {
+				_ = dst.Close()
+			}
+		}()
+		_, err = dst.Write(content)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
