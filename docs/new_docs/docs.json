@@ -112,14 +112,9 @@
     "global": {
       "anchors": [
         {
-          "anchor": "Documentation",
-          "href": "https://docs.dagger.io",
-          "icon": "book-open-cover"
-        },
-        {
           "anchor": "Community",
           "href": "https://dagger.io/community",
-          "icon": "slack"
+          "icon": "discord"
         },
         {
           "anchor": "Blog",
