@@ -31,7 +31,18 @@ func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
+	// +ignore=[
+	// "bin",
+	// ".git",
+	// "**/node_modules",
+	// "**/.venv",
+	// "**/__pycache__",
+	// "docs/node_modules",
+	// "sdk/typescript/node_modules",
+	// "sdk/typescript/dist",
+	// "sdk/rust/examples/backend/target",
+	// "sdk/rust/target"
+	// ]
 	source *dagger.Directory,
 
 	// +optional
