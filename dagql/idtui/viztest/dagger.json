@@ -1,6 +1,6 @@
 {
   "name": "viztest",
-  "engineVersion": "v0.18.10",
+  "engineVersion": "v0.18.12",
   "sdk": {
     "source": "go"
   },
@@ -8,6 +8,11 @@
     {
       "name": "dep",
       "source": "dep"
+    },
+    {
+      "name": "versioned",
+      "source": "github.com/dagger/dagger-test-modules/versioned",
+      "pin": "73670b0338c02cdd190f56b34c6e25066c7c8875"
     }
   ]
 }

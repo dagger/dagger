@@ -552,3 +552,8 @@ func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
 	dag.Dep().GetFiles(ctx)
 	return nil
 }
+
+func (*Viztest) TraceRemoteFunctionCalls(ctx context.Context) error {
+	dag.Versioned().Hello(ctx)
+	return nil
+}

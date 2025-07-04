@@ -167,6 +167,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
+		// local module calls local module fn
 		{
 			Function: "trace-function-calls",
 			DBTest: func(t *testctx.T, db *dagui.DB) {
@@ -175,19 +176,71 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				for _, s := range db.Spans.Order {
 					if s.Name == "Dep.getFiles" {
 						require.Equal(t, "TraceFunctionCalls", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Contains(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "github.com/dagger/dagger/viztest")
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string), "@")[0])
 						require.Equal(t, "getFiles", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Contains(t, s.ExtraAttributes[telemetry.ModuleRefAttr], "github.com/dagger/dagger/viztest")
+						require.Equal(t, "github.com/dagger/dagger/viztest/dep", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
 						depCalled = true
 					} else if s.Name == "Viztest.traceFunctionCalls" {
 						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Contains(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "")
+						require.Equal(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "")
 						require.Equal(t, "traceFunctionCalls", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Contains(t, s.ExtraAttributes[telemetry.ModuleRefAttr], "github.com/dagger/dagger/viztest")
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
 						rootCalled = true
 					}
 				}
-				require.True(t, rootCalled && depCalled)
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// local module calls remote module fn
+		{
+			Function: "trace-remote-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Versioned.hello" {
+						require.Equal(t, "TraceRemoteFunctionCalls", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string), "@")[0])
+						require.Equal(t, "hello", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						depCalled = true
+					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
+						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
+						require.Equal(t, "traceRemoteFunctionCalls", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// remote module calls local module fn
+		{
+			Module:   "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875",
+			Function: "fn",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "DepAlias.fn" {
+						require.Equal(t, "Fn", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
+						require.Equal(t, "fn", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						depCalled = true
+					} else if s.Name == "RootMod.fn" {
+						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
+						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
+						require.Equal(t, "fn", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
 			},
 		},
 	} {

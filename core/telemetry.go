@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -147,12 +146,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, call *callpbv1.Call) (
 	if fc != nil {
 		callerRef.functionName = fc.Name
 		if ms.Git != nil {
-			u, err := removeURLScheme(ms.Git.HTMLRepoURL)
-			if err != nil {
-				return nil, nil
-			}
-			callerRef.ref = path.Join(u, ms.SourceRootSubpath)
-			callerRef.version = ms.Git.Commit
+			callerRef.ref, callerRef.version, _ = strings.Cut(ms.AsString(), "@")
 		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
 			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
 			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
@@ -168,28 +162,27 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, call *callpbv1.Call) (
 	calleeRef.functionName = call.Field
 	calleeRef.version = call.Module.Pin
 	calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
+	calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
 
 	// if it doesn't have a pin, it's a local callee module
 	if calleeRef.version == "" {
-		if ms.Local != nil {
-			calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
-			if ms.Git != nil {
-				u, err := removeURLScheme(ms.Git.HTMLRepoURL)
-				if err != nil {
+		if ms.Git != nil {
+			subPath := ms.SourceRootSubpath
+			calleeRef.ref = path.Join(calleeRef.ref, subPath)
+		} else {
+			if ms.Local != nil {
+				calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
+				if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+					calleeRef.ref = path.Join(gremote, calleeRef.ref)
+				} else {
 					return nil, nil
 				}
-				subPath := ms.SourceRootSubpath
-				calleeRef.ref = path.Join(u, subPath, calleeRef.ref)
 			} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
-				calleeRef.ref = path.Join(gremote, calleeRef.ref)
+				subPath := ms.SourceRootSubpath
+				calleeRef.ref = path.Join(gremote, subPath)
 			} else {
 				return nil, nil
 			}
-		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
-			subPath := ms.SourceRootSubpath
-			calleeRef.ref = path.Join(gremote, subPath)
-		} else {
-			return nil, nil
 		}
 
 		// if not within a function and a local call, use the git ref as the version
@@ -372,13 +365,4 @@ func anyReturns(id *call.ID, types ...string) bool {
 	} else {
 		return false
 	}
-}
-
-func removeURLScheme(strURL string) (string, error) {
-	u, err := url.Parse(strURL)
-	if err != nil {
-		return "", err
-	}
-	u.Scheme = ""
-	return strings.TrimPrefix(u.String(), "//"), nil
 }
