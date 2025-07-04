@@ -77,7 +77,6 @@
               "extending/index",
               "extending/arguments",
               "extending/return-values",
-              "extending/default-paths",
               "extending/module-dependencies",
               "extending/services"
             ]
@@ -104,15 +103,8 @@
             ]
           },
           {
-            "group": "SDKs",
-            "pages": [
-              "reference/sdk/go",
-              "reference/sdk/java",
-              "reference/sdk/php",
-              "reference/sdk/python",
-              "reference/sdk/rust",
-              "reference/sdk/typescript"
-            ]
+            "group": "SDKs"
+
           }
         ]
       }

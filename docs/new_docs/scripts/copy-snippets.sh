@@ -45,19 +45,19 @@ find "$SOURCE_ROOT" -type f -path "*/snippets/*" | while read -r source_file; do
     extension="${filename##*.}"
     case "$extension" in
         go)
-            lang="go Go icon=\"golang\""
+            lang="go Go icon=\"golang\" wrap"
             ;;
         ts|js)
-            lang="typescript Typescript icon=\"javascript\""
+            lang="typescript Typescript icon=\"javascript\" wrap"
             ;;
         php)
-            lang="php PHP icon=\"php\""
+            lang="php PHP icon=\"php\" wrap"
             ;;
         java)
-            lang="java Java icon=\"java\""
+            lang="java Java icon=\"java\" wrap"
             ;;
         py)
-            lang="python Python icon=\"python\""
+            lang="python Python icon=\"python\" wrap"
             ;;
         *)
             lang=""

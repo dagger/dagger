@@ -16,14 +16,14 @@ Install the latest stable release of the Dagger CLI following the steps below.
   <Tab title="macOS">
    We assume that you have [Homebrew](https://brew.sh) installed. If you do, you can install `dagger` with a single command:
 
-    ```shell
+    ```shell wrap
     brew install dagger/tap/dagger
     ```
 
     <Note>
     Note: This installs `dagger` in:
 
-    ```shell
+    ```shell wrap
     type dagger
     # Expected output on macOS ARM:
     # dagger is /opt/homebrew/bin/dagger
@@ -34,26 +34,26 @@ Install the latest stable release of the Dagger CLI following the steps below.
 
     If you do not have Homebrew installed, you can use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
 
-    ```shell
+    ```shell wrap
     curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
     ```
 
     If your user account doesn't have sufficient privileges to install in
     `/usr/local` and `sudo` is available, you can set `BIN_DIR` and use `sudo -E`:
 
-    ```shell
+    ```shell wrap
     curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh
     ```
 
     If you want to set a specific version, you can set `DAGGER_VERSION`:
 
-    ```shell
+    ```shell wrap 
     curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh
     ```
 
     To see the installed version of dagger:
 
-    ```shell
+    ```shell wrap
     ./bin/dagger version
     # Expected output: 
     # dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) darwin/amd64
@@ -62,14 +62,14 @@ Install the latest stable release of the Dagger CLI following the steps below.
   <Tab title="Linux">
     The quickest way of installing the latest stable release of `dagger` on Linux is to use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
 
-    ```shell
+    ```shell wrap
     curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
     ```
 
     <Note>
     This installs `dagger` in `$HOME/.local/bin`:
 
-    ```shell
+    ```shell wrap
     type dagger
     # Expected output: dagger is $HOME/.local/bin/dagger
     ```
@@ -80,19 +80,19 @@ Install the latest stable release of the Dagger CLI following the steps below.
     If you want to install globally, and `sudo` is available, you can specify an
     alternative install location by setting `BIN_DIR` and using `sudo -E`:
 
-    ```shell
+    ```shell wrap
     curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh
     ```
 
     If you want to set a specific version, you can set `DAGGER_VERSION`:
 
-    ```shell
+    ```shell wrap
     curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh
     ```
 
     To see the installed version of dagger:
 
-    ```shell
+    ```shell wrap
     ./bin/dagger version
     # Expected output: dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) linux/amd64
     ```
@@ -123,7 +123,7 @@ Development releases should be considered unfinished.
   <Tab title="macOS">
 To install the latest development release, use the following command:
 
-```shell
+```shell wrap
 curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
 ```
 
@@ -132,7 +132,7 @@ This will install the development release of the Dagger CLI in `./bin/dagger`.
   <Tab title="Linux">
 To install the latest development release, use the following command:
 
-```shell
+```shell wrap
 curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
 ```
 

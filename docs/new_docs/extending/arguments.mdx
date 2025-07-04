@@ -3,7 +3,9 @@ title: "Arguments"
 description: "Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which Dagger Functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more."
 ---
 
-import { DynamicCodeTabs } from "/snippets/dynamic-code-tabs.jsx";
+import { CodeTabs } from '/snippets/components/CodeTabs.jsx';
+import { ShellTabs } from '/snippets/components/ShellTabs.jsx';
+import { PythonTypeNote, PhpTypeNote } from '/snippets/components/LanguageNotes.jsx';
 
 When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
 
@@ -23,94 +25,24 @@ When passing values to Dagger Functions within Dagger Shell, required arguments 
 
 Here is an example of a Dagger Function that accepts a string argument:
 
-<DynamicCodeTabs
-  basePath="/snippets/functions/arguments-string"
-  availableLanguages={['go', 'python']} 
+<CodeTabs 
+  snippetPath="/snippets/code/functions/arguments-string"
+  goFile="main-go.mdx"
+  pythonFile="main.py"
+  typescriptFile="index.ts"
+  phpFile="src/MyModule.php"
+  javaFile="src/main/java/io/dagger/modules/mymodule/MyModule.java"
+  pythonNotes={<PythonTypeNote />}
+  phpNotes={<PhpTypeNote />}
 />
-
-<Tabs groupId="language" queryString="sdk">
-<Tab value="go" title="Go">
-```go file=./snippets/functions/arguments-string/go/main.go
-```
-</Tab>
-<Tab value="python" title="Python">
-```python file=./snippets/functions/arguments-string/python/main.py
-```
-
-Even though the Python runtime doesn't enforce [type annotations][typing] at runtime,
-it's important to define them with Dagger Functions. The Python SDK needs the
-typing information at runtime to correctly report to the API. It can't rely on
-[type inference][inference], which is only possible for external [static type
-checkers][type-checker].
-
-If a function doesn't have a return type annotation, it'll be declared as `None`,
-which translates to the [dagger.Void][void] type in the API:
-
-```python
-@function
-def hello(self):
-    return "Hello world!"
-
-# Error: cannot convert string to Void
-```
-
-It's fine however, when no value actually needs to be returned:
-
-```python
-@function
-def hello(self):
-    ...
-    # no return
-```
-
-[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
-[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
-[typing]: https://docs.python.org/3/library/typing.html
-[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
-[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
-[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
-
-</Tab>
-<Tab value="typescript" title="TypeScript">
-```typescript file=./snippets/functions/arguments-string/typescript/index.ts
-```
-</Tab>
-<Tab value="php" title="PHP">
-```php file=./snippets/functions/arguments-string/php/src/MyModule.php
-```
-
-Even though PHP doesn't enforce [type annotations][typing] at runtime,
-it's important to define them with Dagger Functions. The PHP SDK needs the
-typing information at runtime to correctly report to the API.
-
-[typing]: https://www.php.net/manual/en/language.types.type-system.php
-
-</Tab>
-<Tab value="java" title="Java">
-```java file=./snippets/functions/arguments-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
-```
-</Tab>
-</Tabs>
 
 Here is an example call for this Dagger Function:
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'get-user male'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-get-user male
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger call get-user --gender=male
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'get-user male'"
+  daggerShellCommand="get-user male"
+  daggerCliCommand="dagger call get-user --gender=male"
+/>
 
 The result will look something like this:
 
@@ -130,23 +62,11 @@ Here is an example of passing a host environment variable containing a string va
 export GREETING=bonjour
 ```
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING'"
+  daggerShellCommand="github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING"
+  daggerCliCommand="dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING"
+/>
 
 ## Boolean arguments
 
