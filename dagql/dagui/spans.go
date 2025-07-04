@@ -162,6 +162,8 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+
+	ExtraAttributes map[string]any `json:",omitempty"`
 }
 
 type SpanLink struct {
@@ -238,6 +240,12 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
 		snapshot.Encapsulated = true
+
+	default:
+		if snapshot.ExtraAttributes == nil {
+			snapshot.ExtraAttributes = make(map[string]any)
+		}
+		snapshot.ExtraAttributes[name] = val
 	}
 }
 

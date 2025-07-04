@@ -1,3 +1,7 @@
+Expected stdout:
+
+hi from root hi from dep hi from dep2
+
 Expected stderr:
 
 ▼ connect X.Xs
@@ -5,7 +9,7 @@ Expected stderr:
 ├─● connecting to engine X.Xs
 ╰─● starting session X.Xs
  
-▼ load module: ./viztest X.Xs
+▼ load module: github.com/dagger/dagger-test-modules X.Xs
 ├─● finding module configuration X.Xs
 ├─● initializing module X.Xs
 ├─● inspecting module metadata X.Xs
@@ -13,12 +17,15 @@ Expected stderr:
  
 ● parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
-● .pathArgs(
-  ┆ file: Host.file(path: "/app/dagql/idtui/golden_test.go"): File!
-  ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
-  ┆ contextFile: Directory.file(path: "main.go"): File!
-  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", exclude: [], noCache: true): Directory!
-  ): Void X.Xs
+● rootMod: RootMod! X.Xs
+▼ .fn: String! X.Xs
+┃ hi from root hi from dep hi from dep2
+├─● depAlias: DepAlias! X.Xs
+╰─▼ .fn: String! X.Xs
+  ┃ hi from dep hi from dep2
+  ├─● dep2: Dep2! X.Xs
+  ╰─▼ .fn: String! X.Xs
+    ┃ hi from dep2
+
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
