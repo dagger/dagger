@@ -1,0 +1,311 @@
+---
+title: "Components"
+---
+
+Overview
+
+## Functions
+
+Dagger functions are the building blocks of your workflows. They can be composed together to create complex pipelines.
+
+```go file=/snippets/main.go
+```
+
+## Objects
+
+### Container
+
+### Directory
+
+### File
+
+### LLM
+
+Dagger's `LLM` core type includes API methods to attach objects to a Large Language Model (LLM), send prompts, and receive responses.
+
+#### Prompts
+
+Use the `LLM.withPrompt()` API method to append prompts to the LLM context:
+
+<Tabs groupId="shell">
+<Tab title="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-prompt "What tools do you have available?"
+EOF
+```
+</Tab>
+<Tab title="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+llm |
+  with-prompt "What tools do you have available?"
+```
+</Tab>
+</Tabs>
+
+For longer or more complex prompts, use the `LLM.withPromptFile()` API method to read the prompt from a text file:
+
+<Tabs groupId="shell">
+<Tab title="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-prompt-file ./prompt.txt
+EOF
+```
+</Tab>
+<Tab title="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+llm |
+  with-prompt-file ./prompt.txt
+```
+</Tab>
+</Tabs>
+
+
+#### Responses and Variables
+
+Use the `LLM.lastReply()` API method to obtain the last reply from the LLM, or the `LLM.history()` API method to get the complete message history.
+
+<Important>
+Most LLM services impose rate limits (restrictions on the number of requests they will accept within a given time period). Dagger handles this gracefully with built-in rate limit detection and automatic retry with exponential backoff.
+</Important>
+
+Dagger supports the use of variables in prompts. This allows you to interpolate results of other operations into an LLM prompt:
+
+<Tabs groupId="shell">
+<Tab title="System shell">
+```shell
+dagger <<EOF
+source=\$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+environment=\$(env |
+  with-directory-input 'source' \$source 'a directory with source code')
+llm |
+  with-env \$environment |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply
+EOF
+```
+</Tab>
+<Tab title="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+source=$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+environment=$(env |
+  with-directory-input 'source' $source 'a directory with source code')
+llm |
+  with-env $environment |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply
+```
+</Tab>
+</Tabs>
+
+### Secret
+
+Dagger has first-class support for "secrets", such as passwords, API keys, SSH keys and so on. These secrets can be securely used in Dagger functions without exposing them in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.
+
+<Note>
+[Secret arguments](./arguments.mdx#secret-arguments) can be sourced from multiple providers: the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
+</Note>
+
+Here is an example, which uses a secret in a Dagger function chain:
+
+```shell
+export API_TOKEN="guessme"
+```
+
+<Tabs groupId="language" queryString="sdk">
+<Tab title="System shell">
+```shell
+dagger <<'EOF'
+container |
+  from alpine:latest |
+  with-secret-variable MY_SECRET env://API_TOKEN |
+  with-exec -- sh -c 'echo this is the secret: $MY_SECRET' |
+  stdout
+EOF
+```
+</Tab>
+<Tab title="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container |
+  from alpine:latest |
+  with-secret-variable MY_SECRET env://API_TOKEN |
+  with-exec -- sh -c 'echo this is the secret: $MY_SECRET' |
+  stdout
+```
+</Tab>
+<Tab title="Dagger CLI">
+```shell
+dagger core container \
+  from --address=alpine:latest \
+  with-secret-variable --name="MY_SECRET" --secret="env://API_TOKEN" \
+  with-exec --args="sh","-c",'echo this is the secret: $MY_SECRET' \
+  stdout
+```
+</Tab>
+<Tab value="go" title="Go">
+```go file=./snippets/secrets/go/main.go
+```
+</Tab>
+<Tab value="python" title="Python">
+```python file=./snippets/secrets/python/main.py
+```
+</Tab>
+<Tab value="typescript" title="TypeScript">
+```typescript file=./snippets/secrets/typescript/index.ts
+```
+</Tab>
+</Tabs>
+
+#### Caching
+
+When a `Secret` is included in other operations, the layer cache entries for those operations will be based on the plaintext value of the secret. If the same operation is run with a secret with the same plaintext value, that operation may be cached rather than re-executed. In the above example, the secret is specified as `env://API_TOKEN`, so the cache for the `with-exec` will be based on the plaintext value of the secret. If two clients execute the container and have the same `API_TOKEN` environment variable value, they may share layer cache entries for the container. However, if two clients have different values for the `API_TOKEN` environment variable, the `with-exec` will not share cache entries, even though both clients specify the secret as `env://API_TOKEN`.
+
+In some cases, users may desire that operations share layer cache entries even if the secret plaintext value is different. For example, a secret may often rotate in plaintext value but not be meaningfully different; in these cases, it should still be possible to reuse the cache for operations that include that secret.
+
+For these use cases, the optional `cacheKey` argument to `Secret` construction can be used to specify the "cache key" of the secret. Secrets that share the same `cacheKey` will be considered equivalent when checking cache of operations that include them, even if their plaintext value differs. See [the cookbook](../cookbook/cookbook.mdx#customize-secret-caching-behavior) for example usage.
+
+#### Security considerations
+
+- Dagger automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash.
+- Secret plaintext should be handled securely within your Dagger workflow. For example, you should not write secret plaintext to a file, as it could then be stored in the Dagger cache.
+
+### Service
+
+Dagger Functions support service containers, enabling users to spin up additional services (as containers) and communicate with those services from their workflows.
+
+This makes it possible to:
+- Instantiate and return services from a Dagger Function, and then:
+  - Use those services in other Dagger Functions (container-to-container networking)
+  - Use those services from the calling host (container-to-host networking)
+- Expose host services for use in a Dagger Function (host-to-container networking).
+
+#### Use cases
+
+Some common scenarios for using services with Dagger Functions are:
+
+- Running a database service for local storage or testing
+- Running end-to-end integration tests against a service
+- Running sidecar services
+
+#### Service containers
+
+Services instantiated by a Dagger Function run in service containers, which have the following characteristics:
+
+- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
+- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed.
+- Service containers are health checked prior to running clients.
+
+#### Example
+
+Here is an example of a Dagger Function that returns an HTTP service, which can then be accessed from the calling host:
+
+<Tabs groupId="language" queryString="sdk">
+<Tab value="go" title="Go">
+```go file=./snippets/services-1/go/main.go
+```
+</Tab>
+<Tab value="python" title="Python">
+```python file=./snippets/services-1/python/main.py
+```
+</Tab>
+<Tab value="typescript" title="TypeScript">
+```typescript file=./snippets/services-1/typescript/index.ts
+```
+</Tab>
+<Tab value="php" title="PHP">
+```php file=./snippets/services-1/php/src/MyModule.php
+```
+</Tab>
+<Tab value="java" title="Java">
+```java file=./snippets/services-1/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</Tab>
+</Tabs>
+
+#### Host services
+
+This also works in the opposite direction: containers in Dagger Functions can communicate with services running on the host.
+
+#### Example
+
+Here's an example of how a workflow running in a Dagger Function can access and query a MariaDB database service running on the host:
+
+<Tabs groupId="language" queryString="sdk">
+<Tab value="go" title="Go">
+```go file=./snippets/services-2/go/main.go
+```
+</Tab>
+<Tab value="python" title="Python">
+```python file=./snippets/services-2/python/main.py
+```
+</Tab>
+<Tab value="typescript" title="TypeScript">
+```typescript file=./snippets/services-2/typescript/index.ts
+```
+</Tab>
+<Tab value="php" title="PHP">
+```php file=./snippets/services-2/php/src/MyModule.php
+```
+</Tab>
+<Tab value="java" title="Java">
+```java file=./snippets/services-2/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</Tab>
+</Tabs>
+
+### Environment
+
+Dagger [modules](../features/modules.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
+
+Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
+
+The documentation for the modules are provided to the LLM, so make sure to provide helpful documentation in your Dagger Functions. The LLM should be able to figure out how to use the tools on its own. Don't worry about describing the objects too much in your prompts because it will be redundant with this automatic documentation.
+
+Consider the following Dagger Function:
+
+<Tabs groupId="language" queryString="sdk">
+<Tab value="go" title="Go">
+```go file=../quickstart/agent/snippets/part1/go/main.go
+```
+</Tab>
+<Tab value="python" title="Python">
+```python file=../quickstart/agent/snippets/part1/python/src/coding_agent/main.py
+```
+</Tab>
+<Tab value="typescript" title="TypeScript">
+```typescript file=../quickstart/agent/snippets/part1/typescript/src/index.ts
+```
+</Tab>
+<Tab value="php" title="PHP">
+```php file=../quickstart/agent/snippets/part1/php/src/CodingAgent.php
+```
+</Tab>
+<Tab value="java" title="Java">
+```java file=../quickstart/agent/snippets/part1/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
+```
+</Tab>
+</Tabs>
+
+Here, an instance a `Container` is attached as an input to the `Env` environment. The `Container` is a core type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
+
+In the `Env`, a `Container` instance called `completed` is specified as a desired output of the LLM. This means that the LLM should return the `Container` instance as a result of completing its task. The resulting `Container` object is then available for further processing or for use in other Dagger Functions.
+
+### Create your own
+
+In addition to the core types, you can create your own custom types in Dagger. These custom types can be used in Dagger Functions and can be composed with other core types. 
+
+Learn more about [creating custom types in Dagger](../extending/index.mdx).
+

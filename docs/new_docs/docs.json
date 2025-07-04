@@ -8,6 +8,10 @@
     "dark": "#131126"
   },
   "favicon": "/favicon.png",
+  "banner": {
+    "dismissible": true,
+    "content": "Join Our Engineering Deep Dive on Agentic CI [Register Now](https://dagger.io/deep-dives/agentic-ci)"
+  },
   "navigation": {
     "tabs": [
       {
@@ -15,6 +19,7 @@
         "groups": [
           {
             "group": "Getting Started",
+            "icon": "house",
             "pages": [
               "index",
               "installation",
@@ -24,6 +29,7 @@
           },
           {
             "group": "Quickstart",
+            "icon": "rocket",
             "pages": [
               "quickstart/index",
               "quickstart/ai-agent/index"
@@ -31,9 +37,17 @@
           },
           {
             "group": "Examples",
+            "icon": "lightbulb",
             "pages": [
               "examples",
               "videos"
+            ]
+          },
+          {
+            "group": "Workflow Components",
+            "icon": "list-check",
+            "pages": [
+              "components/index"
             ]
           }
         ]
@@ -43,6 +57,7 @@
         "groups": [
           {
             "group": "Overview",
+            "icon": "cloud",
             "pages": [
               "cloud/index",
               "cloud/organization",
@@ -57,10 +72,14 @@
         "groups": [
           {
             "group": "Extending Dagger",
+            "icon": "puzzle-piece",
             "pages": [
               "extending/index",
               "extending/arguments",
-              "extending/return-values"
+              "extending/return-values",
+              "extending/default-paths",
+              "extending/module-dependencies",
+              "extending/services"
             ]
           }
         ]
@@ -82,6 +101,17 @@
               "reference/api/graphql-api",
               "reference/api/core-types",
               "reference/api/function-registry"
+            ]
+          },
+          {
+            "group": "SDKs",
+            "pages": [
+              "reference/sdk/go",
+              "reference/sdk/java",
+              "reference/sdk/php",
+              "reference/sdk/python",
+              "reference/sdk/rust",
+              "reference/sdk/typescript"
             ]
           }
         ]
@@ -130,5 +160,14 @@
       "github": "https://github.com/dagger",
       "linkedin": "https://linkedin.com/company/dagger"
     }
+  },
+  "background": {
+    "color": {
+      "light": "#f8f4ef",
+      "dark": "#131126"
+    }
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs"
   }
 }

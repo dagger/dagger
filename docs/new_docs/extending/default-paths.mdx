@@ -1,44 +1,48 @@
 ---
-title: "Default Paths"
+slug: /api/default-paths
 ---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Default Paths
 
 It is possible to assign a default path for a `Directory` or `File` argument in a Dagger Function. Dagger will automatically use this default path when no value is specified for the argument. The `Directory` or `File` loaded in this manner is not merely a string, but the actual filesystem state of the directory or file.
 
-<Important>
+:::important
 Default paths are only available for `Directory` and `File` arguments. They are commonly used to load constant filesystem locations, such as an application's source code directory. Additionally, when a value is explicitly passed for the argument, it always overrides the default path.
-</Important>
+:::
 
 Here's an example:
 
 <Tabs groupId="language" queryString="sdk">
-<Tab value="go" title="Go">
+<TabItem value="go" label="Go">
 
 The default path is set by adding a `defaultPath` pragma on the corresponding Dagger Function `source` argument.
 
 ```go file=./snippets/default-paths/go/main.go
 ```
-</Tab>
-<Tab value="python" title="Python">
+</TabItem>
+<TabItem value="python" label="Python">
 
 The default path is set by adding a `DefaultPath` annotation on the corresponding Dagger Function `source` argument.
 
 ```python file=./snippets/default-paths/python/main.py
 ```
-</Tab>
-<Tab value="typescript" title="TypeScript">
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
 
 The default path is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function `source` argument.
 
 ```typescript file=./snippets/default-paths/typescript/index.ts
 ```
-</Tab>
-<Tab value="php" title="PHP">
+</TabItem>
+<TabItem value="php" label="PHP">
 
 The default path is set by adding a `#[DefaultPath]` Attribute on the corresponding Dagger Function `source` argument.
 
 ```php file=./snippets/default-paths/php/src/MyModule.php
 ```
-</Tab>
+</TabItem>
 </Tabs>
 
 When determining how to resolve a default path, Dagger first identifies a "context directory", and then resolves the path starting from the context directory.
@@ -54,9 +58,9 @@ flowchart TD
     B -->|No| F[Context directory = Directory containing dagger.json]
 ```
 
-<Important>
+:::important
 For security reasons, it is not possible to retrieve files or directories outside the context directory.
-</Important>
+:::
 
 The following sections contain examples of how a `Directory` argument is resolved for different default path values. The same rules are followed for `File` arguments.
 
@@ -86,6 +90,6 @@ The following sections contain examples of how a `Directory` argument is resolve
 - If the default path is the relative path `.`, the context directory is still the directory containing `dagger.json`. The resolved path will then be `/my-module`.
 - If the default path is the relative path `..`, the context directory is still the directory containing `dagger.json`. The resolved path will then be the parent of the context directory. This will trigger an error, since Dagger does not permit access to paths outside the context directory.
 
-<Important>
+:::tip
 It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx).
-</Important>
+:::
