@@ -32,7 +32,7 @@
             "icon": "rocket",
             "pages": [
               "quickstart/index",
-              "quickstart/ai-agent/index"
+              "quickstart/workflow"
             ]
           },
           {

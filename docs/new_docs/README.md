@@ -1,28 +1,28 @@
 # This is the new structure for the documentation.
 
 ### 🚀 Getting Started
-- **What is Dagger?**
+- **What is Dagger?** (in new_docs/index.mdx)
   - [Intro](https://docs.dagger.io/)
   - [Features](https://docs.dagger.io/features)
-- **Installation**
+- **Installation** (in new_docs/installation.mdx)
   - [Install Docs](https://docs.dagger.io/install)
-- **Quickstart**
+- **Quickstart** (in new_docs/quickstart/index.mdx)
   - [CI Quickstart (with LLM)](https://docs.dagger.io/quickstart/ci)
-- **Core Concepts**
+- **Core Concepts** (in new_docs/quickstart/index.mdx)
   - [Core Concepts Overview](https://docs.dagger.io/quickstart)
-- **IDE Setup**
+- **IDE Setup** (in new_docs/ide-setup.mdx)
   - [IDE Integration](https://docs.dagger.io/api/ide-integration)
 
 ### 🎯 Use Cases
-- **Modern CI**
+- **Modern CI** (in new_docs/use-cases.mdx)
   - [Using Modules](https://docs.dagger.io/features/modules)
-- **Agentic CI**
+- **Agentic CI** (in new_docs/use-cases.mdx)
   - [LLM Integration](https://docs.dagger.io/features/llm)
 
-### 💡 Examples
+### 💡 Examples (in new_docs/example.mdx)
 - [Example Workflows](https://docs.dagger.io/examples)
 
-### 🧩 Workflow Components
+### 🧩 Workflow Components (in new_docs/components/)
 - **Overview**
 - **Functions**
 - **Objects** ([API Reference](https://docs.dagger.io/api/types))
@@ -40,7 +40,7 @@
 - **Modules**
   - [Custom Functions](https://docs.dagger.io/api/custom-functions)
 
-### ⚙️ Engine & Runtime
+### ⚙️ Engine & Runtime (in new_docs/engine/)
 - Overview
 - Local Development
 - CI Integration
@@ -52,15 +52,15 @@
 - Performance & Caching
 - Troubleshooting
 
-### ☁️ Dagger Cloud
+### ☁️ Dagger Cloud (in new_docs/cloud/)
 - Overview
 - Organization & Auth
 - Observability
 - Module Catalog & Insights
 
-### 📚 Reference
-- **CLI Reference**
-- **API Documentation**
+### 📚 Reference (in new_docs/reference)
+- **CLI Reference** (in new_docs/reference/cli/index.mdx)
+- **API Documentation** (in new_docs/reference/api/index.mdx)
   - GraphQL API
   - Core Types
   - Function Registry
