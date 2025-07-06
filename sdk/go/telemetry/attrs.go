@@ -154,9 +154,9 @@ const (
 	// The normalized caller module ref, e.g. "githuv.com/dagger/dagger@abc123"
 	ModuleCallerRefAttr = "dagger.io/module.caller.ref"
 
-	// The function name of the current module
+	// The function name of the current module in the format if "type.functionName"
 	ModuleFunctionCallNameAttr = "dagger.io/module.function.name"
 
-	// The function name of the current module
+	// The function name of the current module in the format of "type.functionName"
 	ModuleCallerFunctionCallNameAttr = "dagger.io/module.caller.function.name"
 )

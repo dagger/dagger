@@ -14,7 +14,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -75,18 +74,29 @@ func AroundFunc(
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
 	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
-		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id.Call())
+		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
 
 		if callerRef != nil && calleeRef != nil {
 			var callerRefAttr string
 			if len(callerRef.ref) > 0 {
 				callerRefAttr = fmt.Sprintf("%s@%s", callerRef.ref, callerRef.version)
 			}
+
+			callerFn := callerRef.functionName
+			calleeFn := calleeRef.functionName
+
+			if callerRef.typeName != "" {
+				callerFn = fmt.Sprintf("%s.%s", callerRef.typeName, callerRef.functionName)
+			}
+
+			if calleeRef.typeName != "" {
+				calleeFn = fmt.Sprintf("%s.%s", calleeRef.typeName, calleeRef.functionName)
+			}
 			attrs = append(attrs,
 				attribute.String(telemetry.ModuleRefAttr, fmt.Sprintf("%s@%s", calleeRef.ref, calleeRef.version)),
-				attribute.String(telemetry.ModuleFunctionCallNameAttr, calleeRef.functionName),
+				attribute.String(telemetry.ModuleFunctionCallNameAttr, calleeFn),
 				attribute.String(telemetry.ModuleCallerRefAttr, callerRefAttr),
-				attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, callerRef.functionName),
+				attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, callerFn),
 			)
 		}
 	}
@@ -119,14 +129,16 @@ type moduleCallRef struct {
 	ref          string
 	version      string
 	functionName string
+	typeName     string
 }
 
-func parseCallerCalleeRefs(ctx context.Context, q *Query, call *callpbv1.Call) (*moduleCallRef, *moduleCallRef) {
+func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*moduleCallRef, *moduleCallRef) {
 	cm, _ := q.MainClientCallerMetadata(ctx)
 	fc, _ := q.CurrentFunctionCall(ctx)
 	m, _ := q.CurrentModule(ctx)
 	sd, _ := q.CurrentServedDeps(ctx)
 
+	call := callID.Call()
 	calleeModule := call.Module
 
 	var callerRef, calleeRef = &moduleCallRef{}, &moduleCallRef{}
@@ -145,6 +157,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, call *callpbv1.Call) (
 
 	if fc != nil {
 		callerRef.functionName = fc.Name
+		callerRef.typeName = fc.ParentName
 		if ms.Git != nil {
 			callerRef.ref, callerRef.version, _ = strings.Cut(ms.AsString(), "@")
 		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
@@ -163,6 +176,14 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, call *callpbv1.Call) (
 	calleeRef.version = call.Module.Pin
 	calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
 	calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
+
+	var voidType Void
+	if callID.Receiver() != nil {
+		calleeRef.typeName = callID.Receiver().Type().NamedType()
+	} else if call.Type.NamedType == voidType.TypeName() {
+		// it's a top level module function call so set the ParentName as the callee type
+		calleeRef.typeName = callerRef.typeName
+	}
 
 	// if it doesn't have a pin, it's a local callee module
 	if calleeRef.version == "" {
