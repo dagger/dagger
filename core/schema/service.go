@@ -171,7 +171,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	// extract the withExec args
 	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
 	if !ok {
-		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.AstType().NamedType)
+		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.Type().NamedType)
 	}
 	inputs, err := dagql.ExtractIDArgs(withExecField.Args, id)
 	if err != nil {

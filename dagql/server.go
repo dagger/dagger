@@ -386,7 +386,7 @@ func (s *Server) Schema() *ast.Schema {
 	}
 
 	s.schemaOnces[view].Do(func() {
-		queryType := s.Root().AstType().Name()
+		queryType := s.Root().Type().Name()
 		schema := &ast.Schema{
 			Types:         make(map[string]*ast.Definition),
 			PossibleTypes: make(map[string][]*ast.Definition),
@@ -506,7 +506,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 				continue
 			}
-			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.AstType(), op.SelectionSet)
+			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
 			if err != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
 			}
@@ -644,22 +644,22 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		}
 
 		destV := reflect.ValueOf(dest).Elem()
-		if res.AstType().Elem != nil {
+		if res.Type().Elem != nil {
 			if i+1 < len(sels) {
-				return fmt.Errorf("cannot sub-select enum of %s", res.AstType())
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
 			if destV.Type().Kind() != reflect.Slice {
 				// assigning to something like dagql.Typed, don't need to enumerate
 				break
 			}
-			isObj := s.isObjectType(res.AstType().Elem.Name())
+			isObj := s.isObjectType(res.Type().Elem.Name())
 			enum, isEnum := res.Unwrap().(Enumerable)
 			if !isEnum {
 				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
 			}
 			// HACK: list of objects must be the last selection right now unless nth used in Selector.
 			if i+1 < len(sels) {
-				return fmt.Errorf("cannot sub-select enum of %s", res.AstType())
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
 			for nth := 1; nth <= enum.Len(); nth++ {
 				val, err := res.NthValue(nth)
@@ -684,7 +684,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 				}
 			}
 			return nil
-		} else if s.isObjectType(res.AstType().Name()) {
+		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
 			self, err = s.toSelectable(res)
@@ -695,7 +695,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		} else if i+1 < len(sels) {
 			// if the result is not an object and there are further selections,
 			// that's a logic error.
-			return fmt.Errorf("cannot sub-select %s", res.AstType())
+			return fmt.Errorf("cannot sub-select %s", res.Type())
 		}
 	}
 
@@ -800,6 +800,11 @@ func NewResultForID[T Typed](
 ) (res Result[T], _ error) {
 	if id == nil {
 		return res, errors.New("id is nil")
+	}
+
+	// check that we aren't trying to create a Result for a Result itself
+	if _, ok := any(self).(AnyResult); ok {
+		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
 	return Result[T]{
@@ -963,7 +968,7 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		return sel, nil
 	}
 
-	className := val.AstType().Name()
+	className := val.Type().Name()
 	class, ok := s.ObjectType(className)
 	if ok {
 		return class.New(val)
@@ -987,7 +992,7 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("toSelectable: unknown type %q", val.AstType().Name())
+	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {

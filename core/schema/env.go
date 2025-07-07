@@ -118,10 +118,7 @@ func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, a
 	Value       string
 	Description string
 }) (*core.Env, error) {
-	str, err := dagql.NewResultForCurrentID(ctx, dagql.NewString(args.Value))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create string instance: %w", err)
-	}
+	str := dagql.NewString(args.Value)
 	return env.WithInput(args.Name, str, args.Description), nil
 }
 

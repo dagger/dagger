@@ -334,8 +334,10 @@ func TestSelectArray(t *testing.T) {
 				Field: "neighbors",
 			},
 		))
-		pointsArr, ok := dest.(dagql.Array[*points.Point])
-		assert.Assert(t, ok, fmt.Sprintf("expected dagql.Array[*points.Point], got %T", dest))
+		res, ok := dest.(dagql.Result[dagql.Typed])
+		assert.Assert(t, ok, fmt.Sprintf("expected dagql.Array[*points.Point] but got %T", dest))
+		pointsArr, ok := res.Self().(dagql.Array[*points.Point])
+		assert.Assert(t, ok, fmt.Sprintf("expected dagql.Array[*points.Point] but got %T", res.Self()))
 		assert.Equal(t, len(pointsArr), 4)
 	})
 

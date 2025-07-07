@@ -333,7 +333,7 @@ type Result[T Typed] struct {
 
 var _ AnyResult = Result[Typed]{}
 
-func (o Result[T]) AstType() *ast.Type {
+func (o Result[T]) Type() *ast.Type {
 	return o.self.Type()
 }
 
@@ -714,7 +714,7 @@ func (r ObjectResult[T]) call(
 		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
 		// want. Instead, we only want to cache <id digest> -> <actual object value>.
 		// To avoid this, we check that the returned IDable type is the actual object type.
-		matchesType := valID.Type().ToAST().Name() == val.AstType().Name()
+		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
 
 		if digestChanged && matchesType {
 			newID = valID

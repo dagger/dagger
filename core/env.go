@@ -103,7 +103,7 @@ func (env *Env) DeclareOutput(name string, typ dagql.Type, description string) e
 }
 
 // Add an input (read-only) binding to the environment
-func (env *Env) WithInput(key string, val dagql.AnyResult, description string) *Env {
+func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()
 	input := &Binding{Key: key, Value: val, Description: description, env: env}
 	_ = input.ID() // If val is an object, force its ingestion
@@ -189,7 +189,7 @@ func (env *Env) Ingest(obj dagql.AnyResult, desc string) string {
 			Key:          llmID,
 			Value:        obj,
 			Description:  desc,
-			ExpectedType: obj.AstType().Name(),
+			ExpectedType: obj.Type().Name(),
 			env:          env,
 		}
 	}
@@ -270,7 +270,7 @@ func (env *Env) Types() []string {
 
 type Binding struct {
 	Key         string
-	Value       dagql.AnyResult
+	Value       dagql.Typed
 	Description string
 	env         *Env // TODO: wire this up
 	// The expected type
@@ -488,11 +488,19 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			if val == nil {
 				return nil, fmt.Errorf("binding %q undefined", binding.Key)
 			}
-			if val.AstType().Name() != typeName {
-				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.AstType())
+			if val.Type().Name() != typeName {
+				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.Type())
 			}
 
-			return val, nil
+			res, ok := val.(dagql.AnyResult)
+			if !ok {
+				var err error
+				res, err = dagql.NewResultForCurrentID(ctx, val)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert binding %q value to result: %w", binding.Key, err)
+				}
+			}
+			return res, nil
 		},
 		dagql.CacheSpec{
 			DoNotCache: "Bindings are mutable",

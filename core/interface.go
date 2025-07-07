@@ -44,7 +44,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		if err != nil {
 			return nil, fmt.Errorf("load interface implementation: %w", err)
 		}
-		typeName := loadedImpl.val.AstType().Name()
+		typeName := loadedImpl.val.Type().Name()
 		checkType := loadedImpl.valType.TypeDef()
 
 		// Verify that the object provided actually implements the interface. This

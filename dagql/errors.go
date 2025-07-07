@@ -11,7 +11,7 @@ type PanicError struct {
 
 func (err PanicError) Error() string {
 	return fmt.Sprintf("panic while resolving %s.%s: %v\n\n%s",
-		err.Self.AstType().Name(),
+		err.Self.Type().Name(),
 		err.Selection.Alias,
 		err.Cause,
 		string(err.Stack))

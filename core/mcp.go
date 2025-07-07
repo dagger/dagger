@@ -89,7 +89,7 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.AnyObjectResult, error)
 	}
 	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
-			objType := obj.AstType().Name()
+			objType := obj.Type().Name()
 			if expectedType != "" && objType != expectedType {
 				return nil, fmt.Errorf("type error: expected %q, got %q", expectedType, objType)
 			}
@@ -722,11 +722,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
 				}
 				if output.ExpectedType == "String" {
-					var err error
-					output.Value, err = dagql.NewResultForCurrentID(ctx, dagql.String(argStr))
-					if err != nil {
-						return nil, fmt.Errorf("failed to create String instance for %s: %w", name, err)
-					}
+					output.Value = dagql.String(argStr)
 				} else {
 					bnd, ok := m.env.objsByID[argStr]
 					if !ok {
@@ -734,7 +730,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 					}
 
 					obj := bnd.Value
-					actualType := obj.AstType().Name()
+					actualType := obj.Type().Name()
 					if output.ExpectedType != actualType {
 						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
 					}
@@ -1179,7 +1175,7 @@ func (m *MCP) validateAndNormalizeChain(self string, calls []ChainedCall, allMet
 		if err != nil {
 			return err
 		}
-		currentType = obj.AstType()
+		currentType = obj.Type()
 	}
 	var errs error
 	for i, call := range calls {
@@ -1480,7 +1476,7 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 const jsonSchemaIDAttr = "x-id-type"
 
 func (m *MCP) newState(target dagql.AnyObjectResult) (string, error) {
-	typeName := target.AstType().Name()
+	typeName := target.Type().Name()
 	_, known := m.env.typeCounts[typeName]
 	res := map[string]any{
 		"result": m.env.Ingest(target, ""),

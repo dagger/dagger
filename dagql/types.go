@@ -75,16 +75,11 @@ type IDable interface {
 // It's a Result but as an interface and without any type params, allowing it
 // to be passed around without knowing the concrete type at compile-time.
 type AnyResult interface {
+	Typed
 	Wrapper
 	IDable
 	PostCallable
 	Setter
-
-	// AstType returns the GraphQL type of the wrapped Typed value.
-	// NOTE: this *could* be named such that AnyResult implements Typed, but
-	// we purposefully avoid that to prevent nonsense type like Result[Result[Typed]]
-	// at compile time.
-	AstType() *ast.Type
 
 	// DerefValue returns an AnyResult when the wrapped value is Derefable and
 	// has a value set. If the value is not derefable, it returns itself.
