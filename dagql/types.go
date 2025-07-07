@@ -1055,12 +1055,12 @@ func (arr Array[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
 	}, nil
 }
 
-type InstanceArray[T Typed] []Result[T]
+type ResultArray[T Typed] []Result[T]
 
-var _ Typed = InstanceArray[Typed]{}
-var _ Enumerable = InstanceArray[Typed]{}
+var _ Typed = ResultArray[Typed]{}
+var _ Enumerable = ResultArray[Typed]{}
 
-func (i InstanceArray[T]) Type() *ast.Type {
+func (i ResultArray[T]) Type() *ast.Type {
 	var t T
 	return &ast.Type{
 		Elem:    t.Type(),
@@ -1068,23 +1068,23 @@ func (i InstanceArray[T]) Type() *ast.Type {
 	}
 }
 
-func (arr InstanceArray[T]) Element() Typed {
+func (arr ResultArray[T]) Element() Typed {
 	var t T
 	return t
 }
 
-func (arr InstanceArray[T]) Len() int {
+func (arr ResultArray[T]) Len() int {
 	return len(arr)
 }
 
-func (arr InstanceArray[T]) nth(i int) (res Result[T], _ error) {
+func (arr ResultArray[T]) nth(i int) (res Result[T], _ error) {
 	if i < 1 || i > len(arr) {
 		return res, fmt.Errorf("index %d out of bounds", i)
 	}
 	return arr[i-1], nil
 }
 
-func (arr InstanceArray[T]) Nth(i int) (Typed, error) {
+func (arr ResultArray[T]) Nth(i int) (Typed, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1092,7 +1092,7 @@ func (arr InstanceArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr InstanceArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (arr ResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1101,12 +1101,12 @@ func (arr InstanceArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) 
 	return inst, nil
 }
 
-type ObjectInstanceArray[T Typed] []ObjectResult[T]
+type ObjectResultArray[T Typed] []ObjectResult[T]
 
-var _ Typed = ObjectInstanceArray[Typed]{}
-var _ Enumerable = ObjectInstanceArray[Typed]{}
+var _ Typed = ObjectResultArray[Typed]{}
+var _ Enumerable = ObjectResultArray[Typed]{}
 
-func (i ObjectInstanceArray[T]) Type() *ast.Type {
+func (i ObjectResultArray[T]) Type() *ast.Type {
 	var t T
 	return &ast.Type{
 		Elem:    t.Type(),
@@ -1114,23 +1114,23 @@ func (i ObjectInstanceArray[T]) Type() *ast.Type {
 	}
 }
 
-func (arr ObjectInstanceArray[T]) Element() Typed {
+func (arr ObjectResultArray[T]) Element() Typed {
 	var t T
 	return t
 }
 
-func (arr ObjectInstanceArray[T]) Len() int {
+func (arr ObjectResultArray[T]) Len() int {
 	return len(arr)
 }
 
-func (arr ObjectInstanceArray[T]) nth(i int) (res ObjectResult[T], _ error) {
+func (arr ObjectResultArray[T]) nth(i int) (res ObjectResult[T], _ error) {
 	if i < 1 || i > len(arr) {
 		return res, fmt.Errorf("index %d out of bounds", i)
 	}
 	return arr[i-1], nil
 }
 
-func (arr ObjectInstanceArray[T]) Nth(i int) (Typed, error) {
+func (arr ObjectResultArray[T]) Nth(i int) (Typed, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1138,7 +1138,7 @@ func (arr ObjectInstanceArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr ObjectInstanceArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (arr ObjectResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err

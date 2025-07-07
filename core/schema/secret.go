@@ -192,53 +192,53 @@ func (s *secretSchema) setSecret(
 	return secret, nil
 }
 
-func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (res dagql.Result[dagql.String], _ error) {
+func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return res, err
+		return "", err
 	}
 	secretStore, err := query.Secrets(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get secret store: %w", err)
+		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
 	name, ok := secretStore.GetSecretName(secret.ID().Digest())
 	if !ok {
-		return res, fmt.Errorf("secret not found: %s", secret.ID().Digest())
+		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewResultForCurrentID(ctx, dagql.NewString(name))
+	return name, nil
 }
 
-func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (res dagql.Result[dagql.String], _ error) {
+func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return res, err
+		return "", err
 	}
 	secretStore, err := query.Secrets(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get secret store: %w", err)
+		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
 	name, ok := secretStore.GetSecretURI(secret.ID().Digest())
 	if !ok {
-		return res, fmt.Errorf("secret not found: %s", secret.ID().Digest())
+		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewResultForCurrentID(ctx, dagql.NewString(name))
+	return name, nil
 }
 
-func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (res dagql.Result[dagql.String], _ error) {
+func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return res, err
+		return "", err
 	}
 	secretStore, err := query.Secrets(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get secret store: %w", err)
+		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
 	plaintext, err := secretStore.GetSecretPlaintext(ctx, secret.ID().Digest())
 	if err != nil {
-		return res, err
+		return "", err
 	}
 
-	return dagql.NewResultForCurrentID(ctx, dagql.NewString(string(plaintext)))
+	return string(plaintext), nil
 }

@@ -341,8 +341,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	if mod.InstanceID != nil {
-		execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+	if mod.ResultID != nil {
+		execMD.EncodedModuleID, err = mod.ResultID.Encode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode module ID: %w", err)
 		}

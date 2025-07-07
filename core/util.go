@@ -65,7 +65,7 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		} else {
 			return nil, nil
 		}
-	case dagql.Wrapper: // dagql.Instance
+	case dagql.Wrapper: // dagql.Result
 		return collectPBDefinitions(ctx, x.Unwrap())
 	case HasPBDefinitions:
 		return x.PBDefinitions(ctx)

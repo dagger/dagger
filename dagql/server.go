@@ -733,7 +733,7 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	return out, nil
 }
 
-func LoadIDInstances[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]ObjectResult[T], error) {
+func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]ObjectResult[T], error) {
 	out := make([]ObjectResult[T], len(ids))
 	eg := new(errgroup.Group)
 	for i, id := range ids {
@@ -784,7 +784,7 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
-// NewResultForCurrentID creates a new Instance that's set to the current ID from
+// NewResultForCurrentID creates a new Result that's set to the current ID from
 // the given self value.
 func NewResultForCurrentID[T Typed](
 	ctx context.Context,
@@ -793,7 +793,7 @@ func NewResultForCurrentID[T Typed](
 	return NewResultForID(self, CurrentID(ctx))
 }
 
-// NewResultForID creates a new Instance with the given ID and self value.
+// NewResultForID creates a new Result with the given ID and self value.
 func NewResultForID[T Typed](
 	self T,
 	id *call.ID,
@@ -1060,7 +1060,7 @@ func (sel Selection) Name() string {
 	return sel.Selector.Field
 }
 
-// Selector specifies how to retrieve a value from an Instance.
+// Selector specifies how to retrieve a value from an Result.
 type Selector struct {
 	Field string
 	Args  []NamedInput

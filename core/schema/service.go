@@ -215,7 +215,7 @@ func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Con
 func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args struct {
 	UpArgs
 	core.ContainerAsServiceArgs
-}) (res dagql.Result[dagql.Nullable[core.Void]], _ error) {
+}) (res dagql.Nullable[core.Void], _ error) {
 	var inputs []dagql.NamedInput
 	if args.Args != nil {
 		inputs = append(inputs, dagql.NamedInput{
@@ -269,7 +269,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	return s.up(ctx, svc, args.UpArgs)
 }
 
-func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args UpArgs) (res dagql.Result[dagql.Nullable[core.Void]], _ error) {
+func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
 	var svc dagql.ObjectResult[*core.Service]
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
@@ -354,7 +354,7 @@ type UpArgs struct {
 
 const InstrumentationLibrary = "dagger.io/engine.schema"
 
-func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (res dagql.Result[dagql.Nullable[core.Void]], _ error) {
+func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
 	void := dagql.Null[core.Void]()
 
 	useNative := !args.Random && len(args.Ports) == 0
@@ -405,5 +405,5 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	// wait for the request to be canceled
 	<-ctx.Done()
 
-	return dagql.NewResultForCurrentID(ctx, void)
+	return void, nil
 }

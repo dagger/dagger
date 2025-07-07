@@ -529,10 +529,10 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 	return buildctxDir, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (res dagql.Result[*core.Container], _ error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 	platform := query.Platform()
 	if args.Platform.Valid {
@@ -541,24 +541,24 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
 	ctr, err := core.NewContainer(platform)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
-	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDResults(ctx, s.srv, args.Secrets)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 	secretStore, err := query.Secrets(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get secret store: %w", err)
+		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	built, err := ctr.Build(
+	return ctr.Build(
 		ctx,
 		parent.Self(),
 		buildctxDir.Self(),
@@ -569,10 +569,6 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		secretStore,
 		args.NoInit,
 	)
-	if err != nil {
-		return res, fmt.Errorf("failed to build container: %w", err)
-	}
-	return dagql.NewResultForCurrentID(ctx, built)
 }
 
 type directoryTerminalArgs struct {

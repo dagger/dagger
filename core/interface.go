@@ -188,7 +188,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
 	slog.ExtraDebug("installing interface")
 
-	if iface.mod.InstanceID == nil {
+	if iface.mod.ResultID == nil {
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
 	}
 	class := dagql.NewClass(dag, dagql.ClassOpts[*InterfaceAnnotatedValue]{

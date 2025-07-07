@@ -161,7 +161,7 @@ func TestSelectArray(t *testing.T) {
 	}.Install(srv)
 
 	dagql.Fields[*points.Point]{
-		dagql.Func("instanceNeighbors", func(ctx context.Context, self *points.Point, _ struct{}) (dagql.InstanceArray[*points.Point], error) {
+		dagql.Func("instanceNeighbors", func(ctx context.Context, self *points.Point, _ struct{}) (dagql.ResultArray[*points.Point], error) {
 			var pt0 dagql.Result[*points.Point]
 			err := srv.Select(ctx, srv.Root(), &pt0,
 				dagql.Selector{
@@ -273,7 +273,7 @@ func TestSelectArray(t *testing.T) {
 	})
 
 	t.Run("select all as instance array", func(t *testing.T) {
-		var points dagql.InstanceArray[*points.Point]
+		var points dagql.ResultArray[*points.Point]
 		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
 			pointSel,
 			dagql.Selector{
@@ -300,7 +300,7 @@ func TestSelectArray(t *testing.T) {
 	})
 
 	t.Run("select all individual instances", func(t *testing.T) {
-		var points dagql.InstanceArray[*points.Point]
+		var points dagql.ResultArray[*points.Point]
 		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
 			pointSel,
 			dagql.Selector{
@@ -342,7 +342,7 @@ func TestSelectArray(t *testing.T) {
 	})
 
 	t.Run("select all children", func(t *testing.T) {
-		var points dagql.InstanceArray[*points.Point]
+		var points dagql.ResultArray[*points.Point]
 		assert.ErrorContains(t, srv.Select(ctx, srv.Root(), &points,
 			pointSel,
 			dagql.Selector{
@@ -2527,18 +2527,18 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a simple field
 		var result int
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "value"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "value"})
 		require.NoError(t, err)
 		assert.Equal(t, 42, result)
 
 		// Test selecting a string field
 		var textResult string
-		err = srv.Select(ctx, objInstance, &textResult, dagql.Selector{Field: "text"})
+		err = srv.Select(ctx, objResult, &textResult, dagql.Selector{Field: "text"})
 		require.NoError(t, err)
 		assert.Equal(t, "hello", textResult)
 	})
@@ -2557,12 +2557,12 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "NestedObject class not found")
 
 		// Create an instance
-		objInstance, err := nestedObjClass.New(nestedObj)
+		objResult, err := nestedObjClass.New(nestedObj)
 		require.NoError(t, err)
 
 		// Test selecting through a chain of objects
 		var result int
-		err = srv.Select(ctx, objInstance, &result,
+		err = srv.Select(ctx, objResult, &result,
 			dagql.Selector{Field: "inner"},
 			dagql.Selector{Field: "value"})
 		require.NoError(t, err)
@@ -2581,12 +2581,12 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a null field
 		var result *string
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nullableField"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "nullableField"})
 		require.NoError(t, err)
 		assert.Assert(t, result == nil)
 	})
@@ -2684,16 +2684,16 @@ func TestServerSelect(t *testing.T) {
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a non-existent field
 		var result int
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nonExistentField"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "nonExistentField"})
 		require.Error(t, err)
 
 		// Test invalid selector chain (trying to select from a scalar)
-		err = srv.Select(ctx, objInstance, &result,
+		err = srv.Select(ctx, objResult, &result,
 			dagql.Selector{Field: "value"},
 			dagql.Selector{Field: "something"})
 		require.Error(t, err)

@@ -817,7 +817,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDResults(ctx, s.srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -2283,7 +2283,7 @@ func (s *containerSchema) terminalLegacy(
 	ctx context.Context,
 	ctr dagql.ObjectResult[*core.Container],
 	args containerTerminalArgs,
-) (res dagql.Result[*core.TerminalLegacy], _ error) {
+) (*core.TerminalLegacy, error) {
 	// HACK: when attempting to construct a legacy terminal, just spin up a new
 	// terminal attachable. The returned terminal is definitely invalid, but,
 	// the intention was probably to debug it anyways, so we're probably okay.
@@ -2314,10 +2314,10 @@ func (s *containerSchema) terminalLegacy(
 		},
 	)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
-	return dagql.NewResultForCurrentID[*core.TerminalLegacy](ctx, nil)
+	return &core.TerminalLegacy{}, nil
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {

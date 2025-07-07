@@ -295,7 +295,7 @@ func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 }
 
 func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
-	if obj.Module.InstanceID == nil {
+	if obj.Module.ResultID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 

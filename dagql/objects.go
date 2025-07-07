@@ -261,8 +261,8 @@ func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.F
 
 // New returns a new instance of the class.
 func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
-	if objInstance, ok := val.(ObjectResult[T]); ok {
-		return objInstance, nil
+	if objResult, ok := val.(ObjectResult[T]); ok {
+		return objResult, nil
 	}
 	if inst, ok := val.(Result[T]); ok {
 		return ObjectResult[T]{
@@ -376,7 +376,7 @@ func (r Result[T]) WithPostCall(fn cache.PostCallFunc) AnyResult {
 	return r
 }
 
-func (r Result[T]) InstanceWithPostCall(fn cache.PostCallFunc) Result[T] {
+func (r Result[T]) ResultWithPostCall(fn cache.PostCallFunc) Result[T] {
 	r.postCall = fn
 	return r
 }

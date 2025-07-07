@@ -115,7 +115,7 @@ type ModuleSource struct {
 	ConfigDependencies []*modules.ModuleConfigDependency
 
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies dagql.ObjectInstanceArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`

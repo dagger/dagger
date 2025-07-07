@@ -52,8 +52,8 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// InstanceID is the ID of the initialized module.
-	InstanceID *call.ID
+	// ResultID is the ID of the initialized module.
+	ResultID *call.ID
 }
 
 func (*Module) Type() *ast.Type {
@@ -106,7 +106,7 @@ func (mod *Module) IDModule() *call.Module {
 		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self().Kind))
 	}
 
-	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID, mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {

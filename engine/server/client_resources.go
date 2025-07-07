@@ -69,7 +69,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDInstances(ctx, srcDag, secretIDs)
+		secrets, err := dagql.LoadIDResults(ctx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}

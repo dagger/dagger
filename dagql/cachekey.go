@@ -27,7 +27,7 @@ func CachePerClient[P Typed, A any](
 	return CachePerClientObject(ctx, inst, args, cacheCfg)
 }
 
-// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Result.
 func CachePerClientObject[A any](
 	ctx context.Context,
 	_ AnyObjectResult,
@@ -57,7 +57,7 @@ func CachePerSession[P Typed, A any](
 	return CachePerSessionObject(ctx, inst, args, cacheCfg)
 }
 
-// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Result.
 func CachePerSessionObject[A any](
 	ctx context.Context,
 	_ AnyObjectResult,

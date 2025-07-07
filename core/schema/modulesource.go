@@ -655,7 +655,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}
 
-	return inst.InstanceWithPostCall(secretTransferPostCall), nil
+	return inst.ResultWithPostCall(secretTransferPostCall), nil
 }
 
 type directoryAsModuleArgs struct {
@@ -1229,7 +1229,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
 
-	newDeps, err := collectIDObjectInstances(ctx, s.dag, args.Dependencies)
+	newDeps, err := collectIDObjectResults(ctx, s.dag, args.Dependencies)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
@@ -2037,7 +2037,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	mod.InstanceID = tmpModInst.ID()
+	mod.ResultID = tmpModInst.ID()
 
 	modName := src.Self().ModuleName
 
@@ -2170,7 +2170,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
-		mod.InstanceID = dagql.CurrentID(ctx)
+		mod.ResultID = dagql.CurrentID(ctx)
 	} else {
 		// For no SDK, provide an empty stub module definition
 		typeDef := &core.ObjectTypeDef{
@@ -2192,8 +2192,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			Module:  mod,
 			TypeDef: typeDef,
 		}
-		// obj.Install() requires InstanceID to be set.
-		mod.InstanceID = dagql.CurrentID(ctx)
+		// obj.Install() requires ResultID to be set.
+		mod.ResultID = dagql.CurrentID(ctx)
 		if err := obj.Install(ctx, s.dag); err != nil {
 			return inst, fmt.Errorf("failed to install no-sdk module %q: %w", modName, err)
 		}

@@ -68,7 +68,7 @@ func ResourceTransferPostCall(
 		return nil, fmt.Errorf("failed to get source client dagql server: %w", err)
 	}
 
-	secrets, err := dagql.LoadIDInstances(srcClientCtx, srcDag, secretIDs)
+	secrets, err := dagql.LoadIDResults(srcClientCtx, srcDag, secretIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load secret instances: %w", err)
 	}
