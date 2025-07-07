@@ -19,6 +19,6 @@ enum ExistsType: string
     /** Tests path is a directory */
     case DIRECTORY_TYPE = 'DIRECTORY_TYPE';
 
-    /** Tests path is a directory */
+    /** Tests path is a symlink */
     case SYMLINK_TYPE = 'SYMLINK_TYPE';
 }

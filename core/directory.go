@@ -1166,7 +1166,7 @@ var (
 	ExistsTypeDirectory = ExistsTypes.Register("DIRECTORY_TYPE",
 		"Tests path is a directory")
 	ExistsTypeSymlink = ExistsTypes.Register("SYMLINK_TYPE",
-		"Tests path is a directory")
+		"Tests path is a symlink")
 )
 
 func (et ExistsType) Type() *ast.Type {
@@ -1188,25 +1188,15 @@ func (et ExistsType) ToLiteral() call.Literal {
 	return ExistsTypes.Literal(et)
 }
 
-// CacheSharingMode marshals to its lowercased value.
-//
-// NB: as far as I can recall this is purely for ~*aesthetic*~. GraphQL consts
-// are so shouty!
 func (et ExistsType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(strings.ToLower(string(et)))
+	return json.Marshal(string(et))
 }
 
-// CacheSharingMode marshals to its lowercased value.
-//
-// NB: as far as I can recall this is purely for ~*aesthetic*~. GraphQL consts
-// are so shouty!
 func (et *ExistsType) UnmarshalJSON(payload []byte) error {
 	var str string
 	if err := json.Unmarshal(payload, &str); err != nil {
 		return err
 	}
-
-	*et = ExistsType(strings.ToUpper(str))
-
+	*et = ExistsType(str)
 	return nil
 }

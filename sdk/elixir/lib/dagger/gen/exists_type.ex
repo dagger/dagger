@@ -21,7 +21,7 @@ defmodule Dagger.ExistsType do
   def directory_type(), do: :DIRECTORY_TYPE
 
   @doc """
-  Tests path is a directory
+  Tests path is a symlink
   """
   @spec symlink_type() :: :SYMLINK_TYPE
   def symlink_type(), do: :SYMLINK_TYPE

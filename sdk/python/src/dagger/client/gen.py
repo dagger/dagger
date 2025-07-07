@@ -274,7 +274,7 @@ class ExistsType(Enum):
     """Tests path is a regular file"""
 
     SYMLINK_TYPE = "SYMLINK_TYPE"
-    """Tests path is a directory"""
+    """Tests path is a symlink"""
 
 
 class ImageLayerCompression(Enum):

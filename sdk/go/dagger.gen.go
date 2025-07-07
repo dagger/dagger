@@ -10355,7 +10355,7 @@ const (
 	// Tests path is a directory
 	ExistsTypeDirectoryType ExistsType = "DIRECTORY_TYPE"
 
-	// Tests path is a directory
+	// Tests path is a symlink
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
 )
 

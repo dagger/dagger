@@ -2204,7 +2204,7 @@ enum ExistsType {
   """Tests path is a directory"""
   DIRECTORY_TYPE
 
-  """Tests path is a directory"""
+  """Tests path is a symlink"""
   SYMLINK_TYPE
 }
 

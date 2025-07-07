@@ -908,7 +908,7 @@ export enum ExistsType {
   RegularType = "REGULAR_TYPE",
 
   /**
-   * Tests path is a directory
+   * Tests path is a symlink
    */
   SymlinkType = "SYMLINK_TYPE",
 }
