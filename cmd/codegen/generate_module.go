@@ -36,7 +36,10 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	}
 	defer cfg.Close()
 
-	moduleConfig := &generator.ModuleGeneratorConfig{}
+	moduleConfig := &generator.ModuleGeneratorConfig{
+		Merge:  merge,
+		IsInit: isInit,
+	}
 
 	if moduleName != "" {
 		moduleConfig.ModuleName = moduleName
