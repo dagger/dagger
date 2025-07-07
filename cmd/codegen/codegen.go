@@ -51,7 +51,7 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 
 		for _, cmd := range generated.PostCommands {
 			cmd.Dir = cfg.OutputDir
-			if cfg.ModuleConfig.ModuleName != "" {
+			if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
 				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
 			}
 			cmd.Stdout = os.Stdout
