@@ -30,7 +30,7 @@ const (
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
-	return funcs.cfg.ModuleConfig != nil
+	return funcs.cfg.ModuleConfig != nil && funcs.cfg.ModuleConfig.ModuleName != ""
 }
 
 func (funcs goTemplateFuncs) isStandaloneClient() bool {
@@ -52,11 +52,16 @@ func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
+	moduleParentPath := ""
+	if funcs.cfg.ModuleConfig != nil {
+		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	}
+
 	return filepath.Join(
 		// path to the root of this module (since we're probably in internal/dagger/)
 		"../..",
 		// path from the module root to the context directory
-		funcs.cfg.ModuleConfig.ModuleParentPath,
+		moduleParentPath,
 		// path from the context directory to the desired path
 		path,
 	)
