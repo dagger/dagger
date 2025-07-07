@@ -6,6 +6,8 @@ import {
   RequestInit as NodeFetchRequestInit,
 } from "node-fetch"
 
+import { isDeno } from "../utils.js"
+
 const createFetchWithTimeout =
   (timeout: number) =>
   async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
@@ -25,8 +27,7 @@ const createFetchWithTimeout =
       // Edge case for Deno that doesn't work as expected with node-fetch and would
       // rather rely on its native fetch implementation
       // See: https://github.com/dagger/dagger/issues/10546
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (typeof (globalThis as any).Deno !== "undefined") {
+      if (isDeno()) {
         return await fetch(input as RequestInfo, {
           ...(init as RequestInit),
           signal: controller.signal,
