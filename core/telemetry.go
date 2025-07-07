@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -68,6 +69,38 @@ func AroundFunc(
 		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
+
+	// if inside a module call, add call trace metadata. this is useful
+	// since within a single span, we can correlate the caller's and callee's
+	// module and functions calls
+	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
+		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
+
+		if callerRef != nil && calleeRef != nil {
+			var callerRefAttr string
+			if len(callerRef.ref) > 0 {
+				callerRefAttr = fmt.Sprintf("%s@%s", callerRef.ref, callerRef.version)
+			}
+
+			callerFn := callerRef.functionName
+			calleeFn := calleeRef.functionName
+
+			if callerRef.typeName != "" {
+				callerFn = fmt.Sprintf("%s.%s", callerRef.typeName, callerRef.functionName)
+			}
+
+			if calleeRef.typeName != "" {
+				calleeFn = fmt.Sprintf("%s.%s", calleeRef.typeName, calleeRef.functionName)
+			}
+			attrs = append(attrs,
+				attribute.String(telemetry.ModuleRefAttr, fmt.Sprintf("%s@%s", calleeRef.ref, calleeRef.version)),
+				attribute.String(telemetry.ModuleFunctionCallNameAttr, calleeFn),
+				attribute.String(telemetry.ModuleCallerRefAttr, callerRefAttr),
+				attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, callerFn),
+			)
+		}
+	}
+
 	if idInputs, err := id.Inputs(); err != nil {
 		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
 	} else {
@@ -90,6 +123,97 @@ func AroundFunc(
 		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
 	}
+}
+
+type moduleCallRef struct {
+	ref          string
+	version      string
+	functionName string
+	typeName     string
+}
+
+func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*moduleCallRef, *moduleCallRef) {
+	cm, _ := q.MainClientCallerMetadata(ctx)
+	fc, _ := q.CurrentFunctionCall(ctx)
+	m, _ := q.CurrentModule(ctx)
+	sd, _ := q.CurrentServedDeps(ctx)
+
+	call := callID.Call()
+	calleeModule := call.Module
+
+	var callerRef, calleeRef = &moduleCallRef{}, &moduleCallRef{}
+	// there's a caller
+
+	var ms *ModuleSource
+	if m != nil {
+		ms = m.GetSource()
+	} else if m, ok := sd.LookupDep(calleeModule.Name); ok {
+		ms = m.GetSource()
+	}
+
+	if ms == nil {
+		return nil, nil
+	}
+
+	if fc != nil {
+		callerRef.functionName = fc.Name
+		callerRef.typeName = fc.ParentName
+		if ms.Git != nil {
+			callerRef.ref, callerRef.version, _ = strings.Cut(ms.AsString(), "@")
+		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
+			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
+				callerRef.version = gref
+			}
+		} else {
+			// we don't a way to identify the caller ref and version. this could happen
+			// when calling local modules outside a git repo for example
+			return nil, nil
+		}
+	}
+
+	calleeRef.functionName = call.Field
+	calleeRef.version = call.Module.Pin
+	calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
+	calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
+
+	var voidType Void
+	if callID.Receiver() != nil {
+		calleeRef.typeName = callID.Receiver().Type().NamedType()
+	} else if call.Type.NamedType == voidType.TypeName() {
+		// it's a top level module function call so set the ParentName as the callee type
+		calleeRef.typeName = callerRef.typeName
+	}
+
+	// if it doesn't have a pin, it's a local callee module
+	if calleeRef.version == "" {
+		if ms.Git != nil {
+			subPath := ms.SourceRootSubpath
+			calleeRef.ref = path.Join(calleeRef.ref, subPath)
+		} else {
+			if ms.Local != nil {
+				calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
+				if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+					calleeRef.ref = path.Join(gremote, calleeRef.ref)
+				} else {
+					return nil, nil
+				}
+			} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+				subPath := ms.SourceRootSubpath
+				calleeRef.ref = path.Join(gremote, subPath)
+			} else {
+				return nil, nil
+			}
+		}
+
+		// if not within a function and a local call, use the git ref as the version
+		if gr, ok := cm.Labels["dagger.io/git.ref"]; fc == nil && ok {
+			calleeRef.version = gr
+		} else {
+			calleeRef.version = callerRef.version
+		}
+	}
+	return callerRef, calleeRef
 }
 
 // recordStatus records the status of a call on a span.
