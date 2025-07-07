@@ -13,7 +13,7 @@ import (
 var (
 	//go:embed modsourcedeps.graphql
 	loadModuleSourceDepsQuery string
-	moduleSourceID string
+	moduleSourceID            string
 )
 
 var generateClientCmd = &cobra.Command{
@@ -67,7 +67,6 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	cfg.ClientConfig = clientConfig
 
 	return Generate(ctx, cfg)
-
 }
 
 func init() {
