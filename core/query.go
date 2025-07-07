@@ -14,6 +14,7 @@ import (
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -119,6 +120,9 @@ type Server interface {
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+
+	// Get a dagger.Client for the current client context
+	DaggerClient(context.Context) (*dagger.Client, error)
 }
 
 type queryKey struct{}
@@ -148,66 +152,4 @@ func (*Query) Type() *ast.Type {
 
 func (*Query) TypeDescription() string {
 	return "The root of the DAG."
-}
-
-func (q Query) Clone() *Query {
-	return &q
-}
-
-func (q *Query) WithPipeline(name, desc string) *Query {
-	return q.Clone()
-}
-
-func (q *Query) NewContainer(platform Platform) *Container {
-	return &Container{
-		Platform: platform,
-	}
-}
-
-func (q *Query) NewHost() *Host {
-	return &Host{}
-}
-
-func (q *Query) NewModule() *Module {
-	return &Module{}
-}
-
-// IDDeps loads the module dependencies of a given ID.
-//
-// The returned ModDeps extends the inner DefaultDeps with all modules found in
-// the ID, loaded by using the DefaultDeps schema.
-func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
-	defaultDeps, err := q.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("default deps: %w", err)
-	}
-
-	bootstrap, err := defaultDeps.Schema(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap schema: %w", err)
-	}
-	deps := defaultDeps
-	for _, modID := range id.Modules() {
-		mod, err := dagql.NewID[*Module](modID.ID()).Load(ctx, bootstrap)
-		if err != nil {
-			return nil, fmt.Errorf("load source mod: %w", err)
-		}
-		deps = deps.Append(mod.Self)
-	}
-	return deps, nil
-}
-
-func (q *Query) RequireMainClient(ctx context.Context) error {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	mainClientCallerMetadata, err := q.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get main client caller ID: %w", err)
-	}
-	if clientMetadata.ClientID != mainClientCallerMetadata.ClientID {
-		return fmt.Errorf("only the main client can call this function")
-	}
-	return nil
 }

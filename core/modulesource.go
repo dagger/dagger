@@ -133,6 +133,9 @@ type ModuleSource struct {
 	Kind  ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
 	Local *LocalModuleSource
 	Git   *GitModuleSource
+	
+	// Environment configuration from .env.dagger.json
+	EnvConfig *EnvDaggerConfig `field:"true" name:"envConfig" doc:"Environment configuration loaded from .env.dagger.json."`
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -182,6 +185,10 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 	if src.Git != nil {
 		src.Git = src.Git.Clone()
+	}
+
+	if src.EnvConfig != nil {
+		src.EnvConfig = src.EnvConfig.Clone()
 	}
 
 	oriConfigClients := src.ConfigClients

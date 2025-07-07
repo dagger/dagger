@@ -1,0 +1,9 @@
+{
+  "workdir": "/workdir",
+  "base_image": "ubuntu:24.04",
+  "setup_commands": [
+    "apt-get update \u0026\u0026 apt-get install -y git golang-go",
+    "git config --global user.email 'test@example.com'",
+    "git config --global user.name 'Test User'"
+  ]
+}
