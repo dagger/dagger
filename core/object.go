@@ -3,281 +3,87 @@ package core
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
-
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// indicates an ast field is a "trivial resolver"
-// ref: https://graphql.org/learn/execution/#trivial-resolvers
-const trivialFieldDirectiveName = "trivialResolveField"
-
-// indicates an ast field is deprecated
-const deprecatedDirectiveName = "deprecated"
-
-type ModuleObjectType struct {
-	typeDef *ObjectTypeDef
-	mod     *Module
-}
-
-func (t *ModuleObjectType) SourceMod() Mod {
-	if t.mod == nil {
-		return nil
-	}
-	return t.mod
-}
-
-func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
-	if value == nil {
-		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
-		slog.Warn("ModuleObjectType.ConvertFromSDKResult: got nil value")
-		return nil, nil
-	}
-
-	switch value := value.(type) {
-	case map[string]any:
-		return &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
-	}
-}
-
-func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
-	if value == nil {
-		return nil, nil
-	}
-	// NOTE: user mod objects are currently only passed as inputs to the module
-	// they originate from; modules can't have inputs/outputs from other modules
-	// (other than core). These objects are also passed as their direct json
-	// serialization rather than as an ID (so that SDKs can decode them without
-	// needing to make calls to their own API).
-	switch x := value.(type) {
-	case DynamicID:
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current query: %w", err)
-		}
-		deps, err := query.IDDeps(ctx, x.ID())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
-		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
-		val, err := dag.Load(ctx, x.ID())
-		if err != nil {
-			return nil, fmt.Errorf("load DynamicID: %w", err)
-		}
-		switch x := val.(type) {
-		case dagql.Instance[*ModuleObject]:
-			return x.Self.Fields, nil
-		case dagql.Instance[*InterfaceAnnotatedValue]:
-			return x.Self.Fields, nil
-		default:
-			return nil, fmt.Errorf("unexpected value type %T", x)
-		}
-	default:
-		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle %T", t, x)
-	}
-}
-
-func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
-	var obj *ModuleObject
-	switch value := value.(type) {
-	case nil:
-		return nil
-	case *ModuleObject:
-		obj = value
-	case dagql.Instance[*ModuleObject]:
-		obj = value.Self
-	case *InterfaceAnnotatedValue:
-		return t.CollectCoreIDs(ctx, &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value.Fields,
-		}, ids)
-	default:
-		return fmt.Errorf("expected *ModuleObject, got %T", value)
-	}
-
-	for k, v := range obj.Fields {
-		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
-		if !ok {
-			// if this is a private field, then we still should do best-effort collection
-			unknownCollectIDs(v, ids)
-			continue
-		}
-		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
-		}
-		if !ok {
-			return fmt.Errorf("could not find mod type for field %q", k)
-		}
-		typed, err := modType.ConvertFromSDKResult(ctx, v)
-		if err != nil {
-			return fmt.Errorf("failed to convert field %q: %w", k, err)
-		}
-		if err := modType.CollectCoreIDs(ctx, typed, ids); err != nil {
-			return fmt.Errorf("failed to collect IDs for field %q: %w", k, err)
-		}
-	}
-
-	return nil
-}
-
-// unknownCollectIDs naively walks a json-decoded value from a module object
-// type, and tries to find *any* IDs that *might* be found
-func unknownCollectIDs(value any, ids map[digest.Digest]*resource.ID) {
-	switch value := value.(type) {
-	case nil:
-		return
-	case string:
-		var idp call.ID
-		if err := idp.Decode(value); err != nil {
-			return
-		}
-		ids[idp.Digest()] = &resource.ID{
-			ID:       idp,
-			Optional: true, // mark this id as optional, since it's a best-guess attempt
-		}
-	case []any:
-		for _, value := range value {
-			unknownCollectIDs(value, ids)
-		}
-	case map[string]any:
-		for _, value := range value {
-			unknownCollectIDs(value, ids)
-		}
-	}
-}
-
-func (t *ModuleObjectType) TypeDef() *TypeDef {
-	return &TypeDef{
-		Kind:     TypeDefKindObject,
-		AsObject: dagql.NonNull(t.typeDef),
-	}
-}
-
-type Callable interface {
-	Call(context.Context, *CallOpts) (dagql.Typed, error)
-	ReturnType() (ModType, error)
-	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.Object, map[string]dagql.Input, dagql.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
-}
-
-func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
-	mod := t.mod
-	if field, ok := t.typeDef.FieldByName(name); ok {
-		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
-		if err != nil {
-			return nil, fmt.Errorf("get field return type: %w", err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("could not find type for field type: %s", field.TypeDef.ToType())
-		}
-		return &CallableField{
-			Module: t.mod,
-			Field:  field,
-			Return: fieldType,
-		}, nil
-	}
-	if fun, ok := t.typeDef.FunctionByName(name); ok {
-		return NewModFunction(
-			ctx,
-			mod,
-			t.typeDef,
-			mod.Runtime,
-			fun,
-		)
-	}
-	return nil, fmt.Errorf("no field or function %q found on object %q", name, t.typeDef.Name)
-}
-
+// ModuleObject represents an object for a module
 type ModuleObject struct {
-	Module *Module
-
-	TypeDef *ObjectTypeDef
+	Module  *Module
+	TypeDef *TypeDef
 	Fields  map[string]any
 }
 
-func (obj *ModuleObject) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: obj.TypeDef.Name,
-		NonNull:   true,
-	}
-}
+var _ dagql.Object = (*ModuleObject)(nil)
 
-var _ HasPBDefinitions = (*ModuleObject)(nil)
-
-func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	defs := []*pb.Definition{}
-	objDef := obj.TypeDef
-	for _, field := range objDef.Fields {
-		// TODO: we skip over private fields, we can't convert them anyways (this is a bug)
-		name := field.OriginalName
-		val, ok := obj.Fields[name]
-		if !ok {
-			// missing field
-			continue
-		}
-		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for field %q", name)
-		}
-		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
-		}
-		fieldDefs, err := collectPBDefinitions(ctx, converted)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, fieldDefs...)
-	}
-	return defs, nil
+func (obj *ModuleObject) TypeName() string {
+	return obj.TypeDef.Name()
 }
 
 func (obj *ModuleObject) TypeDescription() string {
-	return formatGqlDescription(obj.TypeDef.Description)
+	return obj.TypeDef.Description
 }
 
-func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
-	def := &ast.Definition{
-		Kind: ast.Object,
-		Name: obj.Type().Name(),
-	}
-	if obj.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.TypeDirective())
-	}
-	return def
+func (obj *ModuleObject) ObjectType() dagql.ObjectType {
+	return obj.TypeDef.ObjectType()
 }
 
-func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
-	if obj.Module.InstanceID == nil {
-		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
-	}
+func (obj *ModuleObject) Type() *ast.Type {
+	return obj.TypeDef.Type()
+}
 
-	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
-		Typed: obj,
-	})
+func (obj *ModuleObject) ID() *dagql.ID[*ModuleObject] {
+	return &dagql.ID[*ModuleObject]{
+		Type:  obj.TypeDef,
+		Keys:  obj.Fields,
+		Module: obj.Module.IDModule(),
+	}
+}
+
+func (obj *ModuleObject) CloneWithFields(fields map[string]any) *ModuleObject {
+	clone := &ModuleObject{
+		Module:  obj.Module,
+		TypeDef: obj.TypeDef,
+		Fields:  map[string]any{},
+	}
+	for k, v := range obj.Fields {
+		clone.Fields[k] = v
+	}
+	for k, v := range fields {
+		clone.Fields[k] = v
+	}
+	return clone
+}
+
+func (obj *ModuleObject) SetField(name string, value any) {
+	obj.Fields[name] = value
+}
+
+func (obj *ModuleObject) GetField(name string) (any, bool) {
+	value, found := obj.Fields[name]
+	return value, found
+}
+
+func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	return obj.TypeDef.PBDefinitions(ctx)
+}
+
+func (obj *ModuleObject) install(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
 	mod := obj.Module
+
+	class := dagql.NewClass(objDef.Name(), objDef.Description, obj)
+	class.KeysType = objDef.FieldsType()
+
+	if objDef.SourceMap != nil {
+		class.Directives = append(class.Directives, objDef.SourceMap.TypeDirective())
+	}
+
 	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
@@ -354,13 +160,48 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	dag.Root().ObjectType().Extend(
 		spec,
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			var callInput []CallInput
+			// Load .env.dagger.json config if available
+			envConfig, err := LoadEnvDaggerConfig(ctx, mod.sourceDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load .env.dagger.json: %w", err)
+			}
+
+			// Merge env config with call arguments (call args take precedence)
+			mergedArgs := make(map[string]dagql.Input)
+			
+			// First, add env config arguments if they exist
+			if envConfig != nil {
+				argParser := NewServerArgumentParser(mod.Query)
+				
+				// Get constructor function arguments to match env config keys
+				for _, arg := range fn.metadata.Args {
+					if envValue, hasEnvValue := (*envConfig)[arg.Name]; hasEnvValue {
+						// Parse the string value from env config into the proper type
+						parsedValue, err := argParser.ParseArgument(ctx, arg, envValue)
+						if err != nil {
+							slog.ExtraDebug("failed to parse env config value", "key", arg.Name, "value", envValue, "error", err)
+							continue // Skip invalid values, don't fail the whole call
+						}
+						mergedArgs[arg.Name] = parsedValue
+						slog.ExtraDebug("merged env config argument", "key", arg.Name, "value", envValue)
+					}
+				}
+			}
+
+			// Then, add call arguments (these override env config)
 			for k, v := range args {
+				mergedArgs[k] = v
+			}
+
+			// Convert merged args to CallInput format
+			var callInput []CallInput
+			for k, v := range mergedArgs {
 				callInput = append(callInput, CallInput{
 					Name:  k,
 					Value: v,
 				})
 			}
+
 			return fn.Call(ctx, &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
@@ -378,142 +219,207 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 }
 
 func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
-	for _, field := range obj.TypeDef.Fields {
-		fields = append(fields, objField(obj.Module, field))
-	}
-	return
-}
-
-func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
-	for _, fun := range obj.TypeDef.Functions {
-		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
-		if err != nil {
-			return nil, err
+
+	for _, field := range objDef.Fields {
+		field := field
+		fields = append(fields, dagql.Field[*ModuleObject]{
+			Name:        gqlFieldName(field.Name),
+			Description: field.Description,
+			Type:        field.TypeDef,
+			Module:      obj.Module.IDModule(),
+			Directives:  field.Directives(),
+			Resolver: func(ctx context.Context, self *ModuleObject, args map[string]dagql.Input) (dagql.Typed, error) {
+				val, found := self.GetField(field.Name)
+				if !found {
+					return nil, fmt.Errorf("field %s not found", field.Name)
+				}
+				return val.(dagql.Typed), nil
+			},
+		})
+	}
+
+	return fields
+}
+
+func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]dagql.Field[*ModuleObject], error) {
+	objDef := obj.TypeDef
+
+	var fields []dagql.Field[*ModuleObject]
+	for _, fnDef := range objDef.Functions {
+		fnDef := fnDef
+		if fnDef.ReturnType.Kind == TypeDefKindVoid {
+			continue
 		}
-		fields = append(fields, objFun)
-	}
-	return
-}
 
-func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
-	spec := &dagql.FieldSpec{
-		Name:        field.Name,
-		Description: field.Description,
-		Type:        field.TypeDef.ToTyped(),
-		Module:      mod.IDModule(),
-	}
-	spec.Directives = append(spec.Directives, &ast.Directive{
-		Name: trivialFieldDirectiveName,
-	})
-	if field.SourceMap != nil {
-		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
-	}
-	return dagql.Field[*ModuleObject]{
-		Spec: spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
-			}
-			if !ok {
-				return nil, fmt.Errorf("could not find mod type for field %q", field.Name)
-			}
-			fieldVal, found := obj.Self.Fields[field.OriginalName]
-			if !found {
-				// the field *might* not have been set yet on the object (even
-				// though the typedef has it) - so just pick a suitable zero value
-				fieldVal = nil
-			}
-			return modType.ConvertFromSDKResult(ctx, fieldVal)
-		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: mod.CacheConfigForCall,
-		},
-	}
-}
+		fn, err := NewModFunction(ctx, obj.Module, objDef, obj.Module.Runtime, fnDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create function %s: %w", fnDef.Name, err)
+		}
 
-func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
-	var f dagql.Field[*ModuleObject]
-	modFun, err := NewModFunction(
-		ctx,
-		mod,
-		objDef,
-		mod.Runtime,
-		fun,
-	)
-	if err != nil {
-		return f, fmt.Errorf("failed to create function %q: %w", fun.Name, err)
-	}
-	spec, err := fun.FieldSpec(ctx, mod)
-	if err != nil {
-		return f, fmt.Errorf("failed to get field spec: %w", err)
-	}
-	spec.Module = mod.IDModule()
+		spec, err := fn.metadata.FieldSpec(ctx, obj.Module)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get field spec for %s: %w", fnDef.Name, err)
+		}
+		spec.Module = obj.Module.IDModule()
 
-	return dagql.Field[*ModuleObject]{
-		Spec: &spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-			opts := &CallOpts{
-				ParentTyped:  obj,
-				ParentFields: obj.Self.Fields,
-				// TODO: there may be a more elegant way to do this, but the desired
-				// effect is to cache SDK module calls, which we used to do pre-DagQL.
-				// We should figure out how user modules can opt in to caching, too.
-				Cache:          dagql.IsInternal(ctx),
-				SkipSelfSchema: false,
-				Server:         dag,
-			}
-			for name, val := range args {
-				opts.Inputs = append(opts.Inputs, CallInput{
-					Name:  name,
-					Value: val,
+		fields = append(fields, dagql.Field[*ModuleObject]{
+			Name:        spec.Name,
+			Description: spec.Description,
+			Type:        spec.Type,
+			Args:        spec.Args,
+			Module:      spec.Module,
+			Directives:  spec.Directives,
+			Resolver: func(ctx context.Context, self *ModuleObject, args map[string]dagql.Input) (dagql.Typed, error) {
+				var callInput []CallInput
+				for k, v := range args {
+					callInput = append(callInput, CallInput{
+						Name:  k,
+						Value: v,
+					})
+				}
+				return fn.Call(ctx, &CallOpts{
+					Inputs:       callInput,
+					ParentTyped:  self,
+					ParentFields: self.Fields,
+					Cache:        dagql.IsInternal(ctx),
+					Server:       dag,
 				})
+			},
+		})
+	}
+
+	return fields, nil
+}
+
+func (obj *ModuleObject) AsModule() *Module {
+	return obj.Module
+}
+
+func (obj *ModuleObject) AsService() *Service {
+	return &Service{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsDirectory() *Directory {
+	return &Directory{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsFile() *File {
+	return &File{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsContainer() *Container {
+	return &Container{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsSecret() *Secret {
+	return &Secret{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsSocket() *Socket {
+	return &Socket{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsListObject() *ListObject {
+	return &ListObject{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsEnumObject() *EnumObject {
+	return &EnumObject{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func (obj *ModuleObject) AsInterfaceObject() *InterfaceObject {
+	return &InterfaceObject{
+		ObjectType: obj.TypeDef,
+		Module:     obj.Module,
+		Fields:     obj.Fields,
+	}
+}
+
+func gqlObjectName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	// Remove non-alphanumeric characters and capitalize first letter
+	var result strings.Builder
+	capitalize := true
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			if capitalize {
+				result.WriteRune(r)
+				capitalize = false
+			} else {
+				result.WriteRune(r)
 			}
-			// NB: ensure deterministic order
-			sort.Slice(opts.Inputs, func(i, j int) bool {
-				return opts.Inputs[i].Name < opts.Inputs[j].Name
-			})
-			return modFun.Call(ctx, opts)
-		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: modFun.CacheConfigForCall,
-		},
-	}, nil
-}
-
-type CallableField struct {
-	Module *Module
-	Field  *FieldTypeDef
-	Return ModType
-}
-
-func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, error) {
-	val, ok := opts.ParentFields[f.Field.OriginalName]
-	if !ok {
-		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
+		} else {
+			capitalize = true
+		}
 	}
-	typed, err := f.Return.ConvertFromSDKResult(ctx, val)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert field %q: %w", f.Field.Name, err)
+	return result.String()
+}
+
+func gqlFieldName(name string) string {
+	if name == "" {
+		return ""
 	}
-	return typed, nil
+
+	// Convert to camelCase
+	var result strings.Builder
+	capitalize := false
+	for i, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			if i == 0 {
+				// First character should be lowercase
+				result.WriteRune(r)
+			} else if capitalize {
+				result.WriteRune(r)
+				capitalize = false
+			} else {
+				result.WriteRune(r)
+			}
+		} else {
+			capitalize = true
+		}
+	}
+	return result.String()
 }
 
-func (f *CallableField) ReturnType() (ModType, error) {
-	return f.Return, nil
-}
-
-func (f *CallableField) ArgType(argName string) (ModType, error) {
-	return nil, fmt.Errorf("field cannot have argument %q", argName)
-}
-
-func (f *CallableField) CacheConfigForCall(
-	ctx context.Context,
-	parent dagql.Object,
-	args map[string]dagql.Input,
-	view dagql.View,
-	inputCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)
+// sortFields sorts fields by name for consistent output
+func sortFields(fields []dagql.Field[*ModuleObject]) {
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Name < fields[j].Name
+	})
 }

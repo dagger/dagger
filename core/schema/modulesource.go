@@ -443,6 +443,11 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err := s.initFromModConfig(contents, localSrc); err != nil {
 			return inst, err
 		}
+		
+		// load .env.dagger.json if it exists
+		if err := s.loadEnvDaggerConfig(ctx, localSrc); err != nil {
+			return inst, fmt.Errorf("failed to load .env.dagger.json: %w", err)
+		}
 
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
@@ -604,6 +609,11 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
 		return inst, err
 	}
+	
+	// load .env.dagger.json if it exists
+	if err := s.loadEnvDaggerConfig(ctx, gitSrc); err != nil {
+		return inst, fmt.Errorf("failed to load .env.dagger.json: %w", err)
+	}
 
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
@@ -718,6 +728,11 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	if err := s.initFromModConfig([]byte(configContents), dirSrc); err != nil {
 		return inst, err
 	}
+	
+	// load .env.dagger.json if it exists
+	if err := s.loadEnvDaggerConfig(ctx, dirSrc); err != nil {
+		return inst, fmt.Errorf("failed to load .env.dagger.json: %w", err)
+	}
 
 	// load this module source's deps in parallel
 	query, err := core.CurrentQuery(ctx)
@@ -769,6 +784,84 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	dirSrc.Digest = dirSrc.CalcDigest().String()
 	return inst, nil
+}
+
+// loadEnvDaggerConfig loads .env.dagger.json for the module source
+func (s *moduleSourceSchema) loadEnvDaggerConfig(ctx context.Context, src *core.ModuleSource) error {
+	// Try to load .env.dagger.json from the module source directory
+	switch src.Kind {
+	case core.ModuleSourceKindLocal:
+		envConfigPath := filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath, ".env.dagger.json")
+		if bk, ok := s.dag.Services().Get(resource.ResourceTypeBuildkitClient); ok {
+			contents, err := bk.(*buildkit.Client).ReadCallerHostFile(ctx, envConfigPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					// .env.dagger.json doesn't exist, that's ok
+					return nil
+				}
+				return fmt.Errorf("failed to read .env.dagger.json: %w", err)
+			}
+			
+			envConfig, err := core.LoadEnvDaggerConfigFromBytes(ctx, contents)
+			if err != nil {
+				return fmt.Errorf("failed to parse .env.dagger.json: %w", err)
+			}
+			src.EnvConfig = envConfig
+		}
+		
+	case core.ModuleSourceKindGit:
+		var envConfigContents string
+		err := s.dag.Select(ctx, src.Git.UnfilteredContextDir, &envConfigContents,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(filepath.Join(src.SourceRootSubpath, ".env.dagger.json"))},
+				},
+			},
+			dagql.Selector{Field: "contents"},
+		)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// .env.dagger.json doesn't exist, that's ok
+				return nil
+			}
+			return fmt.Errorf("failed to load git module .env.dagger.json: %w", err)
+		}
+		
+		envConfig, err := core.LoadEnvDaggerConfigFromBytes(ctx, []byte(envConfigContents))
+		if err != nil {
+			return fmt.Errorf("failed to parse git module .env.dagger.json: %w", err)
+		}
+		src.EnvConfig = envConfig
+		
+	case core.ModuleSourceKindDir:
+		var envConfigContents string
+		envConfigPath := filepath.Join(src.SourceRootSubpath, ".env.dagger.json")
+		err := s.dag.Select(ctx, src.ContextDirectory, &envConfigContents,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(envConfigPath)},
+				},
+			},
+			dagql.Selector{Field: "contents"},
+		)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// .env.dagger.json doesn't exist, that's ok
+				return nil
+			}
+			return fmt.Errorf("failed to load dir module .env.dagger.json: %w", err)
+		}
+		
+		envConfig, err := core.LoadEnvDaggerConfigFromBytes(ctx, []byte(envConfigContents))
+		if err != nil {
+			return fmt.Errorf("failed to parse dir module .env.dagger.json: %w", err)
+		}
+		src.EnvConfig = envConfig
+	}
+	
+	return nil
 }
 
 // set values in the given src using values read from the module config file provided as bytes
@@ -854,6 +947,8 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	fullIncludePaths := []string{
 		// always load the config file
 		src.SourceRootSubpath + "/" + modules.Filename,
+		// also load .env.dagger.json if it exists
+		src.SourceRootSubpath + "/.env.dagger.json",
 	}
 
 	if src.SourceSubpath != "" {
