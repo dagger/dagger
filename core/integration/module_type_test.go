@@ -1214,7 +1214,6 @@ class Test:
 					require.NoError(t, err)
 					require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
 				}
-
 			})
 		}
 	})
