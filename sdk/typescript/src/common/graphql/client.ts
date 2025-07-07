@@ -1,10 +1,12 @@
 import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
-import fetch from "node-fetch"
+import nodeFetch from "node-fetch"
 import {
   RequestInfo as NodeFetchRequestInfo,
   RequestInit as NodeFetchRequestInit,
 } from "node-fetch"
+
+import { isDeno } from "../utils.js"
 
 const createFetchWithTimeout =
   (timeout: number) =>
@@ -22,7 +24,17 @@ const createFetchWithTimeout =
     }, timeout)
 
     try {
-      return (await fetch(input as NodeFetchRequestInfo, {
+      // Edge case for Deno that doesn't work as expected with node-fetch and would
+      // rather rely on its native fetch implementation
+      // See: https://github.com/dagger/dagger/issues/10546
+      if (isDeno()) {
+        return await fetch(input as RequestInfo, {
+          ...(init as RequestInit),
+          signal: controller.signal,
+        })
+      }
+
+      return (await nodeFetch(input as NodeFetchRequestInfo, {
         ...(init as NodeFetchRequestInit),
         signal: controller.signal,
       })) as unknown as Response
