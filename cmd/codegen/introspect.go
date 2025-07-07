@@ -23,6 +23,7 @@ func Introspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer dag.Close()
 
 	var data any
 	err = dag.Do(ctx, &dagger.Request{
