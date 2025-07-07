@@ -926,6 +926,33 @@ func (ServiceSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stderr, "Host: "+hostname)
 }
 
+func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	script := c.Container().
+		From(alpineImage).
+		WithNewFile("script", "#!/bin/sh\nwhile true; do echo -n cool | nc -l -p 1337; done").
+		WithExec([]string{"/bin/sh", "-c", "chmod +x script"}).
+		File("script")
+
+	srv := c.Container().
+		From(alpineImage).
+		WithFile("/bin/app", script).
+		WithSymlink("doesnt", "matter"). // Note this is done via a dagOp; which broke things at one point
+		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+		WithExposedPort(1337)
+
+	s, err := c.Container().
+		From(alpineImage).
+		WithServiceBinding("coolserver", srv.AsService()).
+		WithExec([]string{"sh", "-c", "nc coolserver 1337"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "cool", s)
+}
+
 func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

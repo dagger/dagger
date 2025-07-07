@@ -435,6 +435,42 @@ func (DirectorySuite) TestWithFile(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
 	})
+
+	t.Run("dir reference is kept", func(ctx context.Context, t *testctx.T) {
+		f := c.Directory().WithNewFile("some-file", "data").File("some-file")
+
+		d2 := c.Directory().
+			WithNewFile("some-other-file", "other-data").
+			WithNewDirectory("some-dir").
+			Directory("/some-dir").
+			WithFile("f", f)
+
+		// this should no longer be available, since dir.Dir should now be "/dir1"
+		_, err := d2.File("some-other-file").Contents(ctx)
+		require.Error(t, err)
+
+		s, err := d2.File("f").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
+
+	for _, dst := range []string{".", "", "/"} {
+		t.Run(fmt.Sprintf("src filename is used dst is a directory referenced by %s", dst), func(ctx context.Context, t *testctx.T) {
+			f := c.Directory().WithNewFile("some-file", "data").File("some-file")
+			d := c.Directory().WithFile(dst, f)
+			s, err := d.File("some-file").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "data", s)
+		})
+	}
+
+	t.Run("src filename (and not directory names) is used dst is empty", func(ctx context.Context, t *testctx.T) {
+		f := c.Directory().WithNewFile("sub/subterrain/some-file", "data").File("sub/subterrain/some-file")
+		d := c.Directory().WithFile("", f)
+		s, err := d.File("some-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data", s)
+	})
 }
 
 func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
