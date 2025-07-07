@@ -126,7 +126,8 @@ type ModuleSource struct {
 
 	OriginalSubpath string
 
-	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
+	ContextDirectory dagql.Instance[*Directory]    `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
+	ContextModule    dagql.Instance[*ModuleSource] `field:"true" name:"contextModule" doc:"If set, use this module's context directory instead of our own when loading default directory paths"`
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
