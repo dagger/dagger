@@ -30,6 +30,16 @@ type Config struct {
 	ClientConfig *ClientGeneratorConfig
 }
 
+// Close existing dagger client if it exists.
+// This is a convenience method to be used in the main codegen command using a defer.
+func (c *Config) Close() error {
+	if c.Dag != nil {
+		return c.Dag.Close()
+	}
+
+	return nil
+}
+
 // Specific configuration for module generation.
 type ModuleGeneratorConfig struct {
 	// Name of the module to generate code for.

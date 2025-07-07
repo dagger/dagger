@@ -34,6 +34,7 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get global configuration: %w", err)
 	}
+	defer cfg.Close()
 
 	moduleConfig := &generator.ModuleGeneratorConfig{}
 

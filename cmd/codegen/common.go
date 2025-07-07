@@ -43,7 +43,6 @@ func getGlobalConfig(ctx context.Context) (generator.Config, error) {
 		if err != nil {
 			return generator.Config{}, fmt.Errorf("failed to connect to engine: %w", err)
 		}
-		defer dag.Close()
 
 		cfg.Dag = dag
 	}
