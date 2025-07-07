@@ -5,9 +5,9 @@ description: "In addition to providing a set of core functions and types, the Da
 
 import InitProject from '/snippets/init-project.mdx';
 
-Custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger [modules](../features/modules.mdx).
+Custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger modules.
 
-When a Dagger module is loaded into a Dagger session, the Dagger API is [dynamically extended](./internals.mdx#dynamic-api-extension) with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
+When a Dagger module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
 ## Initialize a Dagger module
 
@@ -115,6 +115,7 @@ Here's what you should see:
 
 <Note>
 Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
+
 1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a Dagger Function runs the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
 1. Caching: A reproducible containerized environment makes it possible to cache the result of Dagger Function execution, which in turn allows Dagger to automatically speed up operations.
 1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.

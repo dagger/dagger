@@ -22,8 +22,8 @@
             "icon": "house",
             "pages": [
               "index",
-              "installation",
               "use-cases",
+              "installation",
               "ide-setup"
             ]
           },
