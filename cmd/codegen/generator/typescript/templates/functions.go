@@ -370,11 +370,16 @@ func (funcs typescriptTemplateFuncs) toSingleType(value string) string {
 }
 
 func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
+	moduleParentPath := ""
+	if funcs.cfg.ModuleConfig != nil {
+		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	}
+
 	return filepath.Join(
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
 		// Path to the module's context directory.
-		funcs.cfg.ModuleConfig.ModuleParentPath,
+		moduleParentPath,
 		// Path from the context directory to the target path.
 		path,
 	)
