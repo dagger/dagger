@@ -39,8 +39,9 @@
             "group": "Examples",
             "icon": "lightbulb",
             "pages": [
-              "examples",
-              "videos"
+              "examples/index",
+              "examples/demos",
+              "examples/livesteams"
             ]
           },
           {
@@ -103,7 +104,14 @@
             ]
           },
           {
-            "group": "SDKs"
+            "group": "SDKs",
+            "pages": [
+              "reference/sdk/index",
+              "reference/sdk/go",
+              "reference/sdk/typescript",
+              "reference/sdk/python",
+              "reference/sdk/php"
+            ]
 
           }
         ]
