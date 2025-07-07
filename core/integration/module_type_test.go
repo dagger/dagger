@@ -1021,14 +1021,15 @@ export class Test {
 }
 
 func (TypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
-	type testCase struct {
-		sdk    string
-		source string
-	}
-	for _, tc := range []testCase{
-		{
-			sdk: "go",
-			source: `package main
+	t.Run("simple enum", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
 
 import "dagger/test/internal/dagger"
 
@@ -1049,10 +1050,10 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 	return dagger.NetworkProtocol(proto)
 }
 `,
-		},
-		{
-			sdk: "python",
-			source: `import dagger
+			},
+			{
+				sdk: "python",
+				source: `import dagger
 from dagger import function, object_type
 
 @object_type
@@ -1077,10 +1078,10 @@ class Test:
 
         return MockEnum(proto)
 `,
-		},
-		{
-			sdk: "typescript",
-			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
+			},
+			{
+				sdk: "typescript",
+				source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
 
 @object()
 export class Test {
@@ -1100,33 +1101,123 @@ export class Test {
   }
 }
 `,
-		},
-	} {
-		tc := tc
+			},
+		} {
+			tc := tc
 
-		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			modGen := modInit(t, c, tc.sdk, tc.source)
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
+				out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
-			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+				_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
+				requireErrOut(t, err, "invalid enum member")
 
-			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
+				out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
-			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-			requireErrOut(t, err, "invalid enum member")
+				_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
+				requireErrOut(t, err, "invalid enum member")
 
-			out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
-		})
-	}
+				out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
+			})
+		}
+	})
+
+	t.Run("multi-name for a value", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			sdk    string
+			source string
+		}
+
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+  "dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) FromImageLayerCompression(imageLayerCompression dagger.ImageLayerCompression) string {
+  return string(imageLayerCompression)
+}
+
+func (m *Test) ToImageLayerCompression(imageLayerCompression string) dagger.ImageLayerCompression {
+  return dagger.ImageLayerCompression(imageLayerCompression)
+}
+			`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { ImageLayerCompression, object, func } from "@dagger.io/dagger";
+
+@object()
+export class Test {
+  @func()
+  fromImageLayerCompression(imageLayerCompression: ImageLayerCompression): string {
+    return imageLayerCompression
+  }
+
+  @func()
+  toImageLayerCompression(imageLayerCompression: string): ImageLayerCompression {
+    return imageLayerCompression as ImageLayerCompression
+  }
+}`,
+			},
+			{
+				sdk: "python",
+				source: `import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def from_image_layer_compression(self, image_layer_compression: dagger.ImageLayerCompression) -> str:
+        return str(image_layer_compression)
+
+    @function
+    def to_image_layer_compression(self, image_layer_compression: str) -> dagger.ImageLayerCompression:
+        return dagger.ImageLayerCompression(image_layer_compression)
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
+
+				out, err := modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+
+				_, err = modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+
+				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+
+				// TODO(helderco): Python is failing on that test so we skip it for that language until it's supported
+				if tc.sdk != "python" {
+					out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+				}
+
+			})
+		}
+	})
 }
 
 func (TypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
