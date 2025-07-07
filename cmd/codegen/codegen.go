@@ -17,7 +17,7 @@ import (
 func Generate(ctx context.Context, cfg generator.Config) (err error) {
 	logsW := os.Stdout
 
-	if cfg.ModuleConfig  != nil && cfg.ModuleConfig.ModuleName != "" {
+	if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
 		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleConfig.ModuleName)
 	} else {
 		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)

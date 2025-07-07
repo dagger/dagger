@@ -14,7 +14,7 @@ var (
 	outputDir             string
 	lang                  string
 	introspectionJSONPath string
-	bundle bool
+	bundle                bool
 )
 
 func relativeTo(basepath string, tarpath string) (string, error) {
