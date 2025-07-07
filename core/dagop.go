@@ -124,23 +124,23 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
+	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	switch inst := obj.(type) {
-	case dagql.Instance[*Directory]:
-		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+	switch inst := obj.Unwrap().(type) {
+	case *Directory:
+		if inst.Result != nil {
+			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
-		res, err := inst.Self.Evaluate(ctx)
+		res, err := inst.Evaluate(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -150,13 +150,13 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		}
 		return []solver.Result{ref}, nil
 
-	case dagql.Instance[*File]:
-		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+	case *File:
+		if inst.Result != nil {
+			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
-		res, err := inst.Self.Evaluate(ctx)
+		res, err := inst.Evaluate(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -236,19 +236,16 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query.Self), op.ID)
+	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
 	if err != nil {
 		return nil, err
 	}
-	if wrapped, ok := result.(dagql.Wrapper); ok {
-		result = wrapped.Unwrap()
-	}
 
-	ref, err := query.Self.BuildkitCache().New(ctx, nil, g,
+	ref, err := query.BuildkitCache().New(ctx, nil, g,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(client.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
@@ -287,7 +284,7 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	}()
 
 	enc := json.NewEncoder(f)
-	err = enc.Encode(result)
+	err = enc.Encode(result.Unwrap())
 	if err != nil {
 		return nil, err
 	}
@@ -534,11 +531,11 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
 	loadCtx := ctx
 
-	query, ok := opt.Server.Root().(dagql.Instance[*Query])
+	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	loadCtx = ContextWithQuery(loadCtx, query.Self)
+	loadCtx = ContextWithQuery(loadCtx, query)
 
 	mountData := op.ContainerMountData
 	mountData.Inputs = inputs
@@ -549,14 +546,14 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 		return nil, err
 	}
 
-	bk, err := query.Self.Buildkit(ctx)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	switch inst := obj.(type) {
-	case dagql.Instance[*Container]:
-		return extractContainerBkOutputs(ctx, inst.Self, bk, opt.Worker, op.ContainerMountData)
+	switch inst := obj.Unwrap().(type) {
+	case *Container:
+		return extractContainerBkOutputs(ctx, inst, bk, opt.Worker, op.ContainerMountData)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)

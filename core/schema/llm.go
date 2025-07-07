@@ -52,8 +52,8 @@ func (s llmSchema) Install() {
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
 			),
-		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
-			return dagql.Null[core.Void](), self.Self.MCP(ctx, s.srv)
+		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
+			return dagql.Null[core.Void](), self.MCP(ctx, s.srv)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withPromptFile", s.withPromptFile).
@@ -68,15 +68,15 @@ func (s llmSchema) Install() {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
-		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
-			var zero dagql.ID[*core.LLM]
-			var inst dagql.Instance[*core.LLM]
+		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
+			var inst dagql.Result[*core.LLM]
 			if err := s.srv.Select(ctx, self, &inst, dagql.Selector{
 				Field: "loop",
 			}); err != nil {
-				return zero, err
+				return res, err
 			}
-			return dagql.NewID[*core.LLM](inst.ID()), nil
+			id := dagql.NewID[*core.LLM](inst.ID())
+			return dagql.NewResultForCurrentID(ctx, id)
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
@@ -100,7 +100,7 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(env.Self), nil
+	return llm.WithEnv(env.Self()), nil
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
@@ -163,7 +163,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPromptFile(ctx, file.Self)
+	return llm.WithPromptFile(ctx, file.Self())
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

@@ -170,7 +170,7 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-func (env *Env) Ingest(obj dagql.Object, desc string) string {
+func (env *Env) Ingest(obj dagql.AnyResult, desc string) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
@@ -307,8 +307,8 @@ func (b *Binding) String() string {
 	return fmt.Sprintf("%q", b.Value)
 }
 
-func (b *Binding) AsObject() (dagql.Object, bool) {
-	obj, ok := dagql.UnwrapAs[dagql.Object](b.Value)
+func (b *Binding) AsObject() (dagql.AnyObjectResult, bool) {
+	obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](b.Value)
 	return obj, ok
 }
 
@@ -431,8 +431,8 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 				},
 			),
 		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			env := self.(dagql.Instance[*Env]).Self
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			env := self.(dagql.ObjectResult[*Env]).Self()
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.IDType)
 			description := args["description"].(dagql.String).String()
@@ -440,7 +440,8 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			if err != nil {
 				return nil, err
 			}
-			return env.WithInput(name, obj, description), nil
+
+			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
 		},
 		dagql.CacheSpec{},
 	)
@@ -463,11 +464,12 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 				},
 			),
 		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			env := self.(dagql.Instance[*Env]).Self
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			env := self.(dagql.ObjectResult[*Env]).Self()
 			name := args["name"].(dagql.String).String()
 			desc := args["description"].(dagql.String).String()
-			return env.WithOutput(name, targetType, desc), nil
+
+			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
 		},
 		dagql.CacheSpec{},
 	)
@@ -480,8 +482,8 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
 		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			binding := self.(dagql.Instance[*Binding]).Self
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			binding := self.(dagql.ObjectResult[*Binding]).Self()
 			val := binding.Value
 			if val == nil {
 				return nil, fmt.Errorf("binding %q undefined", binding.Key)
@@ -489,7 +491,16 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			if val.Type().Name() != typeName {
 				return nil, fmt.Errorf("binding %q type mismatch: expected %s, got %s", binding.Key, typeName, val.Type())
 			}
-			return val, nil
+
+			res, ok := val.(dagql.AnyResult)
+			if !ok {
+				var err error
+				res, err = dagql.NewResultForCurrentID(ctx, val)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert binding %q value to result: %w", binding.Key, err)
+				}
+			}
+			return res, nil
 		},
 		dagql.CacheSpec{
 			DoNotCache: "Bindings are mutable",

@@ -123,6 +123,9 @@ func (*Container) TypeDescription() string {
 var _ HasPBDefinitions = (*Container)(nil)
 
 func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if container == nil {
+		return nil, nil
+	}
 	var defs []*pb.Definition
 	if container.FS != nil {
 		defs = append(defs, container.FS)
@@ -133,7 +136,7 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		}
 	}
 	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
@@ -155,6 +158,9 @@ func NewContainer(platform Platform) (*Container, error) {
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (container *Container) Clone() *Container {
+	if container == nil {
+		return nil
+	}
 	cp := *container
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
@@ -230,7 +236,7 @@ func (owner Ownership) Opt() llb.ChownOption {
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    dagql.Instance[*Secret]
+	Secret    dagql.ObjectResult[*Secret]
 	EnvName   string
 	MountPath string
 	Owner     *Ownership
@@ -459,7 +465,7 @@ func (container *Container) Build(
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
-	secrets []dagql.Instance[*Secret],
+	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
 ) (*Container, error) {
@@ -823,7 +829,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 func (container *Container) WithMountedSecret(
 	ctx context.Context,
 	target string,
-	source dagql.Instance[*Secret],
+	source dagql.ObjectResult[*Secret],
 	owner string,
 	mode fs.FileMode,
 ) (*Container, error) {
@@ -939,7 +945,7 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 func (container *Container) WithSecretVariable(
 	ctx context.Context,
 	name string,
-	secret dagql.Instance[*Secret],
+	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -1281,7 +1287,10 @@ func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpt
 	return container, nil
 }
 
-func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	if container == nil {
+		return nil, nil
+	}
 	if container.FS == nil {
 		return nil, nil
 	}
@@ -1721,10 +1730,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Self.Hostname(ctx, svc.ID())
+	host, err := svc.Self().Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
 	}

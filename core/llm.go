@@ -874,7 +874,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 		return fmt.Errorf("failed to figure out module while deciding if llm is allowed: %w", err)
 	}
-	if module.Source.Self.Kind != ModuleSourceKindGit {
+	if module.Source.Self().Kind != ModuleSourceKindGit {
 		return nil
 	}
 
@@ -883,7 +883,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
 	}
 
-	moduleURL := module.Source.Self.Git.Symbolic
+	moduleURL := module.Source.Self().Git.Symbolic
 	for _, allowedModule := range md.AllowedLLMModules {
 		if allowedModule == "all" || moduleURL == allowedModule {
 			return nil
