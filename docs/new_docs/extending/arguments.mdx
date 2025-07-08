@@ -79,37 +79,10 @@ Here is an example of a Dagger Function that accepts a Boolean argument:
 
 <CodeTabs
   goCode="/snippets/sdk-examples/functions/arguments-boolean/go/main-go.mdx"
-  pythonCode="./snippets/functions/arguments-boolean/python/main.py"
-  typescriptCode="./snippets/functions/arguments-boolean/typescript/index.ts"
-  phpCode="./snippets/functions/arguments-boolean/php/src/MyModule.php"
-  javaCode="./snippets/functions/arguments-boolean/java/src/main/java/io/dagger/modules/mymodule/MyModule.java"
+  pythonCode="/snippets/sdk-examples/functions/arguments-boolean/python/main.py"
 />
 
 Here is an example call for this Dagger Function:
-
-```go Go icon=golang wrap
-package main
-import (
-  "fmt"
-  "github.com/dagger/dagger"
-)
-
-func main() {
-  client, err := dagger.Connect(dagger.WithLogOutput(os.Stdout))
-  if err != nil {
-    panic(err)
-  }
-  defer client.Close()
-
-  // Call the Dagger Function with a boolean argument
-  result, err := client.Call("hello", map[string]any{"shout": true})
-  if err != nil {
-    panic(err)
-  }
-
-  fmt.Println(result)
-}
-```
 
 <ShellTabs
   systemShellCommand="dagger -c 'hello true'"
