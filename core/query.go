@@ -121,10 +121,10 @@ type Server interface {
 	SecretSalt() []byte
 
 	// Start a status and return a status tied to its internal span ID.
-	StartStatus(context.Context, *Status) *Status
+	StartStatus(context.Context, *Status) (*Status, error)
 
 	// Look up a started status by its internal span ID.
-	LookupStatus(string) (*Status, bool)
+	LookupStatus(context.Context, string) (*Status, bool, error)
 }
 
 type queryKey struct{}

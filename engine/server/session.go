@@ -160,6 +160,10 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+
+	// user-created spans (exposed as "statuses")
+	spans  map[string]*core.Status
+	spansL *sync.Mutex
 }
 
 type daggerClientState string
@@ -783,6 +787,8 @@ func (srv *Server) getOrInitClient(
 			secretToken:    token,
 			shutdownCh:     make(chan struct{}),
 			clientMetadata: opts.ClientMetadata,
+			spans:          make(map[string]*core.Status),
+			spansL:         &sync.Mutex{},
 		}
 		sess.clients[clientID] = client
 
@@ -1480,22 +1486,30 @@ func (srv *Server) SecretSalt() []byte {
 }
 
 // Start a status and return a status tied to its internal span ID.
-func (srv *Server) StartStatus(ctx context.Context, s *core.Status) *core.Status {
+func (srv *Server) StartStatus(ctx context.Context, s *core.Status) (*core.Status, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	started := s.Clone()
 	tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer(InstrumentationLibrary)
 	_, started.Span = tracer.Start(ctx, s.Name, s.Opts()...)
-	srv.spansL.Lock()
-	srv.spans[started.InternalID()] = started
-	srv.spansL.Unlock()
-	return started
+	client.spansL.Lock()
+	client.spans[started.InternalID()] = started
+	client.spansL.Unlock()
+	return started, nil
 }
 
 // Look up a started status by its internal span ID.
-func (srv *Server) LookupStatus(spanID string) (*core.Status, bool) {
-	srv.spansL.Lock()
-	span, found := srv.spans[spanID]
-	srv.spansL.Unlock()
-	return span, found
+func (srv *Server) LookupStatus(ctx context.Context, spanID string) (*core.Status, bool, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	client.spansL.Lock()
+	span, found := client.spans[spanID]
+	client.spansL.Unlock()
+	return span, found, nil
 }
 
 type httpError struct {

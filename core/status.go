@@ -74,7 +74,7 @@ func (s *Status) Start(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	return query.StartStatus(ctx, s), nil
+	return query.StartStatus(ctx, s)
 }
 
 func (s *Status) InternalID() string {

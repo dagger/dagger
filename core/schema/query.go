@@ -195,7 +195,10 @@ func (s *querySchema) status(ctx context.Context, parent *core.Query, args struc
 }) (*core.Status, error) {
 	query := parent
 	if args.Key != "" {
-		status, found := query.LookupStatus(args.Key)
+		status, found, err := query.LookupStatus(ctx, args.Key)
+		if err != nil {
+			return nil, err
+		}
 		if !found {
 			return nil, fmt.Errorf("status not found: %s", args.Key)
 		}
