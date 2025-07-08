@@ -8,6 +8,7 @@ import (
 	"iter"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -200,13 +201,80 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 	return true
 }
 
-func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
+func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 	for _, arg := range fn.Args {
-		if arg.Name == name {
+		if strings.EqualFold(arg.Name, nameAnyCase) {
 			return arg, true
 		}
 	}
 	return nil, false
+}
+
+func (fn *Function) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
+	arg, ok := fn.LookupArg(argNameAnyCase)
+	if !ok {
+		return "", fmt.Errorf("function %q has no argument %q", fn.Name, argNameAnyCase)
+	}
+	var (
+		newDefault     any
+		newDefaultJSON []byte
+	)
+	switch arg.TypeDef.Kind {
+	case TypeDefKindString:
+		newDefault = prettyValue
+	case TypeDefKindInteger:
+		var err error
+		newDefault, err = strconv.Atoi(prettyValue)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse integer value %q: %w", prettyValue, err)
+		}
+	case TypeDefKindObject:
+		srv := dagql.CurrentDagqlServer(ctx)
+		// eg. "secret", "gitRef", "directory"...
+		typename := arg.TypeDef.ToType().Name()
+		typename = strings.ToLower(typename[0:1]) + typename[1:]
+		var result dagql.AnyResult
+		if err := srv.Select(ctx, srv.Root(), &result,
+			dagql.Selector{
+				Field: "address",
+				Args: []dagql.NamedInput{{
+					Name:  "value",
+					Value: dagql.NewString(prettyValue),
+				}},
+			},
+			dagql.Selector{
+				Field: strings.ToLower(typename),
+			},
+			dagql.Selector{
+				Field: "id",
+			},
+		); err != nil {
+			return "", err
+		}
+		// FIXME: for objects, set a new 'defaultAddress' field on the typedef,
+		// for cleaner display on introspection
+		newDefault = result.Unwrap()
+	default:
+		// Go straight to JSON
+		if val := []byte(prettyValue); json.Valid(val) {
+			newDefaultJSON = val
+		} else {
+			return "", fmt.Errorf(
+				"can't override arg of type %q: value is not valid json: %s",
+				arg.TypeDef.ToType().Name(),
+				val,
+			)
+		}
+	}
+	if newDefaultJSON == nil {
+		var err error
+		newDefaultJSON, err = json.Marshal(newDefault)
+		if err != nil {
+			return "", err
+		}
+	}
+	arg.DefaultValue = newDefaultJSON
+	return arg.Name, nil
 }
 
 type FunctionArg struct {
@@ -783,6 +851,14 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	}
 
 	return true
+}
+
+func (obj *ObjectTypeDef) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
+	fn := obj.Constructor.Value
+	if fn == nil {
+		return "", fmt.Errorf("can't override constructor for type %q: no constructor", obj.Name)
+	}
+	return fn.ApplyLocalDefault(ctx, argNameAnyCase, prettyValue)
 }
 
 type FieldTypeDef struct {

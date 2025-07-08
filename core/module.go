@@ -83,6 +83,40 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
+// Return a reference to the module's main object
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	for _, typeDef := range mod.ObjectDefs {
+		if typeDef.AsObject.Valid {
+			objDef := typeDef.AsObject.Value
+			if strings.EqualFold(objDef.OriginalName, mod.OriginalName) {
+				return objDef, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// Apply default arguments loaded from a local env file, not from the module's schema
+func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults []EnvVariable) error {
+	for _, kv := range defaults {
+		matchedName, err := mod.ApplyLocalDefault(ctx, kv.Name, kv.Value)
+		if err != nil {
+			return err
+		}
+		_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("apply default: %q (%q)", matchedName, kv.Name))
+		span.End()
+	}
+	return nil
+}
+
+func (mod *Module) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return "", fmt.Errorf("error overriding args for module %q: can't load main object", mod.Name())
+	}
+	return mainObj.ApplyLocalDefault(ctx, argNameAnyCase, prettyValue)
+}
+
 func (mod *Module) IDModule() *call.Module {
 	if !mod.Source.Valid {
 		panic("no module source")
