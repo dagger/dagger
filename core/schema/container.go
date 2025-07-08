@@ -574,9 +574,9 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.NodeFunc("load", s.load).
+		dagql.NodeFunc("exportImage", s.exportImage).
 			DoNotCache("Writes to the local host.").
-			Doc("Exports the container to the host's container store").
+			Doc("Exports the container as an image to the host's container image store.").
 			Args(
 				dagql.Arg("name").Doc("Name of image to export to in the host's store"),
 				dagql.Arg("platformVariants").Doc(
@@ -2103,7 +2103,7 @@ type containerLoadArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 }
 
-func (s *containerSchema) load(
+func (s *containerSchema) exportImage(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
 	args containerLoadArgs,

@@ -220,6 +220,29 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Exports the container as an image to the host's container image store.
+     */
+    public function exportImage(
+        string $name,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'exportImage');
+    }
+
+    /**
      * Retrieves the list of exposed ports.
      *
      * This includes ports already exposed by the image, even if not explicitly added with dagger.
@@ -303,29 +326,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('labels');
         return (array)$this->queryLeaf($leafQueryBuilder, 'labels');
-    }
-
-    /**
-     * Exports the container to the host's container store
-     */
-    public function load(
-        string $name,
-        ?array $platformVariants = null,
-        ?ImageLayerCompression $forcedCompression = null,
-        ?ImageMediaTypes $mediaTypes = null,
-    ): void {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('load');
-        $leafQueryBuilder->setArgument('name', $name);
-        if (null !== $platformVariants) {
-        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
-        }
-        if (null !== $forcedCompression) {
-        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
-        }
-        if (null !== $mediaTypes) {
-        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        $this->queryLeaf($leafQueryBuilder, 'load');
     }
 
     /**

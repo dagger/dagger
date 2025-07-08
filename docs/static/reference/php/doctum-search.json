@@ -1939,6 +1939,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::exportImage",
+			"p": "Dagger/Container.html#method_exportImage",
+			"d": "<p>Exports the container as an image to the host's container image store.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::exposedPorts",
 			"p": "Dagger/Container.html#method_exposedPorts",
 			"d": "<p>Retrieves the list of exposed ports.</p>"
@@ -1984,12 +1990,6 @@
 			"n": "Dagger\\Container::labels",
 			"p": "Dagger/Container.html#method_labels",
 			"d": "<p>Retrieves the list of labels passed to container.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Container::load",
-			"p": "Dagger/Container.html#method_load",
-			"d": "<p>Exports the container to the host's container store</p>"
 		},
 		{
 			"t": "M",
