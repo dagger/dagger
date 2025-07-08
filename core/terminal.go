@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
 	"golang.org/x/sync/errgroup"
@@ -92,53 +90,60 @@ func (container *Container) Terminal(
 		ctx,
 		svcID,
 		true,
-		func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
-			eg.Go(func() error {
-				_, err := io.Copy(stdin, term.Stdin)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
-				}
-				return nil
-			})
-			eg.Go(func() error {
-				for resize := range term.ResizeCh {
-					err := svcProc.Resize(egctx, resize)
-					if err != nil {
-						return fmt.Errorf("failed to resize terminal: %w", err)
-					}
-				}
-				return nil
-			})
+		&ServiceIO{
+			// XXX: errclosedpipe?
+			Stdin:    term.Stdin,
+			Stdout:   term.Stdout,
+			Stderr:   term.Stderr,
+			ResizeCh: term.ResizeCh,
 		},
-		func(stdout io.Reader) {
-			eg.Go(func() error {
-				defer term.Stdout.Close()
-				_, err := io.Copy(term.Stdout, stdout)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding container stdout to terminal: %w", err)
-				}
-				return nil
-			})
-		},
-		func(stderr io.Reader) {
-			eg.Go(func() error {
-				defer term.Stderr.Close()
-				_, err := io.Copy(term.Stderr, stderr)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding container stderr to terminal: %w", err)
-				}
-				return nil
-			})
-		},
+		// func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
+		// 	eg.Go(func() error {
+		// 		_, err := io.Copy(stdin, term.Stdin)
+		// 		if err != nil {
+		// 			if errors.Is(err, io.ErrClosedPipe) {
+		// 				return nil
+		// 			}
+		// 			return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
+		// 		}
+		// 		return nil
+		// 	})
+		// 	eg.Go(func() error {
+		// 		for resize := range term.ResizeCh {
+		// 			err := svcProc.Resize(egctx, resize)
+		// 			if err != nil {
+		// 				return fmt.Errorf("failed to resize terminal: %w", err)
+		// 			}
+		// 		}
+		// 		return nil
+		// 	})
+		// },
+		// func(stdout io.Reader) {
+		// 	eg.Go(func() error {
+		// 		defer term.Stdout.Close()
+		// 		_, err := io.Copy(term.Stdout, stdout)
+		// 		if err != nil {
+		// 			if errors.Is(err, io.ErrClosedPipe) {
+		// 				return nil
+		// 			}
+		// 			return fmt.Errorf("error forwarding container stdout to terminal: %w", err)
+		// 		}
+		// 		return nil
+		// 	})
+		// },
+		// func(stderr io.Reader) {
+		// 	eg.Go(func() error {
+		// 		defer term.Stderr.Close()
+		// 		_, err := io.Copy(term.Stderr, stderr)
+		// 		if err != nil {
+		// 			if errors.Is(err, io.ErrClosedPipe) {
+		// 				return nil
+		// 			}
+		// 			return fmt.Errorf("error forwarding container stderr to terminal: %w", err)
+		// 		}
+		// 		return nil
+		// 	})
+		// },
 	)
 	if err != nil {
 		return fmt.Errorf("failed to start service: %w", err)

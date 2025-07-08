@@ -234,6 +234,13 @@ type Namespaced interface {
 	Release(context.Context) error
 }
 
+func NewPlainNS(id string) Namespaced {
+	return &networkNamespace{
+		id:      id,
+		cleanup: &Cleanups{},
+	}
+}
+
 type networkNamespace struct {
 	id      string
 	cleanup *Cleanups

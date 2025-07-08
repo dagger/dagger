@@ -1,13 +1,13 @@
 package core
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,14 +15,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/moby/buildkit/client/llb"
+	bkcache "github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/executor"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
+	"github.com/moby/buildkit/identity"
+	bkmounts "github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
-	utilsystem "github.com/moby/buildkit/util/system"
-	"github.com/sourcegraph/conc/pool"
+	"github.com/moby/buildkit/worker"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -243,17 +247,49 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream != nil)
 }
 
+type ServiceIO struct {
+	Stdin    io.ReadCloser
+	Stdout   io.WriteCloser
+	Stderr   io.WriteCloser
+	ResizeCh chan bkgw.WinSize
+}
+
+func (io *ServiceIO) Close() error {
+	if io == nil {
+		return nil
+	}
+
+	var errs []error
+	if io.Stdin != nil {
+		if err := io.Stdin.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if io.Stdout != nil {
+		if err := io.Stdout.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if io.Stderr != nil {
+		if err := io.Stderr.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func (svc *Service) Start(
 	ctx context.Context,
 	id *call.ID,
 	interactive bool,
-	forwardStdin func(io.Writer, bkgw.ContainerProcess),
-	forwardStdout func(io.Reader),
-	forwardStderr func(io.Reader),
+	sio *ServiceIO,
+	// forwardStdin func(io.Writer, bkgw.ContainerProcess),
+	// forwardStdout func(io.Reader),
+	// forwardStderr func(io.Reader),
 ) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, id, interactive, forwardStdin, forwardStdout, forwardStderr)
+		return svc.startContainer(ctx, id, interactive, sio)
 	case svc.TunnelUpstream != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
@@ -268,10 +304,15 @@ func (svc *Service) startContainer(
 	ctx context.Context,
 	id *call.ID,
 	interactive bool,
-	forwardStdin func(io.Writer, bkgw.ContainerProcess),
-	forwardStdout func(io.Reader),
-	forwardStderr func(io.Reader),
+	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
+	var cleanups buildkit.Cleanups
+	defer func() {
+		if rerr != nil {
+			cleanups.Run()
+		}
+	}()
+
 	dig := id.Digest()
 
 	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
@@ -308,12 +349,7 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
-
-	defer func() {
-		if err != nil {
-			detachDeps()
-		}
-	}()
+	cleanups.Add("detach deps", buildkit.Infallible(detachDeps))
 
 	var domain string
 	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
@@ -335,119 +371,89 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+	cache := query.BuildkitCache()
+	session := query.BuildkitSession()
 
-	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
-
-	pbmounts, states, _, err := getAllContainerMounts(ctr)
+	pbmounts, states, count, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
 
-	mountsG := pool.New().WithErrors()
-	mounts := make([]buildkit.ContainerMount, 0)
-	for _, pbmount := range pbmounts {
-		mount := bkgw.Mount{
-			Selector:  pbmount.Selector,
-			Dest:      pbmount.Dest,
-			ResultID:  pbmount.ResultID,
-			Readonly:  pbmount.Readonly,
-			MountType: pbmount.MountType,
-			CacheOpt:  pbmount.CacheOpt,
-			SecretOpt: pbmount.SecretOpt,
-			SSHOpt:    pbmount.SSHOpt,
-			// TODO(vito): why is there no TmpfsOpt? PR upstream?
-			// TmpfsOpt  *TmpfsOpt   `protobuf:"bytes,19,opt,name=TmpfsOpt,proto3" json:"TmpfsOpt,omitempty"`
+	inputs := make([]bkcache.ImmutableRef, count)
+	eg, egctx := errgroup.WithContext(ctx)
+	for i, st := range states {
+		def, err := st.Marshal(egctx)
+		if err != nil {
+			return nil, err
+		}
+		if def == nil {
+			continue
 		}
 
-		var st *llb.State
-		if pbmount.Input != pb.Empty {
-			st = &states[pbmount.Input]
-		}
-
-		if st != nil {
-			def, err := st.Marshal(ctx)
+		eg.Go(func() error {
+			res, err := bk.Solve(egctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: def.ToPB(),
+			})
 			if err != nil {
-				return nil, fmt.Errorf("marshal mount %s: %w", pbmount.Dest, err)
+				return err
 			}
-
-			if def != nil {
-				mountsG.Go(func() error {
-					res, err := bk.Solve(ctx, bkgw.SolveRequest{
-						Definition: def.ToPB(),
-						Evaluate:   true,
-					})
-					if err != nil {
-						return fmt.Errorf("solve mount %s: %w", pbmount.Dest, err)
-					}
-					mount.Ref = res.Ref
-					return nil
-				})
+			ref, err := res.Ref.Result(egctx)
+			if err != nil {
+				return err
 			}
-		}
-
-		mounts = append(mounts, buildkit.ContainerMount{
-			Mount: &mount,
+			if ref != nil {
+				inputs[i] = ref.Sys().(*worker.WorkerRef).ImmutableRef
+			}
+			return nil
 		})
 	}
-	if err := mountsG.Wait(); err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	execCtx := trace.ContextWithSpanContext(ctx, svc.Creator)
-	ctx, span := Tracer(ctx).Start(
-		// The parent is the call site that triggered it to start.
-		ctx,
-		// Match naming scheme of normal exec span.
-		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		// This span continues the original withExec, by linking to it.
-		telemetry.Resume(execCtx),
-		// Hide this span so the user can just focus on the withExec.
-		telemetry.Internal(),
-	)
-	defer func() {
-		if rerr != nil {
-			// NB: this is intentionally conditional; we only complete if there was
-			// an error starting. span.End is called when the service exits.
-			telemetry.End(span, func() error { return rerr })
-		}
-	}()
-
-	gc, err := bk.NewContainer(execCtx, buildkit.NewContainerRequest{
-		Mounts:            mounts,
-		Hostname:          fullHost,
-		Platform:          &pbPlatform,
-		ExecutionMetadata: *execMD,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("new container: %w", err)
+	workerRefs := make([]*worker.WorkerRef, 0, len(inputs))
+	for _, ref := range inputs {
+		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
 	}
 
-	defer func() {
-		if err != nil {
-			gc.Release(context.WithoutCancel(ctx))
-		}
-	}()
+	svcID := identity.NewID()
+	name := fmt.Sprintf("container %s", svcID)
+	mm := bkmounts.NewMountManager(name, cache, session)
+	// XXX: session group?
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, nil, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		// if m.Input != pb.Empty {
+		// 	cm = refs[m.Input].Worker.CacheManager()
+		// }
+		// return cache.New(ctx, ref, g)
+		return cache.New(ctx, ref, nil)
+	}, runtime.GOOS)
+	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
+		cleanups.Add("release active ref", func() error {
+			return active.Ref.Release(context.WithoutCancel(ctx))
+		})
+	}
+	for _, o := range p.OutputRefs {
+		cleanups.Add("release output ref", func() error {
+			return o.Ref.Release(context.WithoutCancel(ctx))
+		})
+	}
 
-	checked := make(chan error, 1)
-	go func() {
-		checked <- newHealth(bk, gc, fullHost, ctr.Ports).Check(ctx)
-	}()
-
-	env := slices.Clone(ctr.Config.Env)
-	env = append(env, telemetry.PropagationEnv(ctx)...)
-	addDefaultEnvvar(env, "PATH", utilsystem.DefaultPathEnv(svc.Container.Platform.OS))
-
-	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
-	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
+	meta, err := ctr.metaSpec(ctx, ContainerExecOpts{
+		Args:                          svc.Args,
+		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
+		NoInit:                        svc.NoInit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	meta.Hostname = fullHost
 
 	// capture stdout/stderr while the service is starting so we can include it in
 	// the exec error
 	stdoutBuf := new(strings.Builder)
 	stderrBuf := new(strings.Builder)
-
-	if forwardStdin != nil {
-		stdinCtr, stdinClient = io.Pipe()
-	}
 
 	// buffer stdout/stderr so we can return a nice error
 	outBufWC := discardOnClose(stdoutBuf)
@@ -456,87 +462,134 @@ func (svc *Service) startContainer(
 	defer outBufWC.Close()
 	defer errBufWC.Close()
 
+	var stdinReader io.ReadCloser
 	stdoutWriters := multiWriteCloser{outBufWC}
 	stderrWriters := multiWriteCloser{errBufWC}
 
-	if forwardStdout != nil {
-		stdoutClient, stdoutCtr = io.Pipe()
-		stdoutWriters = append(stdoutWriters, stdoutCtr)
+	if sio != nil && sio.Stdin != nil {
+		stdinReader = sio.Stdin
 	}
-	if forwardStderr != nil {
-		stderrClient, stderrCtr = io.Pipe()
-		stderrWriters = append(stderrWriters, stderrCtr)
+	if sio != nil && sio.Stdout != nil {
+		stdoutWriters = append(stdoutWriters, sio.Stdout)
 	}
-
-	req := bkgw.StartRequest{
-		Args:      svc.Args,
-		Env:       env,
-		Cwd:       cmp.Or(ctr.Config.WorkingDir, "/"),
-		User:      ctr.Config.User,
-		SecretEnv: ctr.secretEnvs(),
-		Tty:       interactive,
-		Stdin:     stdinCtr,
-		Stdout:    stdoutWriters,
-		Stderr:    stderrWriters,
-	}
-	if svc.InsecureRootCapabilities {
-		req.SecurityMode = pb.SecurityMode_INSECURE
-	}
-	svcProc, err := gc.Start(execCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("start container: %w", err)
+	if sio != nil && sio.Stderr != nil {
+		stderrWriters = append(stderrWriters, sio.Stderr)
 	}
 
-	if forwardStdin != nil {
-		forwardStdin(stdinClient, svcProc)
+	signal := make(chan syscall.Signal)
+
+	startedCh := make(chan struct{})
+
+	if interactive {
+		meta.Tty = true
+		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
-	if forwardStdout != nil {
-		forwardStdout(stdoutClient)
+
+	resize := make(chan executor.WinSize)
+	if sio != nil && sio.ResizeCh != nil {
+		go func() {
+			defer close(resize)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case winSize := <-sio.ResizeCh:
+					resize <- executor.WinSize{
+						Rows: winSize.Rows,
+						Cols: winSize.Cols,
+					}
+				}
+
+			}
+		}()
 	}
-	if forwardStderr != nil {
-		forwardStderr(stderrClient)
+
+	// XXX:
+	// secretEnv, err := gwCtr.loadSecretEnv(ctx, req.SecretEnv)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// procInfo.Meta.Env = append(procInfo.Meta.Env, secretEnv...)
+	//
+	// env = append(env, telemetry.PropagationEnv(ctx)...)
+
+	worker := bk.Worker.ExecWorker(trace.SpanContextFromContext(ctx), *execMD)
+	exec := worker.Executor()
+	exited := make(chan struct{})
+	runErr := make(chan error)
+	go func() {
+		_, err = exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+			Meta:   *meta,
+			Stdin:  stdinReader,
+			Stdout: stdoutWriters,
+			Stderr: stderrWriters,
+			Resize: resize,
+			Signal: signal,
+		}, startedCh)
+		runErr <- err
+		// close(exited)
+	}()
+	// TODO: allow getting things from service (using prev id)
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case <-startedCh:
 	}
+
+	// XXX:
+	// execCtx := trace.ContextWithSpanContext(ctx, svc.Creator)
+	// ctx, span := Tracer(ctx).Start(
+	// 	// The parent is the call site that triggered it to start.
+	// 	ctx,
+	// 	// Match naming scheme of normal exec span.
+	// 	fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
+	// 	// This span continues the original withExec, by linking to it.
+	// 	telemetry.Resume(execCtx),
+	// 	// Hide this span so the user can just focus on the withExec.
+	// 	telemetry.Internal(),
+	// )
+	// defer func() {
+	// 	if rerr != nil {
+	// 		// NB: this is intentionally conditional; we only complete if there was
+	// 		// an error starting. span.End is called when the service exits.
+	// 		telemetry.End(span, func() error { return rerr })
+	// 	}
+	// }()
+
+	/// ------------------------------------------------------------------------------------
+
+	// XXX: cleanup....
+
+	checked := make(chan error, 1)
+	go func() {
+		// checked <- newHealth(bk, gc, fullHost, ctr.Ports).Check(ctx)
+		checked <- newHealth(bk, buildkit.NewPlainNS(svcID), fullHost, ctr.Ports).Check(ctx)
+	}()
 
 	var stopped atomic.Bool
 
 	var exitErr error
-	exited := make(chan struct{})
 	go func() {
 		defer func() {
-			if stdinClient != nil {
-				stdinClient.Close()
-			}
-			if stdoutClient != nil {
-				stdoutClient.Close()
-			}
-			if stderrClient != nil {
-				stderrClient.Close()
-			}
+			sio.Close()
 			close(exited)
 		}()
 
-		exitErr = svcProc.Wait()
+		exitErr = <-runErr
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is
 		// helpful for troubleshooting
-		defer telemetry.End(span, func() error {
-			if stopped.Load() {
-				// stopped; we don't care about the exit result (likely 137)
-				return nil
-			}
-			return exitErr
-		})
+		// defer telemetry.End(span, func() error {
+		// 	if stopped.Load() {
+		// 		// stopped; we don't care about the exit result (likely 137)
+		// 		return nil
+		// 	}
+		// 	return exitErr
+		// })
 
-		// detach dependent services when process exits
-		detachDeps()
-
-		// release container
-		if err := gc.Release(ctx); exitErr == nil && err != nil {
-			if !errors.Is(err, context.Canceled) {
-				exitErr = fmt.Errorf("release: %w", err)
-			}
-		}
+		// run all cleanups, discarding container
+		cleanups.Run()
 	}()
 
 	stopSvc := func(ctx context.Context, force bool) error {
@@ -545,9 +598,10 @@ func (svc *Service) startContainer(
 		if force {
 			sig = syscall.SIGKILL
 		}
-		if err := svcProc.Signal(ctx, sig); err != nil {
-			return fmt.Errorf("signal: %w", err)
-		}
+		signal <- sig
+		// if err := svcProc.Signal(ctx, sig); err != nil {
+		// 	return fmt.Errorf("signal: %w", err)
+		// }
 		select {
 		case <-ctx.Done():
 			slog.Info("service stop interrupted", "err", ctx.Err())
@@ -588,7 +642,7 @@ func (svc *Service) startContainer(
 				return nil, &buildkit.ExecError{
 					Err:      gwErr,
 					Origin:   svc.Creator,
-					Cmd:      req.Args,
+					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
 					Stdout:   stdoutBuf.String(),
 					Stderr:   stderrBuf.String(),
