@@ -134,13 +134,13 @@ scalar CloudID
 type Container {
   """
   Turn the container into a Service.
-  
+
   Be sure to set any exposed ports before this conversion.
   """
   asService(
     """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    
+
     If empty, the container's default command is used.
     """
     args: [String!] = []
@@ -168,7 +168,7 @@ type Container {
 
     """
     If set, skip the automatic init process injected into containers by default.
-    
+
     This should only be used if the user requires that their exec process be the
     pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -182,14 +182,14 @@ type Container {
   asTarball(
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform images.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -200,7 +200,7 @@ type Container {
 
     """
     Use the specified media types for the image's layers.
-    
+
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
@@ -223,9 +223,9 @@ type Container {
 
     """
     Secrets to pass to the build.
-    
+
     They will be mounted at /run/secrets/[secret-name] in the build container
-    
+
     They can be accessed in the Dockerfile using the "secret" mount type and
     mount path /run/secrets/[secret-name], e.g. RUN
     --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
@@ -236,7 +236,7 @@ type Container {
 
     """
     If set, skip the automatic init process injected into containers created by RUN statements.
-    
+
     This should only be used if the user requires that their exec processes be
     the pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -249,7 +249,7 @@ type Container {
 
   """
   Retrieve a directory from the container's root filesystem
-  
+
   Mounts are included.
   """
   directory(
@@ -277,25 +277,25 @@ type Container {
 
   """
   The exit code of the last executed command
-  
+
   Returns an error if no command was executed
   """
   exitCode: Int!
 
   """
   EXPERIMENTAL API! Subject to change/removal at any time.
-  
+
   Configures all available GPUs on the host to be accessible to this container.
-  
+
   This currently works for Nvidia devices only.
   """
   experimentalWithAllGPUs: Container!
 
   """
   EXPERIMENTAL API! Subject to change/removal at any time.
-  
+
   Configures the provided list of devices to be accessible to this container.
-  
+
   This currently works for Nvidia devices only.
   """
   experimentalWithGPU(
@@ -305,27 +305,27 @@ type Container {
 
   """
   Writes the container as an OCI tarball to the destination file path on the host.
-  
+
   It can also export platform variants.
   """
   export(
     """
     Host's destination path (e.g., "./tarball").
-    
+
     Path can be relative to the engine's workdir or absolute.
     """
     path: String!
 
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -336,7 +336,7 @@ type Container {
 
     """
     Use the specified media types for the exported image's layers.
-    
+
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
@@ -351,14 +351,14 @@ type Container {
 
   """
   Retrieves the list of exposed ports.
-  
+
   This includes ports already exposed by the image, even if not explicitly added with dagger.
   """
   exposedPorts: [Port!]!
 
   """
   Retrieves a file at the given path.
-  
+
   Mounts are included.
   """
   file(
@@ -418,27 +418,27 @@ type Container {
 
   """
   Package the container state as an OCI image, and publish it to a registry
-  
+
   Returns the fully qualified address of the published image, with digest
   """
   publish(
     """
     The OCI address to publish to
-    
+
     Same format as "docker push". Example: "registry.example.com/user/repo:tag"
     """
     address: String!
 
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the published image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -449,7 +449,7 @@ type Container {
 
     """
     Use the specified media types for the published image's layers.
-    
+
     Defaults to "OCI", which is compatible with most recent registries, but
     "Docker" may be needed for older registries without OCI support.
     """
@@ -465,21 +465,21 @@ type Container {
 
   """
   The buffered standard error stream of the last executed command
-  
+
   Returns an error if no command was executed
   """
   stderr: String!
 
   """
   The buffered standard output stream of the last executed command
-  
+
   Returns an error if no command was executed
   """
   stdout: String!
 
   """
   Forces evaluation of the pipeline in the engine.
-  
+
   It doesn't run the default command if no exec has been set.
   """
   sync: ContainerID!
@@ -509,7 +509,7 @@ type Container {
 
   """
   Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-  
+
   Be sure to set any exposed ports before calling this api.
   """
   up(
@@ -518,14 +518,14 @@ type Container {
 
     """
     List of frontend/backend port mappings to forward.
-    
+
     Frontend is the port accepting traffic on the host, backend is the service port.
     """
     ports: [PortForward!] = []
 
     """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    
+
     If empty, the container's default command is used.
     """
     args: [String!] = []
@@ -553,7 +553,7 @@ type Container {
 
     """
     If set, skip the automatic init process injected into containers by default.
-    
+
     This should only be used if the user requires that their exec process be the
     pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -623,9 +623,9 @@ type Container {
 
     """
     A user:group to set for the directory and its contents.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -673,10 +673,10 @@ type Container {
   withExec(
     """
     Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
-    
+
     To run a shell command, execute the shell and pass the shell command as
     argument. Example: ["sh", "-c", "ls -l | grep foo"]
-    
+
     Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
     """
     args: [String!]!
@@ -707,7 +707,7 @@ type Container {
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
-    
+
     DANGER: this grants the command full access to the host system. Only use
     when 1) you trust the command being executed and 2) you specifically need
     this level of access.
@@ -722,7 +722,7 @@ type Container {
 
     """
     Skip the automatic init process injected into containers by default.
-    
+
     Only use this if you specifically need the command to be pid 1 in the
     container. Otherwise it may result in unexpected behavior. If you're not
     sure, you don't need this.
@@ -732,11 +732,11 @@ type Container {
 
   """
   Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
-  
+
   Exposed ports serve two purposes:
-  
+
   - For health checks and introspection, when running services
-  
+
   - For setting the EXPOSE OCI field when publishing the container
   """
   withExposedPort(
@@ -772,9 +772,9 @@ type Container {
 
     """
     A user:group to set for the file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -801,9 +801,9 @@ type Container {
 
     """
     A user:group to set for the files.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -842,13 +842,13 @@ type Container {
 
     """
     A user:group to set for the mounted cache directory.
-    
+
     Note that this changes the ownership of the specified mount along with the
     initial filesystem provided by source (if any). It does not have any effect
     if/when the cache has already been created.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -870,9 +870,9 @@ type Container {
 
     """
     A user:group to set for the mounted directory and its contents.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -894,9 +894,9 @@ type Container {
 
     """
     A user or user:group to set for the mounted file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -920,16 +920,16 @@ type Container {
 
     """
     A user:group to set for the mounted secret.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
 
     """
     Permission given to the mounted secret (e.g., 0600).
-    
+
     This option requires an owner to be set to be active.
     """
     mode: Int = 256
@@ -979,9 +979,9 @@ type Container {
 
     """
     A user:group to set for the file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -1030,12 +1030,12 @@ type Container {
 
   """
   Establish a runtime dependency from a container to a network service.
-  
+
   The service will be started automatically when needed and detached when it is
   no longer needed, executing the default command if none is set.
-  
+
   The service will be reachable from the container via the provided hostname alias.
-  
+
   The service dependency will also convey to any files or directories produced by the container.
   """
   withServiceBinding(
@@ -1077,9 +1077,9 @@ type Container {
 
     """
     A user:group to set for the mounted socket.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -1207,7 +1207,7 @@ type Container {
   withoutRegistryAuth(
     """
     Registry's address to remove the authentication from.
-    
+
     Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
     address: String!
@@ -1235,14 +1235,14 @@ type Container {
 
   """
   Retrieves this container with an unset command user.
-  
+
   Should default to root.
   """
   withoutUser: Container!
 
   """
   Unset the container's working directory.
-  
+
   Should default to "/".
   """
   withoutWorkdir: Container!
@@ -1315,7 +1315,7 @@ type Directory {
   asModule(
     """
     An optional subpath of the directory which contains the module's configuration file.
-    
+
     If not set, the module source code is loaded from the root of the directory.
     """
     sourceRootPath: String = "."
@@ -1325,7 +1325,7 @@ type Directory {
   asModuleSource(
     """
     An optional subpath of the directory which contains the module's configuration file.
-    
+
     If not set, the module source code is loaded from the root of the directory.
     """
     sourceRootPath: String = "."
@@ -1375,14 +1375,14 @@ type Directory {
 
     """
     Secrets to pass to the build.
-    
+
     They will be mounted at /run/secrets/[secret-name].
     """
     secrets: [SecretID!] = []
 
     """
     If set, skip the automatic init process injected into containers created by RUN statements.
-    
+
     This should only be used if the user requires that their exec processes be
     the pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -1564,7 +1564,7 @@ type Directory {
   withTimestamps(
     """
     Timestamp to set dir/files in.
-    
+
     Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
     timestamp: Int!
@@ -2253,7 +2253,7 @@ type File {
   withTimestamps(
     """
     Timestamp to set dir/files in.
-    
+
     Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
     timestamp: Int!
@@ -2597,9 +2597,9 @@ type Host {
   service(
     """
     Ports to expose via the service, forwarding through the host network.
-    
+
     If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-    
+
     An empty set of ports is not valid; an error will be returned.
     """
     ports: [PortForward!]!
@@ -2610,7 +2610,7 @@ type Host {
 
   """
   Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-  
+
   The file is limited to a size of 512000 bytes.
   """
   setSecretFile(
@@ -2628,20 +2628,20 @@ type Host {
 
     """
     Map each service port to the same port on the host, as if the service were running natively.
-    
+
     Note: enabling may result in port conflicts.
     """
     native: Boolean = false
 
     """
     Configure explicit port forwarding rules for the tunnel.
-    
+
     If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-    
+
     If no ports are given, all of the service's ports are forwarded. If native
     is true, each port maps to the same port on the host. If native is false,
     each port maps to a random port chosen by the host.
-    
+
     If ports are given and native is true, the ports are additive.
     """
     ports: [PortForward!] = []
@@ -2897,7 +2897,7 @@ type Module {
 
   """
   Serve a module's API in the current session.
-  
+
   Note: this can only be called once per session. In the future, it could return
   a stream or service to remove the side effect.
   """
@@ -3268,7 +3268,7 @@ type Query {
 
   """
   Creates a scratch container, with no image or metadata.
-  
+
   To pull an image, follow up with the "from" function.
   """
   container(
@@ -3280,7 +3280,7 @@ type Query {
 
   """
   The FunctionCall context that the SDK caller is currently executing in.
-  
+
   If the caller is not currently executing in a function, this will return an error.
   """
   currentFunctionCall: FunctionCall!
@@ -3355,9 +3355,9 @@ type Query {
   git(
     """
     URL of the git repository.
-    
+
     Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-    
+
     Suffix ".git" is optional.
     """
     url: String!
@@ -3589,11 +3589,11 @@ type Query {
     means that any secrets with the same cache key will be considered equivalent
     in terms of cache lookups, even if they have different URIs or plaintext
     values.
-    
+
     For example, two secrets with the same cache key provided as secret env vars
     to other wise equivalent containers will result in the container withExecs
     hitting the cache for each other.
-    
+
     If not set, the cache key for the secret will be derived from its plaintext
     value as looked up when the secret is constructed.
     """
@@ -3602,7 +3602,7 @@ type Query {
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
-  
+
   The plaintext value is limited to a size of 128000 bytes.
   """
   setSecret(
@@ -3708,9 +3708,9 @@ scalar SecretID
 type Service {
   """
   Retrieves an endpoint that clients can use to reach this container.
-  
+
   If no port is specified, the first exposed port is used. If none exist an error is returned.
-  
+
   If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
   """
   endpoint(
@@ -3734,7 +3734,7 @@ type Service {
 
   """
   Start the service and wait for its health checks to succeed.
-  
+
   Services bound to a Container do not need to be manually started.
   """
   start: ServiceID!
@@ -3751,7 +3751,7 @@ type Service {
   up(
     """
     List of frontend/backend port mappings to forward.
-    
+
     Frontend is the port accepting traffic on the host, backend is the service port.
     """
     ports: [PortForward!] = []
@@ -3815,7 +3815,7 @@ type Terminal {
 
   """
   Forces evaluation of the pipeline in the engine.
-  
+
   It doesn't run the default command if no exec has been set.
   """
   sync: TerminalID!
@@ -3874,7 +3874,7 @@ type TypeDef {
 
   """
   Returns a TypeDef of kind Enum with the provided name.
-  
+
   Note that an enum's values may be omitted if the intent is only to refer to an
   enum. This is how functions are able to return their own, or any other
   circular reference.
@@ -3956,7 +3956,7 @@ type TypeDef {
 
   """
   Returns a TypeDef of kind Object with the provided name.
-  
+
   Note that an object's fields and functions may be omitted if the intent is
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
@@ -3994,21 +3994,21 @@ enum TypeDefKind {
 
   """
   Always paired with a ListTypeDef.
-  
+
   A list of values all having the same type.
   """
   LIST_KIND
 
   """
   Always paired with an ObjectTypeDef.
-  
+
   A named type defined in the GraphQL schema, with fields and functions.
   """
   OBJECT_KIND
 
   """
   Always paired with an InterfaceTypeDef.
-  
+
   A named type of functions that can be matched+implemented by other objects+interfaces.
   """
   INTERFACE_KIND
@@ -4020,7 +4020,7 @@ enum TypeDefKind {
 
   """
   A special kind used to signify that no value is returned.
-  
+
   This is used for functions that have no return value. The outer TypeDef
   specifying this Kind is always Optional, as the Void is never actually
   represented.
@@ -4029,7 +4029,7 @@ enum TypeDefKind {
 
   """
   A GraphQL enum type and its values
-  
+
   Always paired with an EnumTypeDef.
   """
   ENUM_KIND
@@ -4051,21 +4051,21 @@ enum TypeDefKind {
 
   """
   Always paired with a ListTypeDef.
-  
+
   A list of values all having the same type.
   """
   LIST
 
   """
   Always paired with an ObjectTypeDef.
-  
+
   A named type defined in the GraphQL schema, with fields and functions.
   """
   OBJECT
 
   """
   Always paired with an InterfaceTypeDef.
-  
+
   A named type of functions that can be matched+implemented by other objects+interfaces.
   """
   INTERFACE
@@ -4077,7 +4077,7 @@ enum TypeDefKind {
 
   """
   A special kind used to signify that no value is returned.
-  
+
   This is used for functions that have no return value. The outer TypeDef
   specifying this Kind is always Optional, as the Void is never actually
   represented.
@@ -4086,7 +4086,7 @@ enum TypeDefKind {
 
   """
   A GraphQL enum type and its values
-  
+
   Always paired with an EnumTypeDef.
   """
   ENUM
