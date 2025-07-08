@@ -5,7 +5,7 @@
 
 # Define source and destination roots
 SOURCE_ROOT="/Users/jason/go/src/github.com/jasonmccallister/dagger/docs/current_docs"
-DEST_ROOT="/Users/jason/go/src/github.com/jasonmccallister/dagger/docs/new_docs/snippets/code"
+DEST_ROOT="/Users/jason/go/src/github.com/jasonmccallister/dagger/docs/new_docs/snippets/sdk-examples"
 
 # Create destination directory if it doesn't exist
 mkdir -p "$DEST_ROOT"
@@ -34,8 +34,12 @@ find "$SOURCE_ROOT" -type f -path "*/snippets/*" | while read -r source_file; do
     # For example: dagger.json -> dagger-json.mdx
     new_filename=$(echo "$filename" | sed 's/\./\-/g')
     
+    # Remove "snippets/" from the directory path to avoid duplication
+    clean_dir_part=$(echo "$dir_part" | sed 's/snippets\///g')
+    
     # Create the destination directory structure
-    dest_dir="$DEST_ROOT/${dir_part#*/}"
+    # If the path already contains "snippets", don't add it again
+    dest_dir="$DEST_ROOT/${clean_dir_part#*/}"
     mkdir -p "$dest_dir"
     
     # Define the destination file path with hyphen-separated extension + .mdx
