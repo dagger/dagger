@@ -263,6 +263,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    void
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_exportImage">exportImage</a>(string $name, array|null $platformVariants = null, <abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null $forcedCompression = null, <abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null $mediaTypes = null)
+        
+                                            <p><p>Exports the container as an image to the host's container image store.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     array
                 </div>
                 <div class="col-md-8">
@@ -339,16 +349,6 @@
                     <a href="#method_labels">labels</a>()
         
                                             <p><p>Retrieves the list of labels passed to container.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    void
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_load">load</a>(string $name, array|null $platformVariants = null, <abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null $forcedCompression = null, <abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null $mediaTypes = null)
-        
-                                            <p><p>Exports the container to the host's container store</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1498,8 +1498,65 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_exportImage">
+        <div class="location">at line 225</div>
+        <code>                    void
+    <strong>exportImage</strong>(string $name, array|null $platformVariants = null, <abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null $forcedCompression = null, <abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null $mediaTypes = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Exports the container as an image to the host's container image store.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$platformVariants</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null</td>
+                <td>$forcedCompression</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null</td>
+                <td>$mediaTypes</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>void</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_exposedPorts">
-        <div class="location">at line 227</div>
+        <div class="location">at line 250</div>
         <code>                    array
     <strong>exposedPorts</strong>()
         </code>
@@ -1531,7 +1588,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 238</div>
+        <div class="location">at line 261</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path, bool|null $expand = false)
         </code>
@@ -1578,7 +1635,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_from">
-        <div class="location">at line 251</div>
+        <div class="location">at line 274</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>from</strong>(string $address)
         </code>
@@ -1620,7 +1677,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 261</div>
+        <div class="location">at line 284</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -1652,7 +1709,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_imageRef">
-        <div class="location">at line 270</div>
+        <div class="location">at line 293</div>
         <code>                    string
     <strong>imageRef</strong>()
         </code>
@@ -1684,7 +1741,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_import">
-        <div class="location">at line 279</div>
+        <div class="location">at line 302</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>import</strong>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $source, string|null $tag = &#039;&#039;)
         </code>
@@ -1731,7 +1788,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_label">
-        <div class="location">at line 292</div>
+        <div class="location">at line 315</div>
         <code>                    string
     <strong>label</strong>(string $name)
         </code>
@@ -1773,7 +1830,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_labels">
-        <div class="location">at line 302</div>
+        <div class="location">at line 325</div>
         <code>                    array
     <strong>labels</strong>()
         </code>
@@ -1792,63 +1849,6 @@
                     <table class="table table-condensed">
         <tr>
             <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_load">
-        <div class="location">at line 311</div>
-        <code>                    void
-    <strong>load</strong>(string $name, array|null $platformVariants = null, <abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null $forcedCompression = null, <abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null $mediaTypes = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Exports the container to the host's container store</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$platformVariants</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><abbr title="Dagger\Dagger\ImageLayerCompression">ImageLayerCompression</abbr>|null</td>
-                <td>$forcedCompression</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><abbr title="Dagger\Dagger\ImageMediaTypes">ImageMediaTypes</abbr>|null</td>
-                <td>$mediaTypes</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>void</td>
             <td></td>
         </tr>
     </table>

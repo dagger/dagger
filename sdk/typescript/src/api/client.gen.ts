@@ -190,21 +190,7 @@ export type ContainerExportOpts = {
   expand?: boolean
 }
 
-export type ContainerFileOpts = {
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
-  expand?: boolean
-}
-
-export type ContainerImportOpts = {
-  /**
-   * Identifies the tag to import from the archive, if the archive bundles multiple tags.
-   */
-  tag?: string
-}
-
-export type ContainerLoadOpts = {
+export type ContainerExportImageOpts = {
   /**
    * Identifiers for other platform specific containers.
    *
@@ -225,6 +211,20 @@ export type ContainerLoadOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerFileOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  expand?: boolean
+}
+
+export type ContainerImportOpts = {
+  /**
+   * Identifies the tag to import from the archive, if the archive bundles multiple tags.
+   */
+  tag?: string
 }
 
 export type ContainerPublishOpts = {
@@ -1977,9 +1977,9 @@ export class Container extends BaseClient {
   private readonly _envVariable?: string = undefined
   private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
+  private readonly _exportImage?: Void = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
-  private readonly _load?: Void = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
   private readonly _stderr?: string = undefined
@@ -1998,9 +1998,9 @@ export class Container extends BaseClient {
     _envVariable?: string,
     _exitCode?: number,
     _export?: string,
+    _exportImage?: Void,
     _imageRef?: string,
     _label?: string,
-    _load?: Void,
     _platform?: Platform,
     _publish?: string,
     _stderr?: string,
@@ -2016,9 +2016,9 @@ export class Container extends BaseClient {
     this._envVariable = _envVariable
     this._exitCode = _exitCode
     this._export = _export
+    this._exportImage = _exportImage
     this._imageRef = _imageRef
     this._label = _label
-    this._load = _load
     this._platform = _platform
     this._publish = _publish
     this._stderr = _stderr
@@ -2258,6 +2258,41 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Exports the container as an image to the host's container image store.
+   * @param name Name of image to export to in the host's store
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+   *
+   * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
+   *
+   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   */
+  exportImage = async (
+    name: string,
+    opts?: ContainerExportImageOpts,
+  ): Promise<void> => {
+    if (this._exportImage) {
+      return
+    }
+
+    const metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
+    const ctx = this._ctx.select("exportImage", {
+      name,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    await ctx.execute()
+  }
+
+  /**
    * Retrieves the list of exposed ports.
    *
    * This includes ports already exposed by the image, even if not explicitly added with dagger.
@@ -2349,38 +2384,6 @@ export class Container extends BaseClient {
     const response: Awaited<labels[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
-  }
-
-  /**
-   * Exports the container to the host's container store
-   * @param name Name of image to export to in the host's store
-   * @param opts.platformVariants Identifiers for other platform specific containers.
-   *
-   * Used for multi-platform image.
-   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
-   *
-   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
-   *
-   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   */
-  load = async (name: string, opts?: ContainerLoadOpts): Promise<void> => {
-    if (this._load) {
-      return
-    }
-
-    const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
-    }
-
-    const ctx = this._ctx.select("load", {
-      name,
-      ...opts,
-      __metadata: metadata,
-    })
-
-    await ctx.execute()
   }
 
   /**
