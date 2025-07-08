@@ -202,21 +202,28 @@ func (s *querySchema) status(ctx context.Context, parent *core.Query, args struc
 		return status, nil
 	}
 	return &core.Status{
-		Name:  args.Name,
-		Query: parent,
+		Name: args.Name,
 	}, nil
 }
 
-func (s *querySchema) statusStart(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
-	return s.selectStatus(ctx, parent.Self.Start(ctx))
+func (s *querySchema) statusStart(ctx context.Context, parent dagql.ObjectResult[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	st, err := parent.Self().Start(ctx)
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return s.selectStatus(ctx, st)
 }
 
-func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.Instance[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
-	return s.selectStatus(ctx, parent.Self.Display(ctx))
+func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.ObjectResult[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	st, err := parent.Self().Display(ctx)
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return s.selectStatus(ctx, st)
 }
 
 func (s *querySchema) selectStatus(ctx context.Context, started *core.Status) (dagql.ID[*core.Status], error) {
-	var inst dagql.Instance[*core.Status]
+	var inst dagql.ObjectResult[*core.Status]
 	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
 		Field: "status",
 		Args: []dagql.NamedInput{
@@ -242,7 +249,7 @@ func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args s
 			parent.Span.SetStatus(codes.Error, fmt.Sprintf("failed to load error: %v", err))
 		} else {
 			// use telemetry.End which also provides origin tracking
-			telemetry.End(parent.Span, func() error { return dagErr.Self })
+			telemetry.End(parent.Span, func() error { return dagErr.Self() })
 		}
 	} else {
 		// use telemetry.End so the status gets set to OK

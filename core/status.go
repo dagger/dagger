@@ -17,8 +17,6 @@ type Status struct {
 	Reveal      bool
 	Passthrough bool
 
-	Query *Query
-
 	Span trace.Span
 }
 
@@ -34,9 +32,7 @@ func (*Status) TypeDescription() string {
 }
 
 func (s Status) Clone() *Status {
-	cp := &s
-	cp.Query = cp.Query.Clone()
-	return cp
+	return &s
 }
 
 func (s *Status) WithActorEmoji(actor string) *Status {
@@ -63,15 +59,22 @@ func (s *Status) WithReveal() *Status {
 	return cp
 }
 
-func (s *Status) Display(ctx context.Context) *Status {
-	status := s.Start(ctx)
+func (s *Status) Display(ctx context.Context) (*Status, error) {
+	status, err := s.Start(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// UNSET should be ok, it's not like failure is even possible
 	status.Span.End()
-	return status
+	return status, nil
 }
 
-func (s *Status) Start(ctx context.Context) *Status {
-	return s.Query.StartStatus(ctx, s)
+func (s *Status) Start(ctx context.Context) (*Status, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return query.StartStatus(ctx, s), nil
 }
 
 func (s *Status) InternalID() string {
