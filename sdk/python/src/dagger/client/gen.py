@@ -6174,6 +6174,12 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRepositoryID)
 
+    def latest_version(self) -> GitRef:
+        """Returns details for the latest semver tag."""
+        _args: list[Arg] = []
+        _ctx = self._select("latestVersion", _args)
+        return GitRef(_ctx)
+
     def ref(self, name: str) -> GitRef:
         """Returns details of a ref.
 

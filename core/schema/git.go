@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/dagger/dagger/core"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/moby/buildkit/executor/oci"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
@@ -92,6 +94,9 @@ func (s *gitSchema) Install() {
 				// TODO: id is normally a reserved word; we should probably rename this
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
+		dagql.NodeFuncWithCacheKey("latestVersion", s.latestVersion, dagql.CachePerSession).
+			Doc(`Returns details for the latest semver tag.`),
+
 		dagql.FuncWithCacheKey("tags", s.tags, dagql.CachePerSession).
 			Doc(`tags that match any of the given glob patterns.`).
 			Args(
@@ -490,6 +495,21 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	return s.ref(ctx, parent, refArgs{Name: "HEAD"})
 }
 
+func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+	tags, err := parent.Self().Tags(ctx, []string{"refs/tags/v*"}, "-version:refname")
+	if err != nil {
+		return inst, err
+	}
+	tags = slices.DeleteFunc(tags, func(tag string) bool {
+		return !semver.IsValid(tag)
+	})
+	if len(tags) == 0 {
+		return inst, fmt.Errorf("no valid semver tags found")
+	}
+	tag := tags[0]
+	return s.ref(ctx, parent, refArgs{Name: "refs/tags/" + tag})
+}
+
 type commitArgs struct {
 	ID string
 }
@@ -528,7 +548,7 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Tags(ctx, patterns)
+	res, err := parent.Tags(ctx, patterns, "")
 	return dagql.NewStringArray(res...), err
 }
 
@@ -547,7 +567,7 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	res, err := parent.Branches(ctx, patterns)
+	res, err := parent.Branches(ctx, patterns, "")
 	return dagql.NewStringArray(res...), err
 }
 

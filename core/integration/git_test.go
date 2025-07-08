@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 )
 
@@ -62,12 +63,27 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, head, "ref: refs/heads/main")
 
+		// latest
+		byLatest := git.LatestVersion()
+		_, err = byLatest.Commit(ctx)
+		require.NoError(t, err)
+		ref, err := byLatest.Ref(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `^refs/tags/v\d\.+\d+\.\d+$`, ref)
+		checkClean(ctx, t, byLatest.Tree(), true)
+		readme, err = byLatest.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+		head, err = byLatest.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.True(t, gitutil.IsCommitSHA(strings.TrimSpace(head)), head)
+
 		// main
 		byBranch := git.Branch("main")
 		commit, err := byBranch.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mainCommit, commit)
-		ref, err := byBranch.Ref(ctx)
+		ref, err = byBranch.Ref(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/heads/main", ref)
 		checkClean(ctx, t, byBranch.Tree(), true)
