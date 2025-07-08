@@ -1,14 +1,26 @@
 ---
 title: "Services"
+description: "Services in Dagger Functions enable long-running service containers, allowing communication between Dagger Functions and the host."
+keywords: ["dagger functions", "dagger call", "services", "service containers", "container networking", "host networking"]
 ---
 
-Dagger Functions support service containers, enabling users to spin up additional long-running services (as containers) and communicate with those services from Dagger Functions.
+Dagger Functions support service containers, enabling users to spin up additional long-running services (as containers) and communicate with those services from Dagger Functions. 
 
-This makes it possible to:
-- Instantiate and return services from a Dagger Function, and then:
+Using Services in Dagger modules makes it possible to:
+
+- **Instantiate and return services** from a Dagger Function, and then:
   - Use those services in other Dagger Functions (container-to-container networking)
   - Use those services from the calling host (container-to-host networking)
-- Expose host services for use in a Dagger Function (host-to-container networking).
+- **Expose host services** for use in a Dagger Function (host-to-container networking).
+
+```mermaid
+graph TD
+  A[Dagger Function] -->|Returns| B[Service Container]
+  B -->|Used by| C[Other Dagger Function]
+  B -->|Accessible from| D[Calling Host]
+  E[Host Service] -->|Exposed to| F[Dagger Function]
+```
+## Common scenarios
 
 Some common scenarios for using services with Dagger Functions are:
 

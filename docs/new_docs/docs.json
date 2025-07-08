@@ -31,7 +31,7 @@
             "group": "Quickstart",
             "icon": "rocket",
             "pages": [
-              "quickstart/index",
+              "quickstart/basics",
               "quickstart/workflow"
             ]
           },
@@ -39,9 +39,9 @@
             "group": "Examples",
             "icon": "lightbulb",
             "pages": [
-              "examples/index",
-              "examples/demos",
-              "examples/livesteams"
+              "examples",
+              "demos",
+              "livestreams"
             ]
           },
           {
@@ -60,7 +60,7 @@
             "group": "Overview",
             "icon": "cloud",
             "pages": [
-              "cloud/index",
+              "cloud/overview",
               "cloud/organization",
               "cloud/observability",
               "cloud/module-catalog"
@@ -75,11 +75,13 @@
             "group": "Extending Dagger",
             "icon": "puzzle-piece",
             "pages": [
-              "extending/index",
+              "extending/overview",
               "extending/arguments",
+              "extending/default-paths",
               "extending/return-values",
-              "extending/module-dependencies",
-              "extending/services"
+              "extending/inline-documentation",
+              "extending/services",
+              "extending/module-dependencies"
             ]
           }
         ]
@@ -92,7 +94,7 @@
           {
             "group": "CLI Reference",
             "pages": [
-              "reference/cli/index"
+              "reference/cli/overview"
             ]
           },
           {
@@ -106,13 +108,12 @@
           {
             "group": "SDKs",
             "pages": [
-              "reference/sdk/index",
+              "reference/sdk/overview",
               "reference/sdk/go",
               "reference/sdk/typescript",
               "reference/sdk/python",
               "reference/sdk/php"
             ]
-
           }
         ]
       }

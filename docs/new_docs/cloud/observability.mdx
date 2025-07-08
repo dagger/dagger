@@ -2,3 +2,9 @@
 title: "Observability"
 description: "Learn how to monitor and debug your Dagger workflows with observability features in Dagger Cloud."
 ---
+
+Dagger uses OpenTelemetry (OTel) as its telemetry protocol -- both the TUI and Dagger Cloud are powered by OTel. Each Dagger Function call is represented as an OpenTelemetry trace. The operations performed by the Dagger Function are represented as OpenTelemetry spans. A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
+
+Dagger is aware of the context it runs in. The Dagger Cloud dashboard classifies Traces depending on whether you triggered a run from your local development host or from your CI environment. You can select the appropriate view from the dashboard. 
+
+Here's an example showing Traces generated in both CI and local environments:
