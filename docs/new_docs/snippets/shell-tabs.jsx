@@ -1,7 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// Import the CodeBlock component from your documentation framework
-// This is likely something provided by your MDX framework
-import { CodeBlock } from '@your-docs-framework/components';
 
 export const ShellTabs = ({ systemShellCommand, daggerShellCommand, daggerCliCommand }) => {
   // Determine which tabs should be visible based on provided commands

@@ -73,7 +73,7 @@
         "groups": [
           {
             "group": "Extending Dagger",
-            "icon": "puzzle-piece",
+            "icon": "plug",
             "pages": [
               "extending/overview",
               "extending/arguments",
@@ -154,7 +154,7 @@
     "socials": {
       "x": "https://x.com/dagger_id",
       "github": "https://github.com/dagger",
-      "linkedin": "https://linkedin.com/company/dagger"
+      "linkedin": "https://www.linkedin.com/company/dagger-io"
     }
   },
   "background": {
@@ -164,6 +164,10 @@
     }
   },
   "styling": {
-    "eyebrows": "breadcrumbs"
+    "eyebrows": "section",
+    "codeblocks": "system"
+  },
+  "icons": {
+    "library": "lucide"
   }
 }

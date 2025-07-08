@@ -4,7 +4,7 @@ description: "Dagger Functions, just like regular functions, can accept argument
 ---
 
 import { ShellTabs } from '/snippets/shell-tabs.jsx';
-import { CustomCodeGroup } from '/snippets/custom-code-group.jsx';
+import { CodeTabs } from '/snippets/code-tabs.jsx';
 
 In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which Dagger Functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more. 
 
@@ -77,8 +77,8 @@ export GREETING=bonjour
 
 Here is an example of a Dagger Function that accepts a Boolean argument:
 
-<CustomCodeGroup 
-  goCode="./snippets/functions/arguments-boolean/go/main.go"
+<CodeTabs
+  goCode="/snippets/sdk-examples/functions/arguments-boolean/go/main-go.mdx"
   pythonCode="./snippets/functions/arguments-boolean/python/main.py"
   typescriptCode="./snippets/functions/arguments-boolean/typescript/index.ts"
   phpCode="./snippets/functions/arguments-boolean/php/src/MyModule.php"

@@ -1,8 +1,7 @@
-import React from 'react';
-// Import the CodeBlock component from your documentation framework
+import React, { useState, useEffect } from 'react';
 import { CodeBlock, CodeGroup } from '@your-docs-framework/components';
 
-export const CustomCodeGroup = ({ 
+export const CodeTabs = ({ 
   goCode, 
   pythonCode, 
   typescriptCode, 
@@ -15,12 +14,36 @@ export const CustomCodeGroup = ({
   phpMeta = {},
   javaMeta = {}
 }) => {
-  // Determine which code snippets are available
-  const hasGoCode = Boolean(goCode);
-  const hasPythonCode = Boolean(pythonCode);
-  const hasTypeScriptCode = Boolean(typescriptCode);
-  const hasPhpCode = Boolean(phpCode);
-  const hasJavaCode = Boolean(javaCode);
+  // Determine which tabs should be visible based on provided code
+  const availableTabs = [];
+  if (goCode) availableTabs.push('go');
+  if (pythonCode) availableTabs.push('python');
+  if (typescriptCode) availableTabs.push('typescript');
+  if (phpCode) availableTabs.push('php');
+  if (javaCode) availableTabs.push('java');
+
+  // Set initial preferred language to the first available tab
+  const [preferredLanguage, setPreferredLanguage] = useState(availableTabs.length > 0 ? availableTabs[0] : null);
+
+  // Load preferred language from localStorage on component mount
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem('preferredLanguage');
+    // Only use saved language if it's still available
+    if (savedLanguage && availableTabs.includes(savedLanguage)) {
+      setPreferredLanguage(savedLanguage);
+    }
+  }, [availableTabs]);
+
+  // Save preferred language to localStorage when it changes
+  useEffect(() => {
+    if (preferredLanguage) {
+      localStorage.setItem('preferredLanguage', preferredLanguage);
+    }
+  }, [preferredLanguage]);
+
+  const handleLanguageChange = (language) => {
+    setPreferredLanguage(language);
+  };
 
   // Default language display names
   const languageDisplayNames = {
@@ -98,28 +121,48 @@ export const CustomCodeGroup = ({
     );
   };
 
-  // If no code snippets are available, don't render anything
-  if (!hasGoCode && !hasPythonCode && !hasTypeScriptCode && !hasPhpCode && !hasJavaCode) {
+  // If no tabs are available, don't render anything
+  if (availableTabs.length === 0) {
     return null;
   }
 
-  // If only one code snippet is available, render just that code without a group
-  if ([hasGoCode, hasPythonCode, hasTypeScriptCode, hasPhpCode, hasJavaCode].filter(Boolean).length === 1) {
-    if (hasGoCode) return renderCodeBlock(goCode, 'go');
-    if (hasPythonCode) return renderCodeBlock(pythonCode, 'python');
-    if (hasTypeScriptCode) return renderCodeBlock(typescriptCode, 'typescript');
-    if (hasPhpCode) return renderCodeBlock(phpCode, 'php');
-    if (hasJavaCode) return renderCodeBlock(javaCode, 'java');
+  // If only one tab is available, render just the code without tabs
+  if (availableTabs.length === 1) {
+    const onlyTab = availableTabs[0];
+    let code;
+    
+    switch(onlyTab) {
+      case 'go': code = goCode; break;
+      case 'python': code = pythonCode; break;
+      case 'typescript': code = typescriptCode; break;
+      case 'php': code = phpCode; break;
+      case 'java': code = javaCode; break;
+      default: code = null;
+    }
+    
+    return renderCodeBlock(code, onlyTab);
   }
+
+  // Get current active code based on preferredLanguage
+  const getActiveCode = () => {
+    switch(preferredLanguage) {
+      case 'go': return goCode;
+      case 'python': return pythonCode;
+      case 'typescript': return typescriptCode;
+      case 'php': return phpCode;
+      case 'java': return javaCode;
+      default: return null;
+    }
+  };
 
   // Render all code blocks within a CodeGroup
   return (
     <CodeGroup>
-      {hasGoCode && renderCodeBlock(goCode, 'go')}
-      {hasPythonCode && renderCodeBlock(pythonCode, 'python')}
-      {hasTypeScriptCode && renderCodeBlock(typescriptCode, 'typescript')}
-      {hasPhpCode && renderCodeBlock(phpCode, 'php')}
-      {hasJavaCode && renderCodeBlock(javaCode, 'java')}
+      {goCode && renderCodeBlock(goCode, 'go')}
+      {pythonCode && renderCodeBlock(pythonCode, 'python')}
+      {typescriptCode && renderCodeBlock(typescriptCode, 'typescript')}
+      {phpCode && renderCodeBlock(phpCode, 'php')}
+      {javaCode && renderCodeBlock(javaCode, 'java')}
     </CodeGroup>
   );
 };
@@ -167,6 +210,9 @@ export default function ({ children }) {
                   meta[key.trim()] = value.trim() === 'true' ? true : 
                                      value.trim() === 'false' ? false : 
                                      value.trim();
+                } else if (key && !value) {
+                  // Handle flags without values (e.g., "wrap")
+                  meta[key.trim()] = true;
                 }
               });
             });
@@ -206,6 +252,9 @@ export default function ({ children }) {
               meta[key.trim()] = value.trim() === 'true' ? true : 
                                  value.trim() === 'false' ? false : 
                                  value.trim().replace(/^["'](.*)["']$/, '$1'); // Remove quotes if present
+            } else if (key && !value) {
+              // Handle flags without values (e.g., "wrap")
+              meta[key.trim()] = true;
             }
           });
         }
@@ -231,5 +280,5 @@ export default function ({ children }) {
     });
   }
 
-  return <CustomCodeGroup {...codeSnippets} />;
+  return <CodeTabs {...codeSnippets} />;
 }
