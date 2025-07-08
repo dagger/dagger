@@ -71,7 +71,7 @@ func (s *Status) Display(ctx context.Context) *Status {
 }
 
 func (s *Status) Start(ctx context.Context) *Status {
-	return s.Query.StartSpan(ctx, s)
+	return s.Query.StartStatus(ctx, s)
 }
 
 func (s *Status) InternalID() string {

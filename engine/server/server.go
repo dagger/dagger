@@ -23,6 +23,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
@@ -182,6 +183,10 @@ type Server struct {
 	locker *locker.Locker
 
 	secretSalt []byte
+
+	// user-created spans (exposed as "statuses")
+	spans  map[string]*core.Status
+	spansL *sync.Mutex
 }
 
 type NewServerOpts struct {
@@ -217,6 +222,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		baseDagqlCache: cache.NewCache[digest.Digest, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
+
+		spans:  make(map[string]*core.Status),
+		spansL: &sync.Mutex{},
 	}
 
 	//

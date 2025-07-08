@@ -930,8 +930,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}).ServeHTTP(w, r)
 }
 
-const InstrumentationLibrary = "dagger.io/engine.server"
-
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -1479,6 +1477,25 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 // A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
+}
+
+// Start a status and return a status tied to its internal span ID.
+func (srv *Server) StartStatus(ctx context.Context, s *core.Status) *core.Status {
+	started := s.Clone()
+	tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer(InstrumentationLibrary)
+	_, started.Span = tracer.Start(ctx, s.Name, s.Opts()...)
+	srv.spansL.Lock()
+	srv.spans[started.InternalID()] = started
+	srv.spansL.Unlock()
+	return started
+}
+
+// Look up a started status by its internal span ID.
+func (srv *Server) LookupStatus(spanID string) (*core.Status, bool) {
+	srv.spansL.Lock()
+	span, found := srv.spans[spanID]
+	srv.spansL.Unlock()
+	return span, found
 }
 
 type httpError struct {
