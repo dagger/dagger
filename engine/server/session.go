@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1242,6 +1243,44 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
+	// Find the eponym object (object with same name as module)
+	err = func() error {
+		slog.Info("hooking into main module install", "module", mod.Name(), "module_bis", mod.OriginalName)
+		var mainObj *core.ObjectTypeDef
+		for _, typeDef := range mod.ObjectDefs {
+			if typeDef.AsObject.Valid {
+				objDef := typeDef.AsObject.Value
+				if strings.ToLower(objDef.OriginalName) == strings.ToLower(mod.OriginalName) {
+					mainObj = objDef
+					break
+				}
+			}
+		}
+
+		if mainObj == nil {
+			return fmt.Errorf("no main object found") // No eponym object found
+		}
+
+		// Check if it has a constructor
+		if !mainObj.Constructor.Valid {
+			slog.Info("main module has no constructor: %s", mod.Name())
+			return nil // No constructor
+		}
+
+		slog.Info("main module has a constructor: %s", mod.Name())
+
+		constructor := mainObj.Constructor.Value
+		dag, err := srv.Server(ctx)
+		if err != nil {
+			return err
+		}
+		return injectDefaultSecret(ctx, dag, constructor, "token", "env://TOKEN")
+	}()
+	if err != nil {
+		return fmt.Errorf("env override: %s", err.Error())
+	}
+
 	err = srv.serveModule(client, mod)
 	if err != nil {
 		return err
@@ -1255,6 +1294,34 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		}
 	}
 	return nil
+}
+
+func injectDefaultSecret(ctx context.Context, srv *dagql.Server, fn *core.Function, argName, argValue string) error {
+	slog.Info("injecting secret construvtor arg %s with default value %s", argName, argValue)
+	for _, arg := range fn.Args {
+		if arg.OriginalName == argName {
+			var secretID core.SecretID
+			if err := srv.Select(ctx, srv.Root(), &secretID,
+				dagql.Selector{
+					Field: "secret",
+					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(argValue)}},
+				},
+				dagql.Selector{
+					Field: "id",
+				},
+			); err != nil {
+				return err
+			}
+			secretIDJSON, err := json.Marshal(secretID)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = secretIDJSON
+			slog.Info("injection complete. Default argument = %s", secretIDJSON)
+			return nil
+		}
+	}
+	return fmt.Errorf("Inject default secret: no such argument: %s", argName)
 }
 
 // not threadsafe, client.stateMu must be held when calling
