@@ -83,6 +83,36 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
+// Return a reference to the module's main object
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	for _, typeDef := range mod.ObjectDefs {
+		if typeDef.AsObject.Valid {
+			objDef := typeDef.AsObject.Value
+			if strings.ToLower(objDef.OriginalName) == strings.ToLower(mod.OriginalName) {
+				return objDef, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (mod *Module) OverrideArgs(ctx context.Context, overrides map[string]string) error {
+	for argName, prettyValue := range overrides {
+		if err := mod.OverrideArg(ctx, argName, prettyValue); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (mod *Module) OverrideArg(ctx context.Context, argName, prettyValue string) error {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return fmt.Errorf("error overriding args for module %q: can't load main object", mod.Name())
+	}
+	return mainObj.OverrideArg(ctx, argName, prettyValue)
+}
+
 func (mod *Module) IDModule() *call.Module {
 	if !mod.Source.Valid {
 		panic("no module source")
