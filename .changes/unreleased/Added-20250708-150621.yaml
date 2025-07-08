@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    New Container.exportImage API to load images to host container image store
+time: 2025-07-08T15:06:21.63855917+01:00
+custom:
+    Author: jedevc
+    PR: "10662"
