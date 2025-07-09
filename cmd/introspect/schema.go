@@ -128,10 +128,17 @@ func formatDescription(w io.Writer, indent string, description string) {
 	}
 
 	lines := descriptionLines(description, 120-len(indent))
+	for i, line := range lines {
+		if len(line) == 0 {
+			// avoid indenting empty lines
+			continue
+		}
+		lines[i] = indent + line
+	}
 
-	text := strings.Join(lines, "\n"+indent) + "\n"
+	text := strings.Join(lines, "\n") + "\n"
 	if len(lines) > 1 || preferMultipleLines(text) {
-		fmt.Fprint(w, indent+`"""`+"\n"+indent+text+indent+`"""`+"\n")
+		fmt.Fprint(w, indent+`"""`+"\n"+text+indent+`"""`+"\n")
 	} else {
 		fmt.Fprint(w, indent+`"""`+strings.TrimSpace(text)+`"""`+"\n")
 	}
