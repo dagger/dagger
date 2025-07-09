@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -16,6 +17,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -312,15 +314,30 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err != nil {
 		return err
 	}
-	for _, log := range logs {
-		spanID := dagui.SpanID{SpanID: log.SpanID()}
+	for _, record := range logs {
+		// Check if this log is marked as verbose
+		isVerbose := false
+		record.WalkAttributes(func(kv log.KeyValue) bool {
+			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
+				isVerbose = true
+				return false // stop walking
+			}
+			return true // continue walking
+		})
+
+		// Skip verbose logs in the dots frontend
+		if isVerbose {
+			continue
+		}
+
+		spanID := dagui.SpanID{SpanID: record.SpanID()}
 		spanDt, ok := fe.data[spanID]
 		if !ok {
 			spanDt = &spanData{}
 			fe.data[spanID] = spanDt
 		}
 
-		body := log.Body().AsString()
+		body := record.Body().AsString()
 		if body == "" {
 			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
 			// want to avoid giving it its own line.
@@ -340,11 +357,11 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 			if spanDt.logsPending && len(spanDt.logs) > 0 {
 				spanDt.logs[len(spanDt.logs)-1].line.Write([]byte(line))
-				spanDt.logs[len(spanDt.logs)-1].time = log.Timestamp()
+				spanDt.logs[len(spanDt.logs)-1].time = record.Timestamp()
 			} else {
 				spanDt.logs = append(spanDt.logs, logLine{
 					line: newCursorBuffer([]byte(line)),
-					time: log.Timestamp(),
+					time: record.Timestamp(),
 				})
 			}
 
