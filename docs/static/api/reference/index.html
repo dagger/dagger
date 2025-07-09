@@ -11088,7 +11088,10 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Status-internalId" href="#Status-internalId"><code>internalId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Returns the internal ID of the status. </td>
+                        <td>
+                          <p>Returns the internal OpenTelemetry span ID of the status.</p>
+                          <p>(You probably don&#39;t need to use this, unless you&#39;re implementing OpenTelemetry integration for a Dagger SDK.)</p>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Status-name" href="#Status-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -11097,37 +11100,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Status-start" href="#Status-start"><code>start</code></a> - <span class="property-type"><a href="#definition-StatusID"><code>StatusID!</code></a></span> </td>
                         <td> Start a new instance of the status. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Status-withActorEmoji" href="#Status-withActorEmoji"><code>withActorEmoji</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
-                        <td> Set an emoji representing the actor of the status. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>actor</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Status-withPassthrough" href="#Status-withPassthrough"><code>withPassthrough</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
-                        <td> Hide the status itself, and reveal its children. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Status-withReceivedMessage" href="#Status-withReceivedMessage"><code>withReceivedMessage</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
-                        <td>
-                          <p>Indicates that the status represents a received message.</p>
-                          <p>The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Status-withReveal" href="#Status-withReveal"><code>withReveal</code></a> - <span class="property-type"><a href="#definition-Status"><code>Status!</code></a></span> </td>
-                        <td> Ensure the status is visible without having to expand its parents. </td>
                       </tr>
                     </tbody>
                   </table>

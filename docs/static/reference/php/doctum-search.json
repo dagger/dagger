@@ -4235,7 +4235,7 @@
 			"t": "M",
 			"n": "Dagger\\Status::internalId",
 			"p": "Dagger/Status.html#method_internalId",
-			"d": "<p>Returns the internal ID of the status.</p>"
+			"d": "<p>Returns the internal OpenTelemetry span ID of the status.</p>"
 		},
 		{
 			"t": "M",
@@ -4248,30 +4248,6 @@
 			"n": "Dagger\\Status::start",
 			"p": "Dagger/Status.html#method_start",
 			"d": "<p>Start a new instance of the status.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Status::withActorEmoji",
-			"p": "Dagger/Status.html#method_withActorEmoji",
-			"d": "<p>Set an emoji representing the actor of the status.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Status::withPassthrough",
-			"p": "Dagger/Status.html#method_withPassthrough",
-			"d": "<p>Hide the status itself, and reveal its children.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Status::withReceivedMessage",
-			"p": "Dagger/Status.html#method_withReceivedMessage",
-			"d": "<p>Indicates that the status represents a received message.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Status::withReveal",
-			"p": "Dagger/Status.html#method_withReveal",
-			"d": "<p>Ensure the status is visible without having to expand its parents.</p>"
 		},
 		{
 			"t": "M",

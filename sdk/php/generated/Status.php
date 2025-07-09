@@ -44,7 +44,9 @@ class Status extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns the internal ID of the status.
+     * Returns the internal OpenTelemetry span ID of the status.
+     *
+     * (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
      */
     public function internalId(): string
     {
@@ -68,44 +70,5 @@ class Status extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
         return new \Dagger\StatusId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
-    }
-
-    /**
-     * Set an emoji representing the actor of the status.
-     */
-    public function withActorEmoji(string $actor): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withActorEmoji');
-        $innerQueryBuilder->setArgument('actor', $actor);
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Hide the status itself, and reveal its children.
-     */
-    public function withPassthrough(): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPassthrough');
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Indicates that the status represents a received message.
-     *
-     * The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-     */
-    public function withReceivedMessage(): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReceivedMessage');
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Ensure the status is visible without having to expand its parents.
-     */
-    public function withReveal(): Status
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReveal');
-        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

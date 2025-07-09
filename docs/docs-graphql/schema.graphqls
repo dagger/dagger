@@ -3634,7 +3634,7 @@ type Query {
     name: String!
 
     key: String = ""
-  ): Status!
+  ): Status! @experimental(reason: "The statuses API is experimental and subject to change.\n\nThe current capabilities are limited. Please open an issue to request new UI controls.")
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -3832,7 +3832,11 @@ type Status {
   """A unique identifier for this Status."""
   id: StatusID!
 
-  """Returns the internal ID of the status."""
+  """
+  Returns the internal OpenTelemetry span ID of the status.
+  
+  (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
+  """
   internalId: String!
 
   """The display name of the status."""
@@ -3840,22 +3844,6 @@ type Status {
 
   """Start a new instance of the status."""
   start: StatusID!
-
-  """Set an emoji representing the actor of the status."""
-  withActorEmoji(actor: String!): Status!
-
-  """Hide the status itself, and reveal its children."""
-  withPassthrough: Status!
-
-  """
-  Indicates that the status represents a received message.
-  
-  The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-  """
-  withReceivedMessage: Status!
-
-  """Ensure the status is visible without having to expand its parents."""
-  withReveal: Status!
 }
 
 """

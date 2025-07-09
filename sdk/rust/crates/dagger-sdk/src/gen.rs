@@ -10068,7 +10068,8 @@ impl Status {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Returns the internal ID of the status.
+    /// Returns the internal OpenTelemetry span ID of the status.
+    /// (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
     pub async fn internal_id(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("internalId");
         query.execute(self.graphql_client.clone()).await
@@ -10082,44 +10083,6 @@ impl Status {
     pub async fn start(&self) -> Result<StatusId, DaggerError> {
         let query = self.selection.select("start");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Set an emoji representing the actor of the status.
-    pub fn with_actor_emoji(&self, actor: impl Into<String>) -> Status {
-        let mut query = self.selection.select("withActorEmoji");
-        query = query.arg("actor", actor.into());
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Hide the status itself, and reveal its children.
-    pub fn with_passthrough(&self) -> Status {
-        let query = self.selection.select("withPassthrough");
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Indicates that the status represents a received message.
-    /// The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-    pub fn with_received_message(&self) -> Status {
-        let query = self.selection.select("withReceivedMessage");
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Ensure the status is visible without having to expand its parents.
-    pub fn with_reveal(&self) -> Status {
-        let query = self.selection.select("withReveal");
-        Status {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
 }
 #[derive(Clone)]

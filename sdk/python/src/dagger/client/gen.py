@@ -9097,6 +9097,11 @@ class Client(Root):
     def status(self, name: str, *, key: str | None = "") -> "Status":
         """Create a new status indicator.
 
+        .. caution::
+            Experimental: The statuses API is experimental and subject to
+            change.  The current capabilities are limited. Please open an
+            issue to request new UI controls.
+
         Parameters
         ----------
         name:
@@ -9776,7 +9781,10 @@ class Status(Type):
         return await _ctx.execute(StatusID)
 
     async def internal_id(self) -> str:
-        """Returns the internal ID of the status.
+        """Returns the internal OpenTelemetry span ID of the status.
+
+        (You probably don't need to use this, unless you're implementing
+        OpenTelemetry integration for a Dagger SDK.)
 
         Returns
         -------
@@ -9830,36 +9838,6 @@ class Status(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "start", _args)
 
-    def with_actor_emoji(self, actor: str) -> Self:
-        """Set an emoji representing the actor of the status."""
-        _args = [
-            Arg("actor", actor),
-        ]
-        _ctx = self._select("withActorEmoji", _args)
-        return Status(_ctx)
-
-    def with_passthrough(self) -> Self:
-        """Hide the status itself, and reveal its children."""
-        _args: list[Arg] = []
-        _ctx = self._select("withPassthrough", _args)
-        return Status(_ctx)
-
-    def with_received_message(self) -> Self:
-        """Indicates that the status represents a received message.
-
-        The message body must be sent as logs, so that it can be streamed. The
-        name of the status is ignored.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withReceivedMessage", _args)
-        return Status(_ctx)
-
-    def with_reveal(self) -> Self:
-        """Ensure the status is visible without having to expand its parents."""
-        _args: list[Arg] = []
-        _ctx = self._select("withReveal", _args)
-        return Status(_ctx)
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.token = None
@@ -9911,13 +9889,6 @@ class Status(Type):
         if self.token:
             opentelemetry.context.detach(self.token)
         return void
-
-    def with_(self, cb: Callable[["Status"], "Status"]) -> "Status":
-        """Call the provided callable with current Status.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
 
 
 @typecheck

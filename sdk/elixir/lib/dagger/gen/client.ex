@@ -1073,6 +1073,10 @@ defmodule Dagger.Client do
 
   @doc """
   Create a new status indicator.
+
+  > #### Experimental {: .warning}
+  >
+  > "The statuses API is experimental and subject to change.\\\\n\\\\nThe current capabilities are limited. Please open an issue to request new UI controls."
   """
   @spec status(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Status.t()
   def status(%__MODULE__{} = client, name, optional_args \\ []) do

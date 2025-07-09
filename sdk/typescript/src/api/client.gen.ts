@@ -8476,6 +8476,7 @@ export class Client extends BaseClient {
   /**
    * Create a new status indicator.
    * @param name A display name for the status.
+   * @experimental
    */
   status = (name: string, opts?: ClientStatusOpts): Status => {
     const ctx = this._ctx.select("status", { name, ...opts })
@@ -9096,7 +9097,9 @@ export class Status extends BaseClient {
   }
 
   /**
-   * Returns the internal ID of the status.
+   * Returns the internal OpenTelemetry span ID of the status.
+   *
+   * (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
    */
   internalId = async (): Promise<string> => {
     if (this._internalId) {
@@ -9136,40 +9139,6 @@ export class Status extends BaseClient {
     return new Client(ctx.copy()).loadStatusFromID(response)
   }
 
-  /**
-   * Set an emoji representing the actor of the status.
-   */
-  withActorEmoji = (actor: string): Status => {
-    const ctx = this._ctx.select("withActorEmoji", { actor })
-    return new Status(ctx)
-  }
-
-  /**
-   * Hide the status itself, and reveal its children.
-   */
-  withPassthrough = (): Status => {
-    const ctx = this._ctx.select("withPassthrough")
-    return new Status(ctx)
-  }
-
-  /**
-   * Indicates that the status represents a received message.
-   *
-   * The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-   */
-  withReceivedMessage = (): Status => {
-    const ctx = this._ctx.select("withReceivedMessage")
-    return new Status(ctx)
-  }
-
-  /**
-   * Ensure the status is visible without having to expand its parents.
-   */
-  withReveal = (): Status => {
-    const ctx = this._ctx.select("withReveal")
-    return new Status(ctx)
-  }
-
   public async run<T>(fn: (span: Status) => Promise<T>) {
     const started = await this.start()
     const spanIdHex = await started.internalId()
@@ -9187,15 +9156,6 @@ export class Status extends BaseClient {
     } finally {
       await started.end({ error: spanError })
     }
-  }
-
-  /**
-   * Call the provided function with current Status.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Status) => Status) => {
-    return arg(this)
   }
 }
 

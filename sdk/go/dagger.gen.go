@@ -9418,6 +9418,10 @@ type StatusOpts struct {
 }
 
 // Create a new status indicator.
+//
+// Experimental: The statuses API is experimental and subject to change.
+//
+// The current capabilities are limited. Please open an issue to request new UI controls.
 func (r *Client) Status(name string, opts ...StatusOpts) *Status {
 	q := r.query.Select("status")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -10125,14 +10129,6 @@ type Status struct {
 	name       *string
 	start      *StatusID
 }
-type WithStatusFunc func(r *Status) *Status
-
-// With calls the provided function with current Status.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Status) With(f WithStatusFunc) *Status {
-	return f(r)
-}
 
 func (r *Status) WithGraphQLQuery(q *querybuilder.Selection) *Status {
 	return &Status{
@@ -10254,7 +10250,9 @@ func (r *Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Returns the internal ID of the status.
+// Returns the internal OpenTelemetry span ID of the status.
+//
+// (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
 func (r *Status) InternalID(ctx context.Context) (string, error) {
 	if r.internalId != nil {
 		return *r.internalId, nil
@@ -10291,49 +10289,6 @@ func (r *Status) Start(ctx context.Context) (*Status, error) {
 	return &Status{
 		query: q.Root().Select("loadStatusFromID").Arg("id", id),
 	}, nil
-}
-
-// Set an emoji representing the actor of the status.
-func (r *Status) WithActorEmoji(actor string) *Status {
-	q := r.query.Select("withActorEmoji")
-	q = q.Arg("actor", actor)
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// Hide the status itself, and reveal its children.
-func (r *Status) WithPassthrough() *Status {
-	q := r.query.Select("withPassthrough")
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// Indicates that the status represents a received message.
-//
-// The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-func (r *Status) WithReceivedMessage() *Status {
-	q := r.query.Select("withReceivedMessage")
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// Ensure the status is visible without having to expand its parents.
-func (r *Status) WithReveal() *Status {
-	q := r.query.Select("withReveal")
-
-	return &Status{
-		query:  q,
-		client: r.client,
-	}
 }
 
 // An interactive terminal that clients can connect to.

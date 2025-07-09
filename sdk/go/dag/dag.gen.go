@@ -471,6 +471,10 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 }
 
 // Create a new status indicator.
+//
+// Experimental: The statuses API is experimental and subject to change.
+//
+// The current capabilities are limited. Please open an issue to request new UI controls.
 func Status(name string, opts ...dagger.StatusOpts) *dagger.Status {
 	client := initClient()
 	return client.Status(name, opts...)

@@ -61,7 +61,9 @@ defmodule Dagger.Status do
   end
 
   @doc """
-  Returns the internal ID of the status.
+  Returns the internal OpenTelemetry span ID of the status.
+
+  (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
   """
   @spec internal_id(t()) :: {:ok, String.t()} | {:error, term()}
   def internal_id(%__MODULE__{} = status) do
@@ -100,64 +102,6 @@ defmodule Dagger.Status do
          client: status.client
        }}
     end
-  end
-
-  @doc """
-  Set an emoji representing the actor of the status.
-  """
-  @spec with_actor_emoji(t(), String.t()) :: Dagger.Status.t()
-  def with_actor_emoji(%__MODULE__{} = status, actor) do
-    query_builder =
-      status.query_builder |> QB.select("withActorEmoji") |> QB.put_arg("actor", actor)
-
-    %Dagger.Status{
-      query_builder: query_builder,
-      client: status.client
-    }
-  end
-
-  @doc """
-  Hide the status itself, and reveal its children.
-  """
-  @spec with_passthrough(t()) :: Dagger.Status.t()
-  def with_passthrough(%__MODULE__{} = status) do
-    query_builder =
-      status.query_builder |> QB.select("withPassthrough")
-
-    %Dagger.Status{
-      query_builder: query_builder,
-      client: status.client
-    }
-  end
-
-  @doc """
-  Indicates that the status represents a received message.
-
-  The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.
-  """
-  @spec with_received_message(t()) :: Dagger.Status.t()
-  def with_received_message(%__MODULE__{} = status) do
-    query_builder =
-      status.query_builder |> QB.select("withReceivedMessage")
-
-    %Dagger.Status{
-      query_builder: query_builder,
-      client: status.client
-    }
-  end
-
-  @doc """
-  Ensure the status is visible without having to expand its parents.
-  """
-  @spec with_reveal(t()) :: Dagger.Status.t()
-  def with_reveal(%__MODULE__{} = status) do
-    query_builder =
-      status.query_builder |> QB.select("withReveal")
-
-    %Dagger.Status{
-      query_builder: query_builder,
-      client: status.client
-    }
   end
 end
 
