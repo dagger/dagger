@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
@@ -64,7 +65,7 @@ func (t GoSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Go SDK API
 func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	fmt.Printf("ACB GoSDK.Generate called\n")
+	fmt.Printf("ACB GoSDK.Generate called by %s\n", debug.Stack())
 	installer := t.Dagger.installer("sdk")
 	generated := t.Dagger.Go().Env().
 		With(installer).

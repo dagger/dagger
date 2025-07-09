@@ -180,6 +180,7 @@ func (s *Selection) Execute(ctx context.Context) error {
 
 	query, err := s.Build(ctx)
 	if err != nil {
+		fmt.Printf("ACB querybuilder err=%v\n", err)
 		return err
 	}
 
@@ -191,6 +192,7 @@ func (s *Selection) Execute(ctx context.Context) error {
 		&graphql.Response{Data: &response},
 	)
 	if err != nil {
+		fmt.Printf("ACB makeRequest err=%v\n", err)
 		return err
 	}
 
