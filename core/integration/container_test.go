@@ -5177,6 +5177,13 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, entries, "bar")
 	})
+
+	t.Run("symlink works with scratch container", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			WithSymlink("doesnt-matter", "symlink").
+			Sync(ctx)
+		require.NoError(t, err)
+	})
 }
 
 func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {

@@ -591,6 +591,9 @@ func getRefOrEvaluate(ctx context.Context, ref bkcache.ImmutableRef, t Evaluatab
 	if err != nil {
 		return nil, err
 	}
+	if res == nil {
+		return nil, nil
+	}
 	cacheRef, err := res.SingleRef()
 	if err != nil {
 		return nil, err
