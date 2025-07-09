@@ -5221,7 +5221,7 @@ func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
 
 	t.Run("docker-image driver", func(ctx context.Context, t *testctx.T) {
 		imageName := "foobar:docker-image"
-		_, err = dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerc.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -5237,7 +5237,7 @@ func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://dagger.test")
 
 		imageName := "foobar:docker-container"
-		_, err = alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
+		_, err := alt.WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = alt.WithExec([]string{"docker", "inspect", imageName}).Sync(ctx)
@@ -5253,7 +5253,7 @@ func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://docker:1234")
 
 		imageName := "foobar:tcp"
-		_, err = alt.
+		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "docker-image").
 			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
 			Sync(ctx)
@@ -5287,7 +5287,7 @@ func (ContainerSuite) TestLoadContainerd(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
 
 		imageName := "foobar:tcp"
-		_, err = alt.
+		_, err := alt.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
 			WithExec([]string{"dagger", "shell", "-c", `container | from "alpine" | with-exec touch,foo | export-image "` + imageName + `"`}).
 			Sync(ctx)
