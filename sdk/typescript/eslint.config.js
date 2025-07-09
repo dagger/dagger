@@ -19,4 +19,11 @@ export default [
       "**/*.md",
     ],
   },
+  {
+    files: ["sdk/typescript/src/api/client.gen.ts", "src/api/client.gen.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-duplicate-enum-values": "off",
+    },
+  },
 ]

@@ -60,7 +60,7 @@
 	{{- if gt (len $enums) 0 }}
 	const metadata = {
 	    {{- range $v := $enums }}
-	    {{ $v.Name | FormatName -}}: { is_enum: true },
+	    {{ $v.Name | FormatName -}}: { is_enum: true, value_to_name: {{ $v | GetInputEnumValueType }}ValueToName },
 	    {{- end }}
 	}
 {{ "" -}}
@@ -95,6 +95,11 @@
     {{- else if not .TypeRef.IsVoid -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
     return response.map((r) => new Client(ctx.copy()).load{{ . | FormatReturnType | ToSingleType | FormatProtected }}FromID(r.id))
+        {{- else if and .TypeRef.IsList (IsListOfEnum .TypeRef) -}}
+    return response.map((r) => {{ . | FormatReturnType | ToSingleType }}NameToValue(r))
+        {{- else if .TypeRef.IsEnum }}
+        {{- /* If it's an Enum, we receive the member name so we must convert it to the actual value */ -}}
+    return {{ $promiseRetType }}NameToValue(response)
         {{- else }}
     return response
         {{- end }}

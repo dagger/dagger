@@ -53,6 +53,40 @@ export enum CacheSharingMode {
    */
   Shared = "SHARED",
 }
+
+/**
+ * Utility function to convert a CacheSharingMode value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function CacheSharingModeValueToName(value: CacheSharingMode): string {
+  switch (value) {
+    case CacheSharingMode.Locked:
+      return "LOCKED"
+    case CacheSharingMode.Private:
+      return "PRIVATE"
+    case CacheSharingMode.Shared:
+      return "SHARED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a CacheSharingMode name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function CacheSharingModeNameToValue(name: string): CacheSharingMode {
+  switch (name) {
+    case "LOCKED":
+      return CacheSharingMode.Locked
+    case "PRIVATE":
+      return CacheSharingMode.Private
+    case "SHARED":
+      return CacheSharingMode.Shared
+    default:
+      return name as CacheSharingMode
+  }
+}
 /**
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
@@ -1076,19 +1110,90 @@ export type HostID = string & { __HostID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz = "EStarGZ",
+  EstarGz = "EStarGZ",
+  Estargz = ImageLayerCompression.EstarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
+}
+
+/**
+ * Utility function to convert a ImageLayerCompression value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ImageLayerCompressionValueToName(
+  value: ImageLayerCompression,
+): string {
+  switch (value) {
+    case ImageLayerCompression.EstarGz:
+      return "EStarGZ"
+    case ImageLayerCompression.Gzip:
+      return "Gzip"
+    case ImageLayerCompression.Uncompressed:
+      return "Uncompressed"
+    case ImageLayerCompression.Zstd:
+      return "Zstd"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ImageLayerCompression name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
+  switch (name) {
+    case "EStarGZ":
+      return ImageLayerCompression.EstarGz
+    case "Gzip":
+      return ImageLayerCompression.Gzip
+    case "Uncompressed":
+      return ImageLayerCompression.Uncompressed
+    case "Zstd":
+      return ImageLayerCompression.Zstd
+    default:
+      return name as ImageLayerCompression
+  }
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Docker = "DOCKER",
-  Dockermediatypes = "DockerMediaTypes",
-  Oci = "OCI",
-  Ocimediatypes = "OCIMediaTypes",
+  Docker = "DockerMediaTypes",
+  DockerMediaTypes = ImageMediaTypes.Docker,
+  Oci = "OCIMediaTypes",
+  OcimediaTypes = ImageMediaTypes.Oci,
+}
+
+/**
+ * Utility function to convert a ImageMediaTypes value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
+  switch (value) {
+    case ImageMediaTypes.Docker:
+      return "DOCKER"
+    case ImageMediaTypes.Oci:
+      return "OCI"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ImageMediaTypes name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
+  switch (name) {
+    case "DOCKER":
+      return ImageMediaTypes.Docker
+    case "OCI":
+      return ImageMediaTypes.Oci
+    default:
+      return name as ImageMediaTypes
+  }
 }
 /**
  * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
@@ -1151,12 +1256,46 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
-  Dir = "DIR",
-  DirSource = "DIR_SOURCE",
-  Git = "GIT",
-  GitSource = "GIT_SOURCE",
-  Local = "LOCAL",
-  LocalSource = "LOCAL_SOURCE",
+  Dir = "DIR_SOURCE",
+  DirSource = ModuleSourceKind.Dir,
+  Git = "GIT_SOURCE",
+  GitSource = ModuleSourceKind.Git,
+  Local = "LOCAL_SOURCE",
+  LocalSource = ModuleSourceKind.Local,
+}
+
+/**
+ * Utility function to convert a ModuleSourceKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
+  switch (value) {
+    case ModuleSourceKind.Dir:
+      return "DIR"
+    case ModuleSourceKind.Git:
+      return "GIT"
+    case ModuleSourceKind.Local:
+      return "LOCAL"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ModuleSourceKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
+  switch (name) {
+    case "DIR":
+      return ModuleSourceKind.Dir
+    case "GIT":
+      return ModuleSourceKind.Git
+    case "LOCAL":
+      return ModuleSourceKind.Local
+    default:
+      return name as ModuleSourceKind
+  }
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -1164,6 +1303,36 @@ export enum ModuleSourceKind {
 export enum NetworkProtocol {
   Tcp = "TCP",
   Udp = "UDP",
+}
+
+/**
+ * Utility function to convert a NetworkProtocol value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function NetworkProtocolValueToName(value: NetworkProtocol): string {
+  switch (value) {
+    case NetworkProtocol.Tcp:
+      return "TCP"
+    case NetworkProtocol.Udp:
+      return "UDP"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a NetworkProtocol name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function NetworkProtocolNameToValue(name: string): NetworkProtocol {
+  switch (name) {
+    case "TCP":
+      return NetworkProtocol.Tcp
+    case "UDP":
+      return NetworkProtocol.Udp
+    default:
+      return name as NetworkProtocol
+  }
 }
 /**
  * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
@@ -1360,6 +1529,40 @@ export enum ReturnType {
    */
   Success = "SUCCESS",
 }
+
+/**
+ * Utility function to convert a ReturnType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ReturnTypeValueToName(value: ReturnType): string {
+  switch (value) {
+    case ReturnType.Any:
+      return "ANY"
+    case ReturnType.Failure:
+      return "FAILURE"
+    case ReturnType.Success:
+      return "SUCCESS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ReturnType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ReturnTypeNameToValue(name: string): ReturnType {
+  switch (name) {
+    case "ANY":
+      return ReturnType.Any
+    case "FAILURE":
+      return ReturnType.Failure
+    case "SUCCESS":
+      return ReturnType.Success
+    default:
+      return name as ReturnType
+  }
+}
 /**
  * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
  */
@@ -1507,132 +1710,198 @@ export enum TypeDefKind {
   /**
    * A boolean value.
    */
-  Boolean = "BOOLEAN",
+  Boolean = "BOOLEAN_KIND",
 
   /**
    * A boolean value.
    */
-  BooleanKind = "BOOLEAN_KIND",
+  BooleanKind = TypeDefKind.Boolean,
 
   /**
    * A GraphQL enum type and its values
    *
    * Always paired with an EnumTypeDef.
    */
-  Enum = "ENUM",
+  Enum = "ENUM_KIND",
 
   /**
    * A GraphQL enum type and its values
    *
    * Always paired with an EnumTypeDef.
    */
-  EnumKind = "ENUM_KIND",
+  EnumKind = TypeDefKind.Enum,
 
   /**
    * A float value.
    */
-  Float = "FLOAT",
+  Float = "FLOAT_KIND",
 
   /**
    * A float value.
    */
-  FloatKind = "FLOAT_KIND",
+  FloatKind = TypeDefKind.Float,
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
    */
-  Input = "INPUT",
+  Input = "INPUT_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
    */
-  InputKind = "INPUT_KIND",
+  InputKind = TypeDefKind.Input,
 
   /**
    * An integer value.
    */
-  Integer = "INTEGER",
+  Integer = "INTEGER_KIND",
 
   /**
    * An integer value.
    */
-  IntegerKind = "INTEGER_KIND",
+  IntegerKind = TypeDefKind.Integer,
 
   /**
    * Always paired with an InterfaceTypeDef.
    *
    * A named type of functions that can be matched+implemented by other objects+interfaces.
    */
-  Interface = "INTERFACE",
+  Interface = "INTERFACE_KIND",
 
   /**
    * Always paired with an InterfaceTypeDef.
    *
    * A named type of functions that can be matched+implemented by other objects+interfaces.
    */
-  InterfaceKind = "INTERFACE_KIND",
+  InterfaceKind = TypeDefKind.Interface,
 
   /**
    * Always paired with a ListTypeDef.
    *
    * A list of values all having the same type.
    */
-  List = "LIST",
+  List = "LIST_KIND",
 
   /**
    * Always paired with a ListTypeDef.
    *
    * A list of values all having the same type.
    */
-  ListKind = "LIST_KIND",
+  ListKind = TypeDefKind.List,
 
   /**
    * Always paired with an ObjectTypeDef.
    *
    * A named type defined in the GraphQL schema, with fields and functions.
    */
-  Object = "OBJECT",
+  Object = "OBJECT_KIND",
 
   /**
    * Always paired with an ObjectTypeDef.
    *
    * A named type defined in the GraphQL schema, with fields and functions.
    */
-  ObjectKind = "OBJECT_KIND",
+  ObjectKind = TypeDefKind.Object,
 
   /**
    * A scalar value of any basic kind.
    */
-  Scalar = "SCALAR",
+  Scalar = "SCALAR_KIND",
 
   /**
    * A scalar value of any basic kind.
    */
-  ScalarKind = "SCALAR_KIND",
+  ScalarKind = TypeDefKind.Scalar,
 
   /**
    * A string value.
    */
-  String = "STRING",
+  String = "STRING_KIND",
 
   /**
    * A string value.
    */
-  StringKind = "STRING_KIND",
+  StringKind = TypeDefKind.String,
 
   /**
    * A special kind used to signify that no value is returned.
    *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
-  Void = "VOID",
+  Void = "VOID_KIND",
 
   /**
    * A special kind used to signify that no value is returned.
    *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
-  VoidKind = "VOID_KIND",
+  VoidKind = TypeDefKind.Void,
+}
+
+/**
+ * Utility function to convert a TypeDefKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function TypeDefKindValueToName(value: TypeDefKind): string {
+  switch (value) {
+    case TypeDefKind.Boolean:
+      return "BOOLEAN"
+    case TypeDefKind.Enum:
+      return "ENUM"
+    case TypeDefKind.Float:
+      return "FLOAT"
+    case TypeDefKind.Input:
+      return "INPUT"
+    case TypeDefKind.Integer:
+      return "INTEGER"
+    case TypeDefKind.Interface:
+      return "INTERFACE"
+    case TypeDefKind.List:
+      return "LIST"
+    case TypeDefKind.Object:
+      return "OBJECT"
+    case TypeDefKind.Scalar:
+      return "SCALAR"
+    case TypeDefKind.String:
+      return "STRING"
+    case TypeDefKind.Void:
+      return "VOID"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a TypeDefKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function TypeDefKindNameToValue(name: string): TypeDefKind {
+  switch (name) {
+    case "BOOLEAN":
+      return TypeDefKind.Boolean
+    case "ENUM":
+      return TypeDefKind.Enum
+    case "FLOAT":
+      return TypeDefKind.Float
+    case "INPUT":
+      return TypeDefKind.Input
+    case "INTEGER":
+      return TypeDefKind.Integer
+    case "INTERFACE":
+      return TypeDefKind.Interface
+    case "LIST":
+      return TypeDefKind.List
+    case "OBJECT":
+      return TypeDefKind.Object
+    case "SCALAR":
+      return TypeDefKind.Scalar
+    case "STRING":
+      return TypeDefKind.String
+    case "VOID":
+      return TypeDefKind.Void
+    default:
+      return name as TypeDefKind
+  }
 }
 /**
  * The absence of a value.
@@ -2078,8 +2347,11 @@ export class Container extends BaseClient {
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("asTarball", { ...opts, __metadata: metadata })
@@ -2242,8 +2514,11 @@ export class Container extends BaseClient {
     }
 
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("export", {
@@ -2438,8 +2713,11 @@ export class Container extends BaseClient {
     }
 
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("publish", {
@@ -2669,7 +2947,7 @@ export class Container extends BaseClient {
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     const metadata = {
-      expect: { is_enum: true },
+      expect: { is_enum: true, value_to_name: ReturnTypeValueToName },
     }
 
     const ctx = this._ctx.select("withExec", {
@@ -2698,7 +2976,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithExposedPortOpts,
   ): Container => {
     const metadata = {
-      protocol: { is_enum: true },
+      protocol: { is_enum: true, value_to_name: NetworkProtocolValueToName },
     }
 
     const ctx = this._ctx.select("withExposedPort", {
@@ -2782,7 +3060,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithMountedCacheOpts,
   ): Container => {
     const metadata = {
-      sharing: { is_enum: true },
+      sharing: { is_enum: true, value_to_name: CacheSharingModeValueToName },
     }
 
     const ctx = this._ctx.select("withMountedCache", {
@@ -3062,7 +3340,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithoutExposedPortOpts,
   ): Container => {
     const metadata = {
-      protocol: { is_enum: true },
+      protocol: { is_enum: true, value_to_name: NetworkProtocolValueToName },
     }
 
     const ctx = this._ctx.select("withoutExposedPort", {
@@ -7364,7 +7642,7 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<ModuleSourceKind> = await ctx.execute()
 
-    return response
+    return ModuleSourceKindNameToValue(response)
   }
 
   /**
@@ -7860,7 +8138,7 @@ export class Port extends BaseClient {
 
     const response: Awaited<NetworkProtocol> = await ctx.execute()
 
-    return response
+    return NetworkProtocolNameToValue(response)
   }
 }
 
@@ -8464,7 +8742,10 @@ export class Client extends BaseClient {
     opts?: ClientModuleSourceOpts,
   ): ModuleSource => {
     const metadata = {
-      requireKind: { is_enum: true },
+      requireKind: {
+        is_enum: true,
+        value_to_name: ModuleSourceKindValueToName,
+      },
     }
 
     const ctx = this._ctx.select("moduleSource", {
@@ -9198,7 +9479,7 @@ export class TypeDef extends BaseClient {
 
     const response: Awaited<TypeDefKind> = await ctx.execute()
 
-    return response
+    return TypeDefKindNameToValue(response)
   }
 
   /**
@@ -9305,7 +9586,7 @@ export class TypeDef extends BaseClient {
    */
   withKind = (kind: TypeDefKind): TypeDef => {
     const metadata = {
-      kind: { is_enum: true },
+      kind: { is_enum: true, value_to_name: TypeDefKindValueToName },
     }
 
     const ctx = this._ctx.select("withKind", { kind, __metadata: metadata })

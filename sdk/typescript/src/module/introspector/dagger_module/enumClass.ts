@@ -38,7 +38,8 @@ export class DaggerEnumClassValue
 
   toJSON() {
     return {
-      name: this.value,
+      name: this.name,
+      value: this.value,
       description: this.description,
     }
   }

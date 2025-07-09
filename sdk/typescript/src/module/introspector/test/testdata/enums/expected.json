@@ -56,10 +56,12 @@
       "values": {
         "ACTIVE": {
           "name": "ACTIVE",
+          "value": "ACTIVE value",
           "description": "Active status"
         },
         "INACTIVE": {
           "name": "INACTIVE",
+          "value": "INACTIVE value",
           "description": "Inactive status"
         }
       }

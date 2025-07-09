@@ -5452,7 +5452,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*A = "A", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
 				},
 			},
 		},
@@ -5461,8 +5461,8 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 			src: `import { object, func } from "@dagger.io/dagger"
 
 export enum MyEnum {
-  MyEnumA = "MyEnumA",
-	MyEnumB = "MyEnumB",
+  A = "MyEnumA",
+	B = "MyEnumB",
 }
 
 @object()
@@ -5492,7 +5492,7 @@ export class Dep {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/src/index.ts:3:13\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
 				},
 				typescript: []string{
 					// struct
@@ -5507,7 +5507,7 @@ export class Dep {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/src/index.ts:3:13\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
 				},
 			},
 		},
