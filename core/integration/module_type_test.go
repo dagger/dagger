@@ -1186,7 +1186,7 @@ class Test:
 
     @function
     def to_image_layer_compression(self, image_layer_compression: str) -> dagger.ImageLayerCompression:
-        return dagger.ImageLayerCompression(image_layer_compression)
+        return dagger.ImageLayerCompression[image_layer_compression]
 `,
 			},
 		} {
@@ -1208,12 +1208,9 @@ class Test:
 				require.NoError(t, err)
 				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
 
-				// TODO(helderco): Python is failing on that test so we skip it for that language until it's supported
-				if tc.sdk != "python" {
-					out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
-					require.NoError(t, err)
-					require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
-				}
+				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
 			})
 		}
 	})
