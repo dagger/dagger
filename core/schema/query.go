@@ -74,28 +74,16 @@ func (s *querySchema) Install() {
 
 		dagql.Func("status", s.status).
 			Doc(`Create a new status indicator.`).
+			Experimental(
+				"The statuses API is experimental and subject to change.",
+				"The current capabilities are limited. Please open an issue to request new UI controls.",
+			).
 			Args(
 				dagql.Arg("name").Doc("A display name for the status."),
 			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Status]{
-		dagql.Func("withPassthrough", s.statusWithPassthrough).
-			Doc(`Hide the status itself, and reveal its children.`),
-
-		dagql.Func("withReveal", s.statusWithReveal).
-			Doc(`Ensure the status is visible without having to expand its parents.`),
-
-		dagql.Func("withActorEmoji", s.statusWithActorEmoji).
-			Doc(`Set an emoji representing the actor of the status.`),
-
-		dagql.Func("withReceivedMessage", s.statusWithReceivedMessage).
-			Doc(`Indicates that the status represents a received message.`,
-				`The message body must be sent as logs, so that it can be streamed. The name of the status is ignored.`),
-
-		dagql.Func("internalId", s.statusInternalID).
-			Doc(`Returns the internal ID of the status.`),
-
 		dagql.NodeFuncWithCacheKey("start", s.statusStart, dagql.CachePerCall).
 			Doc(`Start a new instance of the status.`),
 
@@ -104,6 +92,12 @@ func (s *querySchema) Install() {
 
 		dagql.Func("end", s.statusEnd).
 			Doc(`Mark the status as complete, with an optional error.`),
+
+		dagql.Func("internalId", s.statusInternalID).
+			Doc(
+				`Returns the internal OpenTelemetry span ID of the status.`,
+				`(You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)`,
+			),
 	}.Install(s.srv)
 }
 
@@ -263,22 +257,4 @@ func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args s
 
 func (s *querySchema) statusInternalID(ctx context.Context, parent *core.Status, args struct{}) (string, error) {
 	return parent.Span.SpanContext().SpanID().String(), nil
-}
-
-func (s *querySchema) statusWithActorEmoji(ctx context.Context, parent *core.Status, args struct {
-	Actor string
-}) (*core.Status, error) {
-	return parent.WithActorEmoji(args.Actor), nil
-}
-
-func (s *querySchema) statusWithReceivedMessage(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
-	return parent.WithMessage("received"), nil
-}
-
-func (s *querySchema) statusWithReveal(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
-	return parent.WithReveal(), nil
-}
-
-func (s *querySchema) statusWithPassthrough(ctx context.Context, parent *core.Status, args struct{}) (*core.Status, error) {
-	return parent.WithPassthrough(), nil
 }
