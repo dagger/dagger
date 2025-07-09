@@ -14,7 +14,7 @@ When calling a Dagger Function from the CLI, its arguments are exposed as comman
 Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 
 - Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument.
-- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME.
+- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME`.
 - Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 - Sockets: Dagger Functions that accept an argument of type `Socket` can be passed host sockets in the form `$SOCKET`.
 </Important>
@@ -140,23 +140,11 @@ You can either use the primitive `int` type or the boxed `java.lang.Integer` typ
 
 Here is an example call for this Dagger Function:
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'add-integer 1 2'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-add-integer 1 2
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger call add-integer --a=1 --b=2
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'add-integer 1 2'"
+  daggerShellCommand="add-integer 1 2"
+  daggerCliCommand="dagger call add-integer --a=1 --b=2" 
+/>
 
 The result will look like this:
 
@@ -211,23 +199,11 @@ You can either use the primitive `float` type or the boxed `java.lang.Float` typ
 
 Here is an example call for this Dagger Function:
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'add-float 1.4 2.7'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-add-float 1.4 2.7
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger call add-float --a=1.4 --b=2.7
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'add-float 1.4 2.7'"
+  daggerShellCommand="add-float 1.4 2.7"
+  daggerCliCommand="dagger call add-float --a=1.4 --b=2.7"
+/>
 
 The result will look like this:
 
@@ -253,6 +229,7 @@ To pass an array argument to a Dagger Function, use a comma-separated list of va
 ```
 </Tab>
 <Tab value="php" title="PHP">
+
 <Note>
 Lists must have their subtype specified by adding the `#[ListOfType]` attribute to the relevant function argument.
 
@@ -275,23 +252,11 @@ For instance instead of the `String[] names` argument in the example, you can ha
 
 Here is an example call for this Dagger Function:
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'hello John,Jane'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-hello John,Jane
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger call hello --names=John,Jane
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'hello John,Jane'"
+  daggerShellCommand="hello John,Jane"
+  daggerCliCommand="dagger call hello --names=John,Jane"
+/>
 
 The result will look like this:
 
@@ -337,23 +302,11 @@ mkdir -p mydir/mysubdir
 touch mydir/a mydir/b mydir/c mydir/mysubdir/y mydir/mysubdir/z
 ```
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger -c 'tree mydir 2'
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-tree mydir 2
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger call tree --src=mydir --depth=2
-```
-</Tab>
-</Tabs>
+<ShellTabs
+  systemShellCommand="dagger -c 'tree mydir 2'"
+  daggerShellCommand="tree mydir 2"
+  daggerCliCommand="dagger call tree --src=mydir --depth=2"
+/>
 
 The result will look like this:
 
@@ -371,38 +324,26 @@ The result will look like this:
 
 Here is an example of passing a [remote repository](./remote-repositories.mdx) (Dagger's open-source repository) over HTTPS as a `Directory` argument:
 
-<Tabs groupId="shell">
-<Tab value="System shell">
-```shell
-dagger <<EOF
+<ShellTabs
+  systemShellCommand={`dagger <<EOF
 container |
   from alpine:latest |
   with-directory /src https://github.com/dagger/dagger |
   with-exec ls /src |
   stdout
-EOF
-```
-</Tab>
-<Tab value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
-container |
+EOF`}
+  daggerShellCommand={`container |
   from alpine:latest |
   with-directory /src https://github.com/dagger/dagger |
   with-exec ls /src |
-  stdout
-```
-</Tab>
-<Tab value="Dagger CLI">
-```shell
-dagger core \
-  container \
-  from --address=alpine:latest \
-  with-directory --path=/src --directory=https://github.com/dagger/dagger \
-  with-exec --args="ls","/src" \
-  stdout
-```
-</Tab>
-</Tabs>
+  stdout`}
+  daggerCliCommand={`dagger core \\
+  container \\
+  from --address=alpine:latest \\
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \\
+  with-exec --args="ls","/src" \\
+  stdout`}
+/>
 
 The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-repositories.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
