@@ -129,7 +129,7 @@ func (h *Helm) chart() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
-				"helm~3.17.3",
+				"helm~3.18.4",
 				"kubectl",
 			},
 		}).
