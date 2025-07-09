@@ -2554,8 +2554,11 @@ export class Container extends BaseClient {
     }
 
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("exportImage", {
