@@ -284,9 +284,6 @@ func (svc *Service) Start(
 	id *call.ID,
 	interactive bool,
 	sio *ServiceIO,
-	// forwardStdin func(io.Writer, bkgw.ContainerProcess),
-	// forwardStdout func(io.Reader),
-	// forwardStderr func(io.Reader),
 ) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
@@ -307,7 +304,6 @@ func (svc *Service) startContainer(
 	interactive bool,
 	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
-	// XXX: ensure services are definitely stopped in the buildkit session
 	var cleanups buildkit.Cleanups
 	defer func() {
 		if rerr != nil {
@@ -578,21 +574,16 @@ func (svc *Service) startContainer(
 		cleanups.Run()
 	}()
 
-	stopSvc := func(ctx context.Context, force bool) error {
-		stopped.Store(true)
-		sig := syscall.SIGTERM
-		if force {
-			sig = syscall.SIGKILL
-		}
-		signal <- sig
+	signalSvc := func(ctx context.Context, sig syscall.Signal) error {
 		select {
 		case <-ctx.Done():
-			slog.Info("service stop interrupted", "err", ctx.Err())
+			slog.Info("service signal interrupted", "err", ctx.Err())
 			return ctx.Err()
-		case exitErr := <-exited:
-			slog.Info("service exited in stop", "err", exitErr)
-			return nil
+		case <-exited:
+			slog.Info("service exited in signal")
+		case signal <- sig:
 		}
+		return nil
 	}
 
 	waitSvc := func(ctx context.Context) error {
@@ -602,6 +593,19 @@ func (svc *Service) startContainer(
 		case <-exited:
 			return exitErr
 		}
+	}
+
+	stopSvc := func(ctx context.Context, force bool) error {
+		stopped.Store(true)
+		sig := syscall.SIGTERM
+		if force {
+			sig = syscall.SIGKILL
+		}
+		err := signalSvc(ctx, sig)
+		if err != nil {
+			return err
+		}
+		return waitSvc(ctx)
 	}
 
 	select {

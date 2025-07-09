@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"text/template"
 	"time"
@@ -1743,7 +1744,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 	})
 
 	// ensure everyone eventually stops
-	eg.Wait()
+	require.ErrorContains(t, eg.Wait(), "exit code: "+strconv.Itoa(128+int(syscall.SIGKILL)))
 
 	out, err = fetch()
 	require.Error(t, err)
