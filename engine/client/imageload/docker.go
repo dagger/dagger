@@ -5,26 +5,26 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strings"
+	"regexp"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/util/traceexec"
 	"go.opentelemetry.io/otel"
 )
 
-type Docker struct{}
-
-func init() {
-	register("docker-image", &Docker{})
+type Docker struct {
+	Cmd string
 }
 
-func (Docker) ID() string {
-	return "docker"
+func init() {
+	register("docker-image", &Docker{"docker"})
+	register("nerdctl-image", &Docker{"nerdctl"})
+	register("podman-image", &Docker{"podman"})
 }
 
 func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
 	// check docker is running
-	cmd := exec.CommandContext(ctx, "docker", "info")
+	cmd := exec.CommandContext(ctx, loader.Cmd, "info")
 	_, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
 	if err != nil {
 		return nil, err
@@ -39,23 +39,20 @@ func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Re
 	ctx, span := otel.Tracer("").Start(ctx, "load "+name)
 	defer telemetry.End(span, func() error { return rerr })
 
-	cmd := exec.CommandContext(ctx, "docker", "load")
+	cmd := exec.CommandContext(ctx, loader.Cmd, "load")
 	cmd.Stdin = tarball
 	stdout, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w", err)
 	}
 
-	_, imageID, ok := strings.Cut(stdout, "Loaded image ID: sha256:")
-	if !ok {
-		_, imageID, ok = strings.Cut(stdout, "Loaded image: sha256:") // podman
-		if !ok {
-			return fmt.Errorf("unexpected output from docker load")
-		}
+	result := regexp.MustCompile("sha256:([0-9a-f]+)").FindStringSubmatch(stdout)
+	if len(result) == 0 {
+		return fmt.Errorf("unexpected output from docker load: %s", stdout)
 	}
-	imageID = strings.TrimSpace(imageID)
+	imageID := result[1]
 
-	_, err = traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "tag", imageID, name), telemetry.Encapsulated())
+	_, err = traceexec.Exec(ctx, exec.CommandContext(ctx, loader.Cmd, "tag", imageID, name), telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}
