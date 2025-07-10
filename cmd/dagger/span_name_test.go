@@ -34,6 +34,7 @@ func TestSpanName(t *testing.T) {
 			// like `--bool foo`, so we want to fall back to the full command
 			want: "--bool foo --fizz",
 		},
+		{args: []string{"/path/to/dagger", "session", "--label", "dagger.io/sdk.name:go"}, want: "dagger session --label dagger.io/sdk.name:go"},
 	} {
 		t.Run(fmt.Sprintf("%v", test.args), func(t *testing.T) {
 			require.Equal(t, test.want, spanName(test.args))
