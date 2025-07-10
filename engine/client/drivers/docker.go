@@ -1,284 +1,89 @@
 package drivers
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"net"
-	"net/url"
-	"os"
+	"io"
 	"os/exec"
-	"path/filepath"
-	"regexp"
-	"slices"
-	"strconv"
-	"strings"
-
-	"dagger.io/dagger/telemetry"
-	"github.com/adrg/xdg"
-	"github.com/docker/cli/cli/connhelper/commandconn"
-	"github.com/google/go-containerregistry/pkg/name"
-	"go.opentelemetry.io/otel"
 
 	"github.com/dagger/dagger/engine/client/imageload"
-	"github.com/dagger/dagger/engine/config"
-	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/traceexec"
-)
-
-var (
-	engineConfigPath = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
 )
 
 func init() {
-	register("docker-image", &dockerImageDriver{})
-	register("docker-container", &dockerContainerDriver{})
+	register("docker-image", &imageDriver{docker{"docker"}, imageload.Docker{"docker"}})
+	register("docker-container", &containerDriver{docker{"docker"}, imageload.Docker{"docker"}})
+
+	register("nerdctl-image", &imageDriver{docker{"nerdctl"}, imageload.Docker{"nerdctl"}})
+	register("nerdctl-container", &containerDriver{docker{"nerdctl"}, imageload.Docker{"nerdctl"}})
+
+	register("podman-image", &imageDriver{docker{"podman"}, imageload.Docker{"podman"}})
+	register("podman-container", &containerDriver{docker{"podman"}, imageload.Docker{"podman"}})
 }
 
-// dockerImageDriver creates and manages a container, then connects to it
-type dockerImageDriver struct{}
-
-func (d *dockerImageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
-	cleanup := true
-	if val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); ok {
-		b, _ := strconv.ParseBool(val)
-		cleanup = !b
-	} else if val := target.Query().Get("cleanup"); val != "" {
-		cleanup, _ = strconv.ParseBool(val)
-	}
-
-	containerName := target.Query().Get("container")
-	volumeName := target.Query().Get("volume")
-	port, _ := strconv.Atoi(target.Query().Get("port"))
-
-	target, err := d.create(ctx, target.Host+target.Path, containerName, volumeName, cleanup, port, opts)
-	if err != nil {
-		return nil, err
-	}
-	return dockerConnector{target: target}, nil
+// docker is an implementation of the containerBackend for any
+// docker-compatible cli.
+type docker struct {
+	cmd string
 }
 
-func (d *dockerImageDriver) ImageLoader() imageload.Backend {
-	return imageload.Docker{}
+var _ containerBackend = docker{}
+
+func (d docker) ImagePull(image string) *exec.Cmd {
+	return exec.Command(d.cmd, "pull", image)
 }
 
-type dockerConnector struct {
-	target *url.URL
+func (d docker) ImageLoad(name string, tarball io.Reader) *exec.Cmd {
+	cmd := exec.Command(d.cmd, "load")
+	cmd.Stdin = tarball
+	return cmd
 }
 
-type dockerContainerDriver struct{}
-
-func (d *dockerContainerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
-	return dockerConnector{target: target}, nil
+func (d docker) ImageInspect(image string) *exec.Cmd {
+	return exec.Command(d.cmd, "image", "inspect", image)
 }
 
-func (d *dockerContainerDriver) ImageLoader() imageload.Backend {
-	return imageload.Docker{}
+func (d docker) ImageTag(dest string, src string) *exec.Cmd {
+	return exec.Command(d.cmd, "tag", src, dest)
 }
 
-func (d dockerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	ctxFlags := []string{}
-	if context := d.target.Query().Get("context"); context != "" {
-		ctxFlags = append(ctxFlags, "--context="+context)
+func (d docker) ContainerRun(name string, opts runOpts) *exec.Cmd {
+	args := []string{"run", "--name", name, "-d"}
+	for _, volume := range opts.volumes {
+		args = append(args, "-v", volume)
+	}
+	for _, env := range opts.env {
+		args = append(args, "-e", env)
+	}
+	for _, port := range opts.ports {
+		args = append(args, "-p", port)
+	}
+	if opts.privileged {
+		args = append(args, "--privileged")
+	}
+	if opts.gpus {
+		args = append(args, "--gpus", "all")
 	}
 
-	// using uncancelled context because context remains active for the
-	// duration of the process, after dial has completed
-	return commandconn.New(context.WithoutCancel(ctx), "docker", append(ctxFlags, []string{"exec", "-i", d.target.Hostname(), "buildctl", "dial-stdio"}...)...)
+	args = append(args, opts.image)
+	args = append(args, opts.args...)
+	return exec.Command(d.cmd, args...)
 }
 
-const (
-	// trim image digests to 16 characters to makeoutput more readable
-	hashLen             = 16
-	containerNamePrefix = "dagger-engine-"
-)
-
-const InstrumentationLibrary = "dagger.io/client.drivers"
-
-// Pull the image and run it with a unique name tied to the pinned
-// sha of the image. Remove any other containers leftover from
-// previous executions of the engine at different versions (which
-// are identified by looking for containers with the prefix
-// "dagger-engine-").
-func (d *dockerImageDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, port int, opts *DriverOpts) (target *url.URL, rerr error) {
-	ctx, span := otel.Tracer("").Start(ctx, "create")
-	defer telemetry.End(span, func() error { return rerr })
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
-	if containerName == "" {
-		id, err := resolveImageID(imageRef)
-		if err != nil {
-			return nil, err
-		}
-		// run the container using that id in the name
-		containerName = containerNamePrefix + id
-	}
-
-	leftoverEngines, err := collectLeftoverEngines(ctx, containerName)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		slog.Warn("failed to list containers", "error", err)
-		leftoverEngines = []string{}
-	}
-
-	for i, leftoverEngine := range leftoverEngines {
-		// if we already have a container with that name, attempt to start it
-		if leftoverEngine == containerName {
-			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
-			if output, err := traceexec.Exec(ctx, cmd); err != nil {
-				return nil, fmt.Errorf("failed to start container %s: %w", output, err)
-			}
-			garbageCollectEngines(ctx, cleanup, slog, slices.Delete(leftoverEngines, i, i+1))
-			return &url.URL{
-				Scheme: "docker-container",
-				Host:   containerName,
-			}, nil
-		}
-	}
-
-	// ensure the image is pulled
-	if _, err := traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, fmt.Errorf("failed to inspect image: %w", err)
-		}
-		if _, err := traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
-			return nil, fmt.Errorf("failed to pull image: %w", err)
-		}
-	}
-
-	volume := distconsts.EngineDefaultStateDir
-	if volumeName != "" {
-		volume = volumeName + ":" + volume
-	}
-	cmd := exec.CommandContext(ctx,
-		"docker",
-		"run",
-		"--name", containerName,
-		"-d",
-		"--restart", "always",
-		"-v", volume,
-		"--privileged",
-	)
-
-	// mount the config path
-	if _, err := os.Stat(engineConfigPath); err == nil {
-		cmd.Args = append(cmd.Args, "-v", engineConfigPath+":"+config.DefaultConfigPath())
-	} else if !errors.Is(err, os.ErrNotExist) {
-		slog.Warn("could not stat config", "path", engineConfigPath, "error", err)
-	}
-
-	// explicitly pass current env vars; if we append more below existing ones like DOCKER_HOST
-	// won't be passed to the cmd
-	cmd.Env = os.Environ()
-	if opts.DaggerCloudToken != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
-		cmd.Args = append(cmd.Args, "-e", EnvDaggerCloudToken)
-	}
-	if opts.GPUSupport != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvGPUSupport, opts.GPUSupport))
-		cmd.Args = append(cmd.Args, "-e", EnvGPUSupport, "--gpus", "all")
-	}
-	if port != 0 {
-		cmd.Args = append(cmd.Args, "-p", fmt.Sprintf("%d:%d", port, port))
-	}
-
-	cmd.Args = append(cmd.Args, imageRef)
-	cmd.Args = append(cmd.Args, "--debug")
-	if port != 0 {
-		cmd.Args = append(cmd.Args, "--addr", fmt.Sprintf("tcp://0.0.0.0:%d", port))
-	}
-
-	if output, err := traceexec.Exec(ctx, cmd); err != nil {
-		if !isContainerAlreadyInUseOutput(output) {
-			return nil, fmt.Errorf("failed to run container %s: %w", output, err)
-		}
-	}
-
-	// garbage collect any other containers with the same name pattern, which
-	// we assume to be leftover from previous runs of the engine using an older
-	// version
-	garbageCollectEngines(ctx, cleanup, slog, leftoverEngines)
-
-	return &url.URL{
-		Scheme: "docker-container",
-		Host:   containerName,
-	}, nil
+func (d docker) ContainerExec(name string, args []string) *exec.Cmd {
+	cmdArgs := append([]string{"exec", "-i", name}, args...)
+	return exec.Command(d.cmd, cmdArgs...)
 }
 
-func resolveImageID(imageRef string) (string, error) {
-	ref, err := name.ParseReference(imageRef)
-	if err != nil {
-		return "", fmt.Errorf("parsing image reference: %w", err)
-	}
-	if digest, ok := ref.(name.Digest); ok {
-		// We already have the digest as part of the image ref
-		_, id, ok := strings.Cut(digest.DigestStr(), "sha256:")
-		if !ok {
-			return "", fmt.Errorf("invalid image reference %q", imageRef)
-		}
-		return id[:hashLen], nil
-	}
-	if tag, ok := ref.(name.Tag); ok {
-		// Otherwise, fallback to the image tag
-		return tag.TagStr(), nil
-	}
-
-	// default to latest
-	return "latest", nil
+func (d docker) ContainerRemove(name string) *exec.Cmd {
+	return exec.Command(d.cmd, "rm", "-fv", name)
 }
 
-func garbageCollectEngines(ctx context.Context, cleanup bool, log *slog.Logger, engines []string) {
-	if !cleanup {
-		return
-	}
-	for _, engine := range engines {
-		if engine == "" {
-			continue
-		}
-		if output, err := traceexec.Exec(ctx, exec.CommandContext(ctx,
-			"docker", "rm", "-fv", engine,
-		)); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			if !strings.Contains(output, "already in progress") {
-				log.Warn("failed to remove old container", "container", engine, "error", err)
-			}
-		}
-	}
+func (d docker) ContainerStart(name string) *exec.Cmd {
+	return exec.Command(d.cmd, "start", name)
 }
 
-func collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]string, error) {
-	names := []string{"^" + containerNamePrefix}
-	for _, name := range additionalNames {
-		names = append(names, "^"+regexp.QuoteMeta(name)+"$")
-	}
-	cmd := exec.CommandContext(ctx,
-		"docker", "ps",
-		"-a",
-		"--no-trunc",
-		"--filter", "name="+strings.Join(names, "|"),
-		"--format", "{{.Names}}",
-	)
-	output, err := traceexec.Exec(ctx, cmd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list containers %s: %w", output, err)
-	}
-	engineNames := strings.Split(output, "\n")
-	return engineNames, err
+func (d docker) ContainerInspect(name string) *exec.Cmd {
+	return exec.Command(d.cmd, "container", "inspect", name)
 }
 
-func isContainerAlreadyInUseOutput(output string) bool {
-	switch {
-	// docker cli output
-	case strings.Contains(output, "is already in use"):
-		return true
-	// nerdctl cli output
-	case strings.Contains(output, "is already used"):
-		return true
-	}
-	return false
+func (d docker) ContainerLs() *exec.Cmd {
+	return exec.Command(d.cmd, "ps", "-a", "--format", "{{.Names}}")
 }
