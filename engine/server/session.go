@@ -1233,6 +1233,42 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
+func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[string]string, error) {
+	dag, err := srv.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	envConfigDir, err := mod.GetSource().LoadContext(ctx, dag, ".", []string{
+		"*", ".*", "!.env.dagger.json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var envConfigContents string
+	dag.Select(ctx, envConfigDir, &envConfigContents,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(".env.dagger.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	var envConfig map[string]string
+	if err := json.Unmarshal([]byte(envConfigContents), &envConfig); err != nil {
+		return nil, err
+	}
+	return envConfig, nil
+}
+
 // Stitch in the given module to the list being served to the current client
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
@@ -1245,6 +1281,11 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 
 	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
 	// Find the eponym object (object with same name as module)
+	envConfig, err := srv.loadEnvConfig(ctx, mod)
+	if err != nil {
+		return err
+	}
+	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig)
 	err = func() error {
 		slog.Info("hooking into main module install", "module", mod.Name(), "module_bis", mod.OriginalName)
 		var mainObj *core.ObjectTypeDef
@@ -1275,7 +1316,13 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		if err != nil {
 			return err
 		}
-		return injectDefaultSecret(ctx, dag, constructor, "token", "env://TOKEN")
+		for k, v := range envConfig {
+			slog.Info("injecting env config value", "key", k, "value", v)
+			if err := injectDefaultSecret(ctx, dag, constructor, k, v); err != nil {
+				return err
+			}
+		}
+		return nil
 	}()
 	if err != nil {
 		return fmt.Errorf("env override: %s", err.Error())
