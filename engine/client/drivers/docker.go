@@ -16,9 +16,8 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/adrg/xdg"
+	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/google/go-containerregistry/pkg/name"
-	connh "github.com/moby/buildkit/client/connhelper"
-	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	"go.opentelemetry.io/otel"
 
 	"github.com/dagger/dagger/engine/client/imageload"
@@ -33,13 +32,14 @@ var (
 )
 
 func init() {
-	register("docker-image", &dockerDriver{})
+	register("docker-image", &dockerImageDriver{})
+	register("docker-container", &dockerContainerDriver{})
 }
 
-// dockerDriver creates and manages a container, then connects to it
-type dockerDriver struct{}
+// dockerImageDriver creates and manages a container, then connects to it
+type dockerImageDriver struct{}
 
-func (d *dockerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
+func (d *dockerImageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
 	cleanup := true
 	if val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); ok {
 		b, _ := strconv.ParseBool(val)
@@ -52,24 +52,40 @@ func (d *dockerDriver) Provision(ctx context.Context, target *url.URL, opts *Dri
 	volumeName := target.Query().Get("volume")
 	port, _ := strconv.Atoi(target.Query().Get("port"))
 
-	helper, err := d.create(ctx, target.Host+target.Path, containerName, volumeName, cleanup, port, opts)
+	target, err := d.create(ctx, target.Host+target.Path, containerName, volumeName, cleanup, port, opts)
 	if err != nil {
 		return nil, err
 	}
-	return dockerConnector{helper: helper, target: target}, nil
+	return dockerConnector{target: target}, nil
 }
 
-func (d *dockerDriver) ImageLoader() imageload.Backend {
+func (d *dockerImageDriver) ImageLoader() imageload.Backend {
 	return imageload.Docker{}
 }
 
 type dockerConnector struct {
-	helper *connh.ConnectionHelper
 	target *url.URL
 }
 
+type dockerContainerDriver struct{}
+
+func (d *dockerContainerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
+	return dockerConnector{target: target}, nil
+}
+
+func (d *dockerContainerDriver) ImageLoader() imageload.Backend {
+	return imageload.Docker{}
+}
+
 func (d dockerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	return d.helper.ContextDialer(ctx, d.target.String())
+	ctxFlags := []string{}
+	if context := d.target.Query().Get("context"); context != "" {
+		ctxFlags = append(ctxFlags, "--context="+context)
+	}
+
+	// using uncancelled context because context remains active for the
+	// duration of the process, after dial has completed
+	return commandconn.New(context.WithoutCancel(ctx), "docker", append(ctxFlags, []string{"exec", "-i", d.target.Hostname(), "buildctl", "dial-stdio"}...)...)
 }
 
 const (
@@ -85,7 +101,7 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func (d *dockerDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, port int, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
+func (d *dockerImageDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, port int, opts *DriverOpts) (target *url.URL, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create")
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
@@ -116,10 +132,10 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 				return nil, fmt.Errorf("failed to start container %s: %w", output, err)
 			}
 			garbageCollectEngines(ctx, cleanup, slog, slices.Delete(leftoverEngines, i, i+1))
-			return connhDocker.Helper(&url.URL{
+			return &url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
-			})
+			}, nil
 		}
 	}
 
@@ -186,10 +202,10 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 	// version
 	garbageCollectEngines(ctx, cleanup, slog, leftoverEngines)
 
-	return connhDocker.Helper(&url.URL{
+	return &url.URL{
 		Scheme: "docker-container",
 		Host:   containerName,
-	})
+	}, nil
 }
 
 func resolveImageID(imageRef string) (string, error) {
