@@ -325,7 +325,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			return true // continue walking
 		})
 
-		// Skip verbose logs in the dots frontend
+		// Skip verbose logs in the plain frontend
 		if isVerbose {
 			continue
 		}
