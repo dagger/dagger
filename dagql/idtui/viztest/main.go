@@ -12,7 +12,9 @@ import (
 	"dagger/viztest/internal/dagger"
 	"dagger/viztest/internal/telemetry"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Viztest struct {
@@ -43,7 +45,7 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 1: UNSET span under ERROR status - should hoist
 	dag.Status("failing outer status").Run(ctx, func(ctx context.Context) error {
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := Tracer().Start(ctx, "unset middle status")
 			defer span.End() // UNSET
 			dag.Status("failing inner status").Run(ctx, func(ctx context.Context) error {
 				stdio := telemetry.SpanStdio(ctx, "")
@@ -57,7 +59,7 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 2: UNSET span under OK status - should NOT hoist
 	dag.Status("succeeding outer status").Run(ctx, func(ctx context.Context) error {
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := Tracer().Start(ctx, "unset middle sstatus")
 			defer span.End() // UNSET
 			dag.Status("failing inner status").Run(ctx, func(ctx context.Context) error {
 				stdio := telemetry.SpanStdio(ctx, "")
@@ -110,15 +112,22 @@ func (v *Viztest) CustomStatus(ctx context.Context) (res string, rerr error) {
 }
 
 func (v *Viztest) RevealedStatuses(ctx context.Context) (res string, rerr error) {
-	dag.Status("custom status").Display(ctx)
-	dag.Status("revealed status").WithReveal().Display(ctx)
 	func() {
-		ctx, status := dag.Status("revealed message").
-			WithReveal().
-			WithActorEmoji("😊").
-			WithReceivedMessage().
-			Context(ctx)
-		status.End(ctx)
+		_, span := Tracer().Start(ctx, "custom status")
+		span.End()
+	}()
+	func() {
+		_, span := Tracer().Start(ctx, "revealed status",
+			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
+		span.End()
+	}()
+	func() {
+		ctx, span := Tracer().Start(ctx, "revealed message",
+			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)),
+			trace.WithAttributes(attribute.String("dagger.io/ui.actor.emoji", "😊")),
+			trace.WithAttributes(attribute.String("dagger.io/ui.message", "received")),
+		)
+		span.End()
 		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String("dagger.io/content.type", "text/markdown"))
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
@@ -128,12 +137,13 @@ func (v *Viztest) RevealedStatuses(ctx context.Context) (res string, rerr error)
 }
 
 func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
-	ctx, status := dag.Status("revealed status").WithReveal().Context(ctx)
+	ctx, span := Tracer().Start(ctx, "revealed status",
+		trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
 	res, err := v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 	if err != nil {
 		return "", err
 	}
-	status.End(ctx)
+	span.End()
 	fmt.Println("i did stuff, here's the result:", res)
 	return res, nil
 }

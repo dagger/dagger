@@ -18,13 +18,13 @@ Expected stderr:
 ! i failed on the outside
 ├─▼ failing outer status X.Xs ERROR
 │ ! outer failure
-│ ╰─▼ unset middle span X.Xs
+│ ╰─▼ unset middle status X.Xs
 │   ╰─▼ failing inner status X.Xs ERROR
 │     ┃ this should be hoisted - ancestor failed
 │     ! inner failure
 │    
 ╰─▼ succeeding outer status X.Xs
-  ╰─▼ unset middle span X.Xs
+  ╰─▼ unset middle sstatus X.Xs
     ╰─▼ failing inner status X.Xs ERROR
       ┃ this should NOT be hoisted - ancestor succeeded
       ! inner failure
