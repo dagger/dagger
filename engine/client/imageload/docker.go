@@ -22,9 +22,12 @@ func (Docker) ID() string {
 	return "docker"
 }
 
-func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
+func (loader Docker) Loader(ctx context.Context) (_ *Loader, rerr error) {
+	ctx, span := otel.Tracer("").Start(ctx, "check for docker daemon")
+	defer telemetry.End(span, func() error { return rerr })
+
 	// check docker is running
-	cmd := exec.CommandContext(ctx, "docker", "info")
+	cmd := exec.CommandContext(ctx, "docker", "info", "--format", "{{.ServerVersion}}")
 	_, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
 	if err != nil {
 		return nil, err

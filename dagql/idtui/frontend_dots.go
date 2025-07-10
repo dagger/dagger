@@ -122,10 +122,6 @@ func (fe *frontendDots) MetricExporter() sdkmetric.Exporter {
 	return &dotsMetricExporter{fe: fe}
 }
 
-func (fe *frontendDots) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	fe.reporter.ConnectedToEngine(ctx, name, version, clientID)
-}
-
 func (fe *frontendDots) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
 	fe.reporter.SetCloudURL(ctx, url, msg, logged)
 }

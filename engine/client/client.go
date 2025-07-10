@@ -81,7 +81,6 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback   func(context.Context, string, string, string)
 	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace   sdktrace.SpanExporter
@@ -103,7 +102,7 @@ type Params struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 
-	ImageLoader *imageload.Loader
+	ImageLoaderBackend imageload.Backend
 }
 
 type Client struct {
@@ -111,7 +110,8 @@ type Client struct {
 
 	eg *errgroup.Group
 
-	connector drivers.Connector
+	connector   drivers.Connector
+	imageLoader *imageload.Loader
 
 	internalCtx    context.Context
 	internalCancel context.CancelCauseFunc
@@ -125,6 +125,7 @@ type Client struct {
 	httpClient *httpClient
 	bkClient   *bkclient.Client
 	bkVersion  string
+	bkName     string
 	sessionSrv *BuildkitSessionServer
 
 	// A client for the dagger API that is directly hooked up to this engine client.
@@ -278,6 +279,14 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		cloudToken = v
 	}
 
+	if c.CloudURLCallback != nil {
+		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
+			c.CloudURLCallback(ctx, url, msg, ok)
+		} else {
+			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
+		}
+	}
+
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
@@ -290,38 +299,37 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	if c.ImageLoader == nil {
-		loaderBackend := driver.ImageLoader()
-		if loaderBackend != nil {
-			c.ImageLoader, err = loaderBackend.Loader(ctx)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine")
+	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	slog.Debug("connecting", "runner", c.RunnerHost)
 
-	slog.Debug("connecting", "runner", c.RunnerHost, "client", c.ID)
-
-	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.connector)
+	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
+	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
+	telemetry.End(span, func() error { return err })
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
 	}
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
+	c.bkName = bkInfo.BuildkitVersion.Revision
 
-	if c.EngineCallback != nil {
-		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
+	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
+
+	imageBackend := c.ImageLoaderBackend
+	if imageBackend == nil {
+		imageBackend = driver.ImageLoader()
 	}
-	if c.CloudURLCallback != nil {
-		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
-			c.CloudURLCallback(ctx, url, msg, ok)
-		} else {
-			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
+	if imageBackend != nil {
+		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
+		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
+		if err != nil {
+			err = fmt.Errorf("failed to get image loader: %w", err)
+		}
+		telemetry.End(span, func() error { return err })
+		if err != nil {
+			return err
 		}
 	}
 
@@ -397,8 +405,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
 	}
 
-	if loader := c.Params.ImageLoader; loader != nil {
-		attachable, err := store.NewImageLoaderAttachable(loader)
+	if c.imageLoader != nil {
+		attachable, err := store.NewImageLoaderAttachable(c.imageLoader)
 		if err != nil {
 			return err
 		}

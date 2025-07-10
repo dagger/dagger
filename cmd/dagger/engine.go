@@ -95,17 +95,12 @@ func withEngine(
 			if err != nil {
 				return err
 			}
-			loader, err := backend.Loader(ctx)
-			if err != nil {
-				return err
-			}
-			params.ImageLoader = loader
+			params.ImageLoaderBackend = backend
 		}
 
 		params.DisableHostRW = disableHostRW
 		params.AllowedLLMModules = allowedLLMModules
 
-		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
 
 		params.EngineTrace = telemetry.SpanForwarder{

@@ -158,10 +158,6 @@ func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	<-ctx.Done()
 }
 
-func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	// noisy, so suppress this for now
-}
-
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
 	if fe.OpenWeb {
 		if err := browser.OpenURL(url); err != nil {
