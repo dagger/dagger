@@ -465,6 +465,14 @@ func (svc *Service) startContainer(
 		stderrWriters = append(stderrWriters, stderrCtr)
 	}
 
+	// ACB force output here (dont merge)
+	//stdoutWriters = append(stdoutWriters, newACBDumpStdout())
+	//stderrWriters = append(stderrWriters, newACBDumpStderr())
+
+	acbStdout, acbStderr := newDumpFilePair()
+	stdoutWriters = append(stdoutWriters, acbStdout)
+	stderrWriters = append(stderrWriters, acbStderr)
+
 	req := bkgw.StartRequest{
 		Args:      svc.Args,
 		Env:       env,

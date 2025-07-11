@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -108,6 +111,71 @@ func NewFileWithContents(
 		return nil, err
 	}
 	return dir.File(ctx, name)
+}
+
+func NewFileWithContentsDagOp(
+	ctx context.Context,
+	name string,
+	content []byte,
+	permissions fs.FileMode,
+	ownership *Ownership,
+	platform Platform,
+) (_ bkcache.ImmutableRef, err error) {
+	if dir, _ := filepath.Split(name); dir != "" {
+		return nil, fmt.Errorf("file name %q must not contain a directory", name)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache := query.BuildkitCache()
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group found")
+	}
+
+	bkref, err := cache.New(ctx, nil, bkSessionGroup,
+		bkcache.CachePolicyRetain,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("New file %s (%s)", name, humanize.Bytes(uint64(len(content))))),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, nil, func(root string) error {
+		// create the file
+		dest := filepath.Join(root, name)
+		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(content)
+		if err != nil {
+			return err
+		}
+		if err = f.Close(); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("file write failed: %w", err)
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref = nil
+	return snap, nil
 }
 
 func NewFileSt(ctx context.Context, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {

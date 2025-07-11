@@ -169,6 +169,7 @@ func Introspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("introspection query: %w", err)
 	}
+	fmt.Printf("ACB here with data %+v\n", data)
 	if data != nil {
 		jsonData, err := json.MarshalIndent(data, "", "  ")
 		if err != nil {

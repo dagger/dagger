@@ -656,6 +656,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 }
 
 func collectLocalModulesRecursive(ctx context.Context, base *dagger.ModuleSource, m map[string]*dagger.ModuleSource) error {
+	fmt.Printf("ACB collectLocalModulesRecursive\n")
 	kind, err := base.Kind(ctx)
 	if err != nil {
 		return err
