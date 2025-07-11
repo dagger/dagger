@@ -1,8 +1,12 @@
 package drivers
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"os/exec"
+	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/engine/client/imageload"
 )
@@ -84,6 +88,16 @@ func (d docker) ContainerInspect(name string) *exec.Cmd {
 	return exec.Command(d.cmd, "container", "inspect", name)
 }
 
-func (d docker) ContainerLs() *exec.Cmd {
-	return exec.Command(d.cmd, "ps", "-a", "--format", "{{.Names}}")
+func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
+	cmd := exec.Command(d.cmd, "ps", "-a", "--format", "{{.Names}}")
+
+	outBuf := new(bytes.Buffer)
+
+	err := cmd.Run()
+	out := strings.TrimSpace(outBuf.String())
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.Collect(strings.Lines(out)), nil
 }
