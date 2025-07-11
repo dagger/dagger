@@ -160,10 +160,10 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File, moduleSourceID dagger.ModuleSourceID, outputDir string) *clientGenContainer {
 	codegenArgs := []string{
 		codegenBinPath,
+		"generate-client",
 		"--lang", "typescript",
 		"--output", outputDir,
 		"--introspection-json-path", schemaPath,
-		"--client-only",
 		"--module-source-id", string(moduleSourceID),
 	}
 
