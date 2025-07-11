@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/dagger/dagger/util/ctrns"
+	"go.opentelemetry.io/otel"
 )
 
 type Containerd struct{}
@@ -20,6 +22,9 @@ func (Containerd) ID() string {
 }
 
 func (loader Containerd) Loader(ctx context.Context) (_ *Loader, rerr error) {
+	_, span := otel.Tracer("").Start(ctx, "dial containerd")
+	defer telemetry.End(span, func() error { return rerr })
+
 	addr := defaults.DefaultAddress
 	if v, ok := os.LookupEnv("CONTAINERD_ADDRESS"); ok {
 		addr = v
