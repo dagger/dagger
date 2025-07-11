@@ -813,6 +813,30 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	require.Equal(t, hostname(c1), hostname(c2))
 }
 
+func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v2.0 && touch abc && git add abc && git commit -m "abc" && git tag v1.0`})
+	v2commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+	require.NoError(t, err)
+	v2commit = strings.TrimSpace(v2commit)
+
+	git := ctr.Directory(".").AsGit()
+
+	ref, err := git.LatestVersion().Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0", ref)
+	commit, err := git.LatestVersion().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, v2commit, commit)
+}
+
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
