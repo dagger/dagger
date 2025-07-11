@@ -5,6 +5,7 @@ import logging
 from cattrs.preconf.json import JsonConverter
 
 import dagger
+from dagger.mod._exceptions import BadUsageError
 from dagger.mod._types import APIName, ContextPath
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,8 @@ class Parameter:
         return self.has_default or self.default_path is not None or self.is_nullable
 
     def _validate(self):
+        extra = {"parameter": self.signature}
+
         # These validations are already done by the engine, just repeating them
         # here for better error messages.
         if not self.is_nullable and self.has_default and self.signature.default is None:
@@ -131,17 +134,17 @@ class Parameter:
                 "Can't use a default value of None on a non-nullable type for "
                 f"parameter '{self.signature.name}'"
             )
-            raise ValueError(msg)
+            raise BadUsageError(msg, extra=extra)
 
         if self.default_path:
             if self.has_default and not (
                 self.is_nullable and self.signature.default is None
             ):
                 msg = (
-                    "Can't use DefaultPath with a default value for "
-                    f"parameter '{self.signature.name}'"
+                    f"DefaultPath can't be used in parameter '{self.signature.name}' "
+                    "since it already defines a default value."
                 )
-                raise AssertionError(msg)
+                raise BadUsageError(msg, extra=extra)
 
             if not self.default_path:
                 # NB: We could instead warn or just ignore, but it's better to fail
@@ -150,4 +153,4 @@ class Parameter:
                     "DefaultPath can't be used with an empty path in "
                     f"parameter '{self.signature.name}'"
                 )
-                raise ValueError(msg)
+                raise BadUsageError(msg, extra=extra)
