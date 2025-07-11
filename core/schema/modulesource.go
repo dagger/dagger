@@ -2238,18 +2238,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// Handle blueprint context separation
-	var blueprintSrc dagql.ObjectResult[*core.ModuleSource]
-	var targetName string
-	var targetOriginalName string
 	originalSrc := src
+	blueprintSrc := src.Self().Blueprint
 
-	if src.Self().Blueprint.Self() != nil {
-		// Store target module information
-		targetName = src.Self().ModuleName
-		targetOriginalName = src.Self().ModuleOriginalName
-
-		// Use blueprint for SDK operations
-		blueprintSrc = src.Self().Blueprint
+	if blueprintSrc.Self() != nil {
 		src = blueprintSrc
 	}
 
@@ -2320,14 +2312,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	// If using a blueprint, restore target context and name for file operations
+	// FIXME: If using a blueprint, restore target context and name for file operations
 	if blueprintSrc.Self() != nil {
-		mod.NameField = targetName
-		mod.OriginalName = targetOriginalName
-		// Use the target's module name for the final result
-		modName = targetName
+		// Show the downstream module name to clients, not the blueprint name
+		// NOTE: we don't change OriginalName, that's used internally at runtime
+		mod.NameField = originalSrc.Self().ModuleName
 	}
-
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
