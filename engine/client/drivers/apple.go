@@ -42,6 +42,7 @@ func (d apple) ImageTag(dest string, src string) *exec.Cmd {
 }
 
 func (d apple) ContainerRun(name string, opts runOpts) *exec.Cmd {
+	// TODO: set resources for the engine with --cpus and --memory
 	args := []string{"run", "--name", name, "-d"}
 	for _, volume := range opts.volumes {
 		if strings.Contains(volume, ":") {
