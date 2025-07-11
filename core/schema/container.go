@@ -596,7 +596,7 @@ func (s *containerSchema) Install() {
 					OCI support.`),
 			),
 
-		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, WithPathFn(s.asTarballPath))).
+		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, WithStaticPath[*core.Container, containerAsTarballArgs]("container.tar"))).
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			Args(
 				dagql.Arg("platformVariants").Doc(
@@ -1953,10 +1953,6 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
 
 	FSDagOpInternalArgs
-}
-
-func (s *containerSchema) asTarballPath(ctx context.Context, val *core.Container, _ containerAsTarballArgs) (string, error) {
-	return "container.tar", nil
 }
 
 func (s *containerSchema) asTarball(
