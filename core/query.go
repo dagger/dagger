@@ -119,6 +119,12 @@ type Server interface {
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+
+	// Start a status and return a status tied to its internal span ID.
+	StartStatus(context.Context, *Status) (*Status, error)
+
+	// Look up a started status by its internal span ID.
+	LookupStatus(context.Context, string) (*Status, bool, error)
 }
 
 type queryKey struct{}
@@ -136,7 +142,9 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 }
 
 func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+	return &Query{
+		Server: srv,
+	}
 }
 
 func (*Query) Type() *ast.Type {

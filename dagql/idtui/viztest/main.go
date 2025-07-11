@@ -42,41 +42,33 @@ func (v *Viztest) Encapsulate(ctx context.Context) error {
 // Demonstrate that error logs are not hoisted as long as their enclosing span
 // did not fail, and how UNSET spans interact with the hoisting logic.
 func (*Viztest) FailEncapsulated(ctx context.Context) error {
-	// Scenario 1: UNSET span under ERROR span - should hoist
-	(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "failing outer span")
-		defer telemetry.End(span, func() error { return rerr })
+	// Scenario 1: UNSET span under ERROR status - should hoist
+	dag.Status("failing outer status").Run(ctx, func(ctx context.Context) error {
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := Tracer().Start(ctx, "unset middle status")
 			defer span.End() // UNSET
-			(func() (rerr error) {
-				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+			dag.Status("failing inner status").Run(ctx, func(ctx context.Context) error {
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
 				return errors.New("inner failure")
-			})()
+			})
 		})()
 		return errors.New("outer failure")
-	})()
+	})
 
-	// Scenario 2: UNSET span under OK span - should NOT hoist
-	(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "succeeding outer span")
-		defer telemetry.End(span, func() error { return rerr })
+	// Scenario 2: UNSET span under OK status - should NOT hoist
+	dag.Status("succeeding outer status").Run(ctx, func(ctx context.Context) error {
 		(func() {
-			ctx, span := Tracer().Start(ctx, "unset middle span")
+			ctx, span := Tracer().Start(ctx, "unset middle sstatus")
 			defer span.End() // UNSET
-			(func() (rerr error) {
-				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+			dag.Status("failing inner status").Run(ctx, func(ctx context.Context) error {
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
 				return errors.New("inner failure")
-			})()
+			})
 		})()
 		return nil // outer span succeeds
-	})()
+	})
 
 	return errors.New("i failed on the outside")
 }
@@ -113,19 +105,19 @@ func (*Viztest) ManyLines(n int) {
 	}
 }
 
-func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
-	ctx, span := Tracer().Start(ctx, "custom span")
-	defer telemetry.End(span, func() error { return rerr })
+func (v *Viztest) CustomStatus(ctx context.Context) (res string, rerr error) {
+	ctx, status := dag.Status("custom status").Context(ctx)
+	defer status.End(ctx)
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
-func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
+func (v *Viztest) RevealedStatuses(ctx context.Context) (res string, rerr error) {
 	func() {
-		_, span := Tracer().Start(ctx, "custom span")
+		_, span := Tracer().Start(ctx, "custom status")
 		span.End()
 	}()
 	func() {
-		_, span := Tracer().Start(ctx, "revealed span",
+		_, span := Tracer().Start(ctx, "revealed status",
 			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
 		span.End()
 	}()
@@ -140,15 +132,12 @@ func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
 	}()
-	func() {
-		_, span := Tracer().Start(ctx, "revealed span")
-		span.End()
-	}()
+	dag.Status("not revealed status").Display(ctx)
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
 func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
-	ctx, span := Tracer().Start(ctx, "revealed span",
+	ctx, span := Tracer().Start(ctx, "revealed status",
 		trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
 	res, err := v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 	if err != nil {
@@ -159,16 +148,53 @@ func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
 	return res, nil
 }
 
-func (*Viztest) ManySpans(
+func (v *Viztest) NestedStatuses(ctx context.Context,
+	// +default=false
+	fail bool,
+) (res string, rerr error) {
+	err := dag.Status("custom status").Run(ctx, func(ctx context.Context) error {
+		if _, err := v.Echo(ctx, "outer: "+time.Now().String()); err != nil {
+			return err
+		}
+		if err := dag.Status("sub status").Run(ctx, func(ctx context.Context) error {
+			_, err := v.Echo(ctx, "sub 1: "+time.Now().String())
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := dag.Status("sub status").Run(ctx, func(ctx context.Context) error {
+			_, err := v.Echo(ctx, "sub 2: "+time.Now().String())
+			return err
+		}); err != nil {
+			return err
+		}
+		return dag.Status("another sub status").Run(ctx, func(ctx context.Context) error {
+			return dag.Status("sub status").Run(ctx, func(ctx context.Context) error {
+				if fail {
+					return errors.New("oh no")
+				} else {
+					_, err := v.Echo(ctx, "im even deeper: "+time.Now().String())
+					return err
+				}
+			})
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
+}
+
+func (*Viztest) ManyStatuses(
 	ctx context.Context,
 	n int,
 	// +default=0
 	delayMs int,
 ) {
 	for i := 1; i <= n; i++ {
-		_, span := Tracer().Start(ctx, fmt.Sprintf("span %d", i))
+		ctx, status := dag.Status(fmt.Sprintf("status %d", i)).Context(ctx)
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
-		span.End()
+		status.End(ctx)
 	}
 }
 
@@ -189,7 +215,7 @@ func (*Viztest) StreamingLogs(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			for i := 0; i < batchSize; i++ {
+			for range batchSize {
 				fmt.Printf("%d: %d\n", lineNo, time.Now().UnixNano())
 				lineNo += 1
 			}
@@ -214,7 +240,7 @@ func (*Viztest) StreamingChunks(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			for i := 0; i < batchSize; i++ {
+			for range batchSize {
 				fmt.Printf("%d: %d; ", lineNo, time.Now().UnixNano())
 				lineNo += 1
 			}
