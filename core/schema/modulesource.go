@@ -148,6 +148,15 @@ func (s *moduleSourceSchema) Install() {
 				dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
 			),
 
+		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
+			Doc(`Set a blueprint for the module source.`).
+			Args(
+				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
+			),
+
+		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
+			Doc(`Remove the current blueprint from the module source.`),
+
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
@@ -444,6 +453,10 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
+		if err := s.loadBlueprintModule(ctx, bk, localSrc); err != nil {
+			return inst, err
+		}
+
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
@@ -605,6 +618,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
+	if err := s.loadBlueprintModule(ctx, bk, gitSrc); err != nil {
+		return inst, err
+	}
+
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -656,6 +673,23 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.ResultWithPostCall(secretTransferPostCall), nil
+}
+
+func (s *moduleSourceSchema) loadBlueprintModule(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource) error {
+	// If we have a blueprint module, load it
+	pcfg := src.ConfigBlueprint
+	if pcfg == nil {
+		return nil
+	}
+	blueprint, err := core.ResolveDepToSource(ctx, bk, s.dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+	if err != nil {
+		return fmt.Errorf("failed to resolve dep to source: %w", err)
+	}
+	src.Blueprint = blueprint
+	return nil
 }
 
 type directoryAsModuleArgs struct {
@@ -783,12 +817,23 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	// blueprint is incompatible with some dagger.json fields
+	if src.Blueprint.Self() != nil {
+		if src.SDK != nil {
+			return fmt.Errorf("blueprint and sdk can't both be set")
+		}
+		if src.Dependencies.Len() != 0 {
+			return fmt.Errorf("blueprint and dependencies can't both be set")
+		}
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+	src.ConfigBlueprint = modCfg.Blueprint
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1334,6 +1379,59 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	return parentSrc, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceWithBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Blueprint core.ModuleSourceID
+	},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+
+	// Validate blueprint compatibility
+	if parentSrc.SDK != nil {
+		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
+	}
+	if parentSrc.Dependencies.Len() > 0 {
+		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
+	}
+
+	// Load blueprint module
+	blueprint, err := args.Blueprint.Load(ctx, s.dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load blueprint: %w", err)
+	}
+
+	parentSrc.Blueprint = blueprint
+
+	// Also set ConfigBlueprint for persistence
+	blueprintSrc := blueprint.Self()
+	configBlueprint := &modules.ModuleConfigDependency{
+		Name:   blueprintSrc.ModuleName,
+		Source: blueprintSrc.AsString(),
+	}
+
+	// Set pin if it's a versioned reference
+	if blueprintSrc.Kind == core.ModuleSourceKindGit {
+		configBlueprint.Pin = blueprintSrc.Git.Pin
+	}
+
+	parentSrc.ConfigBlueprint = configBlueprint
+
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct{},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+	parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
+	parentSrc.ConfigBlueprint = nil
+	return parentSrc, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -1590,6 +1688,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			Source: src.SDK.Source,
 			Config: src.SDK.Config,
 		}
+	}
+
+	// Copy blueprint configuration if present
+	if src.ConfigBlueprint != nil {
+		modCfg.Blueprint = src.ConfigBlueprint
 	}
 
 	// Check version compatibility.
@@ -2134,13 +2237,23 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	// Handle blueprint context separation
+	originalSrc := src
+	blueprintSrc := src.Self().Blueprint
+
+	if blueprintSrc.Self() != nil {
+		src = blueprintSrc
+	}
+
 	sdk := src.Self().SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}
 	}
 
+	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source: src,
+		Source:        src,
+		ContextSource: originalSrc,
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,
@@ -2199,6 +2312,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
+	// FIXME: If using a blueprint, restore target context and name for file operations
+	if blueprintSrc.Self() != nil {
+		// Show the downstream module name to clients, not the blueprint name
+		// NOTE: we don't change OriginalName, that's used internally at runtime
+		mod.NameField = originalSrc.Self().ModuleName
+	}
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)

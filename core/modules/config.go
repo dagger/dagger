@@ -56,6 +56,9 @@ type ModuleConfig struct {
 	// The SDK this module uses
 	SDK *SDK `json:"sdk,omitempty"`
 
+	// An optional blueprint module
+	Blueprint *ModuleConfigDependency `json:"blueprint,omitempty"`
+
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 
