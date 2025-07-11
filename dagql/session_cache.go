@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
@@ -21,6 +22,10 @@ type SessionCache struct {
 
 	results []cache.Result[CacheKeyType, CacheValueType]
 	mu      sync.Mutex
+
+	// isClosed is set to true when ReleaseAndClose is called.
+	// Any in-progress results will be released and errors returned.
+	isClosed bool
 
 	seenKeys sync.Map
 }
@@ -110,6 +115,15 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	fn func(context.Context) (*CacheValWithCallbacks, error),
 	opts ...CacheCallOpt,
 ) (res CacheResult, err error) {
+	// do a quick check to see if the cache is closed; we do another check
+	// at the end in case the cache is closed while we're waiting for the call
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
+	}
+	c.mu.Unlock()
+
 	var o CacheCallOpts
 	for _, opt := range opts {
 		opt.SetCacheCallOpt(&o)
@@ -145,18 +159,29 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	if err != nil {
 		return nil, err
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// if the session cache is closed, ensure we release the result so it doesn't leak
+	if c.isClosed {
+		err := fmt.Errorf("session cache is closed")
+		err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		return nil, err
+	}
+
 	if !isZero {
-		c.mu.Lock()
 		c.results = append(c.results, res)
-		c.mu.Unlock()
 	}
 
 	return res, nil
 }
 
-func (c *SessionCache) ReleaseAll(ctx context.Context) error {
+func (c *SessionCache) ReleaseAndClose(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	c.isClosed = true
 
 	var rerr error
 	for _, res := range c.results {
