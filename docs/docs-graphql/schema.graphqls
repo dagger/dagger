@@ -2552,6 +2552,9 @@ type GitRepository {
   """A unique identifier for this GitRepository."""
   id: GitRepositoryID!
 
+  """Returns details for the latest semver tag."""
+  latestVersion: GitRef!
+
   """Returns details of a ref."""
   ref(
     """
