@@ -22,6 +22,9 @@ type Module struct {
 	// The source of the module
 	Source dagql.ObjectResult[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
 
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints
+	ContextSource dagql.ObjectResult[*ModuleSource]
+
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 

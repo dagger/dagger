@@ -2241,13 +2241,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	var blueprintSrc dagql.ObjectResult[*core.ModuleSource]
 	var targetName string
 	var targetOriginalName string
-	var targetContextDir dagql.ObjectResult[*core.Directory]
+	originalSrc := src
 
 	if src.Self().Blueprint.Self() != nil {
 		// Store target module information
 		targetName = src.Self().ModuleName
 		targetOriginalName = src.Self().ModuleOriginalName
-		targetContextDir = src.Self().ContextDirectory
 
 		// Use blueprint for SDK operations
 		blueprintSrc = src.Self().Blueprint
@@ -2261,7 +2260,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source: src,
+		Source:        src,
+		ContextSource: originalSrc,
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,
@@ -2322,7 +2322,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// If using a blueprint, restore target context and name for file operations
 	if blueprintSrc.Self() != nil {
-		mod.Source.Self().ContextDirectory = targetContextDir
 		mod.NameField = targetName
 		mod.OriginalName = targetOriginalName
 		// Use the target's module name for the final result
