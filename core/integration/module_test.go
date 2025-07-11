@@ -5768,6 +5768,60 @@ func (m *Test) ReadFile(
 	})
 }
 
+func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	moduleSrc := `package main
+
+import (
+  "context"
+)
+
+type Test struct{}
+
+func (m *Test) RunNoisy(ctx context.Context) error {
+	_, err := dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"sh", "-c", ` + "`" + `
+			for i in $(seq 100); do
+				for j in $(seq 1024); do
+					echo -n x
+					echo -n y >/dev/stderr
+				done
+				echo
+			done
+			exit 42
+		` + "`" + `}).
+		Sync(ctx)
+	return err
+}
+`
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+	require.NoError(t, err)
+
+	c := connect(ctx, t)
+
+	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	_, err = testutil.QueryWithClient[struct {
+		Test struct {
+			RunNoisy any
+		}
+	}](c, t, `{test{runNoisy}}`, nil)
+	var execError *dagger.ExecError
+	require.ErrorAs(t, err, &execError)
+
+	// if we get `2` here, that means we're getting the less helpful error:
+	// process "/runtime" did not complete successfully: exit code: 2
+	require.Equal(t, 42, execError.ExitCode)
+	require.Contains(t, execError.Stdout, "xxxxx")
+	require.Contains(t, execError.Stderr, "yyyyy")
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
