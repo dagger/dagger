@@ -3,106 +3,109 @@ package drivers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"os/exec"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/util/traceexec"
+	"github.com/docker/cli/cli/connhelper/commandconn"
 )
 
 func init() {
-	register("apple-image", &imageDriver{apple{"apple"}, nil})
-	register("apple-container", &containerDriver{apple{"apple"}, nil})
+	register("apple-image", &imageDriver{apple{}, nil})
+	register("apple-container", &containerDriver{apple{}, nil})
 }
 
 // apple is an implementation of the containerBackend for any
 // apple-compatible cli.
-type apple struct {
-	cmd string
-}
+type apple struct{}
 
 var _ containerBackend = apple{}
 
-func (d apple) ImagePull(image string) *exec.Cmd {
-	return exec.Command("container", "image", "pull", image)
+func (apple) ImagePull(ctx context.Context, image string) error {
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "pull", image))
 }
 
-func (d apple) ImageLoad(name string, tarball io.Reader) *exec.Cmd {
-	cmd := exec.Command("container", "image", "load")
+func (apple) ImageLoad(ctx context.Context, name string, tarball io.Reader) error {
+	cmd := exec.CommandContext(ctx, "container", "image", "load")
 	cmd.Stdin = tarball
-	return cmd
+	return cmd.Run()
 }
 
-func (d apple) ImageInspect(image string) *exec.Cmd {
-	return exec.Command("container", "image", "inspect", image)
+func (apple) ImageExists(ctx context.Context, image string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "container", "image", "inspect", image)
+	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
+	return err == nil, nil
 }
 
-func (d apple) ImageTag(dest string, src string) *exec.Cmd {
-	return exec.Command("container", "image", "tag", src, dest)
+func (apple) ImageTag(ctx context.Context, dest string, src string) error {
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "tag", src, dest))
 }
 
-func (d apple) ContainerRun(name string, opts runOpts) *exec.Cmd {
+func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error {
 	// TODO: set resources for the engine with --cpus and --memory
 	args := []string{"run", "--name", name, "-d"}
 	for _, volume := range opts.volumes {
-		if strings.Contains(volume, ":") {
-			args = append(args, "-v", volume)
+		if !strings.Contains(volume, ":") {
+			// skip anonymous volumes, container doesn't support them
+			continue
 		}
+		args = append(args, "-v", volume)
 	}
 	for _, env := range opts.env {
 		args = append(args, "-e", env)
 	}
-	for _, _ = range opts.ports {
-		panic("oh shit theres a port!!")
-		// args = append(args, "-p", port)
+	for _, port := range opts.ports {
+		return fmt.Errorf("unsupported port argument %q", port)
 	}
-	// if opts.privileged {
-	// 	args = append(args, "--privileged")
-	// }
-	// if opts.gpus {
-	// 	args = append(args, "--gpus", "all")
-	// }
 
 	args = append(args, opts.image)
 	args = append(args, opts.args...)
-	return exec.Command("container", args...)
+
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", args...))
 }
 
-func (d apple) ContainerExec(name string, args []string) *exec.Cmd {
+func (apple) ContainerDial(ctx context.Context, name string, args []string) (net.Conn, error) {
 	cmdArgs := append([]string{"exec", "-i", name}, args...)
-	return exec.Command("container", cmdArgs...)
+	return commandconn.New(ctx, "container", cmdArgs...)
 }
 
-func (d apple) ContainerRemove(name string) *exec.Cmd {
-	return exec.Command("container", "rm", "-f", name)
+func (apple) ContainerRemove(ctx context.Context, name string) error {
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "rm", "-f", name))
 }
 
-func (d apple) ContainerStart(name string) *exec.Cmd {
-	return exec.Command("container", "start", name)
+func (apple) ContainerStart(ctx context.Context, name string) error {
+	// XXX: apple container returns 'running' instead of 'created'
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "start", name))
 }
 
-func (d apple) ContainerInspect(name string) *exec.Cmd {
-	return exec.Command("container", "inspect", name)
+func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "container", "inspect", name)
+	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
+	return err == nil, nil
 }
 
-func (d apple) ContainerLs(ctx context.Context) ([]string, error) {
-	cmd := exec.Command("container", "ls", "-a", "--format", "json")
-
-	stdout, err := traceexec.Exec(ctx, cmd)
-	out := strings.TrimSpace(stdout)
+func (apple) ContainerLs(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
+	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
+
 	var result []struct {
 		Configuration struct {
 			ID string `json:"id"`
 		} `json:"configuration"`
 	}
-	err = json.Unmarshal([]byte(out), &result)
+	err = json.Unmarshal([]byte(stdout), &result)
 	if err != nil {
 		return nil, err
 	}
-	ids := []string{}
+
+	var ids []string
 	for _, res := range result {
 		ids = append(ids, res.Configuration.ID)
 	}

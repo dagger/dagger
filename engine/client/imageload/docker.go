@@ -25,8 +25,7 @@ func init() {
 func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
 	// check docker is running
 	cmd := exec.CommandContext(ctx, loader.Cmd, "info")
-	_, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
-	if err != nil {
+	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
 		return nil, err
 	}
 
@@ -41,7 +40,7 @@ func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Re
 
 	cmd := exec.CommandContext(ctx, loader.Cmd, "load")
 	cmd.Stdin = tarball
-	stdout, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
+	stdout, _, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w", err)
 	}
@@ -52,7 +51,7 @@ func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Re
 	}
 	imageID := result[1]
 
-	_, err = traceexec.Exec(ctx, exec.CommandContext(ctx, loader.Cmd, "tag", imageID, name), telemetry.Encapsulated())
+	err = traceexec.Exec(ctx, exec.CommandContext(ctx, loader.Cmd, "tag", imageID, name), telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}

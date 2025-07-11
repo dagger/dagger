@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/adrg/xdg"
-	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"go.opentelemetry.io/otel"
 
@@ -24,34 +22,29 @@ import (
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/traceexec"
 )
 
 var (
 	engineConfigPath = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
 )
 
-// XXX: ensure we remove docker refs
-
 // containerBackend is a generic backend for containers that can be plugged
 // into image/container drivers. This allows us to have all the exact same
 // logic between different container providers, but have different backend
 // commands.
 //
-// TODO: maybe make this more generic, so that we could implement a containerd client on this
-//
 // TODO: write some tests for impls
 type containerBackend interface {
-	ImagePull(image string) *exec.Cmd
-	ImageLoad(name string, tarball io.Reader) *exec.Cmd
-	ImageInspect(image string) *exec.Cmd
-	ImageTag(dest string, src string) *exec.Cmd
+	ImagePull(ctx context.Context, image string) error
+	ImageLoad(ctx context.Context, name string, tarball io.Reader) error
+	ImageExists(ctx context.Context, image string) (bool, error)
+	ImageTag(ctx context.Context, dest string, src string) error
 
-	ContainerRun(name string, opts runOpts) *exec.Cmd
-	ContainerExec(name string, args []string) *exec.Cmd
-	ContainerRemove(name string) *exec.Cmd
-	ContainerStart(name string) *exec.Cmd
-	ContainerInspect(image string) *exec.Cmd
+	ContainerRun(ctx context.Context, name string, opts runOpts) error
+	ContainerDial(ctx context.Context, name string, args []string) (net.Conn, error)
+	ContainerRemove(ctx context.Context, name string) error
+	ContainerStart(ctx context.Context, name string) error
+	ContainerExists(ctx context.Context, name string) (bool, error)
 	ContainerLs(ctx context.Context) ([]string, error)
 }
 
@@ -117,18 +110,15 @@ func (d *containerDriver) ImageLoader() imageload.Backend {
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
-	ctxFlags := []string{}
+	args := []string{}
 	if context := d.target.Query().Get("context"); context != "" {
-		ctxFlags = append(ctxFlags, "--context="+context)
+		args = append(args, "--context="+context)
 	}
-
-	args := append(ctxFlags, "buildctl", "dial-stdio")
-	cmd := d.backend.ContainerExec(d.target.Hostname(), args)
-	cmd.Env = os.Environ()
+	args = append(args, "buildctl", "dial-stdio")
 
 	// using uncancelled context because context remains active for the
 	// duration of the process, after dial has completed
-	return commandconn.New(context.WithoutCancel(ctx), cmd.Path, cmd.Args[1:]...)
+	return d.backend.ContainerDial(context.WithoutCancel(ctx), d.target.Hostname(), args)
 }
 
 const (
@@ -170,13 +160,12 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
-			cmd := d.backend.ContainerStart(leftoverEngine)
-			if _, err := traceexec.Exec(ctx, cmd); err != nil {
-				// TODO: apple container returns 'running' instead of 'created'
-				// return nil, fmt.Errorf("failed to start container %s: %w", output, err)
+			if err := d.backend.ContainerStart(ctx, leftoverEngine); err != nil {
+				return nil, fmt.Errorf("failed to start container: %w", err)
 			}
 			d.garbageCollectEngines(ctx, cleanup, slices.Delete(leftoverEngines, i, i+1))
 			return &url.URL{
+				// XXX: should not be docker here
 				Scheme: "docker-container",
 				Host:   containerName,
 			}, nil
@@ -184,11 +173,12 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 	}
 
 	// ensure the image is pulled
-	if _, err := traceexec.Exec(ctx, d.backend.ImageInspect(imageRef), telemetry.Encapsulated()); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, fmt.Errorf("failed to inspect image: %w", err)
-		}
-		if _, err := traceexec.Exec(ctx, d.backend.ImagePull(imageRef)); err != nil {
+	exists, err := d.backend.ImageExists(ctx, imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect image: %w", err)
+	}
+	if !exists {
+		if err := d.backend.ImagePull(ctx, imageRef); err != nil {
 			return nil, fmt.Errorf("failed to pull image: %w", err)
 		}
 	}
@@ -225,13 +215,10 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 		runOptions.args = append(runOptions.args, "--addr", fmt.Sprintf("tcp://0.0.0.0:%d", port))
 	}
 
-	cmd := d.backend.ContainerRun(containerName, runOptions)
-	cmd.Env = os.Environ()
-
-	if output, err := traceexec.Exec(ctx, cmd); err != nil {
+	if err := d.backend.ContainerRun(ctx, containerName, runOptions); err != nil {
 		// maybe someone else started the container simultaneously?
-		if _, err2 := traceexec.Exec(ctx, d.backend.ContainerInspect(containerName), telemetry.Encapsulated()); err2 != nil {
-			return nil, fmt.Errorf("failed to run container %s: %w", output, err)
+		if exists, _ := d.backend.ContainerExists(ctx, containerName); exists {
+			return nil, fmt.Errorf("failed to run container: %w", err)
 		}
 	}
 
@@ -241,6 +228,7 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 	d.garbageCollectEngines(ctx, cleanup, leftoverEngines)
 
 	return &url.URL{
+		// XXX: should not be docker here
 		Scheme: "docker-container",
 		Host:   containerName,
 	}, nil
@@ -254,8 +242,7 @@ func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, e
 		if engine == "" {
 			continue
 		}
-		cmd := d.backend.ContainerRemove(engine)
-		if _, err := traceexec.Exec(ctx, cmd); err != nil {
+		if err := d.backend.ContainerRemove(ctx, engine); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -275,7 +262,7 @@ func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalName
 			filteredEngines = append(filteredEngines, name)
 		}
 	}
-	return engines, nil
+	return filteredEngines, nil
 }
 
 func resolveImageID(imageRef string) (string, error) {
