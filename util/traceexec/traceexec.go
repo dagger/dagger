@@ -20,7 +20,7 @@ func Exec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption) (ou
 	defer stdio.Close()
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
-	cmd.Stderr = io.MultiWriter(stdio.Stderr, outBuf)
+	cmd.Stderr = stdio.Stderr
 
 	err := cmd.Run()
 	out = strings.TrimSpace(outBuf.String())

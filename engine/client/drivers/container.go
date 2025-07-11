@@ -52,7 +52,7 @@ type containerBackend interface {
 	ContainerRemove(name string) *exec.Cmd
 	ContainerStart(name string) *exec.Cmd
 	ContainerInspect(image string) *exec.Cmd
-	ContainerLs() *exec.Cmd
+	ContainerLs(ctx context.Context) ([]string, error)
 }
 
 type runOpts struct {
@@ -171,8 +171,9 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
 			cmd := d.backend.ContainerStart(leftoverEngine)
-			if output, err := traceexec.Exec(ctx, cmd); err != nil {
-				return nil, fmt.Errorf("failed to start container %s: %w", output, err)
+			if _, err := traceexec.Exec(ctx, cmd); err != nil {
+				// TODO: apple container returns 'running' instead of 'created'
+				// return nil, fmt.Errorf("failed to start container %s: %w", output, err)
 			}
 			d.garbageCollectEngines(ctx, cleanup, slices.Delete(leftoverEngines, i, i+1))
 			return &url.URL{
@@ -263,18 +264,15 @@ func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, e
 }
 
 func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]string, error) {
-	output, err := traceexec.Exec(ctx, d.backend.ContainerLs())
+	engines, err := d.backend.ContainerLs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list containers %s: %w", output, err)
-	}
-	if len(output) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("failed to list containers %s: %w", engines, err)
 	}
 
-	var engines []string
-	for name := range strings.Lines(output) {
+	var filteredEngines []string
+	for _, name := range engines {
 		if strings.HasPrefix(name, containerNamePrefix) || slices.Contains(additionalNames, name) {
-			engines = append(engines, name)
+			filteredEngines = append(filteredEngines, name)
 		}
 	}
 	return engines, nil
