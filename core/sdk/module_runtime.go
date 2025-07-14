@@ -21,12 +21,23 @@ func (sdk *runtimeModule) Runtime(
 ) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dagqlCache, err := query.Cache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dag := sdk.mod.dag.WithCache(dagqlCache)
+
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst,
+	err = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
 			Args: []dagql.NamedInput{

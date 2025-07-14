@@ -18,7 +18,7 @@ type module struct {
 	sdk dagql.AnyObjectResult
 
 	// A server that the SDK module has been installed to.
-	dag *dagql.Server
+	dag *dagql.ServerSchema
 
 	funcs map[string]*core.Function
 }
@@ -30,21 +30,10 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	// TODO: THIS WILL LEAK IF NEVER RELEASED
-	// TODO: THIS WILL LEAK IF NEVER RELEASED
-	// TODO: THIS WILL LEAK IF NEVER RELEASED
-	// TODO: THIS WILL LEAK IF NEVER RELEASED
-	/*
-		dagqlCache, err := root.Cache(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
-		}
-	*/
-	parentDag, err := root.Server.Server(ctx)
+	dagqlCache, err := root.Cache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
-	dagqlCache := dagql.NewSessionCache(parentDag.Cache.BaseCache())
 	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 
@@ -81,7 +70,7 @@ func newModuleSDK(
 
 	return (&module{
 		mod:   sdkModMeta,
-		dag:   dag,
+		dag:   dag.AsSchema(),
 		sdk:   sdk,
 		funcs: listImplementedFunctions(sdkModMeta.Self()),
 	}).withConfig(ctx, rawConfig)
@@ -112,7 +101,7 @@ func (sdk *module) withConfig(
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.dag.View)
+	inputs := fieldspec.Args.Inputs(sdk.dag.View())
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}
@@ -152,8 +141,18 @@ func (sdk *module) withConfig(
 		})
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dagqlCache, err := query.Cache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dag := sdk.dag.WithCache(dagqlCache)
+
 	var sdkwithconfig dagql.AnyObjectResult
-	err = sdk.dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
+	err = dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
 		{
 			Field: "withConfig",
 			Args:  args,

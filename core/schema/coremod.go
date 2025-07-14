@@ -408,14 +408,15 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, err
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO: not efficient/correct
-	c := dagql.NewSessionCache(obj.coreMod.Dag.Cache.BaseCache())
-	x := *obj.coreMod.Dag
-	dag := &x
-	dag.Cache = c
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get current query: %w", err)
+	}
+	c, err := query.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get query cache: %w", err)
+	}
+	dag := obj.coreMod.Dag.WithCache(c)
 
 	val, err := dag.Load(ctx, &idp)
 	if err != nil {
