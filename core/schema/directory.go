@@ -155,7 +155,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
 			),
-		dagql.Func("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", DagOpDirectoryWrapper(srv, s.withTimestamps, WithPathFn(keepParentDir[dirWithTimestampsArgs]))).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
@@ -279,10 +279,20 @@ func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, ar
 
 type dirWithTimestampsArgs struct {
 	Timestamp int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
-	return parent.WithTimestamps(ctx, args.Timestamp)
+func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirWithTimestampsArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {

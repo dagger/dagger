@@ -867,28 +867,19 @@ func mergeStates(input mergeStateInput) llb.State {
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	t := time.Unix(int64(unix), 0)
-	st = llb.Scratch().File(
-		llb.Copy(st, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-			CreatedTime:         &t,
-		}),
-	)
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	dir.Dir = ""
-
-	return dir, nil
+	return execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			modTime := time.Unix(int64(unix), 0)
+			return os.Chtimes(path, modTime, modTime)
+		})
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (*Directory, error) {
