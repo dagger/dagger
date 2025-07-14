@@ -15,6 +15,7 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -423,6 +424,89 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		return nil, err
 	}
 
+	return dir, nil
+}
+
+func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
+	err := validateFileName(dest)
+	if err != nil {
+		return nil, err
+	}
+
+	if permissions == 0 {
+		permissions = 0o644
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content))))))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+		if err != nil {
+			return err
+		}
+		destPathDir, _ := filepath.Split(resolvedDest)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if dst != nil {
+				_ = dst.Close()
+			}
+		}()
+
+		_, err = dst.Write(content)
+		if err != nil {
+			return err
+		}
+
+		err = dst.Close()
+		if err != nil {
+			return err
+		}
+		dst = nil
+
+		if ownership != nil {
+			err = os.Chown(resolvedDest, ownership.UID, ownership.GID)
+			if err != nil {
+				return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 

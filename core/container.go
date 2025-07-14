@@ -741,7 +741,7 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 			return nil, err
 		}
 
-		return dir.WithNewFile(ctx, file, content, permissions, ownership)
+		return dir.WithNewFileDagOp(ctx, file, content, permissions, ownership)
 	})
 }
 
