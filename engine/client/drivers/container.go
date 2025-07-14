@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -36,11 +35,12 @@ var (
 // TODO: write some tests for impls
 type containerBackend interface {
 	ImagePull(ctx context.Context, image string) error
-	ImageLoad(ctx context.Context, name string, tarball io.Reader) error
 	ImageExists(ctx context.Context, image string) (bool, error)
-	ImageTag(ctx context.Context, dest string, src string) error
+	ImageRemove(ctx context.Context, image string) error
+	ImageLoader(ctx context.Context) imageload.Backend
 
 	ContainerRun(ctx context.Context, name string, opts runOpts) error
+	ContainerExec(ctx context.Context, name string, args []string) (string, string, error)
 	ContainerDial(ctx context.Context, name string, args []string) (net.Conn, error)
 	ContainerRemove(ctx context.Context, name string) error
 	ContainerStart(ctx context.Context, name string) error
@@ -51,11 +51,15 @@ type containerBackend interface {
 type runOpts struct {
 	image string
 
-	volumes    []string
-	env        []string
-	ports      []string
-	gpus       bool
+	volumes []string
+	env     []string
+	ports   []string
+
 	privileged bool
+
+	cpus   string
+	memory string
+	gpus   bool
 
 	args []string
 }
@@ -63,7 +67,6 @@ type runOpts struct {
 // imageDriver creates and manages a container, then connects to it
 type imageDriver struct {
 	backend containerBackend
-	loader  imageload.Backend
 }
 
 func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
@@ -75,50 +78,63 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 		cleanup, _ = strconv.ParseBool(val)
 	}
 
-	containerName := target.Query().Get("container")
-	volumeName := target.Query().Get("volume")
 	port, _ := strconv.Atoi(target.Query().Get("port"))
-
-	target, err := d.create(ctx, target.Host+target.Path, containerName, volumeName, cleanup, port, opts)
+	target, err := d.create(ctx, containerCreateOpts{
+		imageRef:      target.Host + target.Path,
+		containerName: target.Query().Get("container"),
+		volumeName:    target.Query().Get("volume"),
+		cleanup:       cleanup,
+		port:          port,
+		cpus:          target.Query().Get("cpus"),
+		memory:        target.Query().Get("memory"),
+	}, opts)
 	if err != nil {
 		return nil, err
 	}
-	return containerConnector{target: target, backend: d.backend}, nil
+	return containerConnector{
+		backend: d.backend,
+		host:    target.Host,
+		values:  target.Query(),
+	}, nil
 }
 
-func (d *imageDriver) ImageLoader() imageload.Backend {
-	return d.loader
+func (d *imageDriver) ImageLoader(ctx context.Context) imageload.Backend {
+	return d.backend.ImageLoader(ctx)
 }
 
 type containerConnector struct {
-	target  *url.URL
+	host    string
+	values  url.Values
 	backend containerBackend
 }
 
 // imageDriver connects to a container directly
 type containerDriver struct {
 	backend containerBackend
-	loader  imageload.Backend
 }
 
 func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
-	return containerConnector{target: target, backend: d.backend}, nil
+	return containerConnector{
+		backend: d.backend,
+		host:    target.Host,
+		values:  target.Query(),
+	}, nil
 }
 
-func (d *containerDriver) ImageLoader() imageload.Backend {
-	return d.loader
+func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
+	return d.backend.ImageLoader(ctx)
 }
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 	args := []string{}
-	if context := d.target.Query().Get("context"); context != "" {
+	if context := d.values.Get("context"); context != "" {
 		args = append(args, "--context="+context)
 	}
 	args = append(args, "buildctl", "dial-stdio")
 
 	// using uncancelled context because context remains active for the
 	// duration of the process, after dial has completed
-	return d.backend.ContainerDial(context.WithoutCancel(ctx), d.target.Hostname(), args)
+	return d.backend.ContainerDial(context.WithoutCancel(ctx), d.host, args)
 }
 
 const (
@@ -129,18 +145,33 @@ const (
 
 const InstrumentationLibrary = "dagger.io/client.drivers"
 
+type containerCreateOpts struct {
+	imageRef string
+
+	containerName string
+	volumeName    string
+
+	cleanup bool
+
+	port int
+
+	cpus   string
+	memory string
+}
+
 // Pull the image and run it with a unique name tied to the pinned
 // sha of the image. Remove any other containers leftover from
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func (d *imageDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, port int, opts *DriverOpts) (target *url.URL, rerr error) {
+func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create")
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
+	containerName := opts.containerName
 	if containerName == "" {
-		id, err := resolveImageID(imageRef)
+		id, err := resolveImageID(opts.imageRef)
 		if err != nil {
 			return nil, err
 		}
@@ -163,36 +194,34 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 			if err := d.backend.ContainerStart(ctx, leftoverEngine); err != nil {
 				return nil, fmt.Errorf("failed to start container: %w", err)
 			}
-			d.garbageCollectEngines(ctx, cleanup, slices.Delete(leftoverEngines, i, i+1))
-			return &url.URL{
-				// XXX: should not be docker here
-				Scheme: "docker-container",
-				Host:   containerName,
-			}, nil
+			d.garbageCollectEngines(ctx, opts.cleanup, slices.Delete(leftoverEngines, i, i+1))
+			return &url.URL{Host: containerName}, nil
 		}
 	}
 
 	// ensure the image is pulled
-	exists, err := d.backend.ImageExists(ctx, imageRef)
+	exists, err := d.backend.ImageExists(ctx, opts.imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
 	if !exists {
-		if err := d.backend.ImagePull(ctx, imageRef); err != nil {
+		if err := d.backend.ImagePull(ctx, opts.imageRef); err != nil {
 			return nil, fmt.Errorf("failed to pull image: %w", err)
 		}
 	}
 
 	volume := distconsts.EngineDefaultStateDir
-	if volumeName != "" {
-		volume = volumeName + ":" + volume
+	if opts.volumeName != "" {
+		volume = opts.volumeName + ":" + volume
 	}
 
 	runOptions := runOpts{
-		image:      imageRef,
+		image:      opts.imageRef,
 		volumes:    []string{volume},
 		privileged: true,
 		args:       []string{"--debug"},
+		cpus:       opts.cpus,
+		memory:     opts.memory,
 	}
 
 	// mount the config path
@@ -202,17 +231,16 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 		slog.Warn("could not stat config", "path", engineConfigPath, "error", err)
 	}
 
-	// XXX: keep all these secrets? modify the args.
-	if opts.DaggerCloudToken != "" {
-		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
+	if dopts.DaggerCloudToken != "" {
+		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, dopts.DaggerCloudToken))
 	}
-	if opts.GPUSupport != "" {
+	if dopts.GPUSupport != "" {
 		runOptions.gpus = true
-		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvGPUSupport, opts.GPUSupport))
+		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvGPUSupport, dopts.GPUSupport))
 	}
-	if port != 0 {
-		runOptions.ports = append(runOptions.ports, fmt.Sprintf("%d:%d", port, port))
-		runOptions.args = append(runOptions.args, "--addr", fmt.Sprintf("tcp://0.0.0.0:%d", port))
+	if opts.port != 0 {
+		runOptions.ports = append(runOptions.ports, fmt.Sprintf("%d:%d", opts.port, opts.port))
+		runOptions.args = append(runOptions.args, "--addr", fmt.Sprintf("tcp://0.0.0.0:%d", opts.port))
 	}
 
 	if err := d.backend.ContainerRun(ctx, containerName, runOptions); err != nil {
@@ -225,13 +253,9 @@ func (d *imageDriver) create(ctx context.Context, imageRef string, containerName
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	d.garbageCollectEngines(ctx, cleanup, leftoverEngines)
+	d.garbageCollectEngines(ctx, opts.cleanup, leftoverEngines)
 
-	return &url.URL{
-		// XXX: should not be docker here
-		Scheme: "docker-container",
-		Host:   containerName,
-	}, nil
+	return &url.URL{Host: containerName}, nil
 }
 
 func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, engines []string) {

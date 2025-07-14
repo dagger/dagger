@@ -80,7 +80,7 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 	return d.create(ctx, client)
 }
 
-func (d *daggerCloudDriver) ImageLoader() imageload.Backend {
+func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
 	return nil
 }
 

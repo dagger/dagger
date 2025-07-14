@@ -2,8 +2,8 @@ package drivers
 
 import (
 	"context"
-	"io"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -14,16 +14,16 @@ import (
 )
 
 func init() {
-	register("docker-image", &imageDriver{docker{cmd: "docker"}, imageload.Docker{Cmd: "docker"}})
-	register("docker-container", &containerDriver{docker{cmd: "docker"}, imageload.Docker{Cmd: "docker"}})
+	register("docker-image", &imageDriver{docker{cmd: "docker"}})
+	register("docker-container", &containerDriver{docker{cmd: "docker"}})
 
-	register("nerdctl-image", &imageDriver{docker{cmd: "nerdctl"}, imageload.Docker{Cmd: "nerdctl"}})
-	register("nerdctl-container", &containerDriver{docker{cmd: "nerdctl"}, imageload.Docker{Cmd: "nerdctl"}})
-	register("finch-image", &imageDriver{docker{cmd: "finch"}, imageload.Docker{Cmd: "finch"}})
-	register("finch-container", &containerDriver{docker{cmd: "finch"}, imageload.Docker{Cmd: "finch"}})
+	register("nerdctl-image", &imageDriver{docker{cmd: "nerdctl"}})
+	register("nerdctl-container", &containerDriver{docker{cmd: "nerdctl"}})
+	register("finch-image", &imageDriver{docker{cmd: "finch"}})
+	register("finch-container", &containerDriver{docker{cmd: "finch"}})
 
-	register("podman-image", &imageDriver{docker{cmd: "podman"}, imageload.Docker{Cmd: "podman"}})
-	register("podman-container", &containerDriver{docker{cmd: "podman"}, imageload.Docker{Cmd: "podman"}})
+	register("podman-image", &imageDriver{docker{cmd: "podman"}})
+	register("podman-container", &containerDriver{docker{cmd: "podman"}})
 }
 
 // docker is an implementation of the containerBackend for any
@@ -38,26 +38,26 @@ func (d docker) ImagePull(ctx context.Context, image string) error {
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, d.cmd, "pull", image))
 }
 
-func (d docker) ImageLoad(ctx context.Context, name string, tarball io.Reader) error {
-	cmd := exec.CommandContext(ctx, d.cmd, "load")
-	cmd.Stdin = tarball
-	return traceexec.Exec(ctx, cmd)
-}
-
 func (d docker) ImageExists(ctx context.Context, image string) (bool, error) {
 	cmd := exec.CommandContext(ctx, d.cmd, "image", "inspect", image, "--format", "{{ .ID }}")
-	stdout, _, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
+	_, stderr, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
 	if err == nil {
 		return true, nil
 	}
-	if stdout == "[]" {
+
+	stderr = strings.ToLower(stderr)
+	if strings.Contains(stderr, "no such image") || strings.Contains(stderr, "image not known") {
 		return false, nil
 	}
 	return false, err
 }
 
-func (d docker) ImageTag(ctx context.Context, dest string, src string) error {
-	return traceexec.Exec(ctx, exec.CommandContext(ctx, d.cmd, "tag", src, dest))
+func (d docker) ImageRemove(ctx context.Context, image string) error {
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, d.cmd, "image", "rm", image))
+}
+
+func (d docker) ImageLoader(ctx context.Context) imageload.Backend {
+	return imageload.Docker{Cmd: d.cmd}
 }
 
 func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) error {
@@ -65,14 +65,30 @@ func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) err
 	for _, volume := range opts.volumes {
 		args = append(args, "-v", volume)
 	}
+
+	envs := os.Environ()
+
 	for _, env := range opts.env {
-		args = append(args, "-e", env)
+		k, _, ok := strings.Cut(env, "=")
+		if ok {
+			args = append(args, "-e", k)
+			envs = append(envs, env)
+		} else {
+			args = append(args, "-e", env)
+		}
 	}
 	for _, port := range opts.ports {
 		args = append(args, "-p", port)
 	}
 	if opts.privileged {
 		args = append(args, "--privileged")
+	}
+
+	if opts.cpus != "" {
+		args = append(args, "--cpus", opts.cpus)
+	}
+	if opts.memory != "" {
+		args = append(args, "--memory", opts.memory)
 	}
 	if opts.gpus {
 		args = append(args, "--gpus", "all")
@@ -81,7 +97,14 @@ func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) err
 	args = append(args, opts.image)
 	args = append(args, opts.args...)
 
-	return traceexec.Exec(ctx, exec.CommandContext(ctx, d.cmd, args...))
+	cmd := exec.CommandContext(ctx, d.cmd, args...)
+	cmd.Env = envs
+	return traceexec.Exec(ctx, cmd)
+}
+
+func (d docker) ContainerExec(ctx context.Context, name string, args []string) (string, string, error) {
+	cmdArgs := append([]string{"exec", name}, args...)
+	return traceexec.ExecOutput(ctx, exec.CommandContext(ctx, d.cmd, cmdArgs...))
 }
 
 func (d docker) ContainerDial(ctx context.Context, name string, args []string) (net.Conn, error) {

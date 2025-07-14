@@ -16,7 +16,7 @@ type Driver interface {
 
 	// ImageLoader returns an optional associated image loader - not all
 	// drivers will have this!
-	ImageLoader() imageload.Backend
+	ImageLoader(ctx context.Context) imageload.Backend
 }
 
 type Connector interface {

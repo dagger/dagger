@@ -4,23 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/util/traceexec"
 	"github.com/docker/cli/cli/connhelper/commandconn"
 )
 
 func init() {
-	register("apple-image", &imageDriver{apple{}, nil})
-	register("apple-container", &containerDriver{apple{}, nil})
+	register("apple-image", &imageDriver{apple{}})
+	register("apple-container", &containerDriver{apple{}})
 }
 
-// apple is an implementation of the containerBackend for any
-// apple-compatible cli.
 type apple struct{}
 
 var _ containerBackend = apple{}
@@ -29,25 +28,25 @@ func (apple) ImagePull(ctx context.Context, image string) error {
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "pull", image))
 }
 
-func (apple) ImageLoad(ctx context.Context, name string, tarball io.Reader) error {
-	cmd := exec.CommandContext(ctx, "container", "image", "load")
-	cmd.Stdin = tarball
-	return cmd.Run()
-}
-
 func (apple) ImageExists(ctx context.Context, image string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "container", "image", "inspect", image)
 	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
 	return err == nil, nil
 }
 
-func (apple) ImageTag(ctx context.Context, dest string, src string) error {
-	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "tag", src, dest))
+func (apple) ImageRemove(ctx context.Context, image string) error {
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "rm", image))
+}
+
+func (apple) ImageLoader(ctx context.Context) imageload.Backend {
+	return imageload.Apple{}
 }
 
 func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error {
-	// TODO: set resources for the engine with --cpus and --memory
 	args := []string{"run", "--name", name, "-d"}
+
+	envs := os.Environ()
+
 	for _, volume := range opts.volumes {
 		if !strings.Contains(volume, ":") {
 			// skip anonymous volumes, container doesn't support them
@@ -56,16 +55,42 @@ func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error 
 		args = append(args, "-v", volume)
 	}
 	for _, env := range opts.env {
-		args = append(args, "-e", env)
+		k, _, ok := strings.Cut(env, "=")
+		if ok {
+			args = append(args, "-e", k)
+			envs = append(envs, env)
+		} else {
+			args = append(args, "-e", env)
+		}
 	}
 	for _, port := range opts.ports {
 		return fmt.Errorf("unsupported port argument %q", port)
 	}
 
+	if opts.cpus != "" {
+		args = append(args, "--cpus", opts.cpus)
+	} else {
+		// default is 2 CPUs, not generally enough for the engine
+		args = append(args, "--cpus", "4")
+	}
+	if opts.memory != "" {
+		args = append(args, "--memory", opts.memory)
+	} else {
+		// default is 2 G, *definitely* not enough for the engine
+		args = append(args, "--memory", "8G")
+	}
+
 	args = append(args, opts.image)
 	args = append(args, opts.args...)
 
-	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", args...))
+	cmd := exec.CommandContext(ctx, "container", args...)
+	cmd.Env = envs
+	return traceexec.Exec(ctx, cmd)
+}
+
+func (apple) ContainerExec(ctx context.Context, name string, args []string) (string, string, error) {
+	cmdArgs := append([]string{"exec", name}, args...)
+	return traceexec.ExecOutput(ctx, exec.CommandContext(ctx, "container", cmdArgs...))
 }
 
 func (apple) ContainerDial(ctx context.Context, name string, args []string) (net.Conn, error) {
@@ -78,8 +103,14 @@ func (apple) ContainerRemove(ctx context.Context, name string) error {
 }
 
 func (apple) ContainerStart(ctx context.Context, name string) error {
-	// XXX: apple container returns 'running' instead of 'created'
-	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "start", name))
+	_, stderr, err := traceexec.ExecOutput(ctx, exec.CommandContext(ctx, "container", "start", name))
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(stderr, "running") { // already running
+		return nil
+	}
+	return err
 }
 
 func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {

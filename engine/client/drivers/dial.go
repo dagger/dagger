@@ -30,7 +30,7 @@ func (d *dialDriver) Provision(ctx context.Context, target *url.URL, _ *DriverOp
 	return dialConnector{dialDriver: d, target: target}, nil
 }
 
-func (d *dialDriver) ImageLoader() imageload.Backend {
+func (d *dialDriver) ImageLoader(ctx context.Context) imageload.Backend {
 	return d.loader
 }
 

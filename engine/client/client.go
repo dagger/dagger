@@ -291,7 +291,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}
 
 	if c.ImageLoader == nil {
-		loaderBackend := driver.ImageLoader()
+		loaderBackend := driver.ImageLoader(ctx)
 		if loaderBackend != nil {
 			c.ImageLoader, err = loaderBackend.Loader(ctx)
 			if err != nil {

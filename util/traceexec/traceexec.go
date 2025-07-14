@@ -26,13 +26,13 @@ func ExecOutput(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOptio
 	outBuf := new(bytes.Buffer)
 	errBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
-	cmd.Stderr = io.MultiWriter(stdio.Stdout, errBuf)
+	cmd.Stderr = io.MultiWriter(stdio.Stderr, errBuf)
 
 	err := cmd.Run()
 	stdout = strings.TrimSpace(outBuf.String())
 	stderr = strings.TrimSpace(errBuf.String())
 	if err != nil {
-		return stdout, stderr, fmt.Errorf("failed to run command: %w", err)
+		return stdout, stderr, fmt.Errorf("failed to run command %s: %w", cmd.Args, err)
 	}
 	return stdout, stderr, nil
 }
