@@ -25,7 +25,7 @@
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.0",
     "posthog-docusaurus": "^2.0.4",
-    "posthog-js": "^1.256.2",
+    "posthog-js": "^1.257.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
