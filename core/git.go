@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -533,6 +534,26 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return fmt.Errorf("failed to rev-parse: %w", err)
 		} else if strings.TrimSpace(string(res)) == ref.Commit {
 			doFetch = false
+
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				// if shallow, check we have enough depth
+				if depth == 0 {
+					doFetch = true
+				} else {
+					res, err := git.New().Run(ctx, "rev-list", "--count", ref.Commit)
+					if err != nil {
+						return fmt.Errorf("failed to rev-list: %w", err)
+					}
+					res = bytes.TrimSpace(res)
+					count, err := strconv.Atoi(string(res))
+					if err != nil {
+						return fmt.Errorf("failed to parse rev-list output: %w", err)
+					}
+					if count < depth {
+						doFetch = true
+					}
+				}
+			}
 		}
 
 		if doFetch {
@@ -629,11 +650,11 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 		"--force",
 	}
 	if depth == 0 {
-		args = append(args, "--depth="+fmt.Sprint(depth))
-	} else {
 		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 			args = append(args, "--unshallow")
 		}
+	} else {
+		args = append(args, "--depth="+fmt.Sprint(depth))
 	}
 	args = append(args, "origin", refSpec)
 
