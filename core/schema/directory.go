@@ -231,7 +231,16 @@ type WithDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
-	dir, err := args.Directory.Load(ctx, s.srv)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := args.Directory.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -329,16 +338,25 @@ type WithFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	file, err := args.Source.Load(ctx, s.srv)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	dir, err := parent.Self().WithFile(ctx, s.srv, args.Path, file.Self(), args.Permissions, nil)
+	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+
+	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), args.Permissions, nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func keepParentDir[A any](_ context.Context, val *core.Directory, _ A) (string, error) {
@@ -354,20 +372,29 @@ type WithFilesArgs struct {
 }
 
 func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	files := []*core.File{}
 	for _, id := range args.Sources {
-		file, err := id.Load(ctx, s.srv)
+		file, err := id.Load(ctx, srv)
 		if err != nil {
 			return inst, err
 		}
 		files = append(files, file.Self())
 	}
 
-	dir, err := parent.Self().WithFiles(ctx, s.srv, args.Path, files, args.Permissions, nil)
+	dir, err := parent.Self().WithFiles(ctx, srv, args.Path, files, args.Permissions, nil)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutDirectoryArgs struct {
@@ -377,11 +404,20 @@ type withoutDirectoryArgs struct {
 }
 
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dir, err := parent.Self().Without(ctx, s.srv, args.Path)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutFileArgs struct {
@@ -391,11 +427,20 @@ type withoutFileArgs struct {
 }
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dir, err := parent.Self().Without(ctx, s.srv, args.Path)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutFilesArgs struct {
@@ -405,11 +450,20 @@ type withoutFilesArgs struct {
 }
 
 func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dir, err := parent.Self().Without(ctx, s.srv, args.Paths...)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Paths...)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type diffArgs struct {
@@ -417,7 +471,16 @@ type diffArgs struct {
 }
 
 func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
-	dir, err := args.Other.Load(ctx, s.srv)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := args.Other.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -534,12 +597,17 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return nil, err
 	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	platform := query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
 
-	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
+	buildctxDir, err := applyDockerIgnore(ctx, srv, parent, args.Dockerfile)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +617,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, err
 	}
 
-	secrets, err := dagql.LoadIDResults(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -581,6 +649,15 @@ func (s *directorySchema) terminal(
 	dir dagql.ObjectResult[*core.Directory],
 	args directoryTerminalArgs,
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return res, err
+	}
+
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
 	}
@@ -588,14 +665,14 @@ func (s *directorySchema) terminal(
 	var ctr *core.Container
 
 	if args.Container.Valid {
-		inst, err := args.Container.Value.Load(ctx, s.srv)
+		inst, err := args.Container.Value.Load(ctx, srv)
 		if err != nil {
 			return res, err
 		}
 		ctr = inst.Self()
 	}
 
-	err := dir.Self().Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
+	err = dir.Self().Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
 	if err != nil {
 		return res, err
 	}
@@ -623,9 +700,18 @@ type directoryWithSymlinkArgs struct {
 }
 
 func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	dir, err := parent.Self().WithSymlink(ctx, s.srv, args.Target, args.LinkName)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithSymlink(ctx, srv, args.Target, args.LinkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }

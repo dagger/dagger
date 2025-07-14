@@ -14,11 +14,11 @@ type module struct {
 	// The module implementing the SDK.
 	mod dagql.ObjectResult[*core.Module]
 
-	// A server that the SDK module has been installed to.
-	dag *dagql.Server
-
 	// The SDK object retrieved from the server, for calling functions against.
 	sdk dagql.AnyObjectResult
+
+	// A server that the SDK module has been installed to.
+	dag *dagql.Server
 
 	funcs map[string]*core.Function
 }
@@ -30,10 +30,21 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	dagqlCache, err := root.Cache(ctx)
+	// TODO: THIS WILL LEAK IF NEVER RELEASED
+	// TODO: THIS WILL LEAK IF NEVER RELEASED
+	// TODO: THIS WILL LEAK IF NEVER RELEASED
+	// TODO: THIS WILL LEAK IF NEVER RELEASED
+	/*
+		dagqlCache, err := root.Cache(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		}
+	*/
+	parentDag, err := root.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
+	dagqlCache := dagql.NewSessionCache(parentDag.Cache.BaseCache())
 	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 

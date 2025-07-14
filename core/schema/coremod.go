@@ -408,7 +408,16 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, err
 	}
 
-	val, err := obj.coreMod.Dag.Load(ctx, &idp)
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: not efficient/correct
+	c := dagql.NewSessionCache(obj.coreMod.Dag.Cache.BaseCache())
+	x := *obj.coreMod.Dag
+	dag := &x
+	dag.Cache = c
+
+	val, err := dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
 	}
