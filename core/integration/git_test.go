@@ -280,21 +280,43 @@ func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 		return strings.TrimSpace(res), err
 	}
 
-	t.Run("default depth", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-		res, err := log(ctx, dir)
-		require.NoError(t, err)
-		lines := strings.Split(res, "\n")
-		require.Len(t, lines, 1)
-	})
+	// default depth = 1
+	dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+	res, err := log(ctx, dir)
+	require.NoError(t, err)
+	lines := strings.Split(res, "\n")
+	require.Len(t, lines, 1)
 
-	t.Run("depth 5", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
-		res, err := log(ctx, dir)
-		require.NoError(t, err)
-		lines := strings.Split(res, "\n")
-		require.Len(t, lines, 5)
-	})
+	// depth = 5
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 5)
+
+	// depth = 1000 (big depth)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 1000)
+
+	// depth = 20 (back down)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 20)
+
+	// depth = -1 (max depth)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	last := lines[len(lines)-1]
+	require.Greater(t, len(lines), 2000)
+	require.True(t, strings.HasPrefix(last, "30f75"), last)
+	require.Contains(t, last, "Move prototype 69-dagger-archon to top-level")
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
