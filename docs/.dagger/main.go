@@ -52,7 +52,7 @@ const (
 )
 
 const cliZenFrontmatter = `---
-slug: /reference/cli/
+title: "Overview"
 pagination_next: null
 pagination_prev: null
 ---
