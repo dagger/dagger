@@ -4,16 +4,26 @@ $tablet-width: 996px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
 
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap");
+@import url("https://fonts.cdnfonts.com/css/general-sans");
 
 // define a css variable for the dark mode background color
 $dagger-dark-mode-background-color: rgb(13, 12, 27);
 
+// Define General Sans Medium fallback
+@font-face {
+  font-family: "General Sans Medium Placeholder";
+  src: local("Arial");
+  size-adjust: 105%;
+  ascent-override: 93%;
+  descent-override: 22%;
+  line-gap-override: normal;
+}
+
 :root {
-  --ifm-font-family-base: "Open Sans", system-ui, -apple-system, Segoe UI,
-    Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont,
-    "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol";
+  --ifm-font-family-base: "General Sans Medium", "General Sans Medium Placeholder", system-ui, -apple-system, Segoe UI,
+    Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
+  --ifm-font-size-base: 18px;
+  --ifm-font-weight-base: 400;
   --ifm-background-color: #f8f4ef;
   --ifm-color-primary-light: #21798d;
   --ifm-color-primary: #21798d;
@@ -67,6 +77,12 @@ html[data-theme="dark"] {
   // Fix any potential navigation borders in dark mode
   .navbar-sidebar {
     border-color: var(--ifm-background-color) !important;
+  }
+  
+  // Make announcement bar use light mode background in dark mode
+  .theme-announcement-bar {
+    background-color: #f8f4ef !important; /* Using the light mode background color */
+    color: #0d0c1b !important; /* Using dark text for contrast */
   }
 }
 
@@ -124,6 +140,7 @@ div[class*="docSidebarMenu"],
 .navbar__items .navbar__item .navbar__link,
 .navbar__items .navbar-blog-link {
   color: var(--ifm-navbar-link-color) !important;
+  font-size: 00.8175rem;
 }
 
 /* Ensure the active link has the right color in light mode */
@@ -161,8 +178,6 @@ html[data-theme="dark"] {
     color: var(--ifm-menu-color);
     background: none !important;
   }
-  // relative font size to 14px 
-  font-size: 0.875rem; // 14px
   margin-bottom: 2.0rem;
 }
 
@@ -174,14 +189,13 @@ html[data-theme="dark"] {
     color: var(--ifm-menu-color);
     background: none !important;
   }
-  // relative font size to 14px
-  font-size: 0.875rem; // 14px
+  // relative font size to 13px
+  font-size: 0.8125rem; // 13px
 }
 
 .theme-doc-sidebar-item-category .menu__list {
   font-weight: normal;
-  // relative font size to 14px
-  font-size: 0.875rem; // 14px
+  font-size: 0.8125rem; // 13px
   color: var(--ifm-menu-color);
 }
 
@@ -196,4 +210,37 @@ html[data-theme="dark"] {
 .theme-layout-footer {
   background-color: rgb(19, 17, 38);
   color: #fff;
+}
+
+/* Global font styling */
+body {
+  font-family: "General Sans Medium", "General Sans Medium Placeholder", sans-serif;
+  font-feature-settings: normal;
+  font-size: 17px;
+  font-style: normal;
+  font-variation-settings: normal;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+
+// font size adjustments for specific elements
+h1 {
+  font-size: 1.875rem !important;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.5rem !important;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.25rem !important;
+  font-weight: 600;
+}
+
+h4 {
+  font-size: 1rem !important;
+  font-weight: 400;
 }
