@@ -1019,12 +1019,9 @@ func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ 
 	return parent.Stdout(ctx)
 }
 
+//nolint:dupl
 func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (string, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1056,12 +1053,9 @@ func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ 
 	return parent.Stderr(ctx)
 }
 
+//nolint:dupl
 func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (string, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
 	}
