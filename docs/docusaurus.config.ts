@@ -54,6 +54,7 @@ const config: Config = {
           path: "./current_docs",
           routeBasePath: "/",
           sidebarPath: "./sidebars.ts",
+          sidebarCollapsible: false,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
           remarkPlugins: [
             [remarkCodeImport, { allowImportingFromOutside: true }],
@@ -112,7 +113,23 @@ const config: Config = {
   ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
-    sidebarCollapsed: false,
+    announcementBar: {
+      id: "agentic-ci-banner",
+      content: "Engineering deep dive on Agentic CI — <a href=\"https://dagger.io/agentic-ci\">Register Now</a>",
+      backgroundColor: "#131126",
+      textColor: "#ffffff",
+      isCloseable: true,
+    },
+    sidebar: {
+      autoCollapseCategories: false,
+      hideable: false,
+    },
+    docs: {
+      sidebar: {
+        autoCollapseCategories: false,
+        hideable: false,
+      },
+    },
     metadata: [
       {
         name: "description",
@@ -148,23 +165,42 @@ const config: Config = {
     navbar: {
       logo: {
         alt: "Dagger Logo",
-        src: "img/dagger-logo-white.svg",
-        height: "50px",
+        src: "img/dagger-logo-black.png",
+        height: "40px",
         href: "https://dagger.io/",
       },
       items: [
         {
           position: "left",
-          to: "https://daggerverse.dev/",
-          label: "Daggerverse",
-          className: "navbar-blog-link",
-          target: "_self",
-        },
-        {
-          position: "left",
           to: "/",
           label: "Docs",
           className: "navbar-blog-link",
+        },
+        {
+          position: "left",
+          to: "/examples",
+          label: "Examples",
+          className: "navbar-blog-link",
+        },
+        {
+          position: "left",
+          to: "/extending",
+          label: "Extending Dagger",
+          className: "navbar-blog-link",
+        },
+        {
+          position: "left",
+          to: "/reference",
+          label: "Reference",
+          className: "navbar-blog-link",
+        },
+        {
+          position: "right",
+          label: "Try Dagger Cloud >",
+          to: "https://dagger.io/cloud",
+          target: "_blank",
+          className: "navbar-blog-link dagger-cloud-button",
+          id: "dagger-cloud-link",
         },
         {
           type: "search",
@@ -309,7 +345,7 @@ const config: Config = {
       copyright: `
         <hr />
         <div class="flex justify-between">
-          <small>© Dagger 2022-2024</small>
+          <small>© Dagger 2022-2025</small>
           <div class="flex gap-8">
               <a target="_blank" class="footer-discord-link" href="https://discord.gg/dagger-io">
               </a>
