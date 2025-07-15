@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
@@ -37,6 +38,10 @@ func (spec *parsedEnumTypeReference) lookup(key string) *parsedEnumMember {
 
 func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
+}
+
+func (spec *parsedEnumTypeReference) TypeDefObject() (*core.TypeDef, error) {
+	return (&core.TypeDef{}).WithEnum(spec.name, "", nil), nil
 }
 
 func (spec *parsedEnumTypeReference) GoType() types.Type {
@@ -234,6 +239,19 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedEnumType) TypeDefObject() (*core.TypeDef, error) {
+	typeDefObject := (&core.TypeDef{}).WithEnum(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+
+	var err error
+	for _, val := range spec.values {
+		typeDefObject, err = typeDefObject.WithEnumMember(val.name, val.value, strings.TrimSpace(val.doc), coreSourceMap(val.sourceMap))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return typeDefObject, nil
 }
 
 func (spec *parsedEnumType) GoType() types.Type {

@@ -37,11 +37,11 @@ type goSDK struct {
 }
 
 func (sdk *goSDK) HasModuleTypeDefs() bool {
-	return true
+	return false
 }
 
 func (sdk *goSDK) HasModuleTypeDefsObject() bool {
-	return false
+	return true
 }
 
 type goSDKConfig struct {
@@ -226,8 +226,139 @@ func (sdk *goSDK) Codegen(
 func (sdk *goSDK) TypeDefsObject(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.ObjectResult[*core.ModuleSource],
+	src dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load typedefs object")
+	defer telemetry.End(span, func() error { return rerr })
+
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	if !src.Self().ConfigExists {
+		// module has not yet been initialized, no type exposed
+		return
+	}
+
+	var ctr dagql.ObjectResult[*core.Container]
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
+	}
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	// rm dagger.gen.go if it exists, which is going to be overwritten
+	// anyways. If it doesn't exist, we ignore not found in the implementation of
+	// `withoutFile` so it will be a no-op.
+	var updatedContextDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, contextDir, &updatedContextDir,
+		dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
+				},
+			},
+		},
+	); err != nil {
+		return inst, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+	}
+
+	var typeDefsJson string
+	err = dag.Select(ctx, ctr, &typeDefsJson,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"codegen",
+						"typedefs",
+						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+						"--module-name", dagql.String(modName),
+					},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString("typedefs.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst, dagql.Selector{
+		Field: "module",
+	},
+		dagql.Selector{
+			Field: "fromJSON",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "json",
+					Value: dagql.NewString(typeDefsJson),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+
 	return
 }
 
