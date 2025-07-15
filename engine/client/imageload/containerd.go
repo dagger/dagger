@@ -15,10 +15,6 @@ func init() {
 	register("containerd", &Containerd{})
 }
 
-func (Containerd) ID() string {
-	return "containerd"
-}
-
 func (loader Containerd) Loader(ctx context.Context) (_ *Loader, rerr error) {
 	addr := defaults.DefaultAddress
 	if v, ok := os.LookupEnv("CONTAINERD_ADDRESS"); ok {
