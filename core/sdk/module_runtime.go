@@ -22,15 +22,10 @@ func (sdk *runtimeModule) Runtime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
 
-	query, err := core.CurrentQuery(ctx)
+	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag := sdk.mod.dag.WithCache(dagqlCache)
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {

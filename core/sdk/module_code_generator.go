@@ -22,15 +22,10 @@ func (sdk *codeGeneratorModule) Codegen(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
 
-	query, err := core.CurrentQuery(ctx)
+	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag := sdk.mod.dag.WithCache(dagqlCache)
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {

@@ -64,14 +64,6 @@ func WithTelemetry(telemetry TelemetryFunc) CacheCallOpt {
 	})
 }
 
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-func (c *SessionCache) BaseCache() cache.Cache[CacheKeyType, CacheValueType] {
-	return c.cache
-}
-
 func (c *SessionCache) GetOrInitializeValue(
 	ctx context.Context,
 	key CacheKeyType,

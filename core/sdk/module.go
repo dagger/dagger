@@ -18,7 +18,7 @@ type module struct {
 	sdk dagql.AnyObjectResult
 
 	// A server that the SDK module has been installed to.
-	dag *dagql.ServerSchema
+	serverSchema *dagql.ServerSchema
 
 	funcs map[string]*core.Function
 }
@@ -69,11 +69,23 @@ func newModuleSDK(
 	}
 
 	return (&module{
-		mod:   sdkModMeta,
-		dag:   dag.AsSchema(),
-		sdk:   sdk,
-		funcs: listImplementedFunctions(sdkModMeta.Self()),
+		mod:          sdkModMeta,
+		serverSchema: dag.AsSchema(),
+		sdk:          sdk,
+		funcs:        listImplementedFunctions(sdkModMeta.Self()),
 	}).withConfig(ctx, rawConfig)
+}
+
+func (sdk *module) dag(ctx context.Context) (*dagql.Server, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dagqlCache, err := query.Cache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sdk.serverSchema.WithCache(dagqlCache), nil
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -101,7 +113,7 @@ func (sdk *module) withConfig(
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.dag.View())
+	inputs := fieldspec.Args.Inputs(sdk.serverSchema.View())
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}
@@ -141,15 +153,10 @@ func (sdk *module) withConfig(
 		})
 	}
 
-	query, err := core.CurrentQuery(ctx)
+	dag, err := sdk.dag(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.Self().Name(), err)
 	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag := sdk.dag.WithCache(dagqlCache)
 
 	var sdkwithconfig dagql.AnyObjectResult
 	err = dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{

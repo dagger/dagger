@@ -18,15 +18,10 @@ type clientGeneratorModule struct {
 func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (res dagql.Array[dagql.String], err error) {
-	query, err := core.CurrentQuery(ctx)
+	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag := sdk.mod.dag.WithCache(dagqlCache)
 
 	// Return an empty array if the SDK doesn't implement the
 	// `requiredClientGenerationFiles` function.
@@ -51,15 +46,10 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	deps *core.ModDeps,
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
+	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag := sdk.mod.dag.WithCache(dagqlCache)
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
