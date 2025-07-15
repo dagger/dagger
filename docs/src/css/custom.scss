@@ -79,10 +79,10 @@ html[data-theme="dark"] {
     border-color: var(--ifm-background-color) !important;
   }
   
-  // Make announcement bar use light mode background in dark mode
+  // Make announcement bar use primary light color in dark mode
   .theme-announcement-bar {
-    background-color: #f8f4ef !important; /* Using the light mode background color */
-    color: #0d0c1b !important; /* Using dark text for contrast */
+    background-color: #57c7e3 !important; /* Using the primary light color */
+    color: #131226 !important; /* Using dark text for contrast */
   }
 }
 
@@ -145,8 +145,8 @@ div[class*="docSidebarMenu"],
 
 /* Ensure the active link has the right color in light mode */
 html[data-theme="light"] {
-  .navbar__items .navbar__item .navbar__link.navbar__link--active,
-  .navbar-blog-link.navbar__link--active {
+  .navbar__items .navbar__item .navbar__link.navbar__link--active:not(.dagger-cloud-button),
+  .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: rgb(23, 23, 24) !important;
     font-weight: bold !important;
     border-bottom: 2px solid #4b4b5a !important;
@@ -155,8 +155,8 @@ html[data-theme="light"] {
 
 /* Ensure the active link has the right color in dark mode */
 html[data-theme="dark"] {
-  .navbar__items .navbar__item .navbar__link.navbar__link--active,
-  .navbar-blog-link.navbar__link--active {
+  .navbar__items .navbar__item .navbar__link.navbar__link--active:not(.dagger-cloud-button),
+  .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: white !important;
     font-weight: bold !important;
     border-bottom: 2px solid white !important;
@@ -223,8 +223,43 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dagger Cloud button styling */
+.dagger-cloud-button {
+  padding: 0.5rem 1rem !important;
+  border-radius: 8px !important; /* More rounded edges */
+  font-weight: 600 !important;
+  transition: all 0.2s ease-in-out !important;
+}
 
-// font size adjustments for specific elements
+/* Light mode styling for Dagger Cloud button */
+html[data-theme="light"] {
+  .dagger-cloud-button {
+    background-color: rgb(19, 17, 38) !important; /* Dark blue/purple color */
+    color: white !important;
+    border: 1px solid rgb(19, 17, 38) !important;
+    
+    &:hover {
+      background-color: rgb(29, 26, 56) !important; /* Slightly lighter on hover */
+      border-color: rgb(29, 26, 56) !important;
+    }
+  }
+}
+
+/* Dark mode styling for Dagger Cloud button */
+html[data-theme="dark"] {
+  .dagger-cloud-button {
+    background-color: #57c7e3 !important; /* Primary light color */
+    color: #131226 !important; /* Dark background color for contrast */
+    border: 1px solid #57c7e3 !important;
+    
+    &:hover {
+      background-color: #7ad3ea !important; /* Slightly lighter on hover */
+      border-color: #7ad3ea !important;
+    }
+  }
+}
+
+/* font size adjustments for specific elements */
 h1 {
   font-size: 1.875rem !important;
   font-weight: 700;
@@ -241,6 +276,7 @@ h3 {
 }
 
 h4 {
-  font-size: 1rem !important;
-  font-weight: 400;
+  font-size: 1.1rem !important;
+  font-weight: 600;
 }
+

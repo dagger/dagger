@@ -53,6 +53,11 @@ module.exports = {
   reference: [
     {
       type: "category",
+      label: "Reference",
+      items: ["reference/index", "reference/glossary"],
+    },
+    {
+      type: "category",
       label: "CLI Reference",
       items: ["reference/cli/index"],
     },

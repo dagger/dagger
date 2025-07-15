@@ -2,6 +2,9 @@
 title: "Container"
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 The `Container` type represents the state of an OCI-compatible container. This `Container` object is not merely a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a Dagger Function's code as if it were just another variable.
 
 ## Common operations
@@ -25,24 +28,27 @@ The `Container` type represents the state of an OCI-compatible container. This `
 
 ## Examples
 
-### Create a container from an image
+### Publish a container image to a private registry
 
-```shell
-dagger container from alpine:latest
+The following Dagger Function publishes a just-in-time container image to a private registry.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../cookbook/snippets/publish-image/go/main.go
 ```
 
-### Execute a command in a container
+</TabItem>
+<TabItem value="python" label="Python">
 
-```shell
-dagger container from alpine:latest |
-  with-exec -- sh -c 'echo hello world' |
-  stdout
+```python file=../../cookbook/snippets/publish-image/python/main.py
 ```
 
-### Publish a container image to a registry
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
 
-```shell
-dagger container from alpine:latest |
-  with-exec -- sh -c 'echo hello world' |
-  publish --address=myregistry.example.com/myimage:latest
+```typescript file=../../cookbook/snippets/publish-image/typescript/index.ts
 ```
+
+</TabItem>
+</Tabs>
