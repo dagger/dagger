@@ -175,24 +175,28 @@ const config: Config = {
           to: "/",
           label: "Docs",
           className: "navbar-blog-link",
+          activeBaseRegex: "^/$|^/(?!examples|extending|reference).*",
         },
         {
           position: "left",
           to: "/examples",
           label: "Examples",
           className: "navbar-blog-link",
+          activeBaseRegex: "^/examples/?.*",
         },
         {
           position: "left",
           to: "/extending",
           label: "Extending Dagger",
           className: "navbar-blog-link",
+          activeBaseRegex: "^/extending/?.*",
         },
         {
           position: "left",
           to: "/reference",
           label: "Reference",
           className: "navbar-blog-link",
+          activeBaseRegex: "^/reference/?.*",
         },
         {
           position: "right",
