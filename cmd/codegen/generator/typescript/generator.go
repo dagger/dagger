@@ -87,3 +87,7 @@ func generate(config generator.Config, target string, schema *introspection.Sche
 		Overlay: mfs,
 	}, nil
 }
+
+func (g *TypeScriptGenerator) GenerateTypeDefs(_ context.Context) (*generator.GeneratedState, error) {
+	return nil, fmt.Errorf("not implemented for %s SDK", generator.SDKLangTypeScript)
+}
