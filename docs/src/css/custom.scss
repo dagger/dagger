@@ -23,7 +23,7 @@ $desktop-xl-width: 1160px;
   --ifm-navbar-background-color: #f8f4ef;
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
-  --ifm-navbar-link-color: rgba(255, 255, 255, 0.75);
+  --ifm-navbar-link-color: rgb(80, 80, 81);
   --ifm-toc-link-color: #4b4b5a;
 }
 
@@ -38,6 +38,33 @@ html[data-theme="dark"] {
   --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
+  --ifm-navbar-background-color: #131226;
+  --ifm-navbar-link-color: white;
+
+  // Apply dark background to all navbar and navigation elements
+  .navbar,
+  .navbar-sidebar,
+  .navbar-sidebar__backdrop,
+  .navbar-sidebar__item,
+  .navbar-sidebar__items,
+  .navbar__inner,
+  .menu,
+  .menu__list,
+  .theme-doc-sidebar-container,
+  nav {
+    background-color: var(--ifm-background-color) !important;
+  }
+
+  // Make sure dropdown menus also have the correct background
+  .dropdown__menu,
+  .dropdown__link {
+    background-color: var(--ifm-background-color) !important;
+  }
+
+  // Fix any potential navigation borders in dark mode
+  .navbar-sidebar {
+    border-color: var(--ifm-background-color) !important;
+  }
 }
 
 @mixin mobile {
@@ -64,452 +91,54 @@ html[data-theme="dark"] {
   }
 }
 
-.header-github-link {
-  height: 35px;
-  margin: 0;
-  padding: 0;
-  background-color: white;
-  mask-image: url("/img/github-icon.svg");
-  mask-size: 100%;
-  width: 30px;
-
-  @include desktop {
-    width: 35px;
-    text-indent: 40px;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-
-  @include mobile {
-    margin: auto;
-    html[data-theme="light"] {
-      background-color: black;
-    }
-  }
-}
-
-.header-discord-link,
-.footer-discord-link,
-.footer-x-link {
-  background-color: white;
-  height: 30px;
-  margin: 0;
-  mask-image: url("/img/discord-icon.svg");
-  mask-position: center;
-  mask-size: 35px;
-  padding: 0;
-  width: 30px;
-
-  @include desktop {
-    overflow: hidden;
-    text-indent: 40px;
-    white-space: nowrap;
-    width: 30px;
-  }
-
-  @include mobile {
-    margin: auto;
-  }
-}
-
-// Announcement bar padding
-.announcementBar_node_modules-\@docusaurus-theme-classic-lib-theme-AnnouncementBar-styles-module {
-  border-bottom: none !important;
-  padding-top: 10px !important;
-  padding-bottom: 10px !important;
-}
-
-.footer-x-link {
-  mask-size: 20px;
-  mask-image: url("/img/x-icon.svg");
-  mask-repeat: no-repeat;
-  mask-position: center;
-}
-
-html[data-theme="light"] {
-  .header-discord-link {
-    @include mobile {
-      background-color: black;
-    }
-  }
-
-  .header-github-link {
-    @include mobile {
-      background-color: black;
-    }
-  }
-
-  @include mobile {
-    .navbar-blog-link {
-      color: black;
-    }
-  }
-
-  .navbar-sidebar__item {
-    @include tablet {
-      background-color: white;
-    }
-  }
-}
-
-.navbar-blog-link {
-  @include mobile {
-    justify-content: center;
-  }
-}
-
-.navbar__items--right {
-  gap: 1rem;
-}
-
-.navbar__toggle {
-  color: white;
-  margin-right: 1rem;
-}
-
-.navbar__logo {
-  height: 48px;
-  width: 147px;
-}
-
-.dropdown .dropdown__link svg {
-  display: none;
-}
-
-.dropdown > .navbar__link::after {
-  content: "\203A";
-  display: inline-block;
-  transform: rotate(90deg) !important;
-  border: none;
-  padding: 0em 0.5em;
-}
-
-pre {
-  background: #0d0c1b;
-  border: 1px solid rgba(75, 75, 90, 0.3);
-}
-
-.footer {
-  background-color: #0d0c1b;
-  color: white;
-  padding: 4rem 0 1.5rem;
-
-  .flex {
-    display: flex;
-  }
-
-  .gap-8 {
-    gap: 24px;
-  }
-
-  hr {
-    background-color: #4b4968;
-  }
-
-  .justify-between {
-    justify-content: space-between;
-  }
-
-  .footer__link-item {
-    color: white;
-    font-size: 0.875rem;
-  }
-
-  .footer__col {
-    text-align: center;
-  }
-
-  .discord-icon {
-    background-color: white;
-    mask-image: url("/img/discord-icon.svg");
-    mask-size: 100%;
-  }
-}
-
-.DocCardList--no-description .card p {
-  display: none;
-}
-
-// adjust style for Dagger Shell tab title
-.language-shell > div:nth-child(1) {
-  background-color: white;
-  color: black;
-  font-style: italic;
-}
-
-// Remove borders from navbar and sidebar
-.navbar,
-.navbar__inner,
-.navbar-sidebar__item,
-.navbar-sidebar__items {
-  border-bottom: none !important;
+/* Docs Sidebar Styling - Remove all borders */
+.theme-doc-sidebar-container,
+div[class*="docSidebarContainer"],
+.docs-sidebar,
+aside[class*="docSidebarContainer"] {
   border: none !important;
+  border-right: none !important;
+  border-left: none !important;
   box-shadow: none !important;
-}
-
-// Additional navbar border removal and margin
-nav.navbar {
-  border-bottom: 0 !important;
-  border-bottom-width: 0 !important;
-  box-shadow: none !important;
-  margin-bottom: 30px !important;
-}
-
-.navbar--fixed-top {
-  border-bottom: none !important;
-  box-shadow: none !important;
-}
-
-// Use CSS variable to remove navbar shadow/border
-:root {
-  --ifm-navbar-shadow: none !important;
 }
 
 .menu {
+  border: none !important;
   border-right: none !important;
 }
 
-.theme-doc-sidebar-container {
-  border-right: none !important;
-  padding-left: 0 !important;
-}
-
-.navbar-sidebar {
+/* Ensure no borders on the navigation elements within the docs sidebar */
+.theme-doc-sidebar-menu,
+div[class*="docSidebarMenu"],
+.menu__link,
+.menu__list,
+.menu__list-item {
   border: none !important;
+  box-shadow: none !important;
 }
 
-.navbar-sidebar__backdrop {
-  border: none !important;
+/* Navbar Item Colors */
+.navbar__items .navbar__item .navbar__link,
+.navbar__items .navbar-blog-link {
+  color: var(--ifm-navbar-link-color) !important;
 }
 
-// Main content container styles (equivalent to max-w-8xl px-4 mx-auto lg:px-8)
-.main-wrapper,
-.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module,
-.container,
-.navbar__inner {
-  max-width: 96rem; // equivalent to max-w-8xl (1536px)
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem; // equivalent to px-4 (16px)
-  padding-right: 1rem;
-
-  @media (min-width: 1024px) { // equivalent to lg: breakpoint
-    padding-left: 2rem; // equivalent to lg:px-8 (32px)
-    padding-right: 2rem;
+/* Ensure the active link has the right color in light mode */
+html[data-theme="light"] {
+  .navbar__items .navbar__item .navbar__link.navbar__link--active,
+  .navbar-blog-link.navbar__link--active {
+    color: rgb(23, 23, 24) !important;
+    font-weight: bold !important;
+    border-bottom: 2px solid #4b4b5a !important;
   }
 }
 
-// Ensure consistent content width regardless of content size
-.container {
-  width: 100%;
-}
-
-// Set minimum width for main content area to prevent shrinking
-.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module,
-.main-wrapper main {
-  min-width: 0;
-  width: 100%;
-}
-
-// Ensure doc content maintains a consistent width
-article,
-.theme-doc-markdown {
-  min-width: 65ch;
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-// Sidebar top-level titles styling
-.theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link,
-.theme-doc-sidebar-item-link > .menu__link {
-  font-weight: bold !important;
-  color: rgb(23, 23, 24) !important;
-}
-
-// Keep the color even when active
-.theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link--active,
-.theme-doc-sidebar-item-link > .menu__link--active,
-.theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link:hover,
-.theme-doc-sidebar-item-link > .menu__link:hover {
-  color: rgb(23, 23, 24) !important;
-  font-weight: bold !important;
-}
-
-// Remove hover background from main category dropdown links
-.theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link:hover,
-.menu__link--sublist:hover,
-.menu__link--sublist-caret:hover {
-  background-color: transparent !important;
-}
-
-:root {
-  --ifm-menu-color-background-hover: transparent !important;
-}
-
-// Override menu background hover effects completely
-.menu__list-item:hover {
-  background-color: transparent !important;
-}
-
-.menu__list-item-collapsible:hover {
-  background-color: transparent !important;
-}
-
-// Ensure sub-items (children) are not bold
-.theme-doc-sidebar-item-category .menu__list .menu__link,
-.menu__list .menu__list .menu__link {
-  font-weight: normal !important;
-}
-
-// Navbar link colors for non-active items
-.navbar__item .navbar__link:not(.navbar__link--active) {
-  color: #4b4b5a !important;
-}
-
-.navbar-blog-link:not(.navbar__link--active) {
-  color: #4b4b5a !important;
-}
-
-// Active navbar link styling - bold with bottom border underline
-.navbar__item .navbar__link.navbar__link--active,
-.navbar-blog-link.navbar__link--active {
-  font-weight: bold !important;
-  color: rgb(23, 23, 24) !important;
-  border-bottom: 2px solid #4b4b5a !important;
-  padding-bottom: calc(0.5rem - 2px) !important; // Adjust padding to account for border
-  text-decoration: none !important;
-}
-
-// Heading font sizes with h1 at 30px and smaller increments for other headings
-h1 {
-  font-size: 30px !important;
-}
-
-h2 {
-  font-size: 26px !important;
-}
-
-h3 {
-  font-size: 22px !important;
-}
-
-h4 {
-  font-size: 18px !important;
-}
-
-h5 {
-  font-size: 16px !important;
-}
-
-h6 {
-  font-size: 14px !important;
-}
-
-// Body font size
-body,
-p,
-.markdown {
-  font-size: 16px !important;
-}
-
-// Add bottom margin after sidebar category items
-.theme-doc-sidebar-item-category {
-  margin-bottom: 40px !important;
-}
-
-// Sidebar item font size - make them smaller
-.theme-doc-sidebar-item-category .menu__link,
-.theme-doc-sidebar-item-link .menu__link,
-.menu__list .menu__link {
-  font-size: 14px !important;
-}
-
-// Hyperlink styling - only for main content, excluding navbar and sidebar
-.markdown a,
-.theme-doc-markdown a,
-article a {
-  color: rgb(17, 24, 39) !important;
-  font-weight: bold !important;
-  text-decoration: underline !important;
-}
-
-// Ensure visited links in main content maintain the same styling
-.markdown a:visited,
-.theme-doc-markdown a:visited,
-article a:visited {
-  color: rgb(17, 24, 39) !important;
-  font-weight: bold !important;
-  text-decoration: underline !important;
-}
-
-// Reset navbar links to not have underlines
-.navbar a,
-.navbar__link {
-  text-decoration: none !important;
-}
-
-// Reset sidebar links to maintain their original styling
-.menu a,
-.menu__link {
-  text-decoration: none !important;
-}
-
-// Don't underline card links
-a.card,
-.card a {
-  text-decoration: none !important;
-}
-
-// Style for Dagger Cloud navbar button
-#dagger-cloud-link, .dagger-cloud-button {
-  background-color: rgb(19, 17, 38);
-  color: white !important;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  margin-right: 8px;
-}
-
-#dagger-cloud-link:hover, .dagger-cloud-button:hover {
-  background-color: rgba(19, 17, 38, 0.9);
-  color: white !important;
-  text-decoration: none !important;
-}
-
-// Ensure the Dagger Cloud button stays properly styled even when active
-#dagger-cloud-link.navbar__link--active, .dagger-cloud-button.navbar__link--active {
-  background-color: rgb(19, 17, 38);
-  color: white !important;
-  border-bottom: none !important;
-  padding: 8px 16px !important;
-}
-
-// Navbar items font size - 2px smaller than default
-.navbar__item .navbar__link,
-.navbar__items .navbar-blog-link {
-  font-size: calc(var(--ifm-font-size-base) - 1px) !important;
-}
-
-// Fix for doc page layout to maintain consistent width
-.row .col {
-  min-width: 0;
-}
-
-.docPage_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-styles-module {
-  width: 100%;
-}
-
-.docSidebarContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Sidebar-styles-module {
-  width: 300px !important;
-  min-width: 300px !important;
-}
-
-// Ensure page content fills the available space even with minimal content
-.docItemCol_node_modules-\@docusaurus-theme-classic-lib-theme-DocItem-styles-module {
-  flex: 1 1 auto;
-  max-width: 800px;
-  min-height: calc(100vh - var(--ifm-navbar-height) - 4rem);
-  margin: 0 auto;
+/* Ensure the active link has the right color in dark mode */
+html[data-theme="dark"] {
+  .navbar__items .navbar__item .navbar__link.navbar__link--active,
+  .navbar-blog-link.navbar__link--active {
+    color: white !important;
+    font-weight: bold !important;
+    border-bottom: 2px solid white !important;
+  }
 }
