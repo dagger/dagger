@@ -43,7 +43,7 @@ func init() {
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root       Object
+	root       AnyObjectResult
 	telemetry  AroundFunc
 	objects    map[string]ObjectType
 	scalars    map[string]ScalarType
@@ -82,9 +82,9 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	Object,
+	AnyObjectResult,
 	*call.ID,
-) (context.Context, func(res Typed, cached bool, err error))
+) (context.Context, func(res AnyResult, cached bool, err error))
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
@@ -113,9 +113,9 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		// around global config I suppose.
 		NoIDs: true,
 	})
-	srv.root = Instance[T]{
-		Self:  root,
-		Class: rootClass,
+	srv.root = ObjectResult[T]{
+		Result: Result[T]{self: root},
+		class:  rootClass,
 	}
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -244,12 +244,8 @@ var coreDirectives = []DirectiveSpec{
 
 // Root returns the root object of the server. It is suitable for passing to
 // Resolve to resolve a query.
-func (s *Server) Root() Object {
+func (s *Server) Root() AnyObjectResult {
 	return s.root
-}
-
-type Loadable interface {
-	Load(context.Context, *Server) (Typed, error)
 }
 
 // InstallObject installs the given Object type into the schema, or returns the
@@ -280,7 +276,7 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 					},
 				),
 			},
-			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
+			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
 					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
@@ -495,6 +491,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			return nil, gqlErrs(err)
 		}
 
+		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
 		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
 		if len(listErr) != 0 {
 			for _, e := range listErr {
@@ -533,7 +530,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 //
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
-func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
+func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Selection) (map[string]any, error) {
 	results := new(sync.Map)
 
 	pool := pool.New().WithErrors()
@@ -560,74 +557,77 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 }
 
 // Load loads the object with the given ID.
-func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
-	res, id, err := s.loadType(ctx, id)
+func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
-	return s.toSelectable(id, res)
+	return s.toSelectable(res)
 }
 
-func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
-	res, _, err := s.loadType(ctx, id)
-	return res, err
-}
-
-func (s *Server) loadType(ctx context.Context, id *call.ID) (Typed, *call.ID, error) {
-	var base Object
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
 		nth := int(id.Nth())
 		if nth == 0 {
-			base, err = s.Load(ctx, id.Receiver())
+			base, err = s.LoadType(ctx, id.Receiver())
 			if err != nil {
-				return nil, nil, fmt.Errorf("load base: %w", err)
+				return nil, fmt.Errorf("load base: %w", err)
 			}
 		} else {
 			// we are selecting the nth element of an enumerable, load the list
 			// we are selecting from and then select the nth element from it rather
 			// than trying to call the field on the object
-			baseTyped, err := s.LoadType(ctx, id.Receiver())
+			baseValue, err := s.LoadType(ctx, id.Receiver())
 			if err != nil {
-				return nil, nil, fmt.Errorf("load base enum: %w", err)
+				return nil, fmt.Errorf("load base enumerable: %w", err)
 			}
-			baseEnum, isEnum := UnwrapAs[Enumerable](baseTyped)
-			if !isEnum {
-				return nil, nil, fmt.Errorf("cannot select item %d from non-enumerable %T", nth, baseTyped)
-			}
-			res, err := baseEnum.Nth(nth)
+
+			res, err := baseValue.NthValue(nth)
 			if err != nil {
-				return nil, nil, fmt.Errorf("nth %d: %w", nth, err)
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
 			}
-			if wrapped, ok := res.(Derefable); ok {
-				res, ok = wrapped.Deref()
-				if !ok {
-					// the nth element is nil, maybe this should be allowed but for now error out
-					return nil, nil, fmt.Errorf("item %d is null from enumerable", nth)
-				}
+
+			var ok bool
+			res, ok = res.DerefValue()
+			if !ok {
+				// the nth element is nil, maybe this should be allowed but for now error out
+				return nil, fmt.Errorf("item %d is null from enumerable", nth)
 			}
-			return res, id, nil
+
+			return res, nil
 		}
 	} else {
 		base = s.root
 	}
 
-	res, id, err := base.Call(ctx, s, id)
-	return res, id, err
+	baseObj, err := s.toSelectable(base)
+	if err != nil {
+		return nil, fmt.Errorf("toSelectable: %w", err)
+	}
+
+	return baseObj.Call(ctx, s, id)
 }
 
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
-func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
+func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
 	// Annotate ctx with the internal flag so we can distinguish self-calls from
 	// user-calls in the UI.
 	ctx = withInternal(ctx)
 
-	var res Typed = self
-	var id *call.ID
+	var res AnyResult = self
 	for i, sel := range sels {
+		nth := sel.Nth
+		// if we are selecting the nth element, then select the parent list first and
+		// grab the NthValue below
+		if nth != 0 {
+			sel.Nth = 0
+		}
+
 		var err error
-		res, id, err = self.Select(ctx, s, sel)
+		res, err = self.Select(ctx, s, sel)
 		if err != nil {
 			return fmt.Errorf("select: %w", err)
 		}
@@ -635,6 +635,13 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		if res == nil {
 			// null result; nothing to do
 			return nil
+		}
+
+		if nth != 0 {
+			res, err = res.NthValue(nth)
+			if err != nil {
+				return fmt.Errorf("nth %d: %w", nth, err)
+			}
 		}
 
 		destV := reflect.ValueOf(dest).Elem()
@@ -647,7 +654,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 				break
 			}
 			isObj := s.isObjectType(res.Type().Elem.Name())
-			enum, isEnum := res.(Enumerable)
+			enum, isEnum := res.Unwrap().(Enumerable)
 			if !isEnum {
 				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
 			}
@@ -656,22 +663,19 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
 			for nth := 1; nth <= enum.Len(); nth++ {
-				val, err := enum.Nth(nth)
+				val, err := res.NthValue(nth)
 				if err != nil {
 					return fmt.Errorf("nth %d: %w", nth, err)
 				}
-				if wrapped, ok := val.(Derefable); ok {
-					val, ok = wrapped.Deref()
-					if !ok {
-						if err := appendAssign(destV, nil); err != nil {
-							return err
-						}
-						continue
+				val, ok := val.DerefValue()
+				if !ok {
+					if err := appendAssign(destV, nil); err != nil {
+						return err
 					}
+					continue
 				}
 				if isObj {
-					nthID := id.SelectNth(nth)
-					val, err = s.toSelectable(nthID, val)
+					val, err = s.toSelectable(val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -684,7 +688,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(id, res)
+			self, err = s.toSelectable(res)
 			if err != nil {
 				return err
 			}
@@ -695,6 +699,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 			return fmt.Errorf("cannot sub-select %s", res.Type())
 		}
 	}
+
 	return assign(reflect.ValueOf(dest).Elem(), res)
 }
 
@@ -710,33 +715,6 @@ func (s *Server) AddInstallHook(hook InstallHook) {
 	s.installLock.Unlock()
 }
 
-func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
-	var res Typed = self
-	var id *call.ID
-	for i, sel := range sels {
-		var err error
-		res, id, err = self.ReturnType(ctx, s, sel)
-		if err != nil {
-			return nil, fmt.Errorf("select: %w", err)
-		}
-
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			// if the result is an Object, set it as the next selection target, and
-			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(id, res)
-			if err != nil {
-				return nil, err
-			}
-			res = self
-		} else if i+1 < len(sels) {
-			// if the result is not an object and there are further selections,
-			// that's a logic error.
-			return nil, fmt.Errorf("cannot sub-select %s", res.Type())
-		}
-	}
-	return id, nil
-}
-
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
 	out := make([]T, len(ids))
 	eg := new(errgroup.Group)
@@ -746,7 +724,7 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 			if err != nil {
 				return err
 			}
-			out[i] = val.Self
+			out[i] = val.Self()
 			return nil
 		})
 	}
@@ -756,8 +734,8 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	return out, nil
 }
 
-func LoadIDInstances[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Instance[T], error) {
-	out := make([]Instance[T], len(ids))
+func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]ObjectResult[T], error) {
+	out := make([]ObjectResult[T], len(ids))
 	eg := new(errgroup.Group)
 	for i, id := range ids {
 		eg.Go(func() error {
@@ -807,47 +785,65 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
-// NewInstanceForCurrentID creates a new Instance that's set to the current ID from
+// NewResultForCurrentID creates a new Result that's set to the current ID from
 // the given self value.
-func NewInstanceForCurrentID[P, T Typed](
+func NewResultForCurrentID[T Typed](
 	ctx context.Context,
-	srv *Server,
-	parent Instance[P],
 	self T,
-) (Instance[T], error) {
-	return NewInstanceForID(srv, parent, self, CurrentID(ctx))
+) (Result[T], error) {
+	return NewResultForID(self, CurrentID(ctx))
 }
 
-// NewInstanceForID creates a new Instance with the given ID and self value.
-func NewInstanceForID[P, T Typed](
-	srv *Server,
-	parent Instance[P],
+// NewResultForID creates a new Result with the given ID and self value.
+func NewResultForID[T Typed](
 	self T,
 	id *call.ID,
-) (Instance[T], error) {
+) (res Result[T], _ error) {
 	if id == nil {
-		return Instance[T]{}, errors.New("id is nil")
+		return res, errors.New("id is nil")
 	}
 
+	// check that we aren't trying to create a Result for a Result itself
+	if _, ok := any(self).(AnyResult); ok {
+		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
+	}
+
+	return Result[T]{
+		constructor: id,
+		self:        self,
+	}, nil
+}
+
+func NewObjectResultForCurrentID[T Typed](
+	ctx context.Context,
+	srv *Server,
+	self T,
+) (ObjectResult[T], error) {
+	return NewObjectResultForID(self, srv, CurrentID(ctx))
+}
+
+func NewObjectResultForID[T Typed](
+	self T,
+	srv *Server,
+	id *call.ID,
+) (res ObjectResult[T], _ error) {
 	objType, ok := srv.ObjectType(self.Type().Name())
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("unknown type %q", self.Type().Name())
+		return res, fmt.Errorf("unknown type %q", self.Type().Name())
 	}
 	class, ok := objType.(Class[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("not a Class: %T", objType)
+		return res, fmt.Errorf("not a Class: %T", objType)
 	}
 
-	// sanity check: verify the ID matches the type of self
-	if id.Type().NamedType() != objType.TypeName() {
-		return Instance[T]{}, fmt.Errorf("expected ID of type %q, got %q", objType.TypeName(), id.Type().NamedType())
+	inst, err := NewResultForID(self, id)
+	if err != nil {
+		return res, err
 	}
 
-	return Instance[T]{
-		Constructor: id,
-		Self:        self,
-		Class:       class,
-		Module:      parent.Module,
+	return ObjectResult[T]{
+		Result: inst,
+		class:  class,
 	}, nil
 }
 
@@ -886,7 +882,7 @@ func gqlErr(rerr error, path ast.Path) *gqlerror.Error {
 	return gqlErr
 }
 
-func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
+func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Selection) (res any, rerr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			rerr = PanicError{
@@ -909,7 +905,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
-	val, chainedID, err := self.Select(ctx, s, sel.Selector)
+	val, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -919,7 +915,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		return nil, nil
 	}
 
-	enum, ok := val.(Enumerable)
+	enum, ok := val.Unwrap().(Enumerable)
 	if ok {
 		// we're sub-selecting into an enumerable value, so we need to resolve each
 		// element
@@ -927,22 +923,19 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		// TODO arrays of arrays
 		results := []any{} // TODO subtle: favor [] over null result
 		for nth := 1; nth <= enum.Len(); nth++ {
-			val, err := enum.Nth(nth)
+			val, err := val.NthValue(nth)
 			if err != nil {
 				return nil, err
 			}
-			if wrapped, ok := val.(Derefable); ok {
-				val, ok = wrapped.Deref()
-				if !ok {
-					results = append(results, nil)
-					continue
-				}
+			val, ok := val.DerefValue()
+			if !ok {
+				results = append(results, nil)
+				continue
 			}
 			if len(sel.Subselections) == 0 {
-				results = append(results, val)
+				results = append(results, val.Unwrap())
 			} else {
-				nthID := chainedID.SelectNth(nth)
-				node, err := s.toSelectable(nthID, val)
+				node, err := s.toSelectable(val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
@@ -957,11 +950,11 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 	}
 
 	if len(sel.Subselections) == 0 {
-		return val, nil
+		return val.Unwrap(), nil
 	}
 
 	// instantiate the return value so we can sub-select
-	node, err := s.toSelectable(chainedID, val)
+	node, err := s.toSelectable(val)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
@@ -969,17 +962,38 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
-func (s *Server) toSelectable(chainedID *call.ID, val Typed) (Object, error) {
-	if sel, ok := val.(Object); ok {
+func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
+	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
 		return sel, nil
 	}
-	class, ok := s.ObjectType(val.Type().Name())
-	if !ok {
-		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
+
+	className := val.Type().Name()
+	class, ok := s.ObjectType(className)
+	if ok {
+		return class.New(val)
 	}
-	return class.New(chainedID, val)
+
+	// if this is an interface value, we may only know about the underlying object
+	// it's wrapping, check that
+	if iface, ok := UnwrapAs[InterfaceValue](val); ok {
+		obj, err := iface.UnderlyingObject()
+		if err != nil {
+			return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
+		}
+		className := obj.Type().Name()
+		class, ok = s.ObjectType(className)
+		if ok {
+			val, err = NewResultForID(obj, val.ID())
+			if err != nil {
+				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
+			}
+			return class.New(val)
+		}
+	}
+
+	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
@@ -1047,7 +1061,7 @@ func (sel Selection) Name() string {
 	return sel.Selector.Field
 }
 
-// Selector specifies how to retrieve a value from an Instance.
+// Selector specifies how to retrieve a value from an Result.
 type Selector struct {
 	Field string
 	Args  []NamedInput

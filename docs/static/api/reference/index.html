@@ -4534,6 +4534,38 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exportImage" href="#Container-exportImage"><code>exportImage</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void!</code></a></span> </td>
+                        <td> Exports the container as an image to the host's container image store. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of image to export to in the host&#39;s store</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>platformVariants</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>[ContainerID!]</code></a></span></h6>
+                                <p>Identifiers for other platform specific containers.</p>
+                                <p>Used for multi-platform image.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
+                                <p>Force each layer of the exported image to use the specified compression algorithm.</p>
+                                <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <p>Use the specified media types for the exported image&#39;s layers.</p>
+                                <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exposedPorts" href="#Container-exposedPorts"><code>exposedPorts</code></a> - <span class="property-type"><a href="#definition-Port"><code>[Port!]!</code></a></span> </td>
                         <td>
@@ -8563,6 +8595,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRepository-id" href="#GitRepository-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span> </td>
                         <td> A unique identifier for this GitRepository. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-latestVersion" href="#GitRepository-latestVersion"><code>latestVersion</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Returns details for the latest semver tag. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRepository-ref" href="#GitRepository-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>

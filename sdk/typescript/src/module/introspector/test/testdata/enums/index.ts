@@ -8,12 +8,12 @@ export class Status {
   /**
    * Active status
    */
-  static readonly ACTIVE: string = "ACTIVE"
+  static readonly ACTIVE: string = "ACTIVE value"
 
   /**
    * Inactive status
    */
-  static readonly INACTIVE: string = "INACTIVE"
+  static readonly INACTIVE: string = "INACTIVE value"
 }
 
 @object()

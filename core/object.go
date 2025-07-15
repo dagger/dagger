@@ -27,6 +27,8 @@ type ModuleObjectType struct {
 	mod     *Module
 }
 
+var _ ModType = &ModuleObjectType{}
+
 func (t *ModuleObjectType) SourceMod() Mod {
 	if t.mod == nil {
 		return nil
@@ -34,7 +36,7 @@ func (t *ModuleObjectType) SourceMod() Mod {
 	return t.mod
 }
 
-func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
 		slog.Warn("ModuleObjectType.ConvertFromSDKResult: got nil value")
@@ -43,11 +45,11 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 
 	switch value := value.(type) {
 	case map[string]any:
-		return &ModuleObject{
+		return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
-		}, nil
+		})
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 	}
@@ -81,10 +83,10 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("load DynamicID: %w", err)
 		}
 		switch x := val.(type) {
-		case dagql.Instance[*ModuleObject]:
-			return x.Self.Fields, nil
-		case dagql.Instance[*InterfaceAnnotatedValue]:
-			return x.Self.Fields, nil
+		case dagql.ObjectResult[*ModuleObject]:
+			return x.Self().Fields, nil
+		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
+			return x.Self().Fields, nil
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
@@ -93,26 +95,23 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
-	var obj *ModuleObject
-	switch value := value.(type) {
+func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+	if value == nil {
+		return nil
+	}
+	var objFields map[string]any
+	switch value := value.Unwrap().(type) {
 	case nil:
 		return nil
 	case *ModuleObject:
-		obj = value
-	case dagql.Instance[*ModuleObject]:
-		obj = value.Self
+		objFields = value.Fields
 	case *InterfaceAnnotatedValue:
-		return t.CollectCoreIDs(ctx, &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value.Fields,
-		}, ids)
+		objFields = value.Fields
 	default:
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
 
-	for k, v := range obj.Fields {
+	for k, v := range objFields {
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
 		if !ok {
 			// if this is a private field, then we still should do best-effort collection
@@ -126,6 +125,18 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 		if !ok {
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
+
+		curID := value.ID()
+		fieldID := curID.Append(
+			fieldTypeDef.TypeDef.ToType(),
+			fieldTypeDef.Name,
+			curID.View(),
+			curID.Module(),
+			0,
+			"",
+		)
+		ctx := dagql.ContextWithID(ctx, fieldID)
+
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)
@@ -172,10 +183,10 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 }
 
 type Callable interface {
-	Call(context.Context, *CallOpts) (dagql.Typed, error)
+	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.Object, map[string]dagql.Input, dagql.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
+	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, dagql.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -240,11 +251,26 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for field %q", name)
 		}
+
+		curID := dagql.CurrentID(ctx)
+		fieldID := curID.Append(
+			field.TypeDef.ToType(),
+			field.Name,
+			curID.View(),
+			curID.Module(),
+			0,
+			"",
+		)
+		ctx := dagql.ContextWithID(ctx, fieldID)
+
 		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
 		}
-		fieldDefs, err := collectPBDefinitions(ctx, converted)
+		if converted == nil {
+			continue
+		}
+		fieldDefs, err := collectPBDefinitions(ctx, converted.Unwrap())
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +295,7 @@ func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 }
 
 func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
-	if obj.Module.InstanceID == nil {
+	if obj.Module.ResultID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 
@@ -316,12 +342,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 		dag.Root().ObjectType().Extend(
 			spec,
-			func(ctx context.Context, self dagql.Object, _ map[string]dagql.Input) (dagql.Typed, error) {
-				return &ModuleObject{
+			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 					Module:  mod,
 					TypeDef: objDef,
 					Fields:  map[string]any{},
-				}, nil
+				})
 			},
 			dagql.CacheSpec{
 				GetCacheConfig: mod.CacheConfigForCall,
@@ -353,7 +379,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	dag.Root().ObjectType().Extend(
 		spec,
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			var callInput []CallInput
 			for k, v := range args {
 				callInput = append(callInput, CallInput{
@@ -411,7 +437,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
 			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
@@ -419,7 +445,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			if !ok {
 				return nil, fmt.Errorf("could not find mod type for field %q", field.Name)
 			}
-			fieldVal, found := obj.Self.Fields[field.OriginalName]
+			fieldVal, found := obj.Self().Fields[field.OriginalName]
 			if !found {
 				// the field *might* not have been set yet on the object (even
 				// though the typedef has it) - so just pick a suitable zero value
@@ -453,10 +479,10 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
-		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
 				ParentTyped:  obj,
-				ParentFields: obj.Self.Fields,
+				ParentFields: obj.Self().Fields,
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
@@ -488,7 +514,9 @@ type CallableField struct {
 	Return ModType
 }
 
-func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, error) {
+var _ Callable = &CallableField{}
+
+func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
 	val, ok := opts.ParentFields[f.Field.OriginalName]
 	if !ok {
 		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
@@ -510,7 +538,7 @@ func (f *CallableField) ArgType(argName string) (ModType, error) {
 
 func (f *CallableField) CacheConfigForCall(
 	ctx context.Context,
-	parent dagql.Object,
+	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view dagql.View,
 	inputCfg dagql.CacheConfig,

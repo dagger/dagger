@@ -102,8 +102,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.NonNull(dagql.NewString(*self.Name())), nil
 			}
 		}).DoNotCache("simple field selection"),
-		dagql.NodeFunc("kind", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (TypeKind, error) {
-			return TypeKinds.Lookup(self.Self.Kind())
+		dagql.Func("kind", func(ctx context.Context, self *Type, args struct{}) (TypeKind, error) {
+			return TypeKinds.Lookup(self.Kind())
 		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *Type, args struct{}) (string, error) {
 			return self.Description(), nil
@@ -127,10 +127,10 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}) (dagql.Array[*EnumValue], error) {
 			return self.EnumValues(args.IncludeDeprecated.Bool()), nil
 		}).DoNotCache("simple field selection"),
-		dagql.NodeFunc("ofType", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (dagql.Nullable[*Type], error) {
-			switch self.Self.Kind() {
+		dagql.Func("ofType", func(ctx context.Context, self *Type, args struct{}) (dagql.Nullable[*Type], error) {
+			switch self.Kind() {
 			case "LIST", "NON_NULL":
-				return dagql.NonNull(self.Self.OfType()), nil
+				return dagql.NonNull(self.OfType()), nil
 			default:
 				return dagql.Null[*Type](), nil
 			}

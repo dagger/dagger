@@ -176,7 +176,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {
 		// right now calls are cached by module source digest via the `asModule` custom cache key plus
-		// the fact that IDs include the module InstanceID, verify that behavior works as expected
+		// the fact that IDs include the module ResultID, verify that behavior works as expected
 		callMod := func(c *dagger.Client, t *testctx.T, x string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work").

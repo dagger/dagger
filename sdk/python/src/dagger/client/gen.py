@@ -268,48 +268,39 @@ class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
     ESTARGZ = "EStarGZ"
-
-    EStarGZ = "EStarGZ"
+    EStarGZ = ESTARGZ
 
     GZIP = "Gzip"
-
-    Gzip = "Gzip"
+    Gzip = GZIP
 
     UNCOMPRESSED = "Uncompressed"
-
-    Uncompressed = "Uncompressed"
+    Uncompressed = UNCOMPRESSED
 
     ZSTD = "Zstd"
-
-    Zstd = "Zstd"
+    Zstd = ZSTD
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
     DOCKER = "DockerMediaTypes"
-
-    DockerMediaTypes = "DockerMediaTypes"
+    DockerMediaTypes = DOCKER
 
     OCI = "OCIMediaTypes"
-
-    OCIMediaTypes = "OCIMediaTypes"
+    OCIMediaTypes = OCI
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
     DIR = "DIR_SOURCE"
-
-    DIR_SOURCE = "DIR_SOURCE"
+    DIR_SOURCE = DIR
 
     GIT = "GIT_SOURCE"
-
-    GIT_SOURCE = "GIT_SOURCE"
+    GIT_SOURCE = GIT
 
     LOCAL = "LOCAL_SOURCE"
-
-    LOCAL_SOURCE = "LOCAL_SOURCE"
+    LOCAL_SOURCE = LOCAL
 
 
 class NetworkProtocol(Enum):
@@ -338,8 +329,7 @@ class TypeDefKind(Enum):
 
     BOOLEAN = "BOOLEAN_KIND"
     """A boolean value."""
-
-    BOOLEAN_KIND = "BOOLEAN_KIND"
+    BOOLEAN_KIND = BOOLEAN
     """A boolean value."""
 
     ENUM = "ENUM_KIND"
@@ -347,8 +337,7 @@ class TypeDefKind(Enum):
 
     Always paired with an EnumTypeDef.
     """
-
-    ENUM_KIND = "ENUM_KIND"
+    ENUM_KIND = ENUM
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
@@ -356,20 +345,17 @@ class TypeDefKind(Enum):
 
     FLOAT = "FLOAT_KIND"
     """A float value."""
-
-    FLOAT_KIND = "FLOAT_KIND"
+    FLOAT_KIND = FLOAT
     """A float value."""
 
     INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
-
-    INPUT_KIND = "INPUT_KIND"
+    INPUT_KIND = INPUT
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INTEGER = "INTEGER_KIND"
     """An integer value."""
-
-    INTEGER_KIND = "INTEGER_KIND"
+    INTEGER_KIND = INTEGER
     """An integer value."""
 
     INTERFACE = "INTERFACE_KIND"
@@ -377,8 +363,7 @@ class TypeDefKind(Enum):
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
     """
-
-    INTERFACE_KIND = "INTERFACE_KIND"
+    INTERFACE_KIND = INTERFACE
     """Always paired with an InterfaceTypeDef.
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -389,8 +374,7 @@ class TypeDefKind(Enum):
 
     A list of values all having the same type.
     """
-
-    LIST_KIND = "LIST_KIND"
+    LIST_KIND = LIST
     """Always paired with a ListTypeDef.
 
     A list of values all having the same type.
@@ -401,8 +385,7 @@ class TypeDefKind(Enum):
 
     A named type defined in the GraphQL schema, with fields and functions.
     """
-
-    OBJECT_KIND = "OBJECT_KIND"
+    OBJECT_KIND = OBJECT
     """Always paired with an ObjectTypeDef.
 
     A named type defined in the GraphQL schema, with fields and functions.
@@ -410,14 +393,12 @@ class TypeDefKind(Enum):
 
     SCALAR = "SCALAR_KIND"
     """A scalar value of any basic kind."""
-
-    SCALAR_KIND = "SCALAR_KIND"
+    SCALAR_KIND = SCALAR
     """A scalar value of any basic kind."""
 
     STRING = "STRING_KIND"
     """A string value."""
-
-    STRING_KIND = "STRING_KIND"
+    STRING_KIND = STRING
     """A string value."""
 
     VOID = "VOID_KIND"
@@ -425,8 +406,7 @@ class TypeDefKind(Enum):
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
-
-    VOID_KIND = "VOID_KIND"
+    VOID_KIND = VOID
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -1141,6 +1121,63 @@ class Container(Type):
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
+
+    async def export_image(
+        self,
+        name: str,
+        *,
+        platform_variants: "list[Container] | None" = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> Void:
+        """Exports the container as an image to the host's container image store.
+
+        Parameters
+        ----------
+        name:
+            Name of image to export to in the host's store
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the exported image to use the specified
+            compression algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Use the specified media types for the exported image's layers.
+            Defaults to OCI, which is largely compatible with most recent
+            container runtimes, but Docker may be needed for older runtimes
+            without OCI support.
+
+        Returns
+        -------
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg(
+                "platformVariants",
+                () if platform_variants is None else platform_variants,
+                (),
+            ),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("exportImage", _args)
+        await _ctx.execute()
 
     async def exposed_ports(self) -> list["Port"]:
         """Retrieves the list of exposed ports.
@@ -6136,6 +6173,12 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRepositoryID)
+
+    def latest_version(self) -> GitRef:
+        """Returns details for the latest semver tag."""
+        _args: list[Arg] = []
+        _ctx = self._select("latestVersion", _args)
+        return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:
         """Returns details of a ref.

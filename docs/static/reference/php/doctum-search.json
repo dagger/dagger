@@ -1939,6 +1939,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::exportImage",
+			"p": "Dagger/Container.html#method_exportImage",
+			"d": "<p>Exports the container as an image to the host's container image store.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::exposedPorts",
 			"p": "Dagger/Container.html#method_exposedPorts",
 			"d": "<p>Retrieves the list of exposed ports.</p>"
@@ -3298,6 +3304,12 @@
 			"n": "Dagger\\GitRepository::id",
 			"p": "Dagger/GitRepository.html#method_id",
 			"d": "<p>A unique identifier for this GitRepository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::latestVersion",
+			"p": "Dagger/GitRepository.html#method_latestVersion",
+			"d": "<p>Returns details for the latest semver tag.</p>"
 		},
 		{
 			"t": "M",

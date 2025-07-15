@@ -5,6 +5,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -735,25 +736,33 @@ class Enum(Handler[GraphQLEnumType]):
         if body := super().render_body(t):
             yield body
 
+        by_value = OrderedDict()
         for name, value in sorted(t.values.items()):
+            val = self._get_value(value)
+            if val not in by_value:
+                by_value[val] = []
+            by_value[val].append(name)
+
+        for val, names in by_value.items():
             yield ""
 
-            val = None
-            if value.ast_node and (
-                directive := self.ctx.schema.get_directive("enumValue")
-            ):
-                args = graphql.get_directive_values(directive, value.ast_node)
-                if args:
-                    val = args["value"]
-            if not val:
-                val = value.value
-
             # repr uses single quotes for strings, contrary to black
-            val = repr(val).replace("'", '"')
-            yield f"{name} = {val}"
+            valrepr = repr(val).replace("'", '"')
+            yield f"{names[0]} = {valrepr}"
+            if desc := t.values[names[0]].description:
+                yield doc(desc)
 
-            if value.description:
-                yield doc(value.description)
+            for i, name in enumerate(names[1:]):
+                yield f"{name} = {names[0]}"
+                if desc := t.values[names[1 + i]].description:
+                    yield doc(desc)
+
+    def _get_value(self, value) -> str:
+        if value.ast_node and (directive := self.ctx.schema.get_directive("enumValue")):
+            args = graphql.get_directive_values(directive, value.ast_node)
+            if args:
+                return args["value"]
+        return value.value
 
 
 class Field(Protocol):

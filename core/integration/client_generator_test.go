@@ -987,6 +987,105 @@ main()`))
 			})
 		}
 	})
+
+	t.Run("generate in root directory different from context directory", func(ctx context.Context, t *testctx.T) {
+		testCases := []testSetup{
+			{
+				baseImage: golangImage,
+				generator: "go",
+				outputDir: ".",
+				callCmd:   []string{"go", "run", "."},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withGoSetup(`package main
+import (
+  "context"
+  "fmt"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := Connect(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+  fmt.Println("result:", res)
+}`, "."))
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+			},
+			{
+				baseImage: nodeImage,
+				generator: "typescript",
+				outputDir: ".",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+
+async function main() {
+  await connection(async () => {
+    const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+
+    console.log("result:", res)
+  })
+}
+
+main()`))
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"npm", "install"})
+				},
+				callCmd: []string{"tsx", "index.ts"},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				moduleSrc := c.Container().From(tc.baseImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					// Init the repo here so the context is a parent dir of the root dir
+					WithExec([]string{"apk", "add", "git"}).
+					WithExec([]string{"git", "init"}).
+					WithWorkdir("/work/dir/dir").
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
+					With(tc.setup).
+					With(daggerClientInstallAt(tc.generator, tc.outputDir)).
+					With(tc.postSetup)
+
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
+						Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+
+				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+			})
+		}
+	})
 }
 
 func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *testctx.T) {

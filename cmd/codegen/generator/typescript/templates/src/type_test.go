@@ -207,3 +207,209 @@ export type BuildArg = {
 		require.Equal(t, want, b.String())
 	})
 }
+
+func TestTypeEnum(t *testing.T) {
+	t.Run("with-directive", func(t *testing.T) {
+		var enumJSON = `  {
+    "description": "Compression algorithm to use for image layers.",
+    "directives": [],
+    "enumValues": [
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Gzip\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "Gzip"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Zstd\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "Zstd"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"EStarGZ\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "EStarGZ"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Uncompressed\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "Uncompressed"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Gzip\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "GZIP"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Zstd\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "ZSTD"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"EStarGZ\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "ESTARGZ"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [
+          {
+            "args": [
+              {
+                "name": "value",
+                "value": "\"Uncompressed\""
+              }
+            ],
+            "name": "enumValue"
+          }
+        ],
+        "isDeprecated": false,
+        "name": "UNCOMPRESSED"
+      }
+    ],
+    "fields": [],
+    "inputFields": [],
+    "interfaces": [],
+    "kind": "ENUM",
+    "name": "ImageLayerCompression",
+    "possibleTypes": []
+  }`
+
+		wantFile := "testdata/type_test_enum_with_directive_want.ts"
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, enumJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+		require.NoError(t, err)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("no-directive", func(t *testing.T) {
+		var enumJSON = `  {
+    "description": "Transport layer network protocol associated to a port.",
+    "directives": [],
+    "enumValues": [
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [],
+        "isDeprecated": false,
+        "name": "TCP"
+      },
+      {
+        "deprecationReason": null,
+        "description": "",
+        "directives": [],
+        "isDeprecated": false,
+        "name": "UDP"
+      }
+    ],
+    "fields": [],
+    "inputFields": [],
+    "interfaces": [],
+    "kind": "ENUM",
+    "name": "NetworkProtocol",
+    "possibleTypes": []
+  }`
+
+		wantFile := "testdata/type_test_enum_without_directive_want.ts"
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, enumJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+		require.NoError(t, err)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+		require.Equal(t, want, b.String())
+	})
+}

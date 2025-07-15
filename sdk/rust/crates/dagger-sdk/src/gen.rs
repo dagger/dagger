@@ -1909,6 +1909,21 @@ pub struct ContainerExportOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExportImageOpts {
+    /// Force each layer of the exported image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the exported image's layers.
+    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+    /// Identifiers for other platform specific containers.
+    /// Used for multi-platform image.
+    #[builder(setter(into, strip_option), default)]
+    pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
@@ -2524,6 +2539,41 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exports the container as an image to the host's container image store.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_image(&self, name: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("exportImage");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exports the container as an image to the host's container image store.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_image_opts(
+        &self,
+        name: impl Into<String>,
+        opts: ContainerExportImageOpts,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("exportImage");
+        query = query.arg("name", name.into());
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
+        }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -6994,6 +7044,15 @@ impl GitRepository {
     pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns details for the latest semver tag.
+    pub fn latest_version(&self) -> GitRef {
+        let query = self.selection.select("latestVersion");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Returns details of a ref.
     ///

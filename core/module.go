@@ -20,7 +20,7 @@ import (
 
 type Module struct {
 	// The source of the module
-	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
+	Source dagql.ObjectResult[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
 
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
@@ -36,7 +36,7 @@ type Module struct {
 	Deps *ModDeps
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime dagql.Instance[*Container] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	Runtime dagql.ObjectResult[*Container] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 
@@ -52,8 +52,8 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// InstanceID is the ID of the initialized module.
-	InstanceID *call.ID
+	// ResultID is the ID of the initialized module.
+	ResultID *call.ID
 }
 
 func (*Module) Type() *ast.Type {
@@ -74,39 +74,39 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) GetSource() *ModuleSource {
-	return mod.Source.Self
+	return mod.Source.Self()
 }
 
 func (mod *Module) IDModule() *call.Module {
 	var ref, pin string
-	switch mod.Source.Self.Kind {
+	switch mod.Source.Self().Kind {
 	case ModuleSourceKindLocal:
-		ref = filepath.Join(mod.Source.Self.Local.ContextDirectoryPath, mod.Source.Self.SourceRootSubpath)
+		ref = filepath.Join(mod.Source.Self().Local.ContextDirectoryPath, mod.Source.Self().SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		ref = mod.Source.Self.Git.CloneRef
-		if mod.Source.Self.SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(mod.Source.Self.SourceRootSubpath, "/")
+		ref = mod.Source.Self().Git.CloneRef
+		if mod.Source.Self().SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(mod.Source.Self().SourceRootSubpath, "/")
 		}
-		if mod.Source.Self.Git.Version != "" {
-			ref += "@" + mod.Source.Self.Git.Version
+		if mod.Source.Self().Git.Version != "" {
+			ref += "@" + mod.Source.Self().Git.Version
 		}
-		pin = mod.Source.Self.Git.Commit
+		pin = mod.Source.Self().Git.Commit
 
 	case ModuleSourceKindDir:
 		// FIXME: this is better than nothing, but no other code handles refs that
 		// are an encoded ID right now
 		var err error
-		ref, err = mod.Source.Self.ContextDirectory.ID().Encode()
+		ref, err = mod.Source.Self().ContextDirectory.ID().Encode()
 		if err != nil {
 			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
 		}
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self.Kind))
+		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self().Kind))
 	}
 
-	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID, mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -214,7 +214,7 @@ func (mod *Module) View() (dagql.View, bool) {
 
 func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
-	_ dagql.Object,
+	_ dagql.AnyResult,
 	_ map[string]dagql.Input,
 	_ dagql.View,
 	cacheCfg dagql.CacheConfig,
@@ -234,7 +234,7 @@ func (mod *Module) CacheConfigForCall(
 	)
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
-		mod.Source.Self.Digest,
+		mod.Source.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
 
@@ -593,7 +593,7 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 		return nil
 	}
 
-	if mod.Source.Self.Kind != ModuleSourceKindLocal {
+	if mod.Source.Self().Kind != ModuleSourceKindLocal {
 		// TODO: handle remote git files
 		return nil
 	}
@@ -606,7 +606,7 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
 func (mod *Module) modulePath() string {
-	return mod.Source.Self.SourceSubpath
+	return mod.Source.Self().SourceSubpath
 }
 
 // Patch is called after all types have been loaded - here we can update any
@@ -703,15 +703,15 @@ var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.Source.Self != nil {
-		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
+	if mod.Source.Self() != nil {
+		dirDefs, err := mod.Source.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if mod.Runtime.Self != nil {
-		dirDefs, err := mod.Runtime.Self.PBDefinitions(ctx)
+	if mod.Runtime.Self() != nil {
+		dirDefs, err := mod.Runtime.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -723,20 +723,12 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 func (mod Module) Clone() *Module {
 	cp := mod
 
-	if mod.Source.Self != nil {
-		cp.Source.Self = mod.Source.Self.Clone()
-	}
-
 	if mod.SDKConfig != nil {
 		cp.SDKConfig = mod.SDKConfig.Clone()
 	}
 
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
-	}
-
-	if mod.Runtime.Self != nil {
-		cp.Runtime.Self = mod.Runtime.Self.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))
@@ -840,7 +832,6 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		// XXX: apply with defaults correctly!
 		if err := mod.validateTypeDef(ctx, def); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}

@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
@@ -27,6 +31,11 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
+
+type Evaluatable interface {
+	dagql.Typed
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
 
 type HasPBDefinitions interface {
 	// PBDefinitions returns all the buildkit definitions that are part of a core type
@@ -58,7 +67,7 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		} else {
 			return nil, nil
 		}
-	case dagql.Wrapper: // dagql.Instance
+	case dagql.Wrapper: // dagql.Result
 		return collectPBDefinitions(ctx, x.Unwrap())
 	case HasPBDefinitions:
 		return x.PBDefinitions(ctx)
@@ -316,6 +325,39 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	return f(dir)
 }
 
+// mountLLB is a utility for easily mounting an llb definition
+func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: llb,
+	})
+	if err != nil {
+		return err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		tmp, err := os.MkdirTemp("", "mount")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		return f(tmp)
+	}
+	return ref.Mount(ctx, f)
+}
+
 func Supports(ctx context.Context, minVersion string) (bool, error) {
 	id := dagql.CurrentID(ctx)
 	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
@@ -353,3 +395,12 @@ func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
 var (
 	enumView = AfterVersion("v0.18.11")
 )
+
+func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
+	linkDir, linkBasename := filepath.Split(containerPath)
+	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(resolvedLinkDir, linkBasename), nil
+}

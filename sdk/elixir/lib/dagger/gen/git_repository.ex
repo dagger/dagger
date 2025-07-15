@@ -82,6 +82,20 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Returns details for the latest semver tag.
+  """
+  @spec latest_version(t()) :: Dagger.GitRef.t()
+  def latest_version(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("latestVersion")
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   Returns details of a ref.
   """
   @spec ref(t(), String.t()) :: Dagger.GitRef.t()
