@@ -8182,7 +8182,7 @@ posthog-docusaurus@^2.0.4:
   resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
   integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
-posthog-js@^1.255.1:
+posthog-js@^1.256.2:
   version "1.257.0"
   resolved "https://registry.yarnpkg.com/posthog-js/-/posthog-js-1.257.0.tgz#7adfffa024756b910ee87a978e0fc6c12a9fa730"
   integrity sha512-Ujg9RGtWVCu+4tmlRpALSy2ZOZI6JtieSYXIDDdgMWm167KYKvTtbMPHdoBaPWcNu0Km+1hAIBnQFygyn30KhA==
@@ -9497,7 +9497,7 @@ typedoc-plugin-markdown@^4.7.0:
   resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.7.0.tgz#26075805ad5025a654e61720169e445bd24d81c0"
   integrity sha512-PitbnAps2vpcqK2gargKoiFXLWFttvwUbyns/E6zGIFG5Gz8ZQJGttHnYR9csOlcSjB/uyjd8tnoayrtsXG17w==
 
-typedoc@^0.28.5:
+typedoc@^0.28.7:
   version "0.28.7"
   resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.28.7.tgz#30453a9517b49e53f06e08954ef3dd106381447d"
   integrity sha512-lpz0Oxl6aidFkmS90VQDQjk/Qf2iw0IUvFqirdONBdj7jPSN9mGXhy66BcGNDxx5ZMyKKiBVAREvPEzT6Uxipw==
