@@ -42,7 +42,7 @@ func (s *directorySchema) Install() {
 		dagql.Func("name", s.name).
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
-		dagql.Func("entries", s.entries).
+		dagql.NodeFunc("entries", DagOpWrapper(s.srv, s.entries)).
 			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
 			Args(
@@ -277,10 +277,12 @@ func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args
 
 type entriesArgs struct {
 	Path dagql.Optional[dagql.String]
+
+	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) entries(ctx context.Context, parent *core.Directory, args entriesArgs) (dagql.Array[dagql.String], error) {
-	ents, err := parent.Entries(ctx, args.Path.Value.String())
+func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
+	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
 	if err != nil {
 		return nil, err
 	}

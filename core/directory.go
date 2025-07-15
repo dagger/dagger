@@ -244,36 +244,16 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := res.SingleRef()
+	ref, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
+
 	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
 		if clean := path.Clean(src); clean == "." || clean == "/" {
@@ -282,27 +262,33 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: src,
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	paths := []string{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, src)
+		if err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(resolvedDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			path := entry.Name()
+			if useSlash && entry.IsDir() {
+				path += "/"
+			}
+			paths = append(paths, path)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	paths := []string{}
-	for _, entry := range entries {
-		path := entry.Path
-		if useSlash && os.FileMode(entry.Mode).IsDir() {
-			path += "/"
-		}
-		paths = append(paths, path)
-	}
-
 	return paths, nil
 }
 
