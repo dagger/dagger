@@ -10321,7 +10321,14 @@ func (v CacheSharingMode) Value() string {
 }
 
 func (v *CacheSharingMode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
@@ -10330,6 +10337,8 @@ func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "LOCKED":
 		*v = CacheSharingModeLocked
 	case "PRIVATE":
@@ -10337,7 +10346,7 @@ func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
 	case "SHARED":
 		*v = CacheSharingModeShared
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10378,7 +10387,14 @@ func (v ImageLayerCompression) Value() string {
 }
 
 func (v *ImageLayerCompression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
@@ -10387,6 +10403,8 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "EStarGZ":
 		*v = ImageLayerCompressionEstarGz
 	case "ESTARGZ":
@@ -10398,7 +10416,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	case "Zstd":
 		*v = ImageLayerCompressionZstd
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10435,7 +10453,14 @@ func (v ImageMediaTypes) Value() string {
 }
 
 func (v *ImageMediaTypes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
@@ -10444,6 +10469,8 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "DOCKER":
 		*v = ImageMediaTypesDocker
 	case "DockerMediaTypes":
@@ -10453,7 +10480,7 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 	case "OCIMediaTypes":
 		*v = ImageMediaTypesOcimediaTypes
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10489,7 +10516,14 @@ func (v ModuleSourceKind) Value() string {
 }
 
 func (v *ModuleSourceKind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
@@ -10498,6 +10532,8 @@ func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "DIR":
 		*v = ModuleSourceKindDir
 	case "DIR_SOURCE":
@@ -10511,7 +10547,7 @@ func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
 	case "LOCAL_SOURCE":
 		*v = ModuleSourceKindLocalSource
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10548,7 +10584,14 @@ func (v NetworkProtocol) Value() string {
 }
 
 func (v *NetworkProtocol) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
@@ -10557,12 +10600,14 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "TCP":
 		*v = NetworkProtocolTcp
 	case "UDP":
 		*v = NetworkProtocolUdp
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10596,7 +10641,14 @@ func (v ReturnType) Value() string {
 }
 
 func (v *ReturnType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ReturnType) UnmarshalJSON(dt []byte) error {
@@ -10605,6 +10657,8 @@ func (v *ReturnType) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "ANY":
 		*v = ReturnTypeAny
 	case "FAILURE":
@@ -10612,7 +10666,7 @@ func (v *ReturnType) UnmarshalJSON(dt []byte) error {
 	case "SUCCESS":
 		*v = ReturnTypeSuccess
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -10667,7 +10721,14 @@ func (v TypeDefKind) Value() string {
 }
 
 func (v *TypeDefKind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
@@ -10676,6 +10737,8 @@ func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "BOOLEAN":
 		*v = TypeDefKindBoolean
 	case "BOOLEAN_KIND":
@@ -10721,7 +10784,7 @@ func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
 	case "VOID_KIND":
 		*v = TypeDefKindVoidKind
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }

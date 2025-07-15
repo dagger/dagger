@@ -1114,14 +1114,14 @@ export class Test {
 				require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
 				_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1400,7 +1400,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// fromStatusOpt
 				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
@@ -1416,7 +1416,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// toStatus
 				if tc.supportsMembers {
@@ -1428,7 +1428,7 @@ export class Test {
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// introspection
 				mod := inspectModule(ctx, t, modGen)

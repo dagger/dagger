@@ -308,9 +308,19 @@ func (spec *parsedEnumType) marshalJSONMethodCode() *Statement {
 	return Func().Params(Id("r").Id(spec.name)).
 		Id("MarshalJSON").
 		Params().
-		Params(Id("[]byte"), Id("error")).
+		Params(Index().Byte(), Id("error")).
 		BlockFunc(func(g *Group) {
-			g.Return(Id("json").Dot("Marshal").Call(Id("r").Dot("Name").Call()))
+			g.If(Id("r").Op("==").Lit("")).Block(
+				Return(Index().Byte().Call(Lit(`""`)), Nil()),
+			)
+			g.Id("name").Op(":=").Id("r").Dot("Name").Call()
+			g.If(Id("name").Op("==").Lit("")).Block(
+				Return(
+					Nil(),
+					Qual("fmt", "Errorf").Call(Lit("invalid enum value %q"), Id("r")),
+				),
+			)
+			g.Return(Qual("json", "Marshal").Call(Id("name")))
 		})
 }
 
@@ -325,11 +335,12 @@ func (spec *parsedEnumType) unmarshalJSONMethodCode() *Statement {
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 
 			var cases []Code
+			cases = append(cases, Case(Lit("")).Block(Op("*").Id("r").Op("=").Lit("")))
 			for _, v := range spec.values {
 				cases = append(cases, Case(Lit(v.name)).Block(Op("*").Id("r").Op("=").Id(v.originalName)))
 			}
 			cases = append(cases, Default().Block(Return(
-				Qual("fmt", "Errorf").Call(Lit("unknown enum value %q"), Id("s")),
+				Qual("fmt", "Errorf").Call(Lit("invalid enum value %q"), Id("s")),
 			)))
 			g.Switch(Id("s")).Block(cases...)
 			g.Return(Nil())
