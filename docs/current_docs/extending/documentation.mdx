@@ -1,11 +1,10 @@
 ---
-slug: /api/documentation
+title: Inline Documentation
+description: Learn how to document Dagger modules and functions, including how to add descriptions for modules, functions, and arguments in Go, Python, TypeScript, PHP, and Java.
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-# Inline Documentation
 
 Dagger modules and Dagger Functions should be documented so that descriptions are shown in the API and the CLI - for example, when calling `dagger functions`, `dagger call ... --help`, or `.help`.
 
@@ -18,7 +17,7 @@ The following code snippet shows how to add documentation for:
 - Function methods
 - Function arguments
 
-```go file=./snippets/documentation/go/main.go
+```go file=../snippets/documentation/go/main.go
 ```
 
 </TabItem>
@@ -37,7 +36,7 @@ For function arguments, [annotate](https://peps.python.org/pep-0727/#specificati
 :::
 
 <!-- loud_hello has a multi-line docstring on purpose -->
-```python file=./snippets/documentation/python/main.py
+```python file=../snippets/documentation/python/main.py
 ```
 
 </TabItem>
@@ -48,7 +47,7 @@ The following code snippet shows how to add documentation for:
 - Function methods
 - Function arguments
 
-```typescript file=./snippets/documentation/typescript/index.ts
+```typescript file=../snippets/documentation/typescript/index.ts
 ```
 
 </TabItem>
@@ -60,7 +59,7 @@ The following code snippet shows how to add documentation for:
 - Function methods
 - Function arguments
 
-```php file=./snippets/documentation/php/main/src/MyModule.php
+```php file=../snippets/documentation/php/main/src/MyModule.php
 ```
 
 </TabItem>
@@ -71,7 +70,7 @@ The following code snippet shows how to add documentation for:
 - Function methods
 - Function arguments
 
-```java file=./snippets/documentation/java/main/MyModule.java
+```java file=../snippets/documentation/java/main/MyModule.java
 ```
 
 The documentation of the module is added in the `package-info.java` file.
@@ -119,31 +118,31 @@ The following code snippet shows how to add documentation for an object and its 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=./snippets/documentation/go/object.go
+```go file=../snippets/documentation/go/object.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=./snippets/documentation/python/object.py
+```python file=../snippets/documentation/python/object.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=./snippets/documentation/typescript/object.ts
+```typescript file=../snippets/documentation/typescript/object.ts
 ```
 
 </TabItem>
 <TabItem value="php" label="PHP">
 
-```php file=./snippets/documentation/php/object/src/MyModule.php
+```php file=../snippets/documentation/php/object/src/MyModule.php
 ```
 
 </TabItem>
 <TabItem value="java" label="Java">
 
-```java file=./snippets/documentation/java/object/MyModule.java
+```java file=../snippets/documentation/java/object/MyModule.java
 ```
 
 </TabItem>

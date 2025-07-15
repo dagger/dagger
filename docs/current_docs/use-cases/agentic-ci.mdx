@@ -1,5 +1,6 @@
 ---
 title: "Agentic CI"
+description: "Learn how to use Dagger to build agentic CI workflows that can adapt to changing requirements and environments."
 ---
 
 Dagger can be used as a runtime and programming environment for AI agents. Dagger provides an `LLM` core type that enables native integration of Large Language Models (LLM) in your workflows.
@@ -14,7 +15,7 @@ A key feature of Dagger's LLM integration is out-of-the-box support for tool use
 
 Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use these objects and their Dagger Functions to complete the assigned task.
 
-The documentation for the modules are provided to the LLM via [inline documentation](../api/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
+The documentation for the modules are provided to the LLM via [inline documentation](../extending/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
 
 Here's an example:
 

@@ -26,7 +26,7 @@ Before beginning, ensure that:
 
 ## Create containers
 
-Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../api/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../api/index.mdx#calling-the-dagger-api) from the shell ([Dagger Shell](../../features/shell.mdx)) or from code ([custom Dagger Functions](../../api/custom-functions.mdx) written in a programming language).
+Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../extending/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../extending/index.mdx#calling-the-dagger-api) from the shell ([Dagger Shell](../../features/shell.mdx)) or from code ([custom Dagger Functions](../../extending/custom-functions.mdx) written in a programming language).
 
 [Dagger Shell](../../features/shell.mdx) is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules.
 
@@ -108,7 +108,7 @@ The `terminal` function is very useful for [debugging and experimenting](../../f
 
 What you just did (and have been doing since the start) is chaining one Dagger API function call to another with the pipe (`|`) operator. This is one of Dagger's most powerful features, as it allows you create dynamic workflows in a single command - no context switching between Dockerfile creation, build commands, and registry pushes.
 
-Dagger's documentation has [numerous examples of function chaining](../../api/chaining.mdx) in action but here's one more: creating an Alpine container, dropping in a text file with a custom message, setting it to display that message when run, and publishing it to a temporary registry - all in a single command!
+Dagger's documentation has [numerous examples of function chaining](../../extending/chaining.mdx) in action but here's one more: creating an Alpine container, dropping in a text file with a custom message, setting it to display that message when run, and publishing it to a temporary registry - all in a single command!
 
 ```shell
 container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
@@ -119,7 +119,7 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
 
 ## Write custom functions
 
-As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../../api/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../../features/modules.mdx).
+As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../../extending/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../../features/modules.mdx).
 
 :::tip IDE INTEGRATION
 <PartialIde />
@@ -195,7 +195,7 @@ public String publish()
 </TabItem>
 </Tabs>
 
-When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#dynamic-api-extension) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../extending/internals.mdx#dynamic-api-extension) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
 
 <VideoPlayer src="/img/current_docs/quickstart/basics/publish-code.webm" alt="Publishing demonstration" />
 
@@ -371,7 +371,7 @@ When calling Dagger Functions, all names (functions, arguments, fields, etc.) ar
 
 ## Use arguments and return values
 
-Dagger Functions are just like regular functions: they accept [arguments](../../api/arguments.mdx) and [return values](../../api/return-values.mdx). In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful [core types](../../api/types.mdx) which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+Dagger Functions are just like regular functions: they accept [arguments](../../extending/arguments.mdx) and [return values](../../extending/return-values.mdx). In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful [core types](../../extending/types.mdx) which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
 
 Here's a revision of the previous example which splits it into two smaller functions: one to build the container, and one to publish it. The builder function accepts the container image string as an argument and returns a `Container` type. The publisher function accepts a `Container` type as argument and returns the image identifier as a string.
 
@@ -656,8 +656,8 @@ Now that you know the basics of Dagger, continue your journey with the resources
 
 - [Build a CI pipeline](../index.mdx)
 - [Build an AI agent](../agent/index.mdx)
-- [Learn about the Dagger API](../../api/index.mdx)
+- [Learn about the Dagger API](../../extending/index.mdx)
 - [Learn about Dagger Shell](../../features/shell.mdx)
-- [Learn about Dagger Functions](../../api/custom-functions.mdx)
+- [Learn about Dagger Functions](../../extending/custom-functions.mdx)
 - [Visit the Daggerverse](https://daggerverse.dev/)
 - [See more examples in the Cookbook](../../cookbook/cookbook.mdx)

@@ -41,7 +41,7 @@ module.exports = {
     {
       type: "category",
       label: "Extending Dagger",
-      items: ["extending/index"],
+      items: ["extending/index", "extending/arguments", "extending/return-types"],
     },
   ],
 };

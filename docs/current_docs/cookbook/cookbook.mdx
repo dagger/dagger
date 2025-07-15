@@ -11,10 +11,10 @@ import TabItem from "@theme/TabItem";
 
 ### Mount or copy a directory or remote repository to a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/remote-repositories.mdx). It mounts the specified directory to the `/src` path in a container and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../extending/remote-repositories.mdx). It mounts the specified directory to the `/src` path in a container and returns the modified container.
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 
@@ -250,14 +250,14 @@ Besides helping with the final image size, mounts are more performant and resour
 
 ### Modify a copied directory or remote repository in a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::note
 When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
 :::
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 <Tabs groupId="language" queryString="sdk">
@@ -499,7 +499,7 @@ For examples of SSH-based cloning, including private or public Git repositories 
 
 ### Mount or copy a local or remote file to a container
 
-The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../extending/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -711,14 +711,14 @@ Besides helping with the final image size, mounts are more performant and resour
 
 ### Copy a subset of a directory or remote repository to a container using filters specified at run-time
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 :::note
-This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filtering) with [directory filters](../api/fs-filters.mdx).
+This is an example of [post-call filtering](../extending/fs-filters.mdx#post-call-filtering) with [directory filters](../extending/fs-filters.mdx).
 :::
 
 <Tabs groupId="language" queryString="sdk">
@@ -939,14 +939,14 @@ Copy the `data.json` host file to the runtime container and process it:
 
 ### Copy a subset of a directory or remote repository to a container using pre-defined filters
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 :::note
-This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filtering) with [directory filters](../api/fs-filters.mdx).
+This is an example of [pre-call filtering](../extending/fs-filters.mdx#pre-call-filtering) with [directory filters](../extending/fs-filters.mdx).
 :::
 
 <Tabs groupId="language" queryString="sdk">
@@ -1860,19 +1860,19 @@ The first Dagger Function below creates and returns an HTTP service. This servic
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/bind-services/go/main.go
+```go file=../extending/snippets/services/bind-services/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/bind-services/python/main.py
+```python file=../extending/snippets/services/bind-services/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/bind-services/typescript/index.ts
+```typescript file=../extending/snippets/services/bind-services/typescript/index.ts
 ```
 
 </TabItem>
@@ -1907,19 +1907,19 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/expose-dagger-services-to-host/go/main.go
+```go file=../extending/snippets/services/expose-dagger-services-to-host/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/expose-dagger-services-to-host/python/main.py
+```python file=../extending/snippets/services/expose-dagger-services-to-host/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```typescript file=../extending/snippets/services/expose-dagger-services-to-host/typescript/index.ts
 ```
 
 </TabItem>
@@ -1990,19 +1990,19 @@ This implies that a service is already listening on a port on the host, out-of-b
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/expose-host-services-to-dagger/go/main.go
+```go file=../extending/snippets/services/expose-host-services-to-dagger/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/expose-host-services-to-dagger/python/main.py
+```python file=../extending/snippets/services/expose-host-services-to-dagger/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```typescript file=../extending/snippets/services/expose-host-services-to-dagger/typescript/index.ts
 ```
 
 </TabItem>
@@ -2037,19 +2037,19 @@ The following Dagger Function starts a service manually, then retrieves its endp
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/use-endpoint/go/main.go
+```go file=../extending/snippets/services/use-endpoint/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/use-endpoint/python/main.py
+```python file=../extending/snippets/services/use-endpoint/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/use-endpoint/typescript/index.ts
+```typescript file=../extending/snippets/services/use-endpoint/typescript/index.ts
 ```
 
 </TabItem>
@@ -2084,19 +2084,19 @@ The following Dagger Function creates a service and binds it to an application c
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/test-against-db-service/go/main.go
+```go file=../extending/snippets/services/test-against-db-service/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/test-against-db-service/python/main.py
+```python file=../extending/snippets/services/test-against-db-service/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/test-against-db-service/typescript/index.ts
+```typescript file=../extending/snippets/services/test-against-db-service/typescript/index.ts
 ```
 
 </TabItem>
@@ -2131,19 +2131,19 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/start-stop-services/go/main.go
+```go file=../extending/snippets/services/start-stop-services/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/start-stop-services/python/main.py
+```python file=../extending/snippets/services/start-stop-services/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/start-stop-services/typescript/index.ts
+```typescript file=../extending/snippets/services/start-stop-services/typescript/index.ts
 ```
 
 </TabItem>
@@ -2178,19 +2178,19 @@ The following Dagger Function runs two services, service A and service B, that d
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/create-interdependent-services/go/main.go
+```go file=../extending/snippets/services/create-interdependent-services/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/create-interdependent-services/python/main.py
+```python file=../extending/snippets/services/create-interdependent-services/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/create-interdependent-services/typescript/index.ts
+```typescript file=../extending/snippets/services/create-interdependent-services/typescript/index.ts
 ```
 
 </TabItem>
@@ -2681,19 +2681,19 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/services/persist-service-state/go/main.go
+```go file=../extending/snippets/services/persist-service-state/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../api/snippets/services/persist-service-state/python/main.py
+```python file=../extending/snippets/services/persist-service-state/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/services/persist-service-state/typescript/index.ts
+```typescript file=../extending/snippets/services/persist-service-state/typescript/index.ts
 ```
 
 </TabItem>
@@ -2922,18 +2922,18 @@ The following Dagger Function opens an interactive terminal session at different
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/debugging/go/terminal-container/main.go
+```go file=../extending/snippets/debugging/go/terminal-container/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
-```python file=../api/snippets/debugging/python/terminal-container/main.py
+```python file=../extending/snippets/debugging/python/terminal-container/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/debugging/typescript/terminal-container/index.ts
+```typescript file=../extending/snippets/debugging/typescript/terminal-container/index.ts
 ```
 
 </TabItem>
@@ -2968,18 +2968,18 @@ The following Dagger Function clones Dagger's GitHub repository and opens an int
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/debugging/go/terminal-directory-1/main.go
+```go file=../extending/snippets/debugging/go/terminal-directory-1/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
-```python file=../api/snippets/debugging/python/terminal-directory-1/main.py
+```python file=../extending/snippets/debugging/python/terminal-directory-1/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/debugging/typescript/terminal-directory-1/index.ts
+```typescript file=../extending/snippets/debugging/typescript/terminal-directory-1/index.ts
 ```
 
 </TabItem>
@@ -2990,18 +2990,18 @@ The container created to mount the directory can be customized using additional 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../api/snippets/debugging/go/terminal-directory-2/main.go
+```go file=../extending/snippets/debugging/go/terminal-directory-2/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
-```python file=../api/snippets/debugging/python/terminal-directory-2/main.py
+```python file=../extending/snippets/debugging/python/terminal-directory-2/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../api/snippets/debugging/typescript/terminal-directory-2/index.ts
+```typescript file=../extending/snippets/debugging/typescript/terminal-directory-2/index.ts
 ```
 
 </TabItem>
@@ -3082,7 +3082,7 @@ The approach described below is experimental and may be deprecated in favor of a
 </Tabs>
 
 :::warning
-When using spans to group and measure Dagger API function calls, ensure that the function calls are not [lazily evaluated](../api/internals.mdx#lazy-evaluation). The duration of the corresponding spans in this case will always be zero.
+When using spans to group and measure Dagger API function calls, ensure that the function calls are not [lazily evaluated](../extending/internals.mdx#lazy-evaluation). The duration of the corresponding spans in this case will always be zero.
 :::
 
 #### Example

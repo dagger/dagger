@@ -20,7 +20,7 @@ A key feature of Dagger's LLM integration is out-of-the-box support for tool use
 
 Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use these objects and their functions to complete the assigned task.
 
-The documentation for the modules are provided to the LLM via [inline documentation](../api/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
+The documentation for the modules are provided to the LLM via [inline documentation](../extending/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
 
 Here's an example:
 
@@ -138,5 +138,5 @@ Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls
 
 - [Build an AI agent with our quickstart](../quickstart/agent/index.mdx)
 - [Browse examples of agentic workflows](../examples/index.mdx)
-- [Learn about the agent loop and how to work with LLM prompts and responses](../api/llm.mdx)
+- [Learn about the agent loop and how to work with LLM prompts and responses](../extending/llm.mdx)
 - [Configure LLM endpoints](../configuration/llm.mdx)
