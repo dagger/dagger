@@ -537,7 +537,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 
 			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 				// if shallow, check we have enough depth
-				if depth == 0 {
+				if depth <= 0 {
 					doFetch = true
 				} else {
 					res, err := git.New().Run(ctx, "rev-list", "--count", ref.Commit)
@@ -649,7 +649,7 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 		"--update-head-ok",
 		"--force",
 	}
-	if depth == 0 {
+	if depth <= 0 {
 		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 			args = append(args, "--unshallow")
 		}
@@ -704,7 +704,7 @@ func doGitCheckout(
 	}
 
 	args := []string{"fetch", "-u"}
-	if depth != 0 {
+	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
 	args = append(args, "origin", pullref)
