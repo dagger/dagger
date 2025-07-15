@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/mitchellh/mapstructure"
 )
@@ -18,6 +20,7 @@ const errorTypeName = "error"
 var voidDef = Qual("dag", "TypeDef").Call().
 	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
 	Dot("WithOptional").Call(Lit(true))
+var voidDefObject = (&core.TypeDef{}).WithKind(core.TypeDefKindVoid).WithOptional(true)
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
@@ -181,6 +184,73 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	}
 
 	return fnTypeDefCode, nil
+}
+
+func (spec *funcTypeSpec) TypeDefObject() (*core.TypeDef, error) {
+	var fnReturnTypeDef *core.TypeDef
+	if spec.returnSpec == nil {
+		fnReturnTypeDef = voidDefObject
+	} else {
+		var err error
+		fnReturnTypeDef, err = spec.returnSpec.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate return type object: %w", err)
+		}
+	}
+
+	fnTypeDefObject := core.NewFunction(spec.name, fnReturnTypeDef)
+
+	if spec.doc != "" {
+		fnTypeDefObject = fnTypeDefObject.WithDescription(strings.TrimSpace(spec.doc))
+	}
+	if spec.sourceMap != nil {
+		fnTypeDefObject.WithSourceMap(coreSourceMap(spec.sourceMap))
+	}
+
+	for _, argSpec := range spec.argSpecs {
+		if argSpec.isContext {
+			// ignore ctx arg
+			continue
+		}
+
+		argTypeDefObject, err := argSpec.typeSpec.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate arg type object: %w", err)
+		}
+		if argSpec.optional {
+			argTypeDefObject = argTypeDefObject.WithOptional(true)
+		}
+
+		var defaultValueJSON core.JSON
+		if argSpec.hasDefaultValue {
+			var defaultValue string
+			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
+				v, ok := argSpec.defaultValue.(string)
+				if !ok {
+					return nil, fmt.Errorf("unknown enum value %q", v)
+				}
+				res := enumType.lookup(v)
+				if res == nil {
+					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
+				}
+				defaultValue = strconv.Quote(res.name)
+			} else {
+				v, err := json.Marshal(argSpec.defaultValue)
+				if err != nil {
+					return nil, fmt.Errorf("could not encode default value %q: %w", argSpec.defaultValue, err)
+				}
+				defaultValue = string(v)
+			}
+			defaultValueJSON = core.JSON(defaultValue)
+		}
+
+		fnTypeDefObject = fnTypeDefObject.WithArg(argSpec.name, argTypeDefObject, strings.TrimSpace(argSpec.description), defaultValueJSON, argSpec.defaultPath, argSpec.ignore, coreSourceMap(argSpec.sourceMap))
+	}
+
+	return (&core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(core.NewObjectTypeDef("", "")),
+	}).WithFunction(fnTypeDefObject)
 }
 
 func (spec *funcTypeSpec) GoType() types.Type {

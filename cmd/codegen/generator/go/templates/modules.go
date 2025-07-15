@@ -2,14 +2,13 @@ package templates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"regexp"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -113,18 +112,15 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 		methods: make(map[string][]method),
 	}
+func (funcs goTemplateFuncs) getTypes(ps *parseState, strict bool) ([]types.Type, error) {
+	ps.objs = []types.Object{}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
 
-	objFunctionCases := map[string][]Code{}
-
-	createMod := Qual("dag", "Module").Call()
-
-	ps.objs = []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
-			return "", fmt.Errorf("%q should exist in scope, but doesn't", name)
+			return nil, fmt.Errorf("%q should exist in scope, but doesn't", name)
 		}
 		ps.objs = append(ps.objs, obj)
 	}
@@ -150,7 +146,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 		// check if this is the DaggerObject interface
 		if ok, err := ps.checkDaggerObjectIface(obj); err != nil {
-			return "", err
+			return nil, err
 		} else if ok {
 			continue
 		}
@@ -160,143 +156,102 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		}
 	}
 
-	if ps.daggerObjectIfaceType == nil {
-		return "", fmt.Errorf("cannot find default codegen %s interface in:\n[%s]", daggerObjectIfaceName, strings.Join(pkgScope.Names(), ", "))
+	if ps.daggerObjectIfaceType == nil && strict {
+		return nil, fmt.Errorf("cannot find default codegen %s interface in:\n[%s]", daggerObjectIfaceName, strings.Join(pkgScope.Names(), ", "))
 	}
 
-	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
-		createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
-	}
+	return tps, nil
+}
 
-	added := map[string]struct{}{}
+/*
+moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
+
+The overall idea is that users just need to create a struct with the same name as their Module and then
+add methods to that struct to implement their Module. Methods on that struct become Functions.
+
+They are also free to return custom objects from Functions, which themselves may have methods that become
+Functions too. However, only the "top-level" Module struct's Functions will be directly invocable.
+
+This is essentially just the GraphQL execution model.
+
+The implementation works by parsing the user's code and generating a main func that reads function call inputs
+from the Engine, calls the relevant function and returns the result. The generated code is mostly a giant switch/case
+on the object+function name, with each case doing json deserialization of the input arguments and calling the actual
+Go function.
+*/
+func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
+	objFunctionCases := map[string][]Code{}
+
+	createMod := Qual("dag", "Module").Call()
 
 	implementationCode := Empty()
-	for len(tps) != 0 {
-		var nextTps []types.Type
-		for _, tp := range tps {
-			tp = dealias(tp)
 
-			named, isNamed := tp.(*types.Named)
-			if !isNamed {
-				continue
+	err := funcs.visitTypes(
+		true,
+		func(pkgDoc string) error {
+			if pkgDoc != "" {
+				createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
+			}
+			return nil
+		},
+		func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
+			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
+				// errors indicate an internal problem rather than something w/ user code, so error instead
+				return fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 			}
 
-			obj := named.Obj()
-			basePkg := funcs.modulePkg.Types.Path()
-			if obj.Pkg().Path() != basePkg && !ps.isDaggerGenerated(obj) {
-				// the type must be created in the target package (if not a
-				// generated type)
-				return "", fmt.Errorf("cannot code-generate for foreign type %s", obj.Name())
+			// Add the object to the module
+			objTypeDefCode, err := objTypeSpec.TypeDefCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 			}
-			if !obj.Exported() {
-				// the type must be exported
-				return "", fmt.Errorf("cannot code-generate unexported type %s", obj.Name())
+			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+
+			implCode, err := objTypeSpec.ImplementationCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
 			}
+			implementationCode.Add(implCode).Line()
 
-			// avoid adding a struct definition twice (if it's referenced in two function signatures)
-			if _, ok := added[obj.Pkg().Path()+"/"+obj.Name()]; ok {
-				continue
+			return nil
+		},
+		func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
+			// Add the iface to the module
+			ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 			}
+			createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
 
-			switch underlyingObj := named.Underlying().(type) {
-			case *types.Struct:
-				strct := underlyingObj
-				objTypeSpec, err := ps.parseGoStruct(strct, named)
-				if err != nil {
-					return "", err
-				}
-				if objTypeSpec == nil {
-					// not including in module schema, skip it
-					continue
-				}
-
-				if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
-					// errors indicate an internal problem rather than something w/ user code, so error instead
-					return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
-				}
-
-				// Add the object to the module
-				objTypeDefCode, err := objTypeSpec.TypeDefCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
-
-				implCode, err := objTypeSpec.ImplementationCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
-				}
-				implementationCode.Add(implCode).Line()
-
-				// If the object has any extra sub-types (e.g. for function return
-				// values), add them to the list of types to process
-				nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
-
-			case *types.Interface:
-				iface := underlyingObj
-				ifaceTypeSpec, err := ps.parseGoIface(iface, named)
-				if err != nil {
-					return "", err
-				}
-				if ifaceTypeSpec == nil {
-					// not including in module schema, skip it
-					continue
-				}
-
-				// Add the iface to the module
-				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
-				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
-
-				implCode, err := ifaceTypeSpec.ImplementationCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
-				}
-				implementationCode.Add(implCode).Line()
-
-				// If the object has any extra sub-types (e.g. for function return
-				// values), add them to the list of types to process
-				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
-
-			case *types.Basic:
-				if ps.isDaggerGenerated(obj) {
-					continue
-				}
-				enum := underlyingObj
-				enumTypeSpec, err := ps.parseGoEnum(enum, named)
-				if err != nil {
-					return "", err
-				}
-				if enumTypeSpec == nil {
-					// not including in module schema, skip it
-					continue
-				}
-
-				// Add the enum to the module
-				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
-				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
-
-				implCode, err := enumTypeSpec.ImplementationCode()
-				if err != nil {
-					return "", fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
-				}
-				implementationCode.Add(implCode).Line()
-
-				// If the object has any extra sub-types (e.g. for function return
-				// values), add them to the list of types to process
-				nextTps = append(nextTps, enumTypeSpec.GoSubTypes()...)
+			implCode, err := ifaceTypeSpec.ImplementationCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
 			}
+			implementationCode.Add(implCode).Line()
+
+			return nil
+		},
+		func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
+			// Add the enum to the module
+			enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+			}
+			createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
+
+			implCode, err := enumTypeSpec.ImplementationCode()
+			if err != nil {
+				return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
+			}
+			implementationCode.Add(implCode).Line()
+
+			return nil
+		})
+	if err != nil {
+		if errors.Is(err, emptyCodeError) {
+			return `func main() { panic("no code yet") }`, nil
 		}
-
-		tps, nextTps = nextTps, nil
+		return "", err
 	}
 
 	var out []string
