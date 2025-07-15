@@ -6,6 +6,9 @@ $desktop-xl-width: 1160px;
 
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap");
 
+// define a css variable for the dark mode background color
+$dagger-dark-mode-background-color: rgb(13, 12, 27);
+
 :root {
   --ifm-font-family-base: "Open Sans", system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont,
@@ -141,4 +144,56 @@ html[data-theme="dark"] {
     font-weight: bold !important;
     border-bottom: 2px solid white !important;
   }
+}
+
+.navbar--fixed-top {
+  background-color: var(--ifm-navbar-background-color) !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+  margin-bottom: 1.8rem;
+}
+
+.theme-doc-sidebar-item-category {
+  font-weight: bold;
+  color: var(--ifm-menu-color);
+  // no hover effect
+  &:hover {
+    color: var(--ifm-menu-color);
+    background: none !important;
+  }
+  // relative font size to 14px 
+  font-size: 0.875rem; // 14px
+  margin-bottom: 2.0rem;
+}
+
+.menu__list-item-collapsible {
+  font-weight: bold;
+  color: var(--ifm-menu-color);
+  // no hover effect
+  &:hover {
+    color: var(--ifm-menu-color);
+    background: none !important;
+  }
+  // relative font size to 14px
+  font-size: 0.875rem; // 14px
+}
+
+.theme-doc-sidebar-item-category .menu__list {
+  font-weight: normal;
+  // relative font size to 14px
+  font-size: 0.875rem; // 14px
+  color: var(--ifm-menu-color);
+}
+
+.theme-doc-sidebar-item-category .menu__link--active {
+  color: var(--ifm-menu-color);
+  font-weight: bold;
+  &:hover {
+    color: var(--ifm-menu-color);
+  }
+}
+
+.theme-layout-footer {
+  background-color: rgb(19, 17, 38);
+  color: #fff;
 }

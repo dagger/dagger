@@ -3,6 +3,10 @@ title: "Modern CI"
 description: "Build a modern CI workflow with Dagger that's portable, composable, and runs anywhere"
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import VideoPlayer from '../../src/components/VideoPlayer';
+
 This guide will show you how to build a modern CI workflow for an application using Dagger. Workflows often start simple, but eventually transform into a labyrinth of artisanal shell scripts and/or unmanageable YAML code. Dagger lets you replace those artisanal scripts and YAML with a modern API and cross-language scripting engine.
 
 ## Requirements
@@ -61,41 +65,41 @@ After successfully creating your organization, all future Dagger workflows can b
 Bootstrap a new Dagger module in Go, Python, TypeScript, PHP, or Java by running `dagger init` in the application's root directory.
 
 <Tabs groupId="language" queryString="sdk">
-<Tab value="go" title="Go">
+<TabItem value="go" title="Go">
 
 ```shell
 dagger init --sdk=go --name=hello-dagger
 ```
 
-</Tab>
-<Tab value="python" title="Python">
+</TabItem>
+<TabItem value="python" title="Python">
 
 ```shell
 dagger init --sdk=python --name=hello-dagger
 ```
 
-</Tab>
-<Tab value="typescript" title="TypeScript">
+</TabItem>
+<TabItem value="typescript" title="TypeScript">
 
 ```shell
 dagger init --sdk=typescript --name=hello-dagger
 ```
 
-</Tab>
-<Tab value="php" title="PHP">
+</TabItem>
+<TabItem value="php" title="PHP">
 
 ```shell
 dagger init --sdk=php --name=hello-dagger
 ```
 
-</Tab>
-<Tab value="java" title="Java">
+</TabItem>
+<TabItem value="java" title="Java">
 
 ```shell
 dagger init --sdk=java --name=hello-dagger
 ```
 
-</Tab>
+</TabItem>
 </Tabs>
 
 This will generate a `dagger.json` [module metadata file] and a `.dagger` directory containing some boilerplate Dagger Functions as examples.
@@ -112,7 +116,7 @@ You should see information about two auto-generated Dagger Functions: `container
 Replace the generated Dagger module files as described below.
 
 <Tabs groupId="language" queryString="sdk">
-<Tab value="go" title="Go">
+<TabItem value="go" title="Go">
 
 Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -183,8 +187,8 @@ func (m *HelloDagger) BuildEnv(
 }
 ```
 
-</Tab>
-<Tab value="python" title="Python">
+</TabItem>
+<TabItem value="python" title="Python">
 
 Replace the generated `.dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -264,8 +268,8 @@ class HelloDagger:
         )
 ```
 
-</Tab>
-<Tab value="typescript" title="TypeScript">
+</TabItem>
+<TabItem value="typescript" title="TypeScript">
 
 Replace the generated `.dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -338,8 +342,8 @@ export class HelloDagger {
 }
 ```
 
-</Tab>
-<Tab value="php" title="PHP">
+</TabItem>
+<TabItem value="php" title="PHP">
 
 Replace the generated `.dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -425,8 +429,8 @@ class HelloDagger
 }
 ```
 
-</Tab>
-<Tab value="java" title="Java">
+</TabItem>
+<TabItem value="java" title="Java">
 
 Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -496,7 +500,7 @@ public class HelloDagger {
 }
 ```
 
-</Tab>
+</TabItem>
 </Tabs>
 
 In this Dagger module, each Dagger Function performs a different operation:
