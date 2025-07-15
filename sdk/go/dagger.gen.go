@@ -10293,6 +10293,8 @@ func (CacheSharingMode) IsEnum() {}
 
 func (v CacheSharingMode) Name() string {
 	switch v {
+	case "":
+		return ""
 	case CacheSharingModeShared:
 		return "SHARED"
 	case CacheSharingModePrivate:
@@ -10309,7 +10311,14 @@ func (v CacheSharingMode) Value() string {
 }
 
 func (v *CacheSharingMode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
@@ -10318,6 +10327,8 @@ func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "LOCKED":
 		*v = CacheSharingModeLocked
 	case "PRIVATE":
@@ -10348,6 +10359,8 @@ func (ImageLayerCompression) IsEnum() {}
 
 func (v ImageLayerCompression) Name() string {
 	switch v {
+	case "":
+		return ""
 	case ImageLayerCompressionGzip:
 		return "Gzip"
 	case ImageLayerCompressionZstd:
@@ -10366,7 +10379,14 @@ func (v ImageLayerCompression) Value() string {
 }
 
 func (v *ImageLayerCompression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
@@ -10375,6 +10395,8 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "EStarGZ":
 		*v = ImageLayerCompressionEstarGz
 	case "ESTARGZ":
@@ -10409,6 +10431,8 @@ func (ImageMediaTypes) IsEnum() {}
 
 func (v ImageMediaTypes) Name() string {
 	switch v {
+	case "":
+		return ""
 	case ImageMediaTypesOcimediaTypes:
 		return "OCIMediaTypes"
 	case ImageMediaTypesDockerMediaTypes:
@@ -10423,7 +10447,14 @@ func (v ImageMediaTypes) Value() string {
 }
 
 func (v *ImageMediaTypes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
@@ -10432,6 +10463,8 @@ func (v *ImageMediaTypes) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "DOCKER":
 		*v = ImageMediaTypesDocker
 	case "DockerMediaTypes":
@@ -10461,6 +10494,8 @@ func (ModuleSourceKind) IsEnum() {}
 
 func (v ModuleSourceKind) Name() string {
 	switch v {
+	case "":
+		return ""
 	case ModuleSourceKindLocalSource:
 		return "LOCAL_SOURCE"
 	case ModuleSourceKindGitSource:
@@ -10477,7 +10512,14 @@ func (v ModuleSourceKind) Value() string {
 }
 
 func (v *ModuleSourceKind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
@@ -10486,6 +10528,8 @@ func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "DIR":
 		*v = ModuleSourceKindDir
 	case "DIR_SOURCE":
@@ -10522,6 +10566,8 @@ func (NetworkProtocol) IsEnum() {}
 
 func (v NetworkProtocol) Name() string {
 	switch v {
+	case "":
+		return ""
 	case NetworkProtocolTcp:
 		return "TCP"
 	case NetworkProtocolUdp:
@@ -10536,7 +10582,14 @@ func (v NetworkProtocol) Value() string {
 }
 
 func (v *NetworkProtocol) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
@@ -10545,6 +10598,8 @@ func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "TCP":
 		*v = NetworkProtocolTcp
 	case "UDP":
@@ -10568,6 +10623,8 @@ func (ReturnType) IsEnum() {}
 
 func (v ReturnType) Name() string {
 	switch v {
+	case "":
+		return ""
 	case ReturnTypeSuccess:
 		return "SUCCESS"
 	case ReturnTypeFailure:
@@ -10584,7 +10641,14 @@ func (v ReturnType) Value() string {
 }
 
 func (v *ReturnType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ReturnType) UnmarshalJSON(dt []byte) error {
@@ -10593,6 +10657,8 @@ func (v *ReturnType) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "ANY":
 		*v = ReturnTypeAny
 	case "FAILURE":
@@ -10623,6 +10689,8 @@ func (TypeDefKind) IsEnum() {}
 
 func (v TypeDefKind) Name() string {
 	switch v {
+	case "":
+		return ""
 	case TypeDefKindStringKind:
 		return "STRING_KIND"
 	case TypeDefKindIntegerKind:
@@ -10655,7 +10723,14 @@ func (v TypeDefKind) Value() string {
 }
 
 func (v *TypeDefKind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
@@ -10664,6 +10739,8 @@ func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "BOOLEAN":
 		*v = TypeDefKindBoolean
 	case "BOOLEAN_KIND":
