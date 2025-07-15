@@ -231,11 +231,7 @@ type WithDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -338,11 +334,7 @@ type WithFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -372,11 +364,7 @@ type WithFilesArgs struct {
 }
 
 func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -404,11 +392,7 @@ type withoutDirectoryArgs struct {
 }
 
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -427,11 +411,7 @@ type withoutFileArgs struct {
 }
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -450,11 +430,7 @@ type withoutFilesArgs struct {
 }
 
 func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -471,11 +447,7 @@ type diffArgs struct {
 }
 
 func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -649,11 +621,7 @@ func (s *directorySchema) terminal(
 	dir dagql.ObjectResult[*core.Directory],
 	args directoryTerminalArgs,
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -700,11 +668,7 @@ type directoryWithSymlinkArgs struct {
 }
 
 func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}

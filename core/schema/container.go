@@ -889,11 +889,7 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -955,11 +951,7 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	ctr := parent.Self().Clone()
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1096,11 +1088,7 @@ type containerWithSymlinkArgs struct {
 }
 
 func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSymlinkArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1439,11 +1427,7 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1486,11 +1470,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (dagql.String, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1520,11 +1500,7 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1552,11 +1528,7 @@ type containerWithMountedCacheArgs struct {
 }
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1733,11 +1705,7 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1766,11 +1734,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1795,11 +1759,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1826,11 +1786,7 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1862,11 +1818,7 @@ type containerWithFilesArgs struct {
 }
 
 func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFilesArgs) (inst dagql.ObjectResult[*core.Container], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1900,11 +1852,7 @@ type containerWithoutDirectoryArgs struct {
 }
 
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1929,11 +1877,7 @@ type containerWithoutFileArgs struct {
 }
 
 func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -1958,11 +1902,7 @@ type containerWithoutFilesArgs struct {
 }
 
 func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutFilesArgs) (inst dagql.ObjectResult[*core.Container], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -2018,11 +1958,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -2420,11 +2356,7 @@ func (s *containerSchema) import_(ctx context.Context, parent *core.Container, a
 		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
 	}()
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -2511,11 +2443,7 @@ type containerWithServiceBindingArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
@@ -2651,11 +2579,7 @@ func (s *containerSchema) terminalLegacy(
 	ctr dagql.ObjectResult[*core.Container],
 	args containerTerminalArgs,
 ) (*core.TerminalLegacy, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := query.Server.Server(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}

@@ -677,11 +677,7 @@ func (s *moduleSourceSchema) directoryAsModule(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleArgs,
 ) (inst dagql.Result[*core.Module], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -873,11 +869,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) error {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -1106,11 +1098,7 @@ func (s *moduleSourceSchema) moduleSourceDirectory(
 		Path string
 	},
 ) (inst dagql.Result[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -1271,11 +1259,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -1392,11 +1376,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 		Dependencies []string
 	},
 ) (inst dagql.Result[*core.ModuleSource], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -1777,11 +1757,7 @@ func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to get current query: %w", err)
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get current dag: %w", err)
 	}
@@ -2016,11 +1992,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -2089,11 +2061,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 }
 
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.ObjectResult[*core.ModuleSource], mod *core.Module) (*core.Module, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -2213,11 +2181,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.Module], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}

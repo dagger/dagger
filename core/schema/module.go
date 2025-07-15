@@ -267,11 +267,7 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -319,11 +315,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -342,11 +334,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -361,11 +349,7 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -437,11 +421,7 @@ func supportEnumMembers(ctx context.Context) (bool, error) {
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -461,11 +441,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -504,11 +480,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -553,11 +525,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
 	SourceMap core.SourceMapID
 }) (*core.Function, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -632,11 +600,7 @@ func (s *moduleSchema) moduleGeneratedContextDirectory(
 	mod dagql.ObjectResult[*core.Module],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -677,11 +641,7 @@ func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Modu
 func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -696,11 +656,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -715,11 +671,7 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
 	Enum core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -745,11 +697,7 @@ func (s *moduleSchema) currentModuleSource(
 	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -802,11 +750,7 @@ func (s *moduleSchema) currentModuleWorkdir(
 		core.CopyFilter
 	},
 ) (inst dagql.Result[*core.Directory], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -839,11 +783,7 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 		Path string
 	},
 ) (inst dagql.Result[*core.File], err error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
@@ -868,11 +808,7 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 }
 
 func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dag, err := query.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
