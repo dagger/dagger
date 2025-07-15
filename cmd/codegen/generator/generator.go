@@ -29,6 +29,10 @@ type Generator interface {
 
 	// GenerateLibrary only generate the library bindings for the given schema.
 	GenerateLibrary(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+
+	// GenerateTypeDefs extract type definitions from a module and returns a map
+	// of default filename to content for that file.
+	GenerateTypeDefs(ctx context.Context) (*GeneratedState, error)
 }
 
 type GeneratedState struct {
