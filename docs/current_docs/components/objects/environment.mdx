@@ -2,6 +2,9 @@
 title: "Environment"
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 Dagger [modules] are collections of Dagger Functions. When you give a Dagger module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
 
 Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
