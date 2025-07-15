@@ -20,7 +20,7 @@ func init() {
 
 func (loader Apple) Loader(ctx context.Context) (*Loader, error) {
 	// check docker is running
-	cmd := exec.CommandContext(ctx, "system", "status")
+	cmd := exec.CommandContext(ctx, "container", "system", "status")
 	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
 		return nil, err
 	}
