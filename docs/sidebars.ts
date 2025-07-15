@@ -41,7 +41,37 @@ module.exports = {
     {
       type: "category",
       label: "Extending Dagger",
-      items: ["extending/index", "extending/arguments", "extending/return-types"],
+      items: [
+        "extending/index",
+        "extending/arguments",
+        "extending/return-types",
+      ],
+    },
+  ],
+  reference: [
+    {
+      type: "category",
+      label: "CLI Reference",
+      items: ["reference/cli/index"],
+    },
+    {
+      type: "category",
+      label: "API Documentation",
+      items: [
+        "reference/api/index",
+        "reference/api/graphql",
+        "reference/api/module-registry",
+      ],
+    },
+    {
+      type: "category",
+      label: "Engine & Runtime",
+      items: [
+        "reference/engine-runtime/index",
+        "reference/engine-runtime/local-development",
+        "reference/engine-runtime/performance-caching",
+        "reference/engine-runtime/troubleshooting",
+      ],
     },
   ],
 };
