@@ -25,6 +25,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -291,60 +292,57 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	return paths, nil
 }
 
+// patternWithoutTrailingGlob is from fsuitls
+func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
+	patStr := p.String()
+	// We use filepath.Separator here because patternmatcher.Pattern patterns
+	// get transformed to use the native path separator:
+	// https://github.com/moby/patternmatcher/blob/130b41bafc16209dc1b52a103fdac1decad04f1a/patternmatcher.go#L52
+	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
+	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
+	return patStr
+}
+
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
+	paths := []string{}
 
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
+	oldPaths := []string{}
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		return []string{}, nil
-	}
-
-	// We use the same pattern matching function as Buildkit, since just doing
-	// IncludePatterns will still include directories we don't want
+	// TODO create a single patternmatcher.Pattern instance instead (not trivial since patternmatcher.New doesnt modularize this functionality)
 	pm, err := patternmatcher.New([]string{pattern})
 	if err != nil {
 		return nil, err
 	}
+	pats := pm.Patterns()
+	if len(pats) != 1 {
+		panic(fmt.Sprintf("above patternmatcher was only defined with a single pattern, but Patterns() returned %d", len(pats)))
+	}
+	pat := pats[0]
+
+	// from fsutils
+	patternChars := "*[]?^"
+	if filepath.Separator != '\\' {
+		patternChars += `\`
+	}
+	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
 	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
+	_, err = execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
 
-	var paths []string
-	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
-		IncludePattern: pattern,
-		Path:           dir.Dir,
-		Callback: func(path string, info os.FileInfo) error {
+		fsutil.Walk(ctx, resolvedDir, &fsutil.FilterOpt{
+			IncludePatterns: []string{pattern},
+		}, func(path string, info fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
 			// oh well, let's just fake it with false
@@ -358,14 +356,76 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 				path += "/"
 			}
 			if match {
-				paths = append(paths, path)
+				oldPaths = append(oldPaths, path)
 			}
 
 			return nil
-		},
+		})
+
+		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+			if prevErr != nil {
+				return prevErr
+			}
+
+			origpath := path
+			path, err := filepath.Rel(resolvedDir, path)
+			if err != nil {
+				return err
+			}
+			// Skip root
+			if path == "." {
+				return nil
+			}
+			fmt.Printf("ACB origpath: %s; relpath: %s\n", origpath, path)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				break
+			}
+
+			match, err := pm.MatchesUsingParentResult(path, false)
+			if err != nil {
+				return err
+			}
+
+			if match {
+				if useSlash && d.IsDir() {
+					path += "/"
+				}
+				paths = append(paths, path)
+			} else {
+				// optimization from fsutils
+				if d.IsDir() && onlyPrefixIncludes {
+					// Optimization: we can skip walking this dir if no include
+					// patterns could match anything inside it.
+					dirSlash := path + string(filepath.Separator)
+					if !pat.Exclusion() {
+						patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
+						if !strings.HasPrefix(patStr, dirSlash) {
+							return filepath.SkipDir
+						}
+					}
+				}
+			}
+
+			return nil
+		})
 	})
 	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			return []string{}, nil
+		}
 		return nil, err
+	}
+
+	ps := fmt.Sprintf("%v", paths)
+	ops := fmt.Sprintf("%v", oldPaths)
+
+	if ps != ops {
+		panic(fmt.Sprintf("pattern: %s; got %s; expected %s", pattern, ps, ops))
 	}
 
 	return paths, nil
