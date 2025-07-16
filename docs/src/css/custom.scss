@@ -198,6 +198,18 @@ html[data-theme="dark"] {
     font-weight: bold !important;
     border-bottom: 2px solid white !important;
   }
+  
+  /* Style for active links in the sidebar - dark mode only */
+  .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+    background-color: rgba(208, 224, 249, 0.15) !important; /* Using cloud-color with transparency */
+    border-radius: 4px !important;
+  }
+
+  /* Hover effect for menu links - dark mode only */
+  .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
+    background-color: rgba(208, 224, 249, 0.15) !important; /* Using cloud-color with transparency */
+    border-radius: 4px !important;
+  }
 }
 
 .navbar--fixed-top {
