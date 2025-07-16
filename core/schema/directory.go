@@ -79,7 +79,7 @@ func (s *directorySchema) Install() {
 				dagql.Arg("sources").Doc(`Identifiers of the files to copy.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied files (e.g., 0600).`),
 			),
-		dagql.Func("withNewFile", s.withNewFile).
+		dagql.NodeFunc("withNewFile", DagOpDirectoryWrapper(s.srv, s.withNewFile, WithPathFn(keepParentDir[WithNewFileArgs]))).
 			Doc(`Return a snapshot with a new file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "foo/bar.txt"`),
@@ -312,12 +312,20 @@ func (s *directorySchema) file(ctx context.Context, parent *core.Directory, args
 	return parent.File(ctx, args.Path)
 }
 
-func (s *directorySchema) withNewFile(ctx context.Context, parent *core.Directory, args struct {
+type WithNewFileArgs struct {
 	Path        string
 	Contents    string
 	Permissions int `default:"0644"`
-}) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithNewFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	dir, err := parent.Self().WithNewFileDagOp(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 }
 
 type WithFileArgs struct {

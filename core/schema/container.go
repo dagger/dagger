@@ -379,7 +379,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.Func("withNewFile", s.withNewFile).
+		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(s.srv, s.withNewFile)).
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a file added to its filesystem with text content`).
 			Args(
@@ -394,7 +394,7 @@ func (s *containerSchema) Install() {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
-		dagql.Func("withNewFile", s.withNewFileLegacy).
+		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(s.srv, s.withNewFileLegacy)).
 			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			Args(
@@ -1831,15 +1831,22 @@ type containerWithNewFileArgs struct {
 	Permissions int    `default:"0644"`
 	Owner       string `default:""`
 	Expand      bool   `default:"false"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withNewFile(ctx context.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithNewFile(ctx, path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+	ctr, err := parent.Self().WithNewFile(ctx, path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
 }
 
 type containerWithNewFileArgsLegacy struct {
@@ -1847,10 +1854,17 @@ type containerWithNewFileArgsLegacy struct {
 	Contents    string `default:""`
 	Permissions int    `default:"0644"`
 	Owner       string `default:""`
+
+	FSDagOpInternalArgs
 }
 
-func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent *core.Container, args containerWithNewFileArgsLegacy) (*core.Container, error) {
-	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgsLegacy) (inst dagql.ObjectResult[*core.Container], err error) {
+	ctr, err := parent.Self().WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
 }
 
 type containerWithUnixSocketArgs struct {
