@@ -376,8 +376,8 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"c/"}, entries)
 
 	t.Run("does not permit creating directory outside of root", func(ctx context.Context, t *testctx.T) {
-		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
-		require.Error(t, err)
+		_, err := dir.Directory("b").WithNewDirectory("../c").Sync(ctx)
+		require.ErrorContains(t, err, "cannot create directory outside parent")
 	})
 }
 

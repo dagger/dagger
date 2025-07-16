@@ -910,22 +910,45 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	// be sure to create the file under the working directory
 	dest = path.Join(dir.Dir, dest)
 
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
 	if permissions == 0 {
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
-
-	err = dir.SetState(ctx, st)
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withNewDirectory %s", dest)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dest)
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(resolvedDir, permissions)
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 

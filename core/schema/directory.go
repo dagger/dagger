@@ -115,7 +115,7 @@ func (s *directorySchema) Install() {
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
 				dagql.Arg("include").Doc(`If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
 			),
-		dagql.Func("withNewDirectory", s.withNewDirectory).
+		dagql.NodeFunc("withNewDirectory", DagOpDirectoryWrapper(s.srv, s.withNewDirectory, WithPathFn(keepParentDir[withNewDirectoryArgs]))).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory created (e.g., "/logs").`),
@@ -217,10 +217,16 @@ func (s *directorySchema) subdirectory(ctx context.Context, parent *core.Directo
 type withNewDirectoryArgs struct {
 	Path        string
 	Permissions int `default:"0644"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withNewDirectory(ctx context.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, args.Path, fs.FileMode(args.Permissions))
+func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withNewDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	dir, err := parent.Self().WithNewDirectory(ctx, args.Path, fs.FileMode(args.Permissions))
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
 }
 
 type WithDirectoryArgs struct {
