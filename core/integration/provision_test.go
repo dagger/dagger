@@ -161,6 +161,11 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 			})
 
 			t.Run("no cleanup", func(ctx context.Context, t *testctx.T) {
+				if tc.name == "podman" {
+					// this is weiiird, nested podman uses host networking everywhere
+					t.Skip("nested podman doesn't support multiple running containers")
+				}
+
 				c := connect(ctx, t)
 				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
 				dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
