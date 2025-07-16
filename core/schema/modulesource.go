@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -420,6 +421,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		Kind:              core.ModuleSourceKindLocal,
 		Local: &core.LocalModuleSource{
 			ContextDirectoryPath: contextDirPath,
+			IgnorePatterns:       nil,
 		},
 	}
 
@@ -459,7 +461,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
-		// load this module source's context directory, sdk and deps in parallel
+		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
@@ -492,6 +494,10 @@ func (s *moduleSourceSchema) localModuleSource(
 				return nil
 			})
 		}
+
+		eg.Go(func() error {
+			return s.loadLocalModuleIgnorePatterns(ctx, bk, localSrc)
+		})
 		if err := eg.Wait(); err != nil {
 			return inst, err
 		}
@@ -918,6 +924,50 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	return nil
+}
+
+// loadModuleIgnorePatterns loads the .gitignore files inside the context directory
+// and returns the list of patterns that should be ignored by the module
+func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource,
+) error {
+	return (func() (rerr error) {
+		ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load .gitignore patterns up to %q", src.Local.ContextDirectoryPath), telemetry.Internal())
+		defer telemetry.End(span, func() error { return rerr })
+
+		lg := bklog.G(ctx).WithField("module", src.ModuleName)
+		ctx = bklog.WithLogger(ctx, lg)
+
+		var contextDirectory dagql.ObjectResult[*core.Directory]
+
+		err := s.dag.Select(ctx, s.dag.Root(), &contextDirectory,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray("**.gitignore"))},
+				},
+			},
+		)
+
+		if err != nil {
+			return fmt.Errorf("failed to load context directory with only .gitignore: %w", err)
+		}
+
+		gitIgnorePatterns, err := loadGitIgnoreInDirectory(ctx, contextDirectory.Result.Self(), ".")
+		if err != nil {
+			return fmt.Errorf("failed to load .gitignore in context directory %q: %w", src.Local.ContextDirectoryPath, err)
+		}
+
+		lg.Debugf("pattern ignored by .gitignore %q", strings.Join(gitIgnorePatterns, ", "))
+
+		src.Local.IgnorePatterns = gitIgnorePatterns
+
+		return nil
+	})()
 }
 
 // load (or re-load) the context directory for the given module source
