@@ -33,17 +33,17 @@ var driverTestCases = []struct {
 }{
 	{
 		name:      "docker",
-		driver:    "docker-image",
+		driver:    "image+docker",
 		provision: dockerSetup,
 	},
 	{
 		name:      "nerdctl",
-		driver:    "nerdctl-image",
+		driver:    "image+nerdctl",
 		provision: nerdctlSetup,
 	},
 	{
 		name:      "podman",
-		driver:    "podman-image",
+		driver:    "image+podman",
 		provision: podmanSetup,
 	},
 }
@@ -51,19 +51,17 @@ var driverTestCases = []struct {
 func (ProvisionSuite) TestImageDriver(ctx context.Context, t *testctx.T) {
 	for _, tc := range driverTestCases {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			if tc.name == "docker" {
-				t.Run("default image", func(ctx context.Context, t *testctx.T) {
-					c := connect(ctx, t)
-					dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
-					dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
-					// HACK: pre-download builtin image tag (since the original might not
-					// actually have been pushed to the registry)
-					dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:"+engine.Tag)
-					require.NoError(t, err)
+			t.Run("default image", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
+				dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
+				// HACK: pre-download builtin image tag (since the original might not
+				// actually have been pushed to the registry)
+				dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:"+engine.Tag)
+				require.NoError(t, err)
 
-					require.True(t, semver.IsValid(detectEngineVersion(ctx, t, dockerc)))
-				})
-			}
+				require.True(t, semver.IsValid(detectEngineVersion(ctx, t, dockerc)))
+			})
 
 			t.Run("specified image", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)

@@ -7,8 +7,8 @@ import (
 	"io"
 	"maps"
 	"os"
-	"runtime"
 
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -38,7 +38,7 @@ func versionCmd() *cobra.Command {
 		PersistentPreRun: func(*cobra.Command, []string) {},
 		Args:             cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), long())
+			fmt.Fprintln(cmd.OutOrStdout(), version())
 			if forceVersionCheck {
 				updateAvailable, err := updateAvailable(cmd.Context())
 				if err != nil {
@@ -56,12 +56,12 @@ func versionCmd() *cobra.Command {
 	return cmd
 }
 
-func short() string {
-	return fmt.Sprintf("dagger %s (%s)", engine.Version, RunnerHost)
-}
-
-func long() string {
-	return fmt.Sprintf("%s %s/%s", short(), runtime.GOOS, runtime.GOARCH)
+func version() string {
+	return fmt.Sprintf("dagger %s (%s) %s",
+		engine.Version,
+		RunnerHost,
+		platforms.DefaultString(),
+	)
 }
 
 func updateAvailable(ctx context.Context) (string, error) {

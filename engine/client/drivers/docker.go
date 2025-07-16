@@ -13,19 +13,6 @@ import (
 	"github.com/docker/cli/cli/connhelper/commandconn"
 )
 
-func init() {
-	register("docker-image", &imageDriver{docker{cmd: "docker"}})
-	register("docker-container", &containerDriver{docker{cmd: "docker"}})
-
-	register("nerdctl-image", &imageDriver{docker{cmd: "nerdctl"}})
-	register("nerdctl-container", &containerDriver{docker{cmd: "nerdctl"}})
-	register("finch-image", &imageDriver{docker{cmd: "finch"}})
-	register("finch-container", &containerDriver{docker{cmd: "finch"}})
-
-	register("podman-image", &imageDriver{docker{cmd: "podman"}})
-	register("podman-container", &containerDriver{docker{cmd: "podman"}})
-}
-
 // docker is an implementation of the containerBackend for any
 // docker-compatible cli.
 type docker struct {
@@ -33,6 +20,20 @@ type docker struct {
 }
 
 var _ containerBackend = docker{}
+
+func (d docker) Available(ctx context.Context) (bool, error) {
+	// check binary exists
+	if _, err := exec.LookPath(d.cmd); err != nil {
+		return false, nil //nolint:nilerr
+	}
+
+	// check daemon is running
+	cmd := exec.CommandContext(ctx, d.cmd, "info")
+	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 func (d docker) ImagePull(ctx context.Context, image string) error {
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, d.cmd, "pull", image))

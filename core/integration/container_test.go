@@ -5282,11 +5282,8 @@ func (ContainerSuite) TestLoadContainerd(ctx context.Context, t *testctx.T) {
 
 	nerdctl = nerdctl.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-		// NOTE: piggy-back on the docker provisioning until we get a proper containerd driver
-		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
-		WithoutFile("/usr/local/bin/docker")
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "image+nerdctl://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true})
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
 		alt := nerdctl.

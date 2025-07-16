@@ -26,6 +26,10 @@ type dialDriver struct {
 	loader imageload.Backend
 }
 
+func (d *dialDriver) Available(ctx context.Context) (bool, error) {
+	return true, nil // assume always available
+}
+
 func (d *dialDriver) Provision(ctx context.Context, target *url.URL, _ *DriverOpts) (Connector, error) {
 	return dialConnector{dialDriver: d, target: target}, nil
 }

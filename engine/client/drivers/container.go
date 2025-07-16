@@ -23,6 +23,58 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+func init() {
+	register("docker-image", dockerImageDriver)         // legacy
+	register("docker-container", dockerContainerDriver) // legacy
+
+	register("image",
+		dockerImageDriver,
+		appleImageDriver,
+		podmanImageDriver,
+		finchImageDriver,
+		nerdctlImageDriver,
+	)
+	register("container",
+		dockerContainerDriver,
+		appleContainerDriver,
+		podmanContainerDriver,
+		finchContainerDriver,
+		nerdctlContainerDriver,
+	)
+
+	register("image+docker", dockerImageDriver)
+	register("container+docker", dockerContainerDriver)
+
+	register("image+apple", appleImageDriver)
+	register("container+apple", appleContainerDriver)
+
+	register("image+podman", podmanImageDriver)
+	register("container+podman", podmanContainerDriver)
+
+	register("image+finch", finchImageDriver)
+	register("container+finch", finchContainerDriver)
+
+	register("image+nerdctl", nerdctlImageDriver)
+	register("container+nerdctl", nerdctlContainerDriver)
+}
+
+var (
+	dockerImageDriver     = &imageDriver{docker{cmd: "docker"}}
+	dockerContainerDriver = &containerDriver{docker{cmd: "docker"}}
+
+	appleImageDriver     = &imageDriver{apple{}}
+	appleContainerDriver = &containerDriver{apple{}}
+
+	podmanImageDriver     = &imageDriver{docker{cmd: "podman"}}
+	podmanContainerDriver = &containerDriver{docker{cmd: "podman"}}
+
+	nerdctlContainerDriver = &containerDriver{docker{cmd: "nerdctl"}}
+	nerdctlImageDriver     = &imageDriver{docker{cmd: "nerdctl"}}
+
+	finchImageDriver     = &imageDriver{docker{cmd: "finch"}}
+	finchContainerDriver = &containerDriver{docker{cmd: "finch"}}
+)
+
 var (
 	engineConfigPath = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
 )
@@ -31,9 +83,9 @@ var (
 // into image/container drivers. This allows us to have all the exact same
 // logic between different container providers, but have different backend
 // commands.
-//
-// TODO: write some tests for impls
 type containerBackend interface {
+	Available(ctx context.Context) (bool, error)
+
 	ImagePull(ctx context.Context, image string) error
 	ImageExists(ctx context.Context, image string) (bool, error)
 	ImageRemove(ctx context.Context, image string) error
@@ -67,6 +119,10 @@ type runOpts struct {
 // imageDriver creates and manages a container, then connects to it
 type imageDriver struct {
 	backend containerBackend
+}
+
+func (d *imageDriver) Available(ctx context.Context) (bool, error) {
+	return d.backend.Available(ctx)
 }
 
 func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
@@ -111,6 +167,10 @@ type containerConnector struct {
 // imageDriver connects to a container directly
 type containerDriver struct {
 	backend containerBackend
+}
+
+func (d *containerDriver) Available(ctx context.Context) (bool, error) {
+	return d.backend.Available(ctx)
 }
 
 func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {

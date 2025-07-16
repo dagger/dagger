@@ -18,18 +18,12 @@ type Docker struct {
 
 func init() {
 	register("docker-image", &Docker{"docker"})
-	register("nerdctl-image", &Docker{"nerdctl"})
 	register("podman-image", &Docker{"podman"})
-	register("apple-image", &Docker{"podman"})
+	register("finch-image", &Docker{"finch"})
+	register("nerdctl-image", &Docker{"nerdctl"})
 }
 
 func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
-	// check docker is running
-	cmd := exec.CommandContext(ctx, loader.Cmd, "info")
-	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
-		return nil, err
-	}
-
 	return &Loader{
 		TarballLoader: loader.loadTarball,
 	}, nil

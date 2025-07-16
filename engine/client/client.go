@@ -266,7 +266,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(remote.Scheme)
+	driver, err := drivers.GetDriver(ctx, remote.Scheme)
 	if err != nil {
 		return err
 	}

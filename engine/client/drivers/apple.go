@@ -15,14 +15,23 @@ import (
 	"github.com/docker/cli/cli/connhelper/commandconn"
 )
 
-func init() {
-	register("apple-image", &imageDriver{apple{}})
-	register("apple-container", &containerDriver{apple{}})
-}
-
 type apple struct{}
 
 var _ containerBackend = apple{}
+
+func (apple) Available(ctx context.Context) (bool, error) {
+	// check binary exists
+	if _, err := exec.LookPath("container"); err != nil {
+		return false, nil //nolint:nilerr
+	}
+
+	// check daemon is running
+	cmd := exec.CommandContext(ctx, "container", "system", "status")
+	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 func (apple) ImagePull(ctx context.Context, image string) error {
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "pull", image))
