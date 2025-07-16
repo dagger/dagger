@@ -334,6 +334,32 @@ func (src *ModuleSource) LoadContext(
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
+		// Rebased the ignore patterns to be relative to the mounted path from the context directory.
+		// - If the contextual path is /foo/bar, all /foo/bar/.gitignore patterns must become the root or they'll not be applied correctly
+		// - Recursive patterns are not affected
+		// - Patterns that are outside the contextual path are ignored.
+		// - If relativePathToCtx is "." (meaning the contextual path is the same as the mounted path), then all ignore
+		// patterns are applied.
+		for _, pattern := range src.Local.IgnorePatterns {
+			if !strings.HasPrefix(pattern, "**") &&
+				!strings.HasPrefix(pattern, relativePathToCtx+"/") &&
+				!strings.HasPrefix(pattern, "!"+relativePathToCtx+"/") &&
+				relativePathToCtx != "." {
+				continue
+			}
+
+			// If the pattern is negative, we need to trim the leading "!" before removing the relative path
+			// and add it again after.
+			// !foo/bar/baz -> baz -> !baz
+			if strings.HasPrefix(pattern, "!") {
+				pattern = strings.TrimPrefix(pattern, "!")
+				ignore = append(ignore, "!"+strings.TrimPrefix(pattern, relativePathToCtx+"/"))
+				continue
+			}
+
+			ignore = append(ignore, strings.TrimPrefix(pattern, relativePathToCtx+"/"))
+		}
+
 		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
 				Field: "host",
@@ -455,6 +481,7 @@ func (src *ModuleSource) LoadContext(
 
 type LocalModuleSource struct {
 	ContextDirectoryPath string
+	IgnorePatterns       []string
 }
 
 func (src LocalModuleSource) Clone() *LocalModuleSource {
