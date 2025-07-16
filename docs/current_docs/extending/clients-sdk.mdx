@@ -85,7 +85,7 @@ The default template from `dagger develop` creates the following structure:
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the [Dagger module configuration file](../reference/configuration/modules.mdx).
 - `go.mod`/`go.sum` manage the Go module and its dependencies.
 - `main.go` is where your Dagger module code goes. It contains sample code to help you get started.
 - `internal` contains automatically-generated types and helpers needed to configure and run the module:
@@ -111,7 +111,7 @@ In this structure:
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the [Dagger module configuration file](../reference/configuration/modules.mdx).
 - `pyproject.toml` manages the Python project configuration.
 - `uv.lock` manages the module's pinned dependencies.
 - `src/my_module/` is where your Dagger module code goes. It contains sample code to help you get started.
@@ -136,7 +136,7 @@ This structure hosts a Python import package, with a name derived from the proje
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the [Dagger module configuration file](../reference/configuration/modules.mdx).
 - `package.json` manages the module dependencies.
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the TypeScript SDK.
@@ -159,7 +159,7 @@ In this structure:
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the [Dagger module configuration file](../reference/configuration/modules.mdx).
 - `composer.json` manages the module dependencies.
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the PHP SDK.
@@ -187,7 +187,7 @@ In this structure:
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the [Dagger module configuration file](../reference/configuration/modules.mdx).
 - `pom.xml` manages the module dependencies.
 - `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `target` contains the generated Java source classes.
@@ -437,7 +437,7 @@ All tasks have finished
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 :::note
-The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](../configuration/modules.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
+The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](../reference/configuration/modules.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
 :::
 
 Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:

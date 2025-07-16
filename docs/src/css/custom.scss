@@ -212,6 +212,16 @@ html[data-theme="dark"] {
   color: #fff;
 }
 
+.theme-layout-footer a {
+  color: #fff;
+  text-decoration: none;
+  // font size relative to 13px
+  font-size: 0.8125rem; // 13px
+}
+.theme-layout-footer a:hover {
+  text-decoration: underline;
+}
+
 /* Global font styling */
 body {
   font-family: "General Sans Medium", "General Sans Medium Placeholder", sans-serif;
@@ -280,3 +290,8 @@ h4 {
   font-weight: 600;
 }
 
+.footer__copyright {
+  font-size: 0.875rem !important; // 14px
+  color: #fff;
+  align-content: left;
+}
