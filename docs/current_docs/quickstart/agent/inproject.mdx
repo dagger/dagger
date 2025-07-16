@@ -20,7 +20,7 @@ Before beginning, ensure that:
 
 - you have [installed the Dagger CLI](../../installation.mdx).
 - you have a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
-- you have [configured](../../reference/configuration/llm.mdx) an LLM provider to use with Dagger.
+- you have configured an LLM provider to use with Dagger.
 - you have a GitHub account
 - you have completed the [AI agent quickstart](./index.mdx) to learn the basics of LLMs in Dagger.
 - you have completed the [CI quickstart](../index.mdx) to a Daggerize a project.
@@ -226,7 +226,7 @@ Check the help text for the new Dagger Function:
 
 This should show how to use the `develop` function.
 
-Make sure your LLM has been properly [configured](../../reference/configuration/llm.mdx):
+Make sure your LLM has been properly configured:
 
 ```shell
 llm | model
@@ -356,7 +356,7 @@ dagger functions
 
 ### Create a GitHub Actions workflow
 
-1. GitHub Actions will need the ability to call out to an LLM. This means that you must configure GitHub Actions with the same environment variables that you previously [configured](../../reference/configuration/llm.mdx) locally, this time as repository secrets.
+1. GitHub Actions will need the ability to call out to an LLM. This means that you must configure GitHub Actions with the same environment variables that you previously configured locally, this time as repository secrets.
 
 To configure new repository secrets:
 - From your GitHub repository, select the Settings tab

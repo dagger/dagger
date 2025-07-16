@@ -81,4 +81,25 @@ module.exports = {
       ],
     },
   ],
+  ci: [
+    {
+      type: "category",
+      label: "CI",
+      items: ["ci/adopting", "ci/integrations/index", "ci/integrations/ci", "ci/integrations/container-runtimes"],
+    },
+  ],
+  features: [
+    {
+      type: "category",
+      label: "Features",
+      items: ["features/index"],
+    },
+  ],
+  configuration: [
+    {
+      type: "category",
+      label: "Configuration",
+      items: ["reference/configuration/index"],
+    },
+  ],
 };
