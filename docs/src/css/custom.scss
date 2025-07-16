@@ -149,17 +149,7 @@ div[class*="docSidebarMenu"],
   box-shadow: none !important;
 }
 
-/* Style for active links and hover effect in the sidebar */
-.menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-  background-color: rgba(26, 24, 51, 0.1) !important;
-  border-radius: 4px !important;
-}
-
-/* Hover effect for menu links (excluding collapsible category headers) */
-.menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-  background-color: rgba(26, 24, 51, 0.1) !important;
-  border-radius: 4px !important;
-}
+/* Sidebar link styles will be applied in theme-specific sections */
 
 /* Navbar Item Colors */
 .navbar__items .navbar__item .navbar__link,
@@ -185,6 +175,18 @@ html[data-theme="light"] {
   .theme-announcement-bar {
     background-color: #{$inkberry-color} !important; /* Using inkberry color for branding */
     color: white !important; /* Using white text for contrast */
+  }
+  
+  /* Style for active links in the sidebar - light mode only */
+  .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    border-radius: 4px !important;
+  }
+
+  /* Hover effect for menu links - light mode only */
+  .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    border-radius: 4px !important;
   }
 }
 
