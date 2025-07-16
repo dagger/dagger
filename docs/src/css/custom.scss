@@ -149,6 +149,18 @@ div[class*="docSidebarMenu"],
   box-shadow: none !important;
 }
 
+/* Style for active links and hover effect in the sidebar */
+.menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+  background-color: rgba(26, 24, 51, 0.1) !important;
+  border-radius: 4px !important;
+}
+
+/* Hover effect for menu links (excluding collapsible category headers) */
+.menu__link:not(.menu__list-item-collapsible .menu__link):hover {
+  background-color: rgba(26, 24, 51, 0.1) !important;
+  border-radius: 4px !important;
+}
+
 /* Navbar Item Colors */
 .navbar__items .navbar__item .navbar__link,
 .navbar__items .navbar-blog-link {
