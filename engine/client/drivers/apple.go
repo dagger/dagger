@@ -103,7 +103,7 @@ func (apple) ContainerRemove(ctx context.Context, name string) error {
 }
 
 func (apple) ContainerStart(ctx context.Context, name string) error {
-	_, stderr, err := traceexec.ExecOutput(ctx, exec.CommandContext(ctx, "container", "start", name))
+	_, stderr, err := traceexec.ExecOutput(ctx, exec.CommandContext(ctx, "container", "start", name), telemetry.Encapsulated())
 	if err == nil {
 		return nil
 	}
