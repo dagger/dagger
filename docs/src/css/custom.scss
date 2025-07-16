@@ -4,6 +4,16 @@ $tablet-width: 996px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
 
+// branding colors
+$oat-color: rgb(248, 244, 239);
+$tangerine-color: rgb(239, 123, 26);
+$lemon-color: rgb(252, 2192, 9);
+$crimson-color: rgb(190, 29, 67);
+$aqua-color: rgb(64, 185, 188);
+$cloud-color: rgb(208, 224, 249);
+$plum-color: rgb(62, 59, 107);
+
+
 @import url("https://fonts.cdnfonts.com/css/general-sans");
 
 // define a css variable for the dark mode background color
@@ -41,7 +51,7 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
 }
 
 html[data-theme="dark"] {
-  --ifm-background-color: #131226;
+  --ifm-background-color: #1A1833;
   --ifm-color-primary-light: #57c7e3;
   --ifm-color-primary: #57c7e3;
   --ifm-heading-color: white;
@@ -51,22 +61,9 @@ html[data-theme="dark"] {
   --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
-  --ifm-navbar-background-color: #131226;
+  --ifm-navbar-background-color: rgb(19, 17, 38);
   --ifm-navbar-link-color: white;
 
-  // Apply dark background to all navbar and navigation elements
-  .navbar,
-  .navbar-sidebar,
-  .navbar-sidebar__backdrop,
-  .navbar-sidebar__item,
-  .navbar-sidebar__items,
-  .navbar__inner,
-  .menu,
-  .menu__list,
-  .theme-doc-sidebar-container,
-  nav {
-    background-color: var(--ifm-background-color) !important;
-  }
 
   // Make sure dropdown menus also have the correct background
   .dropdown__menu,
@@ -141,6 +138,10 @@ div[class*="docSidebarMenu"],
 .navbar__items .navbar-blog-link {
   color: var(--ifm-navbar-link-color) !important;
   font-size: 00.8175rem;
+}
+
+nav .sidebar {
+  margin-bottom: 1.8rem;
 }
 
 /* Ensure the active link has the right color in light mode */
@@ -244,7 +245,7 @@ body {
 /* Light mode styling for Dagger Cloud button */
 html[data-theme="light"] {
   .dagger-cloud-button {
-    background-color: rgb(19, 17, 38) !important; /* Dark blue/purple color */
+    background-color: #3E3B6B !important; /* Dark blue/purple color */
     color: white !important;
     border: 1px solid rgb(19, 17, 38) !important;
     
@@ -258,8 +259,8 @@ html[data-theme="light"] {
 /* Dark mode styling for Dagger Cloud button */
 html[data-theme="dark"] {
   .dagger-cloud-button {
-    background-color: #57c7e3 !important; /* Primary light color */
-    color: #131226 !important; /* Dark background color for contrast */
+    background-color: #40B9BC !important; /* Primary light color */
+    color: #ffffff !important; /* Dark background color for contrast */
     border: 1px solid #57c7e3 !important;
     
     &:hover {
@@ -294,4 +295,28 @@ h4 {
   font-size: 0.875rem !important; // 14px
   color: #fff;
   align-content: left;
+}
+
+.header-github-link {
+  height: 35px;
+  margin: 0;
+  padding: 0;
+  background-color: white;
+  mask-image: url("/img/github-icon.svg");
+  mask-size: 100%;
+  width: 30px;
+
+  @include desktop {
+    width: 35px;
+    text-indent: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  @include mobile {
+    margin: auto;
+    html[data-theme="light"] {
+      background-color: black;
+    }
+  }
 }

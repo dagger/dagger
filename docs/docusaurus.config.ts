@@ -115,7 +115,8 @@ const config: Config = {
   themeConfig: {
     announcementBar: {
       id: "agentic-ci-banner",
-      content: "Engineering deep dive on Agentic CI — <a href=\"https://dagger.io/agentic-ci\">Register Now</a>",
+      content:
+        'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
       backgroundColor: "#131126",
       textColor: "#ffffff",
       isCloseable: true,
@@ -168,6 +169,7 @@ const config: Config = {
         src: "img/dagger-logo-black.png",
         height: "40px",
         href: "https://dagger.io/",
+        srcDark: "img/dagger-logo-white.png",
       },
       items: [
         {
@@ -200,7 +202,7 @@ const config: Config = {
         },
         {
           position: "right",
-          label: "Try Dagger Cloud >",
+          label: "Try Dagger Cloud",
           to: "https://dagger.io/cloud",
           target: "_blank",
           className: "navbar-blog-link dagger-cloud-button",
