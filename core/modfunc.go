@@ -594,7 +594,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.Source.Self()
+	source := mod.ContextSource.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
