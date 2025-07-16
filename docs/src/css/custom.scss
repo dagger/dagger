@@ -12,7 +12,7 @@ $crimson-color: rgb(190, 29, 67);
 $aqua-color: rgb(64, 185, 188);
 $cloud-color: rgb(208, 224, 249);
 $plum-color: rgb(62, 59, 107);
-
+$inkberry-color: rgb(26, 24, 51);
 
 @import url("https://fonts.cdnfonts.com/css/general-sans");
 
@@ -34,16 +34,16 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
   --ifm-font-size-base: 18px;
   --ifm-font-weight-base: 400;
-  --ifm-background-color: #f8f4ef;
+  --ifm-background-color: #{$oat-color};
   --ifm-color-primary-light: #21798d;
   --ifm-color-primary: #21798d;
-  --ifm-heading-color: #0d0c1b;
+  --ifm-heading-color: #{$dagger-dark-mode-background-color};
   --ifm-hover-overlay: #e1f5fb;
   --ifm-menu-color-active: #21798d;
-  --ifm-menu-color-background-active: rgba(26, 24, 51, 0.1);
-  --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
+  --ifm-menu-color-background-active: rgba($inkberry-color, 0.1);
+  --ifm-menu-color-background-hover: rgba($inkberry-color, 0.1);
   --ifm-menu-color: #4b4b5a;
-  --ifm-navbar-background-color: #f8f4ef;
+  --ifm-navbar-background-color: #{$oat-color};
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
   --ifm-navbar-link-color: rgb(80, 80, 81);
@@ -51,7 +51,7 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
 }
 
 html[data-theme="dark"] {
-  --ifm-background-color: #1A1833;
+  --ifm-background-color: #{$inkberry-color};
   --ifm-color-primary-light: #57c7e3;
   --ifm-color-primary: #57c7e3;
   --ifm-heading-color: white;
@@ -61,31 +61,47 @@ html[data-theme="dark"] {
   --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
-  --ifm-navbar-background-color: rgb(19, 17, 38);
+  --ifm-navbar-background-color: #{$dagger-dark-mode-background-color};
   --ifm-navbar-link-color: white;
 
 
   // Make sure dropdown menus also have the correct background
   .dropdown__menu,
   .dropdown__link {
-    background-color: var(--ifm-background-color) !important;
+    background-color: #{$dagger-dark-mode-background-color} !important;
   }
 
   // Fix any potential navigation borders in dark mode
   .navbar-sidebar {
-    border-color: var(--ifm-background-color) !important;
+    border-color: #{$dagger-dark-mode-background-color} !important;
+    background-color: #{$dagger-dark-mode-background-color} !important;
   }
   
-  // Make announcement bar use primary light color in dark mode
+  // Make announcement bar use plum color in dark mode
   .theme-announcement-bar {
-    background-color: #57c7e3 !important; /* Using the primary light color */
-    color: #131226 !important; /* Using dark text for contrast */
+    background-color: #{$plum-color} !important; /* Using plum color for branding */
+    color: white !important; /* Using white text for contrast */
   }
 }
 
 @mixin mobile {
   @media (max-width: #{$mobile-width}) {
     @content;
+  }
+}
+
+/* General announcement bar styling */
+.theme-announcement-bar {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  font-weight: 500 !important;
+  
+  /* Button styling for announcement bar */
+  button {
+    color: white !important;
+    font-size: 0.875rem !important; /* 14px relative */
+    background-color: transparent !important;
+    transition: all 0.2s ease-in-out !important;
   }
 }
 
@@ -150,7 +166,13 @@ html[data-theme="light"] {
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: rgb(23, 23, 24) !important;
     font-weight: bold !important;
-    border-bottom: 2px solid #4b4b5a !important;
+    border-bottom: 2px solid var(--ifm-menu-color) !important;
+  }
+  
+  // Make announcement bar use inkberry color in light mode
+  .theme-announcement-bar {
+    background-color: #{$inkberry-color} !important; /* Using inkberry color for branding */
+    color: white !important; /* Using white text for contrast */
   }
 }
 
@@ -209,12 +231,12 @@ html[data-theme="dark"] {
 }
 
 .theme-layout-footer {
-  background-color: rgb(19, 17, 38);
-  color: #fff;
+  background-color: #{$dagger-dark-mode-background-color};
+  color: white;
 }
 
 .theme-layout-footer a {
-  color: #fff;
+  color: white;
   text-decoration: none;
   // font size relative to 13px
   font-size: 0.8125rem; // 13px
@@ -245,9 +267,9 @@ body {
 /* Light mode styling for Dagger Cloud button */
 html[data-theme="light"] {
   .dagger-cloud-button {
-    background-color: #3E3B6B !important; /* Dark blue/purple color */
+    background-color: #{$plum-color} !important; /* Dark blue/purple color */
     color: white !important;
-    border: 1px solid rgb(19, 17, 38) !important;
+    border: 1px solid #{$inkberry-color} !important;
     
     &:hover {
       background-color: rgb(29, 26, 56) !important; /* Slightly lighter on hover */
@@ -259,13 +281,13 @@ html[data-theme="light"] {
 /* Dark mode styling for Dagger Cloud button */
 html[data-theme="dark"] {
   .dagger-cloud-button {
-    background-color: #40B9BC !important; /* Primary light color */
-    color: #ffffff !important; /* Dark background color for contrast */
-    border: 1px solid #57c7e3 !important;
+    background-color: #{$plum-color} !important; /* Using plum color for branding */
+    color: white !important; /* White text for contrast */
+    border: 1px solid #{$plum-color} !important;
     
     &:hover {
-      background-color: #7ad3ea !important; /* Slightly lighter on hover */
-      border-color: #7ad3ea !important;
+      background-color: rgba(62, 59, 107, 0.8) !important; /* Slightly lighter plum on hover */
+      border-color: rgba(62, 59, 107, 0.8) !important;
     }
   }
 }
@@ -293,7 +315,7 @@ h4 {
 
 .footer__copyright {
   font-size: 0.875rem !important; // 14px
-  color: #fff;
+  color: white;
   align-content: left;
 }
 
