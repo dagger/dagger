@@ -23,6 +23,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -289,40 +290,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		return []string{}, nil
-	}
+	paths := []string{}
 
 	// We use the same pattern matching function as Buildkit, since just doing
 	// IncludePatterns will still include directories we don't want
@@ -335,12 +303,17 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-
-	var paths []string
-	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
-		IncludePattern: pattern,
-		Path:           dir.Dir,
-		Callback: func(path string, info os.FileInfo) error {
+	_, err = execInMount(ctx, dir, ImmutableOp, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return fsutil.Walk(ctx, resolvedDir, &fsutil.FilterOpt{
+			IncludePatterns: []string{pattern},
+		}, func(path string, info fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
 			// oh well, let's just fake it with false
@@ -358,12 +331,15 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			}
 
 			return nil
-		},
+		})
 	})
 	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			return []string{}, nil
+		}
 		return nil, err
 	}
-
 	return paths, nil
 }
 

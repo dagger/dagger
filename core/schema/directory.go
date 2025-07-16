@@ -48,7 +48,7 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to look at (e.g., "/src").`),
 			),
-		dagql.Func("glob", s.glob).
+		dagql.NodeFunc("glob", DagOpWrapper(s.srv, s.glob)).
 			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			Args(
@@ -302,10 +302,16 @@ func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult
 
 type globArgs struct {
 	Pattern string
+
+	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
-	return parent.Glob(ctx, args.Pattern)
+func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args globArgs) (dagql.Array[dagql.String], error) {
+	ents, err := parent.Self().Glob(ctx, args.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(ents...), nil
 }
 
 func (s *directorySchema) digest(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
