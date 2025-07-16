@@ -160,6 +160,13 @@ defimpl Jason.Encoder, for: Dagger.Service do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Service do
+  def encode(service, _encoder) do
+    {:ok, id} = Dagger.Service.id(service)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Service do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_service_from_id(Dagger.Global.dag(), id)}

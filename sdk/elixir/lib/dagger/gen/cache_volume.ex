@@ -34,6 +34,13 @@ defimpl Jason.Encoder, for: Dagger.CacheVolume do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.CacheVolume do
+  def encode(cache_volume, _encoder) do
+    {:ok, id} = Dagger.CacheVolume.id(cache_volume)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.CacheVolume do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_cache_volume_from_id(Dagger.Global.dag(), id)}
