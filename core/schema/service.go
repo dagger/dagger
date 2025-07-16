@@ -393,11 +393,15 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	for _, port := range runningSvc.Ports {
+		httpKey, httpMsg := "http_url", "http://%s:%d"
+		if port.Port == 443 {
+			httpKey, httpMsg = "https_url", "https://%s:%d"
+		}
 		slog.Info(
 			"tunnel started",
 			"port", port.Port,
 			"protocol", port.Protocol.Network(),
-			"http_url", fmt.Sprintf("http://%s:%d", "localhost", port.Port),
+			httpKey, fmt.Sprintf(httpMsg, "localhost", port.Port),
 			"description", *port.Description,
 		)
 	}
