@@ -713,6 +713,13 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 		}
 		defs = append(defs, dirDefs...)
 	}
+	if mod.ContextSource.Self() != nil {
+		dirDefs, err := mod.ContextSource.Self().PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
 	if mod.Runtime.Self() != nil {
 		dirDefs, err := mod.Runtime.Self().PBDefinitions(ctx)
 		if err != nil {
