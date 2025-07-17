@@ -364,40 +364,38 @@ h4 {
   font-weight: 600;
 }
 
-// .footer {
-//   padding: 4rem 0 1.5rem;
+.footer {
+  color: white;
+  padding: 4rem 0 1.5rem;
 
-//   .flex {
-//     display: flex;
-//   }
+  .flex {
+    display: flex;
+  }
 
-//   .gap-8 {
-//     gap: 24px;
-//   }
+  .gap-8 {
+    gap: 24px;
+  }
 
-//   hr {
-//     background-color: #4b4968;
-//   }
+  hr {
+    background-color: #4b4968;
+  }
 
-//   .justify-between {
-//     justify-content: space-between;
-//   }
+  .justify-between {
+    justify-content: space-between;
+  }
 
-//   .footer__link-item {
-//     color: white;
-//     font-size: 0.875rem;
-//   }
+  .footer__link-item {
+    color: white;
+    font-size: 0.875rem;
+  }
 
-//   .footer__col {
-//     text-align: center;
-//   }
+  .discord-icon {
+    background-color: white;
+    mask-image: url("/img/discord-icon.svg");
+    mask-size: 100%;
+  }
+}
 
-//   .discord-icon {
-//     background-color: white;
-//     mask-image: url("/img/discord-icon.svg");
-//     mask-size: 100%;
-//   }
-// }
 .footer__copyright {
   font-size: 0.875rem !important; // 14px
   color: white;
@@ -435,9 +433,17 @@ h4 {
   font-style: italic;
 }
 
-pre {
-  // background: #{$obsidian-color} !important;
-  // border: 1px solid rgba(75, 75, 90, 0.3);
+// Style for pre elements with different modes
+html[data-theme="light"] pre {
+  background: white !important;
+  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  color: #{$inkberry-color};
+}
+
+html[data-theme="dark"] pre {
+  background: #{$obsidian-color} !important;
+  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  color: #f8f8f2; // Light color for code text in dark mode
 }
 
 // Ensure images don't get skewed and maintain aspect ratio
@@ -465,7 +471,7 @@ html[data-theme="light"] {
     background-color: rgba(26, 24, 51, 0.1) !important;
     color: var(--ifm-menu-color-active);
   }
-  
+
   .tabs__item--active {
     background-color: rgba(26, 24, 51, 0.1) !important;
     border-bottom-color: var(--ifm-menu-color-active);
@@ -479,7 +485,7 @@ html[data-theme="dark"] {
     background-color: rgba(208, 224, 249, 0.15) !important;
     color: var(--ifm-menu-color-active);
   }
-  
+
   .tabs__item--active {
     background-color: rgba(208, 224, 249, 0.15) !important;
     border-bottom-color: var(--ifm-menu-color-active);
