@@ -267,7 +267,12 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
-	elemType, err := args.ElementType.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	elemType, err := args.ElementType.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -310,7 +315,12 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	fieldType, err := args.TypeDef.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	fieldType, err := args.TypeDef.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -324,7 +334,12 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	fn, err := args.Function.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -334,7 +349,12 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	inst, err := args.Function.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	inst, err := args.Function.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -401,7 +421,12 @@ func supportEnumMembers(ctx context.Context) (bool, error) {
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
-	dir, err := args.Code.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	dir, err := args.Code.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +441,12 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
-	returnType, err := args.ReturnType.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	returnType, err := args.ReturnType.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
@@ -450,7 +480,12 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
-	argType, err := args.TypeDef.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	argType, err := args.TypeDef.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
@@ -490,7 +525,12 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
 	SourceMap core.SourceMapID
 }) (*core.Function, error) {
-	sourceMap, err := args.SourceMap.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	sourceMap, err := args.SourceMap.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
@@ -560,7 +600,12 @@ func (s *moduleSchema) moduleGeneratedContextDirectory(
 	mod dagql.ObjectResult[*core.Module],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
-	err = s.dag.Select(ctx, mod.Self().Source, &inst,
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	err = dag.Select(ctx, mod.Self().Source, &inst,
 		dagql.Selector{
 			Field: "generatedContextDirectory",
 		},
@@ -596,17 +641,27 @@ func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Modu
 func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Object.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Object.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
-	return core.EnvHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self())
+	return core.EnvHook{Server: dag}.ModuleWithObject(ctx, mod, def.Self())
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Iface.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Iface.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +671,12 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
 	Enum core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Enum.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Enum.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +697,11 @@ func (s *moduleSchema) currentModuleSource(
 	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
 ) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	curSrc := curMod.Self().Module.Source
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
@@ -648,14 +713,14 @@ func (s *moduleSchema) currentModuleSource(
 	}
 
 	var generatedDiff dagql.Result[*core.Directory]
-	err = s.dag.Select(ctx, curSrc, &generatedDiff,
+	err = dag.Select(ctx, curSrc, &generatedDiff,
 		dagql.Selector{Field: "generatedContextDirectory"},
 	)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
 
-	err = s.dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
+	err = dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
@@ -685,12 +750,17 @@ func (s *moduleSchema) currentModuleWorkdir(
 		core.CopyFilter
 	},
 ) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
-	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "host",
 		},
@@ -713,12 +783,17 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 		Path string
 	},
 ) (inst dagql.Result[*core.File], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
-	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "host",
 		},
@@ -733,10 +808,15 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 }
 
 func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !sourceMap.Valid {
 		return nil, nil
 	}
-	sourceMapI, err := sourceMap.Value.Load(ctx, s.dag)
+	sourceMapI, err := sourceMap.Value.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}

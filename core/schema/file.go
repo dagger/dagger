@@ -63,7 +63,7 @@ func (s *fileSchema) Install() {
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.Func("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", DagOpFileWrapper(s.srv, s.withTimestamps, WithPathFn(keepParentFile[fileWithTimestampsArgs]))).
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
@@ -158,8 +158,18 @@ func (s *fileSchema) exportLegacy(ctx context.Context, parent *core.File, args f
 
 type fileWithTimestampsArgs struct {
 	Timestamp int
+
+	DagOpInternalArgs
 }
 
-func (s *fileSchema) withTimestamps(ctx context.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
-	return parent.WithTimestamps(ctx, args.Timestamp)
+func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileWithTimestampsArgs) (inst dagql.ObjectResult[*core.File], err error) {
+	f, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
+}
+
+func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
+	return val.File, nil
 }

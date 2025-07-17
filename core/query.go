@@ -135,6 +135,30 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 	return q, nil
 }
 
+func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	srv, err := q.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query server: %w", err)
+	}
+	return srv, nil
+}
+
+func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	cache, err := q.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query cache: %w", err)
+	}
+	return cache, nil
+}
+
 func NewRoot(srv Server) *Query {
 	return &Query{Server: srv}
 }

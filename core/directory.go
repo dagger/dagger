@@ -15,6 +15,7 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -244,36 +245,16 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := res.SingleRef()
+	ref, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
+
 	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
 		if clean := path.Clean(src); clean == "." || clean == "/" {
@@ -282,27 +263,33 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: src,
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	paths := []string{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, src)
+		if err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(resolvedDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			path := entry.Name()
+			if useSlash && entry.IsDir() {
+				path += "/"
+			}
+			paths = append(paths, path)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	paths := []string{}
-	for _, entry := range entries {
-		path := entry.Path
-		if useSlash && os.FileMode(entry.Mode).IsDir() {
-			path += "/"
-		}
-		paths = append(paths, path)
-	}
-
 	return paths, nil
 }
 
@@ -423,6 +410,89 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		return nil, err
 	}
 
+	return dir, nil
+}
+
+func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
+	err := validateFileName(dest)
+	if err != nil {
+		return nil, err
+	}
+
+	if permissions == 0 {
+		permissions = 0o644
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content))))))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+		if err != nil {
+			return err
+		}
+		destPathDir, _ := filepath.Split(resolvedDest)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if dst != nil {
+				_ = dst.Close()
+			}
+		}()
+
+		_, err = dst.Write(content)
+		if err != nil {
+			return err
+		}
+
+		err = dst.Close()
+		if err != nil {
+			return err
+		}
+		dst = nil
+
+		if ownership != nil {
+			err = os.Chown(resolvedDest, ownership.UID, ownership.GID)
+			if err != nil {
+				return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
@@ -826,22 +896,45 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	// be sure to create the file under the working directory
 	dest = path.Join(dir.Dir, dest)
 
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
 	if permissions == 0 {
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
-
-	err = dir.SetState(ctx, st)
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withNewDirectory %s", dest)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dest)
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(resolvedDir, permissions)
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 

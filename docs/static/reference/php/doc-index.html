@@ -189,7 +189,9 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branches</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>branches that match any of the given glob patterns.</p></dd><dt><a href="Dagger/LLM.html#method_bindResult">
 <abbr title="Dagger\LLM">LLM</abbr>::bindResult</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>returns the type of the current state</p></dd>        </dl><h2 id="letterC">C</h2>
+                    <dd><p>returns the type of the current state</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::blueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The blueprint referenced by the module source.</p></dd>        </dl><h2 id="letterC">C</h2>
         <dl id="indexC"><dt><a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A directory whose contents persist across runs.</p></dd><dt><a href="Dagger/CacheVolumeId.html"><abbr title="Dagger\CacheVolumeId">CacheVolumeId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p></dd><dt><a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1238,7 +1240,9 @@
 <abbr title="Dagger\Module">Module</abbr>::withInterface</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>This module plus the given Interface type and associated functions</p></dd><dt><a href="Dagger/Module.html#method_withObject">
 <abbr title="Dagger\Module">Module</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withClient">
+                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withBlueprint">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Set a blueprint for the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withClient">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update the module source with a new client to generate.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1252,9 +1256,13 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update the module source with a new SDK.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withSourceSubpath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withSourceSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Update the module source with a new source subpath.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateDependencies">
+                    <dd><p>Update the module source with a new source subpath.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateBlueprint">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdateBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Update the blueprint module to the latest version.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdateDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Update one or more module dependencies.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutClient">
+                    <dd><p>Update one or more module dependencies.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutBlueprint">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Remove the current blueprint from the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutClient">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Remove a client from the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>

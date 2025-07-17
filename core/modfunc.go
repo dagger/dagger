@@ -567,7 +567,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		return id, false, errors.Join(err, baseErr)
 	}
 
-	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath)
+	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath, -1)
 	if err != nil {
 		return id, false, errors.Join(err, baseErr)
 	}
@@ -594,7 +594,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.Source.Self()
+	source := mod.ContextSource.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
@@ -635,7 +635,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "Directory":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
 
-		dir, err := fn.mod.Source.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.ContextSource.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -649,7 +649,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self().LoadContext(ctx, dag, dirPath, nil)
+		dir, err := fn.mod.ContextSource.Self().LoadContext(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}

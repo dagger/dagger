@@ -86,7 +86,7 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *dockerDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, port int, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
-	ctx, span := otel.Tracer("").Start(ctx, "create")
+	ctx, span := otel.Tracer("").Start(ctx, "create container")
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
@@ -124,7 +124,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 	}
 
 	// ensure the image is pulled
-	if _, err := traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
+	if _, err := traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef, "--format", "{{ .ID }}"), telemetry.Encapsulated()); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, fmt.Errorf("failed to inspect image: %w", err)
 		}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -93,7 +95,8 @@ func spanName(args []string) string {
 	}
 	if !isCall {
 		// if we're not a call, just use the original command
-		keep = args
+		keep = slices.Clone(args)
+		keep[0] = filepath.Base(keep[0])
 	} else if len(keep) == 0 {
 		// we're a call, but failed to parse the chain, probably confused by a
 		// boolean flag, so just show the full call

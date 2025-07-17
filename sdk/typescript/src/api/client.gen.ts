@@ -7478,6 +7478,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The blueprint referenced by the module source.
+   */
+  blueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("blueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * The ref to clone the root of the git repo from. Only valid for git sources.
    */
   cloneRef = async (): Promise<string> => {
@@ -7811,6 +7819,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Set a blueprint for the module source.
+   * @param blueprint The blueprint module to set.
+   */
+  withBlueprint = (blueprint: ModuleSource): ModuleSource => {
+    const ctx = this._ctx.select("withBlueprint", { blueprint })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with a new client to generate.
    * @param generator The generator to use
    * @param outputDir The output directory for the generated client.
@@ -7875,11 +7892,27 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update the blueprint module to the latest version.
+   */
+  withUpdateBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateBlueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update one or more module dependencies.
    * @param dependencies The dependencies to update.
    */
   withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Remove the current blueprint from the module source.
+   */
+  withoutBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withoutBlueprint")
     return new ModuleSource(ctx)
   }
 
