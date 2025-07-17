@@ -66,6 +66,19 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Searches for content matching the given pattern, which may be a regular expression or a literal string.
+     */
+    public function search(string $pattern, ?bool $regexp = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $regexp) {
+        $leafQueryBuilder->setArgument('regexp', $regexp);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
      * Retrieves the size of the file, in bytes.
      */
     public function size(): int

@@ -216,6 +216,11 @@ class ScalarTypeDefID(Scalar):
     object of type ScalarTypeDef."""
 
 
+class SearchResultID(Scalar):
+    """The `SearchResultID` scalar type represents an identifier for an
+    object of type SearchResult."""
+
+
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
     of type Secret."""
@@ -525,6 +530,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def as_search_result(self) -> "SearchResult":
+        """Retrieve the binding value, as type SearchResult"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSearchResult", _args)
+        return SearchResult(_ctx)
 
     def as_secret(self) -> "Secret":
         """Retrieve the binding value, as type Secret"""
@@ -3167,6 +3178,29 @@ class Directory(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def search(
+        self,
+        pattern: str,
+        *,
+        regexp: bool | None = False,
+    ) -> list["SearchResult"]:
+        """Searches recursively for content matching the given pattern, which may
+        be a regular expression or a literal string.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        regexp:
+            Interpret the pattern as a regular expression.
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("regexp", regexp, False),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
+
     async def sync(self) -> Self:
         """Force evaluation in the engine.
 
@@ -4667,6 +4701,49 @@ class Env(Type):
         _ctx = self._select("withModuleSourceOutput", _args)
         return Env(_ctx)
 
+    def with_search_result_input(
+        self,
+        name: str,
+        value: "SearchResult",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type SearchResult in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The SearchResult value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultInput", _args)
+        return Env(_ctx)
+
+    def with_search_result_output(self, name: str, description: str) -> Self:
+        """Declare a desired SearchResult output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultOutput", _args)
+        return Env(_ctx)
+
     def with_secret_input(
         self,
         name: str,
@@ -5286,6 +5363,29 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    async def search(
+        self,
+        pattern: str,
+        *,
+        regexp: bool | None = False,
+    ) -> list["SearchResult"]:
+        """Searches for content matching the given pattern, which may be a
+        regular expression or a literal string.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        regexp:
+            Interpret the pattern as a regular expression.
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("regexp", regexp, False),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
 
     async def size(self) -> int:
         """Retrieves the size of the file, in bytes.
@@ -9006,6 +9106,14 @@ class Client(Root):
         _ctx = self._select("loadScalarTypeDefFromID", _args)
         return ScalarTypeDef(_ctx)
 
+    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
+        """Load a SearchResult from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchResultFromID", _args)
+        return SearchResult(_ctx)
+
     def load_secret_from_id(self, id: SecretID) -> "Secret":
         """Load a Secret from its ID."""
         _args = [
@@ -9342,6 +9450,90 @@ class ScalarTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class SearchResult(Type):
+    async def file_path(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filePath", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> SearchResultID:
+        """A unique identifier for this SearchResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SearchResultID
+            The `SearchResultID` scalar type represents an identifier for an
+            object of type SearchResult.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SearchResultID)
+
+    async def line_number(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("lineNumber", _args)
+        return await _ctx.execute(int)
+
+    async def matched_text(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("matchedText", _args)
         return await _ctx.execute(str)
 
 
@@ -10261,6 +10453,8 @@ __all__ = [
     "SDKConfigID",
     "ScalarTypeDef",
     "ScalarTypeDefID",
+    "SearchResult",
+    "SearchResultID",
     "Secret",
     "SecretID",
     "Service",

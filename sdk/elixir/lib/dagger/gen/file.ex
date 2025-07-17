@@ -78,6 +78,33 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Searches for content matching the given pattern, which may be a regular expression or a literal string.
+  """
+  @spec search(t(), String.t(), [{:regexp, boolean() | nil}]) ::
+          {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = file, pattern, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("regexp", optional_args[:regexp])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(file.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: file.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Retrieves the size of the file, in bytes.
   """
   @spec size(t()) :: {:ok, integer()} | {:error, term()}

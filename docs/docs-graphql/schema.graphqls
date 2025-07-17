@@ -49,6 +49,9 @@ type Binding {
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
 
+  """Retrieve the binding value, as type SearchResult"""
+  asSearchResult: SearchResult!
+
   """Retrieve the binding value, as type Secret"""
   asSecret: Secret!
 
@@ -1477,6 +1480,17 @@ type Directory {
   """Returns the name of the directory."""
   name: String!
 
+  """
+  Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.
+  """
+  search(
+    """The text to match."""
+    pattern: String!
+
+    """Interpret the pattern as a regular expression."""
+    regexp: Boolean = false
+  ): [SearchResult!]!
+
   """Force evaluation in the engine."""
   sync: DirectoryID!
 
@@ -2068,6 +2082,29 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type SearchResult in the environment"""
+  withSearchResultInput(
+    """The name of the binding"""
+    name: String!
+
+    """The SearchResult value to assign to the binding"""
+    value: SearchResultID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired SearchResult output to be assigned in the environment
+  """
+  withSearchResultOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Secret in the environment"""
   withSecretInput(
     """The name of the binding"""
@@ -2276,6 +2313,17 @@ type File {
 
   """Retrieves the name of the file."""
   name: String!
+
+  """
+  Searches for content matching the given pattern, which may be a regular expression or a literal string.
+  """
+  search(
+    """The text to match."""
+    pattern: String!
+
+    """Interpret the pattern as a regular expression."""
+    regexp: Boolean = false
+  ): [SearchResult!]!
 
   """Retrieves the size of the file, in bytes."""
   size: Int!
@@ -3591,6 +3639,9 @@ type Query {
   """Load a ScalarTypeDef from its ID."""
   loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
+  """Load a SearchResult from its ID."""
+  loadSearchResultFromID(id: SearchResultID!): SearchResult!
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
@@ -3741,6 +3792,22 @@ type ScalarTypeDef {
 The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 """
 scalar ScalarTypeDefID
+
+type SearchResult {
+  filePath: String!
+
+  """A unique identifier for this SearchResult."""
+  id: SearchResultID!
+
+  lineNumber: Int!
+
+  matchedText: String!
+}
+
+"""
+The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+"""
+scalar SearchResultID
 
 """
 A reference to a secret value, which can be handled more safely than the value itself.

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\File | API</title>
+    <title>Dagger\SearchResult | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_File" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_SearchResult" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,26 +75,24 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>File</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>SearchResult</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>File    
+        <h1>SearchResult    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>File</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>SearchResult</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
     
         
 
-            <div class="description">
-            <p><p>A file.</p></p>                    </div>
             
         
     
@@ -146,29 +144,10 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_contents">contents</a>()
+                    <a href="#method_filePath">filePath</a>()
         
-                                            <p><p>Retrieves the contents of the file.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_digest">digest</a>(bool|null $excludeMetadata = false)
-        
-                                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_export">export</a>(string $path, bool|null $allowParentDirPath = false)
-        
-                                            <p><p>Writes the file to a file path on the host.</p></p>                </div>
+                                            <p class="no-description">No description</p>
+                                    </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,27 +157,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this File.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_name">name</a>()
-        
-                                            <p><p>Retrieves the name of the file.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    array
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_search">search</a>(string $pattern, bool|null $regexp = false)
-        
-                                            <p><p>Searches for content matching the given pattern, which may be a regular expression or a literal string.</p></p>                </div>
+                                            <p><p>A unique identifier for this SearchResult.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -206,39 +165,21 @@
                     int
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_size">size</a>()
+                    <a href="#method_lineNumber">lineNumber</a>()
         
-                                            <p><p>Retrieves the size of the file, in bytes.</p></p>                </div>
+                                            <p class="no-description">No description</p>
+                                    </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_sync">sync</a>()
+                    <a href="#method_matchedText">matchedText</a>()
         
-                                            <p><p>Force evaluation in the engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withName">withName</a>(string $name)
-        
-                                            <p><p>Retrieves this file with its name set to the given name.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withTimestamps">withTimestamps</a>(int $timestamp)
-        
-                                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                </div>
+                                            <p class="no-description">No description</p>
+                                    </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -337,10 +278,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_contents">
-        <div class="location">at line 19</div>
+                    <h3 id="method_filePath">
+        <div class="location">at line 13</div>
         <code>                    string
-    <strong>contents</strong>()
+    <strong>filePath</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -348,98 +289,10 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the contents of the file.</p></p>                        
+                            <p class="no-description">No description</p>
+                    
         </div>
         <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_digest">
-        <div class="location">at line 28</div>
-        <code>                    string
-    <strong>digest</strong>(bool|null $excludeMetadata = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$excludeMetadata</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_export">
-        <div class="location">at line 40</div>
-        <code>                    string
-    <strong>export</strong>(string $path, bool|null $allowParentDirPath = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Writes the file to a file path on the host.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$allowParentDirPath</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -459,7 +312,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 53</div>
+        <div class="location">at line 22</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -469,7 +322,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this File.</p></p>                        
+                            <p><p>A unique identifier for this SearchResult.</p></p>                        
         </div>
         <div class="tags">
             
@@ -490,89 +343,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 62</div>
-        <code>                    string
-    <strong>name</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the name of the file.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_search">
-        <div class="location">at line 71</div>
-        <code>                    array
-    <strong>search</strong>(string $pattern, bool|null $regexp = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Searches for content matching the given pattern, which may be a regular expression or a literal string.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$pattern</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$regexp</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_size">
-        <div class="location">at line 84</div>
+                    <h3 id="method_lineNumber">
+        <div class="location">at line 28</div>
         <code>                    int
-    <strong>size</strong>()
+    <strong>lineNumber</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -580,7 +354,8 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the size of the file, in bytes.</p></p>                        
+                            <p class="no-description">No description</p>
+                    
         </div>
         <div class="tags">
             
@@ -601,10 +376,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_sync">
-        <div class="location">at line 93</div>
-        <code>                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
-    <strong>sync</strong>()
+                    <h3 id="method_matchedText">
+        <div class="location">at line 34</div>
+        <code>                    string
+    <strong>matchedText</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -612,7 +387,8 @@
             
 
         <div class="method-description">
-                            <p><p>Force evaluation in the engine.</p></p>                        
+                            <p class="no-description">No description</p>
+                    
         </div>
         <div class="tags">
             
@@ -620,91 +396,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withName">
-        <div class="location">at line 102</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withName</strong>(string $name)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves this file with its name set to the given name.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withTimestamps">
-        <div class="location">at line 112</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withTimestamps</strong>(int $timestamp)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int</td>
-                <td>$timestamp</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>

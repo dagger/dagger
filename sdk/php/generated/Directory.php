@@ -187,6 +187,19 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.
+     */
+    public function search(string $pattern, ?bool $regexp = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $regexp) {
+        $leafQueryBuilder->setArgument('regexp', $regexp);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId
