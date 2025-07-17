@@ -436,6 +436,8 @@ func main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
+		} else if os.Getenv("CLAUDECODE") == "1" {
+			progress = "report"
 		} else if hasTTY {
 			progress = "tty"
 		} else {
