@@ -3356,6 +3356,22 @@ class Directory(Type):
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
 
+    def with_patch(self, patch: str) -> Self:
+        """Retrieves this directory with the given Git-compatible patch applied.
+
+        Parameters
+        ----------
+        patch:
+            Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex
+            1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1
+            +1,1 @@\n-Hello\n+World\n").
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatch", _args)
+        return Directory(_ctx)
+
     def with_symlink(self, target: str, link_name: str) -> Self:
         """Return a snapshot with a symlink
 

@@ -371,6 +371,20 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Retrieves this directory with the given Git-compatible patch applied.
+  """
+  @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
+  def with_patch(%__MODULE__{} = directory, patch) do
+    query_builder =
+      directory.query_builder |> QB.select("withPatch") |> QB.put_arg("patch", patch)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return a snapshot with a symlink
   """
   @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Directory.t()

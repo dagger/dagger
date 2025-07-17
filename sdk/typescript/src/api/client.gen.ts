@@ -3855,6 +3855,15 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Retrieves this directory with the given Git-compatible patch applied.
+   * @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+   */
+  withPatch = (patch: string): Directory => {
+    const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a symlink
    * @param target Location of the file or directory to link to (e.g., "/existing/file").
    * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
