@@ -79,9 +79,9 @@ Consider the following Dagger Function:
 
 This Dagger Function creates a new LLM, gives it an environment (a container with various tools) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop happens inside the LLM object, so the value of `result` is the environment with the completed assignment.
 
-## MCP
+## Model Context Protocol (MCP)
 
-Model Context Protocol (MCP) support in Dagger can be broken into two categories:
+MCP support in Dagger can be broken into two categories:
 
 1. Exposing MCP outside Dagger
 1. Connecting to external MCP servers from Dagger
