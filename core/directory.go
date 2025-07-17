@@ -511,16 +511,15 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
 	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
