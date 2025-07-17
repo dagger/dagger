@@ -26,6 +26,9 @@ type Generator interface {
 	// GenerateClient runs codegen in a context of a standalone client and returns
 	// a map of default filename to content for that file.
 	GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+
+	// GenerateLibrary only generate the library bindings for the given schema.
+	GenerateLibrary(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
 
 type GeneratedState struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,15 +15,31 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-func Generate(ctx context.Context, cfg generator.Config) (err error) {
-	logsW := os.Stdout
+type GenFunc func(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error)
 
-	if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
-		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleConfig.ModuleName)
-	} else {
-		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
+func getGenerator(cfg generator.Config) (generator.Generator, error) {
+	switch cfg.Lang {
+	case generator.SDKLangGo:
+		return &gogenerator.GoGenerator{
+			Config: cfg,
+		}, nil
+	case generator.SDKLangTypeScript:
+		return &typescriptgenerator.TypeScriptGenerator{
+			Config: cfg,
+		}, nil
+
+	default:
+		sdks := []string{
+			string(generator.SDKLangGo),
+			string(generator.SDKLangTypeScript),
+		}
+
+		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
+}
+
+func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err error) {
 	var introspectionSchema *introspection.Schema
 	var introspectionSchemaVersion string
 	if cfg.IntrospectionJSON != "" {
@@ -39,13 +56,16 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 		}
 	}
 
+	// Set the parent schema
+	generator.SetSchemaParents(introspectionSchema)
+
 	for ctx.Err() == nil {
-		generated, err := generate(ctx, introspectionSchema, introspectionSchemaVersion, cfg)
+		generated, err := genFunc(ctx, introspectionSchema, introspectionSchemaVersion)
 		if err != nil {
 			return err
 		}
 
-		if err := generator.Overlay(ctx, logsW, generated.Overlay, cfg.OutputDir); err != nil {
+		if err := generator.Overlay(ctx, generated.Overlay, cfg.OutputDir); err != nil {
 			return fmt.Errorf("failed to overlay generated code: %w", err)
 		}
 
@@ -56,50 +76,21 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			fmt.Fprintln(logsW, "running post-command:", strings.Join(cmd.Args, " "))
+			slog.Info("running post-command:", strings.Join(cmd.Args, " "))
 			err := cmd.Run()
 			if err != nil {
-				fmt.Fprintln(logsW, "post-command failed:", err)
+				slog.Error("post-command failed:", err)
 				return err
 			}
 		}
 
 		if !generated.NeedRegenerate {
-			fmt.Fprintln(logsW, "done!")
+			slog.Info("done!")
 			break
 		}
 
-		fmt.Fprintln(logsW, "needs another pass...")
+		slog.Info("needs another pass...")
 	}
 
 	return ctx.Err()
-}
-
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
-	generator.SetSchemaParents(introspectionSchema)
-
-	var gen generator.Generator
-	switch cfg.Lang {
-	case generator.SDKLangGo:
-		gen = &gogenerator.GoGenerator{
-			Config: cfg,
-		}
-	case generator.SDKLangTypeScript:
-		gen = &typescriptgenerator.TypeScriptGenerator{
-			Config: cfg,
-		}
-
-	default:
-		sdks := []string{
-			string(generator.SDKLangGo),
-			string(generator.SDKLangTypeScript),
-		}
-		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
-	}
-
-	if cfg.ClientConfig != nil {
-		return gen.GenerateClient(ctx, introspectionSchema, introspectionSchemaVersion)
-	}
-
-	return gen.GenerateModule(ctx, introspectionSchema, introspectionSchemaVersion)
 }

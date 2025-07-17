@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"fmt"
+	"log/slog"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -42,7 +43,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	if moduleSourceID != "" {
 		var res struct {
 			Source struct {
-				Dependencies []generator.ModuleSourceDependencies
+				Dependencies []generator.ModuleSourceDependency
 			}
 		}
 
@@ -66,7 +67,14 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 
 	cfg.ClientConfig = clientConfig
 
-	return Generate(ctx, cfg)
+	generator, err := getGenerator(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to get generator: %w", err)
+	}
+
+	slog.Info("generating %s SDK client\n", cfg.Lang)
+
+	return Generate(ctx, cfg, generator.GenerateClient)
 }
 
 func init() {

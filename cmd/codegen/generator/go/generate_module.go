@@ -37,21 +37,15 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	//  2b. add stub main.go
 	// 3. load package, generate dagger.gen.go (possibly again)
 
-	outDir := "."
-	if moduleConfig.ModuleName != "" {
-		outDir = filepath.Clean(moduleConfig.ModuleSourcePath)
-	}
+	outDir := filepath.Clean(moduleConfig.ModuleSourcePath)
 
 	mfs := memfs.New()
 
-	var overlay fs.FS = mfs
-	if moduleConfig.ModuleName != "" {
-		overlay = layerfs.New(
-			mfs,
-			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
-		)
-	}
+	var overlay fs.FS = layerfs.New(
+		mfs,
+		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
+	)
 
 	genSt := &generator.GeneratedState{
 		Overlay: overlay,
@@ -121,17 +115,6 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *generator.GeneratedState) (*PackageInfo, bool, error) {
 	moduleConfig := g.Config.ModuleConfig
 
-	// don't mess around go.mod if we're not building modules
-	if moduleConfig.ModuleName == "" {
-		if pkg, _, err := loadPackage(ctx, g.Config.OutputDir); err == nil {
-			return &PackageInfo{
-				PackageName:   pkg.Name,
-				PackageImport: pkg.Module.Path,
-			}, false, nil
-		}
-		return nil, false, fmt.Errorf("no module name configured and no existing package found")
-	}
-
 	var needsRegen bool
 
 	var daggerModPath string
@@ -152,21 +135,6 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 		}
 	}
 
-	// if no go.mod is available and we are merging with the projects parent when possible,
-	// check the root output directory instead
-	//
-	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
-	// will want to have a runtime module that lives in the same Go module as
-	// the generated client, which typically lives in the parent directory.
-	if goMod == nil && moduleConfig.Merge {
-		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
-			daggerModPath = "."
-			goMod, err = modfile.ParseLax("go.mod", content, nil)
-			if err != nil {
-				return nil, false, fmt.Errorf("parse go.mod: %w", err)
-			}
-		}
-	}
 	// could not find a go.mod, so we can init a basic one
 	if goMod == nil {
 		daggerModPath = moduleConfig.ModuleSourcePath
