@@ -163,6 +163,14 @@ func (s *directorySchema) Install() {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
+		dagql.NodeFunc("withPatch",
+			DagOpDirectoryWrapper(s.srv, s.withPatch,
+				WithPathFn(keepParentDir[withPatchArgs]))).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
+			Args(
+				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
+			),
 		dagql.Func("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
@@ -306,6 +314,26 @@ type globArgs struct {
 
 func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
 	return parent.Glob(ctx, args.Pattern)
+}
+
+type withPatchArgs struct {
+	Patch string
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithPatch(ctx, args.Patch)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) digest(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
