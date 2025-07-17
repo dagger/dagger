@@ -530,8 +530,12 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		return nil, err
 	}
 	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
 		apply := exec.Command("git", "apply", "-")
-		apply.Dir = root
+		apply.Dir = resolvedDir
 		apply.Stdin = strings.NewReader(patch)
 		apply.Stdout = stdio.Stdout
 		apply.Stderr = stdio.Stderr

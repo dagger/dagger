@@ -1515,6 +1515,29 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Hello, Dagger!\n", content)
 	})
 
+	t.Run("patching a subdirectory", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with a simple file
+		dir := c.Directory().
+			WithNewFile("sub/hello.txt", "Hello, World!\n").
+			Directory("sub")
+
+		// Create a patch that modifies the file
+		patch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Hello, World!
++Hello, Dagger!
+`
+
+		// Apply the patch
+		patchedDir := dir.WithPatch(patch)
+
+		// Verify the patch was applied
+		content, err := patchedDir.File("hello.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Dagger!\n", content)
+	})
+
 	t.Run("patch adding new file", func(ctx context.Context, t *testctx.T) {
 		// Start with an empty directory
 		dir := c.Directory()
