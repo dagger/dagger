@@ -1,6 +1,8 @@
 ---
 slug: /quickstart
 title: "Quickstart"
+description: "Build a CI workflow with Dagger"
+keywords: ["quickstart", "ci", "dagger", "workflow", "hello-dagger"]
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -11,7 +13,9 @@ import VideoPlayer from '../../src/components/VideoPlayer';
 
 CI workflows often start simple, but eventually transform into a labyrinth of artisanal shell scripts and/or unmanageable YAML code. Dagger lets you replace those artisanal scripts and YAML with a modern API and cross-language scripting engine.
 
+:::note
 This quickstart will guide you through building a CI workflow for an application using Dagger.
+:::
 
 ## Requirements
 
@@ -131,7 +135,7 @@ Replace the generated Dagger module files as described below.
 
 Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-```go file=./snippets/go/main.go
+```go Go file=./snippets/go/main.go
 ```
 
 </TabItem>

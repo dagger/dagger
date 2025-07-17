@@ -20,15 +20,22 @@ module.exports = {
       type: "category",
       label: "Components",
       items: [
-        "components/functions",
-        "components/objects/container",
-        "components/objects/directory",
-        "components/objects/file",
-        "components/objects/llm",
-        "components/objects/secret",
-        "components/objects/service",
-        "components/objects/environment",
+        "components/index",
+
         "components/objects/create-your-own",
+        {
+          type: "category",
+          label: "Objects",
+          items: [
+            "components/objects/container",
+            "components/objects/directory",
+            "components/objects/file",
+            "components/objects/llm",
+            "components/objects/secret",
+            "components/objects/service",
+            "components/objects/environment",
+          ],
+        },
       ],
     },
     {
@@ -108,9 +115,7 @@ module.exports = {
     {
       type: "category",
       label: "CI",
-      items: [
-        "ci/adopting",
-      ],
+      items: ["ci/adopting"],
     },
   ],
   features: [
