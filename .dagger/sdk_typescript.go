@@ -146,7 +146,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 	generated := t.nodeJsBase().
 		With(installer).
 		WithFile("/usr/local/bin/codegen", t.Dagger.codegenBinary()).
-		WithExec([]string{"codegen", "generate-module", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
+		WithExec([]string{"codegen", "generate-library", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
 		WithExec([]string{"yarn", "fmt", typescriptGeneratedAPIPath}).
 		File(typescriptGeneratedAPIPath)
 	return dag.Directory().WithFile(typescriptGeneratedAPIPath, generated), nil

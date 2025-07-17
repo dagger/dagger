@@ -51,9 +51,6 @@ type ModuleGeneratorConfig struct {
 	// ModuleParentPath is the path from the module source subpath to the context directory
 	ModuleParentPath string
 
-	// Merge indicates whether to merge the module deps with the existing project (i.e. a go.mod in a *parent* directory).
-	Merge bool
-
 	// Whether we are initializing a new module.
 	// Currently, this is only used in go codegen to enforce backwards-compatible behavior
 	// where a pre-existing go.mod file is checked during dagger init for whether its module
@@ -61,7 +58,7 @@ type ModuleGeneratorConfig struct {
 	IsInit bool
 }
 
-type ModuleSourceDependencies struct {
+type ModuleSourceDependency struct {
 	Kind   string
 	Name   string `json:"moduleOriginalName"`
 	Pin    string
@@ -73,5 +70,5 @@ type ClientGeneratorConfig struct {
 	// The list of all dependencies used by the module.
 	// This is used by the client generator to automatically serves the
 	// dependencies when connecting to the client.
-	ModuleDependencies []ModuleSourceDependencies
+	ModuleDependencies []ModuleSourceDependency
 }

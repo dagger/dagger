@@ -20,6 +20,7 @@ func init() {
 	rootCmd.AddCommand(introspectCmd)
 	rootCmd.AddCommand(generateClientCmd)
 	rootCmd.AddCommand(generateModuleCmd)
+	rootCmd.AddCommand(generateLibraryCmd)
 }
 
 func main() {
