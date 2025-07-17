@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -25,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -483,6 +485,68 @@ func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content
 			}
 		}
 
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
+	return dir, nil
+}
+
+func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, error) {
+	dir = dir.Clone()
+
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		var stdout, stderr strings.Builder
+		apply := exec.Command("git", "apply", "-")
+		apply.Dir = root
+		apply.Stdin = strings.NewReader(patch)
+		apply.Stdout = io.MultiWriter(&stdout, stdio.Stdout)
+		apply.Stderr = io.MultiWriter(&stderr, stdio.Stderr)
+		if err := apply.Run(); err != nil {
+			return &buildkit.ExecError{
+				Err:      err,
+				Origin:   trace.SpanContextFromContext(ctx),
+				Cmd:      apply.Args,
+				ExitCode: apply.ProcessState.ExitCode(),
+				Stdout:   stdout.String(),
+				Stderr:   stderr.String(),
+			}
+		}
 		return nil
 	})
 	if err != nil {

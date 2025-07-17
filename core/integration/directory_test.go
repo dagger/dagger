@@ -1490,6 +1490,118 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("basic patch application", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with a simple file
+		dir := c.Directory().
+			WithNewFile("hello.txt", "Hello, World!\n")
+
+		// Create a patch that modifies the file
+		patch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Hello, World!
++Hello, Dagger!
+`
+
+		// Apply the patch
+		patchedDir := dir.WithPatch(patch)
+
+		// Verify the patch was applied
+		content, err := patchedDir.File("hello.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Dagger!\n", content)
+	})
+
+	t.Run("patch adding new file", func(ctx context.Context, t *testctx.T) {
+		// Start with an empty directory
+		dir := c.Directory()
+
+		// Create a patch that adds a new file
+		patch := `--- /dev/null
++++ b/newfile.txt
+@@ -0,0 +1 @@
++This is a new file!
+`
+
+		// Apply the patch
+		patchedDir := dir.WithPatch(patch)
+
+		// Verify the new file was created
+		content, err := patchedDir.File("newfile.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "This is a new file!\n", content)
+	})
+
+	t.Run("patch deleting file", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with a file to delete
+		dir := c.Directory().
+			WithNewFile("delete-me.txt", "This file will be deleted\n").
+			WithNewFile("keep-me.txt", "This file will be kept\n")
+
+		// Create a patch that deletes the file
+		patch := `--- a/delete-me.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-This file will be deleted
+`
+
+		// Apply the patch
+		patchedDir := dir.WithPatch(patch)
+
+		// Verify the file was deleted
+		ents, err := patchedDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"keep-me.txt"}, ents)
+	})
+
+	t.Run("multiple file patch", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with multiple files
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Content 1\n").
+			WithNewFile("file2.txt", "Content 2\n")
+
+		// Create a patch that modifies both files
+		patch := `--- a/file1.txt
++++ b/file1.txt
+@@ -1 +1 @@
+-Content 1
++Modified Content 1
+--- a/file2.txt
++++ b/file2.txt
+@@ -1 +1 @@
+-Content 2
++Modified Content 2
+`
+
+		// Apply the patch
+		patchedDir := dir.WithPatch(patch)
+
+		// Verify both files were modified
+		content1, err := patchedDir.File("file1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Modified Content 1\n", content1)
+
+		content2, err := patchedDir.File("file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Modified Content 2\n", content2)
+	})
+
+	t.Run("invalid patch format", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("test.txt", "test content")
+
+		// Create an invalid patch
+		invalidPatch := "this is not a valid patch format"
+
+		// Apply the invalid patch and expect an error
+		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
+		require.Error(t, err)
+	})
+}
+
 func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
