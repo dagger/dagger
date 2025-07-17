@@ -29,13 +29,11 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type hostSchema struct {
-	srv *dagql.Server
-}
+type hostSchema struct{}
 
 var _ SchemaResolvers = &hostSchema{}
 
-func (s *hostSchema) Install() {
+func (s *hostSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
 			return parent.NewHost(), nil
@@ -140,7 +138,7 @@ func (s *hostSchema) Install() {
 
 			return container, nil
 		}).Doc("Retrieves a container builtin to the engine."),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
 		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
@@ -212,7 +210,7 @@ func (s *hostSchema) Install() {
 				dagql.Arg("name").Doc(`The user defined name for this secret.`),
 				dagql.Arg("path").Doc(`Location of the file to set as a secret.`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type setSecretFileArgs struct {
@@ -221,7 +219,12 @@ type setSecretFileArgs struct {
 }
 
 func (s *hostSchema) setSecretFile(ctx context.Context, host dagql.ObjectResult[*core.Host], args setSecretFileArgs) (inst dagql.Result[*core.Secret], err error) {
-	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	err = srv.Select(ctx, srv.Root(), &inst,
 		dagql.Selector{
 			Field: "secret",
 			Args: []dagql.NamedInput{{
@@ -241,6 +244,11 @@ type hostDirectoryArgs struct {
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	args.Path = path.Clean(args.Path)
 	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
 		return i, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
@@ -294,7 +302,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewObjectResultForCurrentID(ctx, s.srv,
+	dir, err := dagql.NewObjectResultForCurrentID(ctx, srv,
 		core.NewDirectory(localPB, "/", query.Platform(), nil),
 	)
 	if err != nil {
@@ -376,9 +384,14 @@ func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
 }
 
 func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	fileDir, fileName := filepath.Split(args.Path)
 
-	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
+	if err := srv.Select(ctx, srv.Root(), &i, dagql.Selector{
 		Field: "host",
 	}, dagql.Selector{
 		Field: "directory",
@@ -417,7 +430,12 @@ type hostTunnelArgs struct {
 }
 
 func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTunnelArgs) (*core.Service, error) {
-	inst, err := args.Service.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	inst, err := args.Service.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -472,6 +490,11 @@ type hostServiceArgs struct {
 }
 
 func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostServiceArgs) (inst dagql.Result[*core.Service], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	if len(args.Ports) == 0 {
 		return inst, errors.New("no ports specified")
 	}
@@ -499,7 +522,7 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		}
 
 		var sockInst dagql.Result[*core.Socket]
-		err = s.srv.Select(ctx, s.srv.Root(), &sockInst,
+		err = srv.Select(ctx, srv.Root(), &sockInst,
 			dagql.Selector{
 				Field: "host",
 			},
@@ -524,7 +547,7 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		sockIDs = append(sockIDs, dagql.NewID[*core.Socket](sockInst.ID()))
 	}
 
-	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+	err = srv.Select(ctx, srv.Root(), &inst,
 		dagql.Selector{
 			Field: "host",
 		},
@@ -546,13 +569,18 @@ type hostInternalServiceArgs struct {
 }
 
 func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, args hostInternalServiceArgs) (*core.Service, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	if len(args.Socks) == 0 {
 		return nil, errors.New("no host sockets specified")
 	}
 
 	socks := make([]*core.Socket, 0, len(args.Socks))
 	for _, sockID := range args.Socks {
-		sockInst, err := sockID.Load(ctx, s.srv)
+		sockInst, err := sockID.Load(ctx, srv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load socket: %w", err)
 		}

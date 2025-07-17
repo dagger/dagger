@@ -40,11 +40,9 @@ func init() {
 
 var _ SchemaResolvers = &gitSchema{}
 
-type gitSchema struct {
-	srv *dagql.Server
-}
+type gitSchema struct{}
 
-func (s *gitSchema) Install() {
+func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
 			View(AllVersion).
@@ -68,7 +66,7 @@ func (s *gitSchema) Install() {
 				dagql.Arg("httpAuthHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the repo is fetched.`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFuncWithCacheKey("head", s.head, dagql.CachePerSession).
@@ -119,7 +117,7 @@ func (s *gitSchema) Install() {
 			Args(
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("tree", s.tree).
@@ -137,11 +135,11 @@ func (s *gitSchema) Install() {
 					View(BeforeVersion("v0.12.0")).
 					Doc("This option should be passed to `git` instead.").Deprecated(),
 			),
-		dagql.NodeFunc("commit", DagOpWrapper(s.srv, s.fetchCommit)).
+		dagql.NodeFunc("commit", DagOpWrapper(srv, s.fetchCommit)).
 			Doc(`The resolved commit id at this ref.`),
-		dagql.NodeFunc("ref", DagOpWrapper(s.srv, s.fetchRef)).
+		dagql.NodeFunc("ref", DagOpWrapper(srv, s.fetchRef)).
 			Doc(`The resolved ref name at this ref.`),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type gitArgs struct {
@@ -159,6 +157,11 @@ type gitArgs struct {
 
 //nolint:gocyclo
 func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.Result[*core.GitRepository], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
 		remote, err = gitutil.ParseURL("https://" + args.URL)
@@ -174,7 +177,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	var gitServices core.ServiceBindings
 	if args.ExperimentalServiceHost.Valid {
-		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
+		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, err
 		}
@@ -204,14 +207,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 
 		if args.SSHAuthSocket.Valid {
-			sshAuthSock, err = args.SSHAuthSocket.Value.Load(ctx, s.srv)
+			sshAuthSock, err = args.SSHAuthSocket.Value.Load(ctx, srv)
 			if err != nil {
 				return inst, err
 			}
 		} else if clientMetadata.SSHAuthSocketPath != "" {
 			// For SSH refs, try to load client's SSH socket if no explicit socket was provided
 			var sockInst dagql.ObjectResult[*core.Socket]
-			if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
+			if err := srv.Select(ctx, srv.Root(), &sockInst,
 				dagql.Selector{
 					Field: "host",
 				},
@@ -257,7 +260,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 					Value: dagql.NewString(args.SSHKnownHosts),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+			err = srv.Select(ctx, parent, &inst, dagql.Selector{
 				Field: "git",
 				Args:  selectArgs,
 				View:  dagql.View(dagql.CurrentID(ctx).View()),
@@ -268,13 +271,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		if args.HTTPAuthToken.Valid {
-			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, s.srv)
+			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, srv)
 			if err != nil {
 				return inst, err
 			}
 		}
 		if args.HTTPAuthHeader.Valid {
-			httpAuthHeader, err = args.HTTPAuthHeader.Value.Load(ctx, s.srv)
+			httpAuthHeader, err = args.HTTPAuthHeader.Value.Load(ctx, srv)
 			if err != nil {
 				return inst, err
 			}
@@ -334,7 +337,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			hash := sha256.Sum256([]byte(credentials.Password))
 			secretName := hex.EncodeToString(hash[:])
 			var authToken dagql.ObjectResult[*core.Secret]
-			if err := s.srv.Select(authCtx, s.srv.Root(), &authToken,
+			if err := srv.Select(authCtx, srv.Root(), &authToken,
 				dagql.Selector{
 					Field: "setSecret",
 					Args: []dagql.NamedInput{
@@ -382,7 +385,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 					Value: dagql.Opt(dagql.NewID[*core.Service](args.ExperimentalServiceHost.Value.ID())),
 				})
 			}
-			err = s.srv.Select(ctx, parent, &inst, dagql.Selector{
+			err = srv.Select(ctx, parent, &inst, dagql.Selector{
 				Field: "git",
 				Args:  selectArgs,
 				View:  dagql.View(dagql.CurrentID(ctx).View()),
@@ -572,7 +575,12 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 }
 
 func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
-	token, err := args.Token.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	token, err := args.Token.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +598,12 @@ type withAuthHeaderArgs struct {
 }
 
 func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitRepository, args withAuthHeaderArgs) (*core.GitRepository, error) {
-	header, err := args.Header.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	header, err := args.Header.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -614,6 +627,11 @@ type treeArgs struct {
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
 	if args.SSHKnownHosts.Valid {
 		return inst, fmt.Errorf("sshKnownHosts is no longer supported on `tree`")
 	}
@@ -622,18 +640,18 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	if args.IsDagOp {
-		dir, err := parent.Self().Tree(ctx, s.srv, args.DiscardGitDir, args.Depth)
+		dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth)
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 
-	dir, err := DagOpDirectory(ctx, s.srv, parent.Self(), args, "", s.tree)
+	dir, err := DagOpDirectory(ctx, srv, parent.Self(), args, "", s.tree)
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, s.srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
 		return inst, err
 	}

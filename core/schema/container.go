@@ -37,13 +37,11 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type containerSchema struct {
-	srv *dagql.Server
-}
+type containerSchema struct{}
 
 var _ SchemaResolvers = &containerSchema{}
 
-func (s *containerSchema) Install() {
+func (s *containerSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("container", s.container).
 			Doc(`Creates a scratch container, with no image or metadata.`,
@@ -51,7 +49,7 @@ func (s *containerSchema) Install() {
 			Args(
 				dagql.Arg("platform").Doc(`Platform to initialize the container with. Defaults to the native platform of the current engine`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Container]{
 		Syncer[*core.Container]().
@@ -337,7 +335,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withFile", DagOpContainerWrapper(s.srv, s.withFile)).
+		dagql.NodeFunc("withFile", DagOpContainerWrapper(srv, s.withFile)).
 			Doc(`Return a container snapshot with a file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "/path/to/new-file.txt"`),
@@ -350,7 +348,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withoutFile", DagOpContainerWrapper(s.srv, s.withoutFile)).
+		dagql.NodeFunc("withoutFile", DagOpContainerWrapper(srv, s.withoutFile)).
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to remove (e.g., "/file.txt").`),
@@ -358,7 +356,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withoutFiles", DagOpContainerWrapper(s.srv, s.withoutFiles)).
+		dagql.NodeFunc("withoutFiles", DagOpContainerWrapper(srv, s.withoutFiles)).
 			Doc(`Return a new container spanshot with specified files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`),
@@ -366,7 +364,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withFiles", DagOpContainerWrapper(s.srv, s.withFiles)).
+		dagql.NodeFunc("withFiles", DagOpContainerWrapper(srv, s.withFiles)).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
@@ -379,7 +377,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
-		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(s.srv, s.withNewFile)).
+		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(srv, s.withNewFile)).
 			View(AllVersion).
 			Doc(`Return a new container snapshot, with a file added to its filesystem with text content`).
 			Args(
@@ -394,7 +392,7 @@ func (s *containerSchema) Install() {
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
-		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(s.srv, s.withNewFileLegacy)).
+		dagql.NodeFunc("withNewFile", DagOpContainerWrapper(srv, s.withNewFileLegacy)).
 			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			Args(
@@ -420,7 +418,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withoutDirectory", DagOpContainerWrapper(s.srv, s.withoutDirectory)).
+		dagql.NodeFunc("withoutDirectory", DagOpContainerWrapper(srv, s.withoutDirectory)).
 			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to remove (e.g., ".github/").`),
@@ -490,7 +488,7 @@ func (s *containerSchema) Install() {
 			Doc(`The exit code of the last executed command`,
 				`Returns an error if no command was executed`),
 
-		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
+		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(srv, s.withSymlink)).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
@@ -596,7 +594,7 @@ func (s *containerSchema) Install() {
 					OCI support.`),
 			),
 
-		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, WithStaticPath[*core.Container, containerAsTarballArgs]("container.tar"))).
+		dagql.NodeFunc("asTarball", DagOpFileWrapper(srv, s.asTarball, WithStaticPath[*core.Container, containerAsTarballArgs]("container.tar"))).
 			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
 			Args(
 				dagql.Arg("platformVariants").Doc(
@@ -739,7 +737,7 @@ func (s *containerSchema) Install() {
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{
 		Syncer[*core.TerminalLegacy]().
@@ -750,7 +748,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Deprecated("Use newer dagger to access the terminal").
 			Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type containerArgs struct {
@@ -1933,6 +1931,11 @@ type containerWithNewFileArgs struct {
 }
 
 func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
 		return inst, err
@@ -1943,7 +1946,7 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type containerWithNewFileArgsLegacy struct {
@@ -1956,12 +1959,17 @@ type containerWithNewFileArgsLegacy struct {
 }
 
 func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgsLegacy) (inst dagql.ObjectResult[*core.Container], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+
 	ctr, err := parent.Self().WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
 	if err != nil {
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, ctr)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type containerWithUnixSocketArgs struct {
@@ -2243,6 +2251,10 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return core.Void{}, fmt.Errorf("failed to get server: %w", err)
+	}
 
 	loader, err := bk.LoadImage(ctx, refName.String())
 	if err != nil {
@@ -2250,7 +2262,7 @@ func (s *containerSchema) exportImage(
 	}
 
 	if loader.ContentStore != nil {
-		platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
+		platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 		if err != nil {
 			return core.Void{}, err
 		}
@@ -2330,7 +2342,7 @@ func (s *containerSchema) exportImage(
 				Value: args.ForcedCompression,
 			})
 		}
-		err = s.srv.Select(ctx, parent, &tarball, sel)
+		err = srv.Select(ctx, parent, &tarball, sel)
 		if err != nil {
 			return core.Void{}, err
 		}

@@ -15,13 +15,11 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-type secretSchema struct {
-	srv *dagql.Server
-}
+type secretSchema struct{}
 
 var _ SchemaResolvers = &secretSchema{}
 
-func (s *secretSchema) Install() {
+func (s *secretSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
 			Doc(`Creates a new secret.`).
@@ -44,7 +42,7 @@ func (s *secretSchema) Install() {
 					Sensitive().
 					Doc(`The plaintext of the secret`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Secret]{
 		dagql.NodeFunc("name", s.name).
@@ -57,7 +55,7 @@ func (s *secretSchema) Install() {
 			Sensitive().
 			DoNotCache("Do not include plaintext secret in the cache.").
 			Doc(`The value of this secret.`),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type secretArgs struct {
@@ -70,6 +68,10 @@ func (s *secretSchema) secret(
 	parent dagql.ObjectResult[*core.Query],
 	args secretArgs,
 ) (i dagql.ObjectResult[*core.Secret], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get dagql server: %w", err)
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
@@ -84,7 +86,7 @@ func (s *secretSchema) secret(
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
-	i, err = dagql.NewObjectResultForCurrentID(ctx, s.srv, secret)
+	i, err = dagql.NewObjectResultForCurrentID(ctx, srv, secret)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -150,6 +152,11 @@ func (s *secretSchema) setSecret(
 	parent dagql.ObjectResult[*core.Query],
 	args setSecretArgs,
 ) (i dagql.ObjectResult[*core.Secret], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
 	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self(), args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
@@ -181,7 +188,7 @@ func (s *secretSchema) setSecret(
 		Name:      args.Name,
 		Plaintext: []byte(args.Plaintext),
 	}
-	secret, err := dagql.NewObjectResultForID(secretVal, s.srv, callID)
+	secret, err := dagql.NewObjectResultForID(secretVal, srv, callID)
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}

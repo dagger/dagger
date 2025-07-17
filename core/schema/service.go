@@ -10,13 +10,11 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type serviceSchema struct {
-	srv *dagql.Server
-}
+type serviceSchema struct{}
 
 var _ SchemaResolvers = &serviceSchema{}
 
-func (s *serviceSchema) Install() {
+func (s *serviceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Container]{
 		dagql.NodeFunc("asService", s.containerAsServiceLegacy).
 			View(BeforeVersion("v0.15.0")).
@@ -93,7 +91,7 @@ func (s *serviceSchema) Install() {
 					pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Service]{
 		dagql.NodeFunc("hostname", s.hostname).
@@ -139,10 +137,15 @@ func (s *serviceSchema) Install() {
 			Args(
 				dagql.Arg("kill").Doc(`Immediately kill the service without waiting for a graceful exit`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (inst dagql.ObjectResult[*core.Service], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	id := parent.ID()
 	for id != nil && id.Field() != "withExec" {
 		id = id.Receiver()
@@ -155,11 +158,11 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, svc)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
 	}
 
 	// load the withExec parent
-	obj, err := s.srv.Load(ctx, id.Receiver())
+	obj, err := srv.Load(ctx, id.Receiver())
 	if err != nil {
 		return inst, err
 	}
@@ -194,7 +197,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, s.srv, svc)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
@@ -216,6 +219,11 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	UpArgs
 	core.ContainerAsServiceArgs
 }) (res dagql.Nullable[core.Void], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+
 	var inputs []dagql.NamedInput
 	if args.Args != nil {
 		inputs = append(inputs, dagql.NamedInput{
@@ -255,7 +263,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	}
 
 	var svc dagql.ObjectResult[*core.Service]
-	err := s.srv.Select(ctx, ctr, &svc,
+	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
 			View:  dagql.View(dagql.CurrentID(ctx).View()),
@@ -270,8 +278,13 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 }
 
 func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+
 	var svc dagql.ObjectResult[*core.Service]
-	err := s.srv.Select(ctx, ctr, &svc,
+	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
 			View:  dagql.View(dagql.CurrentID(ctx).View()),
@@ -357,10 +370,15 @@ const InstrumentationLibrary = "dagger.io/engine.schema"
 func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
 	void := dagql.Null[core.Void]()
 
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+
 	useNative := !args.Random && len(args.Ports) == 0
 
 	var hostSvc dagql.Result[*core.Service]
-	err := s.srv.Select(ctx, s.srv.Root(), &hostSvc,
+	err = srv.Select(ctx, srv.Root(), &hostSvc,
 		dagql.Selector{
 			Field: "host",
 		},
