@@ -45,6 +45,8 @@ var (
 
 	installName string
 
+	initBlueprint string
+
 	developSDK        string
 	developSourcePath string
 	developRecursive  bool
@@ -130,11 +132,13 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
+	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+
 	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(moduleInstallCmd, moduleInstallCmd.Flags(), false)
 
@@ -161,8 +165,18 @@ var moduleInitCmd = &cobra.Command{
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
+If --blueprint is specified, the given blueprint is installed in the module.
 `,
-	Example: "dagger init --sdk=python",
+	Example: `
+# Reference a remote module as blueprint
+dagger init --blueprint=github.com/example/blueprint
+
+# Reference a local module as blueprint
+dagger init --blueprint=../my/blueprints/simple-webapp
+
+# Implement a standalone module in Go
+dagger init --sdk=go
+`,
 	GroupID: moduleGroup.ID,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
@@ -258,10 +272,24 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 			if len(moduleIncludes) > 0 {
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
-			_, err = modSrc.
-				WithEngineVersion(modules.EngineVersionLatest).
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
+			// engine version must be set before setting blueprint
+			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+			// Install blueprint if specified
+			if initBlueprint != "" {
+				// Validate that we don't have both SDK and blueprint
+				if sdk != "" {
+					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
+				}
+				// Create a new module source for the blueprint installation
+				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
+					DisableFindUp: true,
+				})
+				// Install the blueprint
+				modSrc = modSrc.WithBlueprint(blueprintSrc)
+			}
+
+			// Export generated files, including dagger.json
+			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -275,8 +303,12 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				}
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootAbsPath)
-
+			// Print success message to user
+			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
+			if initBlueprint != "" {
+				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
 			return nil
 		})
 	},
@@ -357,7 +389,8 @@ var moduleInstallCmd = &cobra.Command{
 
 			switch depSrcKind {
 			case dagger.ModuleSourceKindLocalSource:
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
 					"module_name":   origDepName,
 					"install_name":  installName,
 					"module_sdk":    sdk,
@@ -378,7 +411,8 @@ var moduleInstallCmd = &cobra.Command{
 					return fmt.Errorf("failed to get git commit: %w", err)
 				}
 
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+				analyticsType := "module_install"
+				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
 					"module_name":   origDepName,
 					"install_name":  installName,
 					"module_sdk":    sdk,
@@ -397,13 +431,18 @@ var moduleInstallCmd = &cobra.Command{
 }
 
 var moduleUpdateCmd = &cobra.Command{
-	Use:     "update [options] <module>",
+	Use:     "update [options] [<DEPENDENCY>...]",
 	Aliases: []string{"use"},
-	Short:   "Update a dependency",
-	Long:    "Update a dependency to the latest version (or the version specified). The target module must be local.",
-	Example: `"dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"`,
+	Short:   "Update a module's dependencies",
+	Long: `Update the dependencies of a local module.
+
+To update only specific dependencies, specify their short names or a complete address.
+
+If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+`,
+	Example: `"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"`,
 	GroupID: moduleGroup.ID,
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) { //nolint:dupl
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
@@ -430,6 +469,10 @@ var moduleUpdateCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
+			// If no dependency is specified, also update the blueprint
+			if len(extraArgs) == 0 {
+				modSrc = modSrc.WithUpdateBlueprint()
+			}
 			modSrc = modSrc.WithUpdateDependencies(extraArgs)
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
@@ -454,7 +497,7 @@ var moduleUnInstallCmd = &cobra.Command{
 	Example: "dagger uninstall hello",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) { //nolint:dupl
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()

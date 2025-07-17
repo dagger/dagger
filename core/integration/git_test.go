@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 )
 
@@ -62,12 +63,27 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, head, "ref: refs/heads/main")
 
+		// latest
+		byLatest := git.LatestVersion()
+		_, err = byLatest.Commit(ctx)
+		require.NoError(t, err)
+		ref, err := byLatest.Ref(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `^refs/tags/v\d\.+\d+\.\d+$`, ref)
+		checkClean(ctx, t, byLatest.Tree(), true)
+		readme, err = byLatest.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+		head, err = byLatest.Tree().File(".git/HEAD").Contents(ctx)
+		require.NoError(t, err)
+		require.True(t, gitutil.IsCommitSHA(strings.TrimSpace(head)), head)
+
 		// main
 		byBranch := git.Branch("main")
 		commit, err := byBranch.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, mainCommit, commit)
-		ref, err := byBranch.Ref(ctx)
+		ref, err = byBranch.Ref(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/heads/main", ref)
 		checkClean(ctx, t, byBranch.Tree(), true)
@@ -264,21 +280,43 @@ func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 		return strings.TrimSpace(res), err
 	}
 
-	t.Run("default depth", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-		res, err := log(ctx, dir)
-		require.NoError(t, err)
-		lines := strings.Split(res, "\n")
-		require.Len(t, lines, 1)
-	})
+	// default depth = 1
+	dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+	res, err := log(ctx, dir)
+	require.NoError(t, err)
+	lines := strings.Split(res, "\n")
+	require.Len(t, lines, 1)
 
-	t.Run("depth 5", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
-		res, err := log(ctx, dir)
-		require.NoError(t, err)
-		lines := strings.Split(res, "\n")
-		require.Len(t, lines, 5)
-	})
+	// depth = 5
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 5)
+
+	// depth = 1000 (big depth)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 1000)
+
+	// depth = 20 (back down)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	require.Len(t, lines, 20)
+
+	// depth = -1 (max depth)
+	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
+	res, err = log(ctx, dir)
+	require.NoError(t, err)
+	lines = strings.Split(res, "\n")
+	last := lines[len(lines)-1]
+	require.Greater(t, len(lines), 2000)
+	require.True(t, strings.HasPrefix(last, "30f75"), last)
+	require.Contains(t, last, "Move prototype 69-dagger-archon to top-level")
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
@@ -795,6 +833,30 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	c1 := connect(ctx, t)
 	c2 := connect(ctx, t)
 	require.Equal(t, hostname(c1), hostname(c2))
+}
+
+func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v2.0 && touch abc && git add abc && git commit -m "abc" && git tag v1.0`})
+	v2commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD~"}).Stdout(ctx)
+	require.NoError(t, err)
+	v2commit = strings.TrimSpace(v2commit)
+
+	git := ctr.Directory(".").AsGit()
+
+	ref, err := git.LatestVersion().Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0", ref)
+	commit, err := git.LatestVersion().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, v2commit, commit)
 }
 
 func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {

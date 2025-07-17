@@ -18,6 +18,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"
+	ociexporter "github.com/dagger/dagger/engine/buildkit/exporter/oci"
 )
 
 type ContainerExport struct {
@@ -42,6 +43,7 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
+	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
 	if err != nil {
 		return nil, err
@@ -85,12 +87,17 @@ func (c *Client) ExportContainerImage(
 		return nil, err
 	}
 
-	exporterName := bkclient.ExporterDocker
+	variant := ociexporter.VariantDocker
 	if len(combinedResult.Refs) > 1 {
-		exporterName = bkclient.ExporterOCI
+		variant = ociexporter.VariantOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := ociexporter.New(ociexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.ImageWriter,
+		Variant:        variant,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -139,12 +146,17 @@ func (c *Client) ContainerImageToTarball(
 		return err
 	}
 
-	exporterName := bkclient.ExporterDocker
+	variant := ociexporter.VariantDocker
 	if len(combinedResult.Refs) > 1 {
-		exporterName = bkclient.ExporterOCI
+		variant = ociexporter.VariantOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := ociexporter.New(ociexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.ImageWriter,
+		Variant:        variant,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return err
 	}

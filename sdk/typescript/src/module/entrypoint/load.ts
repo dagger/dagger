@@ -12,6 +12,7 @@ import {
   DaggerObject,
   DaggerObjectBase,
   DaggerTypeObject,
+  DaggerEnumClass,
 } from "../introspector/dagger_module/index.js"
 import { TypeDef } from "../introspector/typedef.js"
 import { InvokeCtx } from "./context.js"
@@ -182,6 +183,11 @@ export async function loadValue(
 
       return executor.buildInterface(interfaceType, value)
     }
+    case TypeDefKind.EnumKind: {
+      const enumType = (type as TypeDef<TypeDefKind.EnumKind>).name
+
+      return executor.buildEnum(enumType, value)
+    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
@@ -189,7 +195,6 @@ export async function loadValue(
     case TypeDefKind.FloatKind:
     case TypeDefKind.VoidKind:
     case TypeDefKind.ScalarKind:
-    case TypeDefKind.EnumKind:
       return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
@@ -222,6 +227,10 @@ export function loadObjectReturnType(
       let listType = retType
       while (listType.kind === TypeDefKind.ListKind) {
         listType = (listType as TypeDef<TypeDefKind.ListKind>).typeDef
+      }
+
+      if (listType.kind === TypeDefKind.EnumKind) {
+        return module.enums[(listType as TypeDef<TypeDefKind.EnumKind>).name]
       }
 
       return module.objects[(listType as TypeDef<TypeDefKind.ObjectKind>).name]
@@ -273,7 +282,8 @@ export async function loadResult(
         throw new Error(`could not find type for result property ${key}`)
       }
 
-      let referencedObject: DaggerObjectBase | undefined = undefined
+      let referencedObject: DaggerObjectBase | DaggerEnumBase | undefined =
+        undefined
 
       // Handle nested objects
       if (property.type.kind === TypeDefKind.ObjectKind) {
@@ -297,6 +307,18 @@ export async function loadResult(
           referencedObject =
             module.objects[(_property as TypeDef<TypeDefKind.ObjectKind>).name]
         }
+
+        // If the original type is a enum, we use it as the referenced object.
+        if (_property.kind === TypeDefKind.EnumKind) {
+          referencedObject =
+            module.enums[(_property as TypeDef<TypeDefKind.EnumKind>).name]
+        }
+      }
+
+      // Handle enums
+      if (property.type.kind === TypeDefKind.EnumKind) {
+        referencedObject =
+          module.enums[(property.type as TypeDef<TypeDefKind.EnumKind>).name]
       }
 
       // If there's no referenced object, we use the current object.
@@ -314,8 +336,20 @@ export async function loadResult(
     return state
   }
 
-  if (typeof result === "object" && object instanceof DaggerEnum) {
-    return result
+  // If it's an enum, we need to resolve the enum member name instead of the value.
+  // A enum value A = "a" will be returned as "a" by the function so we need to
+  // transform it back to "A" to be sent as result to the engine.
+  if (object instanceof DaggerEnum || object instanceof DaggerEnumClass) {
+    const enumMember = Object.entries(object.values).find(
+      ([, member]) => member.value === result,
+    )
+
+    // If the enum member is not found, we return the result as is and let the engine handle it.
+    if (!enumMember) {
+      return result
+    }
+
+    return enumMember[0]
   }
 
   // Handle primitive types

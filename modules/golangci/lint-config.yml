@@ -29,6 +29,12 @@ linters:
     - gomodguard
     - nilerr
 
+  exclusions:
+    rules:
+      - linters:
+        - staticcheck
+        text: "idtools.IdentityMapping"
+
 issues:
   exclude-rules:
     - path: _test\.go

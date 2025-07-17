@@ -148,6 +148,18 @@ func (s *moduleSourceSchema) Install() {
 				dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
 			),
 
+		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
+			Doc(`Set a blueprint for the module source.`).
+			Args(
+				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
+			),
+
+		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
+			Doc(`Update the blueprint module to the latest version.`),
+
+		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
+			Doc(`Remove the current blueprint from the module source.`),
+
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
@@ -413,14 +425,19 @@ func (s *moduleSourceSchema) localModuleSource(
 		},
 	}
 
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !daggerCfgFound {
 		// fill in an empty dir at the source root so the context dir digest incorporates that path
 		var srcRootDir dagql.ObjectResult[*core.Directory]
-		if err := s.dag.Select(ctx, s.dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
+		if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
 			return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
 		}
 
-		err = s.dag.Select(ctx, s.dag.Root(), &localSrc.ContextDirectory,
+		err = dag.Select(ctx, dag.Root(), &localSrc.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
 				Field: "withDirectory",
@@ -452,7 +469,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			}
 
 			if localSrc.SDK != nil {
-				localSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query.Self(), localSrc.SDK, localSrc)
+				localSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), localSrc.SDK, localSrc)
 				if err != nil {
 					return fmt.Errorf("failed to load sdk for local module source: %w", err)
 				}
@@ -461,11 +478,16 @@ func (s *moduleSourceSchema) localModuleSource(
 			return nil
 		})
 
+		// Load blueprint
+		eg.Go(func() error {
+			return s.loadBlueprintModule(ctx, bk, localSrc)
+		})
+
 		localSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(localSrc.ConfigDependencies))
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
 				var err error
-				localSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, s.dag, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+				localSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 				if err != nil {
 					return fmt.Errorf("failed to resolve dep to source: %w", err)
 				}
@@ -490,7 +512,12 @@ func (s *moduleSourceSchema) gitModuleSource(
 	// whether to search up the directory tree for a dagger.json file
 	doFindUp bool,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
-	gitRef, modVersion, err := parsed.GetGitRefAndModVersion(ctx, s.dag, refPin)
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	gitRef, modVersion, err := parsed.GetGitRefAndModVersion(ctx, dag, refPin)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
@@ -519,7 +546,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
 	// Related: https://github.com/dagger/dagger/issues/6292
-	err = s.dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
+	err = dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
 		dagql.Selector{Field: "tree"},
 	)
 	if err != nil {
@@ -586,7 +613,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	var configContents string
-	err = s.dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
+	err = dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
@@ -613,7 +640,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		}
 
 		if gitSrc.SDK != nil {
-			gitSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query.Self(), gitSrc.SDK, gitSrc)
+			gitSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), gitSrc.SDK, gitSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for git module source: %w", err)
 			}
@@ -622,11 +649,16 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return nil
 	})
 
+	// Load blueprint
+	eg.Go(func() error {
+		return s.loadBlueprintModule(ctx, bk, gitSrc)
+	})
+
 	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
 			var err error
-			gitSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, s.dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+			gitSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
 				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
@@ -658,6 +690,23 @@ func (s *moduleSourceSchema) gitModuleSource(
 	return inst.ResultWithPostCall(secretTransferPostCall), nil
 }
 
+func (s *moduleSourceSchema) loadBlueprintModule(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource) error {
+	// If we have a blueprint module, load it
+	pcfg := src.ConfigBlueprint
+	if pcfg == nil {
+		return nil
+	}
+	blueprint, err := core.ResolveDepToSource(ctx, bk, s.dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+	if err != nil {
+		return fmt.Errorf("failed to resolve dep to source: %w", err)
+	}
+	src.Blueprint = blueprint
+	return nil
+}
+
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
@@ -667,7 +716,12 @@ func (s *moduleSourceSchema) directoryAsModule(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleArgs,
 ) (inst dagql.Result[*core.Module], err error) {
-	err = s.dag.Select(ctx, contextDir, &inst,
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	err = dag.Select(ctx, contextDir, &inst,
 		dagql.Selector{
 			Field: "asModuleSource",
 			Args: []dagql.NamedInput{
@@ -686,6 +740,15 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	contextDir dagql.ObjectResult[*core.Directory],
 	args directoryAsModuleArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dag, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	sourceRootSubpath := args.SourceRootPath
 	if sourceRootSubpath == "" {
 		sourceRootSubpath = "."
@@ -703,7 +766,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	configPath := filepath.Join(dirSrc.SourceRootSubpath, modules.Filename)
 	var configContents string
-	err = s.dag.Select(ctx, contextDir, &configContents,
+	err = dag.Select(ctx, contextDir, &configContents,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
@@ -720,10 +783,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	// load this module source's deps in parallel
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -738,7 +797,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			}
 
 			var err error
-			dirSrc.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, dirSrc.SDK, dirSrc)
+			dirSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, dirSrc.SDK, dirSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
 			}
@@ -751,7 +810,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	for i, depCfg := range dirSrc.ConfigDependencies {
 		eg.Go(func() error {
 			var err error
-			dirSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, s.dag, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+			dirSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
 				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
@@ -783,12 +842,26 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	// blueprint is incompatible with some dagger.json fields
+	if modCfg.Blueprint != nil {
+		if modCfg.SDK != nil {
+			return fmt.Errorf("blueprint and sdk can't both be set")
+		}
+		if len(modCfg.Dependencies) != 0 {
+			return fmt.Errorf("blueprint and dependencies can't both be set")
+		}
+		if modCfg.Source != "" {
+			return fmt.Errorf("blueprint and source can't both be set")
+		}
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+	src.ConfigBlueprint = modCfg.Blueprint
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -849,6 +922,11 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) error {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	// we load the includes specified by the user in dagger.json (if any) plus a few
 	// prepended paths that are always loaded
 	fullIncludePaths := []string{
@@ -869,7 +947,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		err := s.dag.Select(ctx, s.dag.Root(), &src.ContextDirectory,
+		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
@@ -884,7 +962,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
-		err := s.dag.Select(ctx, s.dag.Root(), &src.ContextDirectory,
+		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
 				Field: "withDirectory",
@@ -1057,7 +1135,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	if err != nil {
 		return nil, err
 	}
-	src.SDKImpl, err = sdk.NewLoader(s.dag).SDKForModule(ctx, query, src.SDK, src)
+	src.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
@@ -1073,13 +1151,18 @@ func (s *moduleSourceSchema) moduleSourceDirectory(
 		Path string
 	},
 ) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	parentDirPath := src.Self().SourceSubpath
 	if parentDirPath == "" {
 		parentDirPath = src.Self().SourceRootSubpath
 	}
 	path := filepath.Join(parentDirPath, args.Path)
 
-	err = s.dag.Select(ctx, src.Self().ContextDirectory, &inst,
+	err = dag.Select(ctx, src.Self().ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
@@ -1229,7 +1312,12 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
 
-	newDeps, err := collectIDObjectResults(ctx, s.dag, args.Dependencies)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	newDeps, err := collectIDObjectResults(ctx, dag, args.Dependencies)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
@@ -1334,6 +1422,101 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	return parentSrc, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceWithBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Blueprint core.ModuleSourceID
+	},
+) (*core.ModuleSource, error) {
+	// Validate blueprint compatibility
+	if parentSrc.SDK != nil {
+		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
+	}
+	if parentSrc.Dependencies.Len() > 0 {
+		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
+	}
+	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
+		Dependencies: []core.ModuleSourceID{args.Blueprint},
+	}
+	tmpSrc := parentSrc.Clone()
+	tmpSrc.Dependencies = nil
+	tmpSrc, err := s.moduleSourceWithDependencies(ctx, parentSrc, tmpArgs)
+	if err != nil {
+		return nil, err
+	}
+	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+	if err != nil {
+		return nil, err
+	}
+	// The blueprint is the last dependency added
+	// (dependencies are added LIFO)
+	parentSrc = parentSrc.Clone()
+	parentSrc.Blueprint = tmpSrc.Dependencies[0]
+	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
+
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct{},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+	parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
+	parentSrc.ConfigBlueprint = nil
+	return parentSrc, nil
+}
+func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
+	ctx context.Context,
+	parentSrc dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	// If no blueprint is set, return without error
+	if parentSrc.Self().Blueprint.Self() == nil {
+		return parentSrc.Result, nil
+	}
+
+	bpSrc := parentSrc.Self().Blueprint.Self()
+
+	// Only update git sources
+	if bpSrc.Kind != core.ModuleSourceKindGit {
+		return parentSrc.Result, nil
+	}
+
+	// Get the blueprint's symbolic ref without version
+	bpRef := bpSrc.Git.CloneRef
+	if bpSrc.SourceRootSubpath != "" {
+		bpRef += "/" + strings.TrimPrefix(bpSrc.SourceRootSubpath, "/")
+	}
+
+	// Update the blueprint by loading it fresh
+	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
+	err := s.dag.Select(ctx, s.dag.Root(), &bpUpdated,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(bpRef)},
+			},
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+	}
+
+	// Set the updated blueprint on the parent source
+	err = s.dag.Select(ctx, parentSrc, &inst,
+		dagql.Selector{
+			Field: "withBlueprint",
+			Args: []dagql.NamedInput{{
+				Name:  "blueprint",
+				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
+			}},
+		},
+	)
+	return inst, err
+}
 func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -1341,6 +1524,11 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 		Dependencies []string
 	},
 ) (inst dagql.Result[*core.ModuleSource], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	type updateReq struct {
 		symbolic string // either 1) a name of a dep or 2) the source minus any @version
 		version  string // the version to update to, if any specified
@@ -1365,7 +1553,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 			}
 
 			var updatedDep dagql.ObjectResult[*core.ModuleSource]
-			err := s.dag.Select(ctx, s.dag.Root(), &updatedDep,
+			err := dag.Select(ctx, dag.Root(), &updatedDep,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
@@ -1437,7 +1625,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 			}
 
 			var updatedDep dagql.ObjectResult[*core.ModuleSource]
-			err := s.dag.Select(ctx, s.dag.Root(), &updatedDep,
+			err := dag.Select(ctx, dag.Root(), &updatedDep,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
@@ -1461,7 +1649,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 		return inst, fmt.Errorf("dependency %q was requested to be updated, but it is not found in the dependencies list", strings.Join(deps, ","))
 	}
 
-	err := s.dag.Select(ctx, parentSrc, &inst,
+	err = dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
 			Field: "withDependencies",
 			Args: []dagql.NamedInput{{
@@ -1592,6 +1780,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
+	// Copy blueprint configuration if present
+	if src.ConfigBlueprint != nil {
+		modCfg.Blueprint = src.ConfigBlueprint
+	}
+
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
 		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
@@ -1717,6 +1910,11 @@ func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get current dag: %w", err)
+	}
+
 	// load the deps as actual Modules
 	deps, err := s.loadDependencyModules(ctx, srcInst.Self())
 	if err != nil {
@@ -1726,7 +1924,7 @@ func (s *moduleSourceSchema) runCodegen(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self().Digest), srcInst)
+	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self().Digest), srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -1771,7 +1969,7 @@ func (s *moduleSourceSchema) runCodegen(
 			)
 		}
 
-		err = s.dag.Select(ctx, genDirInst, &genDirInst,
+		err = dag.Select(ctx, genDirInst, &genDirInst,
 			dagql.Selector{
 				Field: "withNewFile",
 				Args: []dagql.NamedInput{
@@ -1816,7 +2014,7 @@ func (s *moduleSourceSchema) runCodegen(
 			)
 		}
 
-		err = s.dag.Select(ctx, genDirInst, &genDirInst,
+		err = dag.Select(ctx, genDirInst, &genDirInst,
 			dagql.Selector{
 				Field: "withNewFile",
 				Args: []dagql.NamedInput{
@@ -1846,7 +2044,12 @@ func (s *moduleSourceSchema) runClientGenerator(
 	if err != nil {
 		return genDirInst, err
 	}
-	sdk, err := sdk.NewLoader(s.dag).SDKForModule(
+	dag, err := query.Server.Server(ctx)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	sdk, err := sdk.NewLoader().SDKForModule(
 		ctx,
 		query,
 		&core.SDKConfig{
@@ -1870,7 +2073,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	// Add extra files required to correctly generate the client if there are any.
 	var source dagql.ObjectResult[*core.ModuleSource]
-	err = s.dag.Select(ctx, srcInst, &source, dagql.Selector{
+	err = dag.Select(ctx, srcInst, &source, dagql.Selector{
 		Field: "withIncludes",
 		Args: []dagql.NamedInput{
 			{
@@ -1894,7 +2097,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
 		if _, ok := srcInst.Self().SDKImpl.AsRuntime(); ok {
 			var mod dagql.ObjectResult[*core.Module]
-			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
 			})
 			if err != nil {
@@ -1916,7 +2119,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	}
 
 	// Merge the generated client to the current generated instance
-	err = s.dag.Select(ctx, genDirInst, &genDirInst,
+	err = dag.Select(ctx, genDirInst, &genDirInst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
@@ -1942,6 +2145,11 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Directory], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	modCfg, err := s.loadModuleSourceConfig(srcInst.Self())
 	if err != nil {
 		return res, fmt.Errorf("failed to load module source config: %w", err)
@@ -1975,7 +2183,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	}
 	modCfgBytes = append(modCfgBytes, '\n')
 	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, modules.Filename)
-	err = s.dag.Select(ctx, genDirInst, &genDirInst,
+	err = dag.Select(ctx, genDirInst, &genDirInst,
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
@@ -1990,7 +2198,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	}
 
 	// return just the diff of what we generated relative to the original context directory
-	err = s.dag.Select(ctx, srcInst.Self().ContextDirectory, &genDirInst,
+	err = dag.Select(ctx, srcInst.Self().ContextDirectory, &genDirInst,
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
@@ -2006,13 +2214,17 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 }
 
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.ObjectResult[*core.ModuleSource], mod *core.Module) (*core.Module, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
 	if !ok {
 		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
-	var err error
 	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
@@ -2033,7 +2245,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
-	_, err = s.dag.Cache.GetOrInitializeValue(ctx, tmpModInst.ID().Digest(), tmpModInst)
+	_, err = dag.Cache.GetOrInitializeValue(ctx, tmpModInst.ID().Digest(), tmpModInst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2060,7 +2272,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		result, err := getModDefFn.Call(ctx, &core.CallOpts{
 			Cache:          true,
 			SkipSelfSchema: true,
-			Server:         s.dag,
+			Server:         dag,
 			// Don't include the digest for the current call (which is a bunch of module source stuff, including
 			// APIs that are cached per-client when local sources are involved) in the cache key of this
 			// function call. That would needlessly invalidate the cache more than is needed, similar to how
@@ -2122,6 +2334,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.Module], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if src.Self().ModuleName == "" {
 		return inst, fmt.Errorf("module name must be set")
 	}
@@ -2134,13 +2351,23 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
+	// Handle blueprint context separation
+	originalSrc := src
+	blueprintSrc := src.Self().Blueprint
+
+	if blueprintSrc.Self() != nil {
+		src = blueprintSrc
+	}
+
 	sdk := src.Self().SDK
 	if sdk == nil {
 		sdk = &core.SDKConfig{}
 	}
 
+	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source: src,
+		Source:        src,
+		ContextSource: originalSrc,
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,
@@ -2158,7 +2385,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self().Digest), src)
+	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self().Digest), src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2194,11 +2421,16 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 		// obj.Install() requires ResultID to be set.
 		mod.ResultID = dagql.CurrentID(ctx)
-		if err := obj.Install(ctx, s.dag); err != nil {
+		if err := obj.Install(ctx, dag); err != nil {
 			return inst, fmt.Errorf("failed to install no-sdk module %q: %w", modName, err)
 		}
 	}
 
+	if blueprintSrc.Self() != nil {
+		// Show the downstream module name to clients, not the blueprint name
+		// NOTE: we don't change OriginalName, that's used internally at runtime
+		mod.NameField = originalSrc.Self().ModuleName
+	}
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
@@ -2212,11 +2444,20 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.End(span, func() error { return rerr })
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dag, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	var eg errgroup.Group
 	depMods := make([]dagql.Result[*core.Module], len(src.Dependencies))
 	for i, depSrc := range src.Dependencies {
 		eg.Go(func() error {
-			return s.dag.Select(ctx, depSrc, &depMods[i],
+			return dag.Select(ctx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
 			)
 		})
@@ -2225,10 +2466,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
 	defaultDeps, err := query.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)

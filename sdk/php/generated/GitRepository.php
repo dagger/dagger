@@ -64,6 +64,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns details for the latest semver tag.
+     */
+    public function latestVersion(): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a ref.
      */
     public function ref(string $name): GitRef

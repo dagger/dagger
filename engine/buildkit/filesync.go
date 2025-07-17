@@ -124,6 +124,7 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
+	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
 	if err != nil {
 		return err

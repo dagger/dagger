@@ -4534,6 +4534,38 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exportImage" href="#Container-exportImage"><code>exportImage</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void!</code></a></span> </td>
+                        <td> Exports the container as an image to the host's container image store. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of image to export to in the host&#39;s store</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>platformVariants</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>[ContainerID!]</code></a></span></h6>
+                                <p>Identifiers for other platform specific containers.</p>
+                                <p>Used for multi-platform image.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
+                                <p>Force each layer of the exported image to use the specified compression algorithm.</p>
+                                <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <p>Use the specified media types for the exported image&#39;s layers.</p>
+                                <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exposedPorts" href="#Container-exposedPorts"><code>exposedPorts</code></a> - <span class="property-type"><a href="#definition-Port"><code>[Port!]!</code></a></span> </td>
                         <td>
@@ -8564,6 +8596,10 @@
                         <td data-property-name=""><a class="property-name" id="GitRepository-id" href="#GitRepository-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span> </td>
                         <td> A unique identifier for this GitRepository. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-latestVersion" href="#GitRepository-latestVersion"><code>latestVersion</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Returns details for the latest semver tag. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRepository-ref" href="#GitRepository-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
                         <td> Returns details of a ref. </td>
@@ -9784,6 +9820,10 @@
                         <td> A human readable ref string representation of this module source. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-blueprint" href="#ModuleSource-blueprint"><code>blueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> The blueprint referenced by the module source. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-cloneRef" href="#ModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The ref to clone the root of the git repo from. Only valid for git sources. </td>
                       </tr>
@@ -9895,6 +9935,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The specified version of the git repo this source points to. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Set a blueprint for the module source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>blueprint</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The blueprint module to set.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withClient" href="#ModuleSource-withClient"><code>withClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -10019,6 +10076,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the blueprint module to the latest version. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Update one or more module dependencies. </td>
@@ -10035,6 +10096,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the current blueprint from the module source. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutClient" href="#ModuleSource-withoutClient"><code>withoutClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>

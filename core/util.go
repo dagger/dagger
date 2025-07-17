@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
@@ -323,6 +325,39 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	return f(dir)
 }
 
+// mountLLB is a utility for easily mounting an llb definition
+func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: llb,
+	})
+	if err != nil {
+		return err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		tmp, err := os.MkdirTemp("", "mount")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		return f(tmp)
+	}
+	return ref.Mount(ctx, f)
+}
+
 func Supports(ctx context.Context, minVersion string) (bool, error) {
 	id := dagql.CurrentID(ctx)
 	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
@@ -361,6 +396,12 @@ var (
 	enumView = AfterVersion("v0.18.11")
 )
 
+// RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
+// symlinks except the final component of the path (i.e. the basename component).
+// This is useful for the case where one needs to reference a symlink rather than
+// following it (e.g. deleting a symlink)
+// This function will return an error if any of the symlinks encountered before the final
+// path separator reference a location outside of the root path.
 func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	linkDir, linkBasename := filepath.Split(containerPath)
 	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)

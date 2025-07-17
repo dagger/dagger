@@ -71,6 +71,30 @@ type Server struct {
 	Cache *SessionCache
 }
 
+type ServerSchema struct {
+	inner Server
+}
+
+func (s *ServerSchema) WithCache(c *SessionCache) *Server {
+	inner := s.inner
+	inner.Cache = c
+	return &inner
+}
+
+func (s *ServerSchema) View() View {
+	return s.inner.View
+}
+
+func (s *Server) AsSchema() *ServerSchema {
+	return &ServerSchema{
+		inner: *s,
+	}
+}
+
+func (s *Server) WithCache(c *SessionCache) *Server {
+	return s.AsSchema().WithCache(c)
+}
+
 type InstallHook interface {
 	InstallObject(ObjectType)
 	// FIXME: add support for other install functions
@@ -491,6 +515,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			return nil, gqlErrs(err)
 		}
 
+		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
 		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
 		if len(listErr) != 0 {
 			for _, e := range listErr {

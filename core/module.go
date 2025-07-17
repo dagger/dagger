@@ -22,6 +22,9 @@ type Module struct {
 	// The source of the module
 	Source dagql.ObjectResult[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
 
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints
+	ContextSource dagql.ObjectResult[*ModuleSource]
+
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
@@ -710,6 +713,13 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 		}
 		defs = append(defs, dirDefs...)
 	}
+	if mod.ContextSource.Self() != nil {
+		dirDefs, err := mod.ContextSource.Self().PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
 	if mod.Runtime.Self() != nil {
 		dirDefs, err := mod.Runtime.Self().PBDefinitions(ctx)
 		if err != nil {
@@ -832,7 +842,6 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	// they will be validated when merged into the real final module
 
 	if mod.Deps != nil {
-		// XXX: apply with defaults correctly!
 		if err := mod.validateTypeDef(ctx, def); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}

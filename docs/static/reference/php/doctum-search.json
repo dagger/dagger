@@ -1939,6 +1939,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::exportImage",
+			"p": "Dagger/Container.html#method_exportImage",
+			"d": "<p>Exports the container as an image to the host's container image store.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::exposedPorts",
 			"p": "Dagger/Container.html#method_exposedPorts",
 			"d": "<p>Retrieves the list of exposed ports.</p>"
@@ -3301,6 +3307,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::latestVersion",
+			"p": "Dagger/GitRepository.html#method_latestVersion",
+			"d": "<p>Returns details for the latest semver tag.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::ref",
 			"p": "Dagger/GitRepository.html#method_ref",
 			"d": "<p>Returns details of a ref.</p>"
@@ -3739,6 +3751,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::blueprint",
+			"p": "Dagger/ModuleSource.html#method_blueprint",
+			"d": "<p>The blueprint referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
@@ -3889,6 +3907,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withBlueprint",
+			"d": "<p>Set a blueprint for the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withClient",
 			"p": "Dagger/ModuleSource.html#method_withClient",
 			"d": "<p>Update the module source with a new client to generate.</p>"
@@ -3931,9 +3955,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdateBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withUpdateBlueprint",
+			"d": "<p>Update the blueprint module to the latest version.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdateDependencies",
 			"p": "Dagger/ModuleSource.html#method_withUpdateDependencies",
 			"d": "<p>Update one or more module dependencies.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
+			"d": "<p>Remove the current blueprint from the module source.</p>"
 		},
 		{
 			"t": "M",
