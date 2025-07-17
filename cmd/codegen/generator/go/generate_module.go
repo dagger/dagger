@@ -51,7 +51,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		Overlay: overlay,
 	}
 
-	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs, genSt)
+	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -112,7 +112,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
-func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *generator.GeneratedState) (*PackageInfo, bool, error) {
+func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedState) (*PackageInfo, bool, error) {
 	moduleConfig := g.Config.ModuleConfig
 
 	var needsRegen bool

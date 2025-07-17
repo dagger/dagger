@@ -36,7 +36,6 @@ func getGenerator(cfg generator.Config) (generator.Generator, error) {
 
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
-
 }
 
 func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err error) {
@@ -76,10 +75,10 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			slog.Info("running post-command:", strings.Join(cmd.Args, " "))
+			slog.Info("running post-command:", "args", strings.Join(cmd.Args, " "))
 			err := cmd.Run()
 			if err != nil {
-				slog.Error("post-command failed:", err)
+				slog.Error("post-command failed:", "error", err)
 				return err
 			}
 		}

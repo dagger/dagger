@@ -16,10 +16,10 @@ func Overlay(ctx context.Context, overlay fs.FS, outputDir string) (rerr error) 
 		}
 		if d.IsDir() {
 			if _, err := os.Stat(filepath.Join(outputDir, path)); err == nil {
-				slog.Info("creating directory", path, "[skipped]")
+				slog.Info("creating directory [skipped]", "path", path)
 				return nil
 			}
-			slog.Info("creating directory", path)
+			slog.Info("creating directory", "path", path)
 			return os.MkdirAll(filepath.Join(outputDir, path), 0o755)
 		}
 
@@ -39,11 +39,11 @@ func Overlay(ctx context.Context, overlay fs.FS, outputDir string) (rerr error) 
 		}
 
 		if !needsWrite {
-			slog.Info("writing", path, "[skipped]")
+			slog.Info("writing [skipped]", "path", path)
 			return nil
 		}
 
-		slog.Info("writing", path)
+		slog.Info("writing", "path", path)
 		return os.WriteFile(outPath, newContent, 0o600)
 	})
 }
