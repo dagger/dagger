@@ -54,6 +54,13 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
+		dagql.NodeFunc("search", DagOpWrapper(s.srv, s.search)).
+			View(AllVersion). // entries returns different results in different versions
+			Doc(`Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.`).
+			Args(
+				dagql.Arg("pattern").Doc(`The text to match.`),
+				dagql.Arg("regexp").Doc(`Interpret the pattern as a regular expression.`),
+			),
 		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the directory's digest.
@@ -196,6 +203,8 @@ func (s *directorySchema) Install() {
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
 	}.Install(s.srv)
+
+	dagql.Fields[*core.SearchResult]{}.Install(s.srv)
 }
 
 type directoryPipelineArgs struct {
@@ -320,6 +329,17 @@ type withPatchArgs struct {
 	Patch string
 
 	FSDagOpInternalArgs
+}
+
+type searchArgs struct {
+	Pattern string
+	Regexp  bool `default:"false"`
+
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.Pattern, args.Regexp)
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {

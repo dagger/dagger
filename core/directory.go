@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/slog"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
@@ -556,6 +559,96 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	}
 	dir.Result = snap
 	return dir, nil
+}
+
+func (dir *Directory) Search(ctx context.Context, pattern string, isRE bool) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, dir.Result, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	rgArgs := []string{"--json"}
+	if !isRE {
+		rgArgs = append(rgArgs, "--fixed-strings")
+	}
+	rgArgs = append(rgArgs, pattern)
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		out, err := rg.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+		if err := rg.Start(); err != nil {
+			return err
+		}
+		defer func() {
+			if err := rg.Wait(); err != nil {
+				slog.Error("failed to wait for rg", "error", err)
+			}
+		}()
+		dec := json.NewDecoder(out)
+		for {
+			var match rgJSON
+			if err := dec.Decode(&match); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+			if match.Type != "match" {
+				continue
+			}
+			data := match.Data
+			if len(match.Data.Path.Bytes) > 0 {
+				slog.Warn("skipping non-utf8 path",
+					"path", base64.StdEncoding.EncodeToString(data.Path.Bytes))
+				continue
+			}
+			if len(data.Lines.Bytes) > 0 {
+				slog.Warn("skipping non-utf8 path",
+					"path", base64.StdEncoding.EncodeToString(data.Lines.Bytes))
+				continue
+			}
+			results = append(results, &SearchResult{
+				FilePath:    data.Path.Text,
+				LineNumber:  data.LineNumber,
+				MatchedText: data.Lines.Text,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
