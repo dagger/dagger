@@ -1,8 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -38,6 +43,57 @@ func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
 		}`, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
+}
+
+type ACBConn struct {
+	c engineconn.EngineConn
+}
+
+func (a *ACBConn) Do(req *http.Request) (*http.Response, error) {
+	fmt.Printf("ACB req %+v\n", req)
+	res, err := a.c.Do(req)
+	if err != nil {
+		fmt.Printf("ACB err %v\n", err)
+		return res, err
+	}
+	fmt.Printf("ACB res %+v\n", res)
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("body: %s\n", body)
+	res.Body.Close()
+	res.Body = ioutil.NopCloser(bytes.NewReader(body))
+	return res, err
+}
+func (a *ACBConn) Host() string {
+	return a.c.Host()
+}
+func (a *ACBConn) Close() error {
+	return a.c.Close()
+}
+
+func (DirectorySuite) TestWTF(ctx context.Context, t *testctx.T) {
+
+	c, err := engineconn.Get(ctx, &engineconn.Config{})
+	if err != nil {
+		panic(err)
+	}
+	acbConn := &ACBConn{
+		c: c,
+	}
+
+	res, err := testutil.Query[struct {
+		Directory struct {
+			ID      core.DirectoryID
+			Entries []string
+		}
+	}](t,
+		`{
+			__schemaJSONFile
+		}`, nil, dagger.WithConn(acbConn))
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%+v", res), "wtf")
 }
 
 func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {

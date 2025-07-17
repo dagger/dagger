@@ -56,6 +56,7 @@ func initializeModule(
 	modRef string,
 	modSrc *dagger.ModuleSource,
 ) (rdef *moduleDef, rerr error) {
+	fmt.Printf("ACB initializeModule\n")
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -64,6 +65,7 @@ func initializeModule(
 	telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
+		fmt.Printf("ACB err1 %v\n", err)
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
@@ -74,18 +76,22 @@ func initializeModule(
 	err = modSrc.AsModule().Serve(serveCtx, dagger.ModuleServeOpts{IncludeDependencies: true})
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
+		fmt.Printf("ACB err2 %v\n", err)
 		return nil, fmt.Errorf("failed to serve module: %w", err)
 	}
 
 	def, err := inspectModule(ctx, dag, modSrc)
 	if err != nil {
+		fmt.Printf("ACB err3 %v\n", err)
 		return nil, err
 	}
 
 	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		fmt.Printf("ACB err4 %v\n", err)
 		return nil, err
 	}
 
+	fmt.Printf("ACB initializeDefaultModule okv\n")
 	return def, nil
 }
 
@@ -97,6 +103,7 @@ func initializeClientGeneratorModule(
 	srcRef string,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (gdef *clientGeneratorModuleDef, rerr error) {
+	fmt.Printf("ACB initializeClientGeneratorModule\n")
 	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
 	defer telemetry.End(span, func() error {
 		// To not confuse the user, we don't want to show the error if the config
@@ -272,6 +279,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		}
 	}
 
+	fmt.Printf("ACB return here1\n")
 	return def, nil
 }
 
@@ -284,6 +292,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 		TypeDefs []*modTypeDef
 	}
 
+	fmt.Printf("ACB made it here\n")
 	err := dag.Do(ctx, &dagger.Request{
 		Query: loadTypeDefsQuery,
 	}, &dagger.Response{

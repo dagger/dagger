@@ -14,6 +14,11 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 )
 
+const (
+	schemaJSONFilename             = "schema.json"
+	schemaJSONFilePerm fs.FileMode = 0644
+)
+
 type querySchema struct {
 	srv *dagql.Server
 }
@@ -27,7 +32,7 @@ func (s *querySchema) Install() {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile,
+		dagql.NodeFuncWithCacheKey("__schemaJSONFile", DagOpFileWrapper(s.srv, s.schemaJSONFile, WithStaticPath[*core.Query, schemaJSONArgs](schemaJSONFilename)),
 			dagql.CachePerSchema[*core.Query, schemaJSONArgs](s.srv)).
 			Doc("Get the current schema as a JSON file.").
 			Args(
@@ -88,13 +93,15 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 
 type schemaJSONArgs struct {
 	HiddenTypes []string `default:"[]"`
+
+	FSDagOpInternalArgs
 }
 
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args schemaJSONArgs,
-) (inst dagql.Result[*core.File], rerr error) {
+) (inst dagql.ObjectResult[*core.File], rerr error) {
 	data, err := s.srv.Query(ctx, codegenintrospection.Query, nil)
 	if err != nil {
 		return inst, fmt.Errorf("introspection query failed: %w", err)
@@ -123,33 +130,19 @@ func (s *querySchema) schemaJSONFile(
 		return inst, fmt.Errorf("failed to marshal introspection JSON: %w", err)
 	}
 
-	const schemaJSONFilename = "schema.json"
-	const perm fs.FileMode = 0644
-
-	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
+	snap, err := core.NewFileWithContentsDagOp(ctx, schemaJSONFilename, moduleSchemaJSON, schemaJSONFilePerm, nil, parent.Self().Platform())
 	if err != nil {
 		return inst, err
-	}
-	bk, err := parent.Self().Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	dgst, err := core.GetContentHashFromDef(ctx, bk, f.LLB, "/")
-	if err != nil {
-		return inst, fmt.Errorf("failed to get content hash: %w", err)
 	}
 
 	// LLB marshalling takes up too much memory when file ops have a ton of contents, so we still go through
 	// the blob source for now simply to avoid that.
-	f, err = core.NewFileSt(ctx, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	dgst := dagql.HashFrom(schemaJSONFilename, fmt.Sprintf("%v", schemaJSONFilePerm), string(moduleSchemaJSON))
+	f, err := core.NewFileSt(ctx, blob.LLB(dgst), schemaJSONFilename, parent.Self().Platform(), nil)
 	if err != nil {
 		return inst, err
 	}
 
-	fileInst, err := dagql.NewResultForCurrentID(ctx, f)
-	if err != nil {
-		return inst, err
-	}
-
-	return fileInst.WithDigest(dgst), nil
+	f.Result = snap
+	return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 }
