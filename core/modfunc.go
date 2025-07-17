@@ -567,7 +567,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		return id, false, errors.Join(err, baseErr)
 	}
 
-	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath)
+	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath, -1)
 	if err != nil {
 		return id, false, errors.Join(err, baseErr)
 	}

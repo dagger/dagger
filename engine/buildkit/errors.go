@@ -309,5 +309,5 @@ func getExecMeta(ctx context.Context, client *Client, metaMount bksolver.Result)
 }
 
 func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
-	return ReadSnapshotPath(ctx, c, mntable, fileName)
+	return ReadSnapshotPath(ctx, c, mntable, fileName, MaxExecErrorOutputBytes)
 }
