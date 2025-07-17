@@ -1587,7 +1587,7 @@ type Directory {
     @@\n-Hello\n+World\n").
     """
     patch: String!
-  ): Directory!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
   withSymlink(

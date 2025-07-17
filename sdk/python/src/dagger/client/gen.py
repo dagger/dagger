@@ -3359,6 +3359,10 @@ class Directory(Type):
     def with_patch(self, patch: str) -> Self:
         """Retrieves this directory with the given Git-compatible patch applied.
 
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
         Parameters
         ----------
         patch:

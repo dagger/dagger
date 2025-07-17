@@ -372,6 +372,10 @@ defmodule Dagger.Directory do
 
   @doc """
   Retrieves this directory with the given Git-compatible patch applied.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
   """
   @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
   def with_patch(%__MODULE__{} = directory, patch) do

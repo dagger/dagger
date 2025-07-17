@@ -166,6 +166,7 @@ func (s *directorySchema) Install() {
 		dagql.NodeFunc("withPatch",
 			DagOpDirectoryWrapper(s.srv, s.withPatch,
 				WithPathFn(keepParentDir[withPatchArgs]))).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
