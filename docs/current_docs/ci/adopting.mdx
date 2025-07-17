@@ -94,14 +94,14 @@ Here are a few guidelines:
 
 ### Integrating with CI
 
-Once your pipeline is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](integrations/ci.mdx).
+Once your pipeline is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](../integrations/ci.mdx).
 
 Since your daggerized pipelines are packaged as Dagger Modules, and modules only have one dependency - the `dagger` CLI - integrating your daggerized pipelines boils down to three steps:
 
 1. Decide which CI event should trigger which Dagger pipeline
 2. For each pipeline to trigger, determine how to map inputs from the CI environment into arguments to the Dagger functions composing the pipeline
 3. Write the resulting `dagger call` command for each pipeline.
-4. Find the [integration page for your CI platform](integrations/ci.mdx), and follow the instructions. For example: [GitHub](integrations/github.mdx), [GitLab CI](integrations/gitlab.mdx), [CircleCI](integrations/circleci.mdx), [Jenkins](integrations/jenkins.mdx), [Azure Pipelines](integrations/azure-pipelines.mdx), [AWS CodeBuild](integrations/aws-codebuild.mdx), [Argo Workflows](integrations/argo-workflows.mdx) and [Tekton](integrations/tekton.mdx).
+4. Find the [integration page for your CI platform](../integrations/ci.mdx), and follow the instructions. For example: [GitHub](../integrations/github.mdx), [GitLab CI](../integrations/gitlab.mdx), [CircleCI](../integrations/circleci.mdx), [Jenkins](../integrations/jenkins.mdx), [Azure Pipelines](../integrations/azure-pipelines.mdx), [AWS CodeBuild](../integrations/aws-codebuild.mdx), [Argo Workflows](../integrations/argo-workflows.mdx) and [Tekton](../integrations/tekton.mdx).
 
 A few important notes on CI integration:
 

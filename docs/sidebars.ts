@@ -37,6 +37,7 @@ module.exports = {
       items: [
         "integrations/index",
         "integrations/ci",
+        "integrations/container-runtimes",
         "integrations/apple-container",
         "integrations/argo-workflows",
         "integrations/aws-codebuild",
