@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -309,22 +311,46 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	file = file.Clone()
 
-	st, err := file.State()
+	fileCacheRef, err := getRefOrEvaluate(ctx, file.Result, file)
 	if err != nil {
 		return nil, err
 	}
 
-	t := time.Unix(int64(unix), 0)
-
-	stamped := llb.Scratch().File(llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)))
-
-	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform.Spec()))
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	file.LLB = def.ToPB()
-	file.File = path.Base(file.File)
 
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, fileCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("WithTimestamps %d", unix)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
+		if err != nil {
+			return err
+		}
+		t := time.Unix(int64(unix), 0)
+		err = os.Chtimes(fullPath, t, t)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.Result = snap
 	return file, nil
 }
 

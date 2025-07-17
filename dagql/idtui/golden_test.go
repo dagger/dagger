@@ -450,6 +450,18 @@ var scrubs = []scrubber{
 		"12:34:56",
 		"XX:XX:XX",
 	},
+	// *.dagger.local
+	{
+		regexp.MustCompile(`[a-z0-9]+\.[a-z0-9]+\.dagger\.local`),
+		"iujpijlqnc7me.tun3vdbg35c6q.dagger.local",
+		"xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local",
+	},
+	// version=
+	{
+		regexp.MustCompile(`version=v[a-f0-9.-]+`),
+		"version=v0.18.13-250710134709-7edd4496ecc1",
+		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
+	},
 	// Trailing whitespace
 	{
 		regexp.MustCompile(`\s*` + regexp.QuoteMeta(midterm.Reset.Render())),

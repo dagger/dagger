@@ -125,13 +125,6 @@ func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }
 
-func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	if fe.Silent {
-		return
-	}
-	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version, "client", clientID)
-}
-
 func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
 	if fe.OpenWeb {
 		if err := browser.OpenURL(url); err != nil {

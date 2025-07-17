@@ -21,13 +21,19 @@ func (sdk *codeGeneratorModule) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
+
+	dag, err := sdk.mod.dag(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	var inst dagql.Result[*core.GeneratedCode]
-	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
+	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
 		Field: "codegen",
 		Args: []dagql.NamedInput{
 			{

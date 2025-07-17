@@ -396,6 +396,12 @@ var (
 	enumView = AfterVersion("v0.18.11")
 )
 
+// RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
+// symlinks except the final component of the path (i.e. the basename component).
+// This is useful for the case where one needs to reference a symlink rather than
+// following it (e.g. deleting a symlink)
+// This function will return an error if any of the symlinks encountered before the final
+// path separator reference a location outside of the root path.
 func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	linkDir, linkBasename := filepath.Split(containerPath)
 	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)

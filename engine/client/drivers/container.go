@@ -225,7 +225,7 @@ type containerCreateOpts struct {
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopts *DriverOpts) (target *url.URL, rerr error) {
-	ctx, span := otel.Tracer("").Start(ctx, "create")
+	ctx, span := otel.Tracer("").Start(ctx, "create container")
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 

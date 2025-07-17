@@ -328,11 +328,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
-	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
-		slog.Error("error releasing dagql cache", "error", err)
-		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
-	}
-
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
@@ -396,6 +391,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
+
+	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
