@@ -862,25 +862,47 @@ func mergeStates(input mergeStateInput) llb.State {
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
 
-	st, err := dir.State()
+	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	t := time.Unix(int64(unix), 0)
-	st = llb.Scratch().File(
-		llb.Copy(st, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-			CreatedTime:         &t,
-		}),
-	)
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
 
-	err = dir.SetState(ctx, st)
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dir.Dir = ""
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withTimestamps %d", unix)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			modTime := time.Unix(int64(unix), 0)
+			return os.Chtimes(path, modTime, modTime)
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 
 	return dir, nil
 }
