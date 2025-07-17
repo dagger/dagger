@@ -31,6 +31,28 @@ module.exports = {
         "components/objects/create-your-own",
       ],
     },
+    {
+      type: "category",
+      label: "Integrations",
+      items: [
+        "integrations/index",
+        "integrations/ci",
+        "integrations/apple-container",
+        "integrations/argo-workflows",
+        "integrations/aws-codebuild",
+        "integrations/circleci",
+        "integrations/github-actions",
+        "integrations/github",
+        "integrations/gitlab",
+        "integrations/google-cloud-run",
+        "integrations/jenkins",
+        "integrations/kubernetes",
+        "integrations/nerdctl",
+        "integrations/openshift",
+        "integrations/podman",
+        "integrations/tekton",
+      ],
+    },
   ],
   examples: [
     {
@@ -85,7 +107,9 @@ module.exports = {
     {
       type: "category",
       label: "CI",
-      items: ["ci/adopting", "ci/integrations/index", "ci/integrations/ci", "ci/integrations/container-runtimes"],
+      items: [
+        "ci/adopting",
+      ],
     },
   ],
   features: [
