@@ -22,14 +22,7 @@ func (Docker) ID() string {
 	return "docker"
 }
 
-func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
-	// check docker is running
-	cmd := exec.CommandContext(ctx, "docker", "info")
-	_, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
-	if err != nil {
-		return nil, err
-	}
-
+func (loader Docker) Loader(ctx context.Context) (_ *Loader, rerr error) {
 	return &Loader{
 		TarballLoader: loader.loadTarball,
 	}, nil
