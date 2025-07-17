@@ -493,3 +493,97 @@ html[data-theme="dark"] {
     font-weight: 600;
   }
 }
+
+// Admonition styling
+.admonition {
+  margin-bottom: 1em;
+  padding: 15px 30px 15px 15px;
+  border-radius: 5px;
+  border-left: 6px solid;
+  position: relative;
+  overflow: auto;
+}
+
+.admonition h5 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.admonition-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.5em;
+}
+
+.admonition-icon svg {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  stroke-width: 0;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.admonition-content > :last-child {
+  margin-bottom: 0;
+}
+
+/* Admonition types */
+.admonition-note {
+  background-color: rgba(0, 121, 217, 0.1);
+  border-left-color: #0079D9;
+}
+
+.admonition-note h5 {
+  color: #0079D9;
+}
+
+.admonition-tip {
+  background-color: rgba(0, 170, 91, 0.1);
+  border-left-color: #00AA5B;
+}
+
+.admonition-tip h5 {
+  color: #00AA5B;
+}
+
+.admonition-caution,
+.admonition-warning {
+  background-color: rgba(255, 174, 0, 0.1);
+  border-left-color: #FFAE00;
+}
+
+.admonition-caution h5,
+.admonition-warning h5 {
+  color: #FFAE00;
+}
+
+.admonition-danger {
+  background-color: rgba(211, 47, 47, 0.1);
+  border-left-color: #D32F2F;
+}
+
+.admonition-danger h5 {
+  color: #D32F2F;
+}
+
+// Dark mode adjustments for admonitions
+html[data-theme="dark"] {
+  .admonition-note {
+    background-color: rgba(0, 121, 217, 0.2);
+  }
+  
+  .admonition-tip {
+    background-color: rgba(0, 170, 91, 0.2);
+  }
+  
+  .admonition-caution,
+  .admonition-warning {
+    background-color: rgba(255, 174, 0, 0.2);
+  }
+  
+  .admonition-danger {
+    background-color: rgba(211, 47, 47, 0.2);
+  }
+}
