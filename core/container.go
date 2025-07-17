@@ -199,6 +199,9 @@ func (container *Container) WithoutInputs() *Container {
 var _ dagql.OnReleaser = (*Container)(nil)
 
 func (container *Container) OnRelease(ctx context.Context) error {
+	if container == nil {
+		return nil
+	}
 	if container.FSResult != nil {
 		err := container.FSResult.Release(ctx)
 		if err != nil {
