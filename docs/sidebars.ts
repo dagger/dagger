@@ -93,6 +93,21 @@ module.exports = {
     },
     {
       type: "category",
+      label: "Configuration",
+      items: [
+        "reference/configuration/index",
+        "reference/configuration/cloud",
+        "reference/configuration/cache",
+        "reference/configuration/engine",
+        "reference/configuration/llm",
+        "reference/configuration/modules",
+        "reference/configuration/custom-runner",
+        "reference/configuration/custom-ca",
+        "reference/configuration/proxy",
+      ],
+    },
+    {
+      type: "category",
       label: "API Documentation",
       items: [
         "reference/api/index",
@@ -123,13 +138,6 @@ module.exports = {
       type: "category",
       label: "Features",
       items: ["features/index"],
-    },
-  ],
-  configuration: [
-    {
-      type: "category",
-      label: "Configuration",
-      items: ["reference/configuration/index"],
     },
   ],
 };
