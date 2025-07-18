@@ -215,6 +215,9 @@ type InterfaceTypeDefID string
 // An arbitrary JSON-encoded value.
 type JSON string
 
+// The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+type JSONValueID string
+
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
@@ -391,6 +394,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type JSONValue
+func (r *Binding) AsJSONValue() *JSONValue {
+	q := r.query.Select("asJSONValue")
+
+	return &JSONValue{
 		query: q,
 	}
 }
@@ -4265,6 +4277,30 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type JSONValue in the environment
+func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withJSONValueInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired JSONValue output to be assigned in the environment
+func (r *Env) WithJSONValueOutput(name string, description string) *Env {
+	q := r.query.Select("withJSONValueOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type LLM in the environment
 func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
 	assertNotNil("value", value)
@@ -6454,6 +6490,195 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 	return response, q.Execute(ctx)
 }
 
+type JSONValue struct {
+	query *querybuilder.Selection
+
+	get       *JSON
+	getBool   *bool
+	getInt    *int
+	getJSON   *JSON
+	getString *string
+	id        *JSONValueID
+}
+type WithJSONValueFunc func(r *JSONValue) *JSONValue
+
+// With calls the provided function with current JSONValue.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *JSONValue) With(f WithJSONValueFunc) *JSONValue {
+	return f(r)
+}
+
+func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Return the JSON-encoded value, or a sub-value at the given path
+func (r *JSONValue) Get(ctx context.Context, path string) (JSON, error) {
+	if r.get != nil {
+		return *r.get, nil
+	}
+	q := r.query.Select("get")
+	q = q.Arg("path", path)
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Get a boolean value at the specified path.
+func (r *JSONValue) GetBool(ctx context.Context, path string) (bool, error) {
+	if r.getBool != nil {
+		return *r.getBool, nil
+	}
+	q := r.query.Select("getBool")
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Get an integer value at the specified path.
+func (r *JSONValue) GetInt(ctx context.Context, path string) (int, error) {
+	if r.getInt != nil {
+		return *r.getInt, nil
+	}
+	q := r.query.Select("getInt")
+	q = q.Arg("path", path)
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Get a value as raw JSON at the specified path.
+func (r *JSONValue) GetJSON(ctx context.Context, path string) (JSON, error) {
+	if r.getJSON != nil {
+		return *r.getJSON, nil
+	}
+	q := r.query.Select("getJSON")
+	q = q.Arg("path", path)
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Get a string value at the specified path.
+func (r *JSONValue) GetString(ctx context.Context, path string) (string, error) {
+	if r.getString != nil {
+		return *r.getString, nil
+	}
+	q := r.query.Select("getString")
+	q = q.Arg("path", path)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this JSONValue.
+func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response JSONValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *JSONValue) XXX_GraphQLType() string {
+	return "JSONValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *JSONValue) XXX_GraphQLIDType() string {
+	return "JSONValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *JSONValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *JSONValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Set a boolean value at the specified path.
+func (r *JSONValue) SetBoolean(path string, value bool) *JSONValue {
+	q := r.query.Select("setBoolean")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Set an integer value at the specified path.
+func (r *JSONValue) SetInteger(path string, value int) *JSONValue {
+	q := r.query.Select("setInteger")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Set a value as raw JSON at the specified path
+func (r *JSONValue) SetJSON(path string, value JSON) *JSONValue {
+	q := r.query.Select("setJSON")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Set a string value at the specified path.
+func (r *JSONValue) SetString(path string, value string) *JSONValue {
+	q := r.query.Select("setString")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Removes the value at the specified path. Empty path resets to null.
+func (r *JSONValue) Unset(path string) *JSONValue {
+	q := r.query.Select("unset")
+	q = q.Arg("path", path)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 type LLM struct {
 	query *querybuilder.Selection
 
@@ -8588,6 +8813,15 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// Initialize an empty JSON value
+func (r *Client) JSON() *JSONValue {
+	q := r.query.Select("json")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // LLMOpts contains options for Client.LLM
 type LLMOpts struct {
 	// Model to use
@@ -8893,6 +9127,16 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	q = q.Arg("id", id)
 
 	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Load a JSONValue from its ID.
+func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
+	q := r.query.Select("loadJSONValueFromID")
+	q = q.Arg("id", id)
+
+	return &JSONValue{
 		query: q,
 	}
 }

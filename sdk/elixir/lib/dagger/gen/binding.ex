@@ -128,6 +128,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type JSONValue
+  """
+  @spec as_json_value(t()) :: Dagger.JSONValue.t()
+  def as_json_value(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asJSONValue")
+
+    %Dagger.JSONValue{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type LLM
   """
   @spec as_llm(t()) :: Dagger.LLM.t()

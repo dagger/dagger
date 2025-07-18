@@ -1211,6 +1211,11 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
 export type JSON = string & { __JSON: never }
 
 /**
+ * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ */
+export type JSONValueID = string & { __JSONValueID: never }
+
+/**
  * The `LLMID` scalar type represents an identifier for an object of type LLM.
  */
 export type LLMID = string & { __LLMID: never }
@@ -2025,6 +2030,14 @@ export class Binding extends BaseClient {
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type JSONValue
+   */
+  asJSONValue = (): JSONValue => {
+    const ctx = this._ctx.select("asJSONValue")
+    return new JSONValue(ctx)
   }
 
   /**
@@ -4829,6 +4842,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type JSONValue in the environment
+   * @param name The name of the binding
+   * @param value The JSONValue value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withJSONValueInput = (
+    name: string,
+    value: JSONValue,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withJSONValueInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired JSONValue output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withJSONValueOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type LLM in the environment
    * @param name The name of the binding
    * @param value The LLM value to assign to the binding
@@ -6608,6 +6650,178 @@ export class InterfaceTypeDef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+export class JSONValue extends BaseClient {
+  private readonly _id?: JSONValueID = undefined
+  private readonly _get?: JSON = undefined
+  private readonly _getBool?: boolean = undefined
+  private readonly _getInt?: number = undefined
+  private readonly _getJSON?: JSON = undefined
+  private readonly _getString?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: JSONValueID,
+    _get?: JSON,
+    _getBool?: boolean,
+    _getInt?: number,
+    _getJSON?: JSON,
+    _getString?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._get = _get
+    this._getBool = _getBool
+    this._getInt = _getInt
+    this._getJSON = _getJSON
+    this._getString = _getString
+  }
+
+  /**
+   * A unique identifier for this JSONValue.
+   */
+  id = async (): Promise<JSONValueID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<JSONValueID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the JSON-encoded value, or a sub-value at the given path
+   * @param path The JSON path (dot-separated)
+   */
+  get = async (path: string): Promise<JSON> => {
+    if (this._get) {
+      return this._get
+    }
+
+    const ctx = this._ctx.select("get", { path })
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Get a boolean value at the specified path.
+   */
+  getBool = async (path: string): Promise<boolean> => {
+    if (this._getBool) {
+      return this._getBool
+    }
+
+    const ctx = this._ctx.select("getBool", { path })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Get an integer value at the specified path.
+   */
+  getInt = async (path: string): Promise<number> => {
+    if (this._getInt) {
+      return this._getInt
+    }
+
+    const ctx = this._ctx.select("getInt", { path })
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Get a value as raw JSON at the specified path.
+   */
+  getJSON = async (path: string): Promise<JSON> => {
+    if (this._getJSON) {
+      return this._getJSON
+    }
+
+    const ctx = this._ctx.select("getJSON", { path })
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Get a string value at the specified path.
+   */
+  getString = async (path: string): Promise<string> => {
+    if (this._getString) {
+      return this._getString
+    }
+
+    const ctx = this._ctx.select("getString", { path })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Set a boolean value at the specified path.
+   */
+  setBoolean = (path: string, value: boolean): JSONValue => {
+    const ctx = this._ctx.select("setBoolean", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set an integer value at the specified path.
+   */
+  setInteger = (path: string, value: number): JSONValue => {
+    const ctx = this._ctx.select("setInteger", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set a value as raw JSON at the specified path
+   */
+  setJSON = (path: string, value: JSON): JSONValue => {
+    const ctx = this._ctx.select("setJSON", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set a string value at the specified path.
+   */
+  setString = (path: string, value: string): JSONValue => {
+    const ctx = this._ctx.select("setString", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Removes the value at the specified path. Empty path resets to null.
+   * @param path The JSON path (dot-separated)
+   */
+  unset = (path: string): JSONValue => {
+    const ctx = this._ctx.select("unset", { path })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Call the provided function with current JSONValue.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: JSONValue) => JSONValue) => {
+    return arg(this)
   }
 }
 
@@ -8399,6 +8613,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize an empty JSON value
+   */
+  json = (): JSONValue => {
+    const ctx = this._ctx.select("json")
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Initialize a Large Language Model (LLM)
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
@@ -8635,6 +8857,14 @@ export class Client extends BaseClient {
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
     const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
     return new InterfaceTypeDef(ctx)
+  }
+
+  /**
+   * Load a JSONValue from its ID.
+   */
+  loadJSONValueFromID = (id: JSONValueID): JSONValue => {
+    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    return new JSONValue(ctx)
   }
 
   /**

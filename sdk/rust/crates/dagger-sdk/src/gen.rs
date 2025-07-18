@@ -989,6 +989,41 @@ impl Json {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct JsonValueId(pub String);
+impl From<&str> for JsonValueId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for JsonValueId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<JsonValueId> for JsonValue {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<JsonValueId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<JsonValueId> for JsonValueId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<JsonValueId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<JsonValueId, DaggerError>(self) })
+    }
+}
+impl JsonValueId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Llmid(pub String);
 impl From<&str> for Llmid {
     fn from(value: &str) -> Self {
@@ -1689,6 +1724,15 @@ impl Binding {
     pub fn as_git_repository(&self) -> GitRepository {
         let query = self.selection.select("asGitRepository");
         GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type JSONValue
+    pub fn as_json_value(&self) -> JsonValue {
+        let query = self.selection.select("asJSONValue");
+        JsonValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5904,6 +5948,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type JSONValue in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The JSONValue value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_json_value_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<JsonValueId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withJSONValueInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired JSONValue output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_json_value_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withJSONValueOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type LLM in the environment
     ///
     /// # Arguments
@@ -7481,6 +7574,111 @@ impl InterfaceTypeDef {
     }
 }
 #[derive(Clone)]
+pub struct JsonValue {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl JsonValue {
+    /// Return the JSON-encoded value, or a sub-value at the given path
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The JSON path (dot-separated)
+    pub async fn get(&self, path: impl Into<String>) -> Result<Json, DaggerError> {
+        let mut query = self.selection.select("get");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Get a boolean value at the specified path.
+    pub async fn get_bool(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("getBool");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Get an integer value at the specified path.
+    pub async fn get_int(&self, path: impl Into<String>) -> Result<isize, DaggerError> {
+        let mut query = self.selection.select("getInt");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Get a value as raw JSON at the specified path.
+    pub async fn get_json(&self, path: impl Into<String>) -> Result<Json, DaggerError> {
+        let mut query = self.selection.select("getJSON");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Get a string value at the specified path.
+    pub async fn get_string(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("getString");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this JSONValue.
+    pub async fn id(&self) -> Result<JsonValueId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Set a boolean value at the specified path.
+    pub fn set_boolean(&self, path: impl Into<String>, value: bool) -> JsonValue {
+        let mut query = self.selection.select("setBoolean");
+        query = query.arg("path", path.into());
+        query = query.arg("value", value);
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set an integer value at the specified path.
+    pub fn set_integer(&self, path: impl Into<String>, value: isize) -> JsonValue {
+        let mut query = self.selection.select("setInteger");
+        query = query.arg("path", path.into());
+        query = query.arg("value", value);
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set a value as raw JSON at the specified path
+    pub fn set_json(&self, path: impl Into<String>, value: Json) -> JsonValue {
+        let mut query = self.selection.select("setJSON");
+        query = query.arg("path", path.into());
+        query = query.arg("value", value);
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set a string value at the specified path.
+    pub fn set_string(&self, path: impl Into<String>, value: impl Into<String>) -> JsonValue {
+        let mut query = self.selection.select("setString");
+        query = query.arg("path", path.into());
+        query = query.arg("value", value.into());
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Removes the value at the specified path. Empty path resets to null.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The JSON path (dot-separated)
+    pub fn unset(&self, path: impl Into<String>) -> JsonValue {
+        let mut query = self.selection.select("unset");
+        query = query.arg("path", path.into());
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
 pub struct Llm {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -8882,6 +9080,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Initialize an empty JSON value
+    pub fn json(&self) -> JsonValue {
+        let query = self.selection.select("json");
+        JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Initialize a Large Language Model (LLM)
     ///
     /// # Arguments
@@ -9372,6 +9579,22 @@ impl Query {
             }),
         );
         InterfaceTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a JSONValue from its ID.
+    pub fn load_json_value_from_id(&self, id: impl IntoID<JsonValueId>) -> JsonValue {
+        let mut query = self.selection.select("loadJSONValueFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        JsonValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
