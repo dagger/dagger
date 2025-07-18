@@ -2961,6 +2961,8 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 type DirectorySearchOpts struct {
 	// Interpret the pattern as a regular expression.
 	Regexp bool
+	// Enable searching across multiple lines.
+	Multiline bool
 }
 
 // Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.
@@ -2970,6 +2972,10 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 		// `regexp` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Regexp) {
 			q = q.Arg("regexp", opts[i].Regexp)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
 		}
 	}
 	q = q.Arg("pattern", pattern)
@@ -5066,6 +5072,8 @@ func (r *File) Name(ctx context.Context) (string, error) {
 type FileSearchOpts struct {
 	// Interpret the pattern as a regular expression.
 	Regexp bool
+	// Enable searching across multiple lines.
+	Multiline bool
 }
 
 // Searches for content matching the given pattern, which may be a regular expression or a literal string.
@@ -5075,6 +5083,10 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 		// `regexp` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Regexp) {
 			q = q.Arg("regexp", opts[i].Regexp)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
 		}
 	}
 	q = q.Arg("pattern", pattern)

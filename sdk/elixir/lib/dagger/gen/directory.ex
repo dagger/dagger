@@ -229,7 +229,7 @@ defmodule Dagger.Directory do
   @doc """
   Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.
   """
-  @spec search(t(), String.t(), [{:regexp, boolean() | nil}]) ::
+  @spec search(t(), String.t(), [{:regexp, boolean() | nil}, {:multiline, boolean() | nil}]) ::
           {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
   def search(%__MODULE__{} = directory, pattern, optional_args \\ []) do
     query_builder =
@@ -237,6 +237,7 @@ defmodule Dagger.Directory do
       |> QB.select("search")
       |> QB.put_arg("pattern", pattern)
       |> QB.maybe_put_arg("regexp", optional_args[:regexp])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
       |> QB.select("id")
 
     with {:ok, items} <- Client.execute(directory.client, query_builder) do

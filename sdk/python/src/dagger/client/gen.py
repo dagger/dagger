@@ -3183,6 +3183,7 @@ class Directory(Type):
         pattern: str,
         *,
         regexp: bool | None = False,
+        multiline: bool | None = False,
     ) -> list["SearchResult"]:
         """Searches recursively for content matching the given pattern, which may
         be a regular expression or a literal string.
@@ -3193,10 +3194,13 @@ class Directory(Type):
             The text to match.
         regexp:
             Interpret the pattern as a regular expression.
+        multiline:
+            Enable searching across multiple lines.
         """
         _args = [
             Arg("pattern", pattern),
             Arg("regexp", regexp, False),
+            Arg("multiline", multiline, False),
         ]
         _ctx = self._select("search", _args)
         return await _ctx.execute_object_list(SearchResult)
@@ -5369,6 +5373,7 @@ class File(Type):
         pattern: str,
         *,
         regexp: bool | None = False,
+        multiline: bool | None = False,
     ) -> list["SearchResult"]:
         """Searches for content matching the given pattern, which may be a
         regular expression or a literal string.
@@ -5379,10 +5384,13 @@ class File(Type):
             The text to match.
         regexp:
             Interpret the pattern as a regular expression.
+        multiline:
+            Enable searching across multiple lines.
         """
         _args = [
             Arg("pattern", pattern),
             Arg("regexp", regexp, False),
+            Arg("multiline", multiline, False),
         ]
         _ctx = self._select("search", _args)
         return await _ctx.execute_object_list(SearchResult)

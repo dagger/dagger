@@ -196,7 +196,7 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_search">search</a>(string $pattern, bool|null $regexp = false)
+                    <a href="#method_search">search</a>(string $pattern, bool|null $regexp = false, bool|null $multiline = false)
         
                                             <p><p>Searches for content matching the given pattern, which may be a regular expression or a literal string.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -525,7 +525,7 @@
                     <h3 id="method_search">
         <div class="location">at line 71</div>
         <code>                    array
-    <strong>search</strong>(string $pattern, bool|null $regexp = false)
+    <strong>search</strong>(string $pattern, bool|null $regexp = false, bool|null $multiline = false)
         </code>
     </h3>
     <div class="details">    
@@ -549,6 +549,11 @@
                 <td>$regexp</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$multiline</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -570,7 +575,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_size">
-        <div class="location">at line 84</div>
+        <div class="location">at line 87</div>
         <code>                    int
     <strong>size</strong>()
         </code>
@@ -602,7 +607,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 93</div>
+        <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -634,7 +639,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 102</div>
+        <div class="location">at line 105</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -676,7 +681,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withTimestamps">
-        <div class="location">at line 112</div>
+        <div class="location">at line 115</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withTimestamps</strong>(int $timestamp)
         </code>

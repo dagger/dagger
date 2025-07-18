@@ -1489,6 +1489,9 @@ type Directory {
 
     """Interpret the pattern as a regular expression."""
     regexp: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
   ): [SearchResult!]!
 
   """Force evaluation in the engine."""
@@ -2323,6 +2326,9 @@ type File {
 
     """Interpret the pattern as a regular expression."""
     regexp: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
   ): [SearchResult!]!
 
   """Retrieves the size of the file, in bytes."""

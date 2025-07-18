@@ -4538,6 +4538,9 @@ pub struct DirectoryFilterOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectorySearchOpts {
+    /// Enable searching across multiple lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
     /// Interpret the pattern as a regular expression.
     #[builder(setter(into, strip_option), default)]
     pub regexp: Option<bool>,
@@ -4890,6 +4893,9 @@ impl Directory {
         query = query.arg("pattern", pattern.into());
         if let Some(regexp) = opts.regexp {
             query = query.arg("regexp", regexp);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
         }
         vec![SearchResult {
             proc: self.proc.clone(),
@@ -6573,6 +6579,9 @@ pub struct FileExportOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileSearchOpts {
+    /// Enable searching across multiple lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
     /// Interpret the pattern as a regular expression.
     #[builder(setter(into, strip_option), default)]
     pub regexp: Option<bool>,
@@ -6673,6 +6682,9 @@ impl File {
         query = query.arg("pattern", pattern.into());
         if let Some(regexp) = opts.regexp {
             query = query.arg("regexp", regexp);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
         }
         vec![SearchResult {
             proc: self.proc.clone(),
