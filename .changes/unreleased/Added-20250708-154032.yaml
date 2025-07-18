@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    New `GitRepository.latestVersion` field to get a git ref of the latest semver tag
-time: 2025-07-08T15:40:32.302002068+01:00
-custom:
-    Author: jedevc
-    PR: "10679"

@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix memory leak in engine
-time: 2025-07-09T18:46:53.359054779-07:00
-custom:
-  Author: sipsma
-  PR: "10708"
