@@ -255,16 +255,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	}
 
 	var out []string
-	if !funcs.cfg.TypeDefsOnly {
-		out = append(out, fmt.Sprintf("%#v", implementationCode))
-	}
 	out = append(out,
-		mainSrc(funcs.CheckVersionCompatibility, funcs.cfg.TypeDefsOnly),
+		fmt.Sprintf("%#v", implementationCode),
+		mainSrc(funcs.CheckVersionCompatibility),
 		registerSrc(createMod),
+		invokeSrc(objFunctionCases),
 	)
-	if !funcs.cfg.TypeDefsOnly {
-		out = append(out, invokeSrc(objFunctionCases))
-	}
 	return strings.Join(out, "\n"), nil
 }
 
@@ -284,57 +280,14 @@ const (
 // mainSrc returns the static part of the generated code. It calls out to the
 // "invoke" func, which is the mostly dynamically generated code that actually
 // calls the user's functions.
-func mainSrc(checkVersionCompatibility func(string) bool, typeDefsOnly bool) string {
+func mainSrc(checkVersionCompatibility func(string) bool) string {
 	// Ensure compatibility with modules that predate Void return value handling
 	voidRet := `err`
 	if !checkVersionCompatibility("v0.12.0") {
 		voidRet = `_, err`
 	}
 
-	var dispatch string
-	if typeDefsOnly {
-		dispatch = `func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
-	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if ` + voidRet + ` := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	result, err := register()
-	if err != nil {
-		var exec *dagger.ExecError
-		if errors.As(err, &exec) {
-			return exec.Unwrap()
-		}
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if ` + voidRet + ` := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}`
-	} else {
-		dispatch = `func dispatch(ctx context.Context) (rerr error) {
+	dispatch := `func dispatch(ctx context.Context) (rerr error) {
 	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String("dagger-go-sdk"),
@@ -404,7 +357,6 @@ func mainSrc(checkVersionCompatibility func(string) bool, typeDefsOnly bool) str
 	}
 	return nil
 }`
-	}
 
 	return `func main() {
 	ctx := context.Background()
