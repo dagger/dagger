@@ -810,9 +810,9 @@ export type DirectoryFilterOpts = {
 
 export type DirectorySearchOpts = {
   /**
-   * Interpret the pattern as a regular expression.
+   * Interpret the pattern as a literal string instead of a regular expression.
    */
-  regexp?: boolean
+  literal?: boolean
 
   /**
    * Enable searching across multiple lines.
@@ -969,9 +969,9 @@ export type FileExportOpts = {
 
 export type FileSearchOpts = {
   /**
-   * Interpret the pattern as a regular expression.
+   * Interpret the pattern as a literal string instead of a regular expression.
    */
-  regexp?: boolean
+  literal?: boolean
 
   /**
    * Enable searching across multiple lines.
@@ -3809,7 +3809,7 @@ export class Directory extends BaseClient {
   /**
    * Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.
    * @param pattern The text to match.
-   * @param opts.regexp Interpret the pattern as a regular expression.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
    * @param opts.multiline Enable searching across multiple lines.
    */
   search = async (
@@ -5583,7 +5583,7 @@ export class File extends BaseClient {
   /**
    * Searches for content matching the given pattern, which may be a regular expression or a literal string.
    * @param pattern The text to match.
-   * @param opts.regexp Interpret the pattern as a regular expression.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
    * @param opts.multiline Enable searching across multiple lines.
    */
   search = async (

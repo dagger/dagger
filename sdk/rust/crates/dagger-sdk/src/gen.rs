@@ -4538,12 +4538,12 @@ pub struct DirectoryFilterOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectorySearchOpts {
+    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[builder(setter(into, strip_option), default)]
+    pub literal: Option<bool>,
     /// Enable searching across multiple lines.
     #[builder(setter(into, strip_option), default)]
     pub multiline: Option<bool>,
-    /// Interpret the pattern as a regular expression.
-    #[builder(setter(into, strip_option), default)]
-    pub regexp: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
@@ -4891,8 +4891,8 @@ impl Directory {
     ) -> Vec<SearchResult> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
-        if let Some(regexp) = opts.regexp {
-            query = query.arg("regexp", regexp);
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
         }
         if let Some(multiline) = opts.multiline {
             query = query.arg("multiline", multiline);
@@ -6579,12 +6579,12 @@ pub struct FileExportOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileSearchOpts {
+    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[builder(setter(into, strip_option), default)]
+    pub literal: Option<bool>,
     /// Enable searching across multiple lines.
     #[builder(setter(into, strip_option), default)]
     pub multiline: Option<bool>,
-    /// Interpret the pattern as a regular expression.
-    #[builder(setter(into, strip_option), default)]
-    pub regexp: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileWithReplacedOpts {
@@ -6689,8 +6689,8 @@ impl File {
     ) -> Vec<SearchResult> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
-        if let Some(regexp) = opts.regexp {
-            query = query.arg("regexp", regexp);
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
         }
         if let Some(multiline) = opts.multiline {
             query = query.arg("multiline", multiline);

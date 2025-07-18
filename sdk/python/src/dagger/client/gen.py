@@ -3182,7 +3182,7 @@ class Directory(Type):
         self,
         pattern: str,
         *,
-        regexp: bool | None = False,
+        literal: bool | None = False,
         multiline: bool | None = False,
     ) -> list["SearchResult"]:
         """Searches recursively for content matching the given pattern, which may
@@ -3192,14 +3192,15 @@ class Directory(Type):
         ----------
         pattern:
             The text to match.
-        regexp:
-            Interpret the pattern as a regular expression.
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
         multiline:
             Enable searching across multiple lines.
         """
         _args = [
             Arg("pattern", pattern),
-            Arg("regexp", regexp, False),
+            Arg("literal", literal, False),
             Arg("multiline", multiline, False),
         ]
         _ctx = self._select("search", _args)
@@ -5372,7 +5373,7 @@ class File(Type):
         self,
         pattern: str,
         *,
-        regexp: bool | None = False,
+        literal: bool | None = False,
         multiline: bool | None = False,
     ) -> list["SearchResult"]:
         """Searches for content matching the given pattern, which may be a
@@ -5382,14 +5383,15 @@ class File(Type):
         ----------
         pattern:
             The text to match.
-        regexp:
-            Interpret the pattern as a regular expression.
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
         multiline:
             Enable searching across multiple lines.
         """
         _args = [
             Arg("pattern", pattern),
-            Arg("regexp", regexp, False),
+            Arg("literal", literal, False),
             Arg("multiline", multiline, False),
         ]
         _ctx = self._select("search", _args)

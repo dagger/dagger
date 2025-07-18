@@ -1487,8 +1487,10 @@ type Directory {
     """The text to match."""
     pattern: String!
 
-    """Interpret the pattern as a regular expression."""
-    regexp: Boolean = false
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
 
     """Enable searching across multiple lines."""
     multiline: Boolean = false
@@ -2324,8 +2326,10 @@ type File {
     """The text to match."""
     pattern: String!
 
-    """Interpret the pattern as a regular expression."""
-    regexp: Boolean = false
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
 
     """Enable searching across multiple lines."""
     multiline: Boolean = false

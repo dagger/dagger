@@ -2959,8 +2959,8 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 
 // DirectorySearchOpts contains options for Directory.Search
 type DirectorySearchOpts struct {
-	// Interpret the pattern as a regular expression.
-	Regexp bool
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
 	// Enable searching across multiple lines.
 	Multiline bool
 }
@@ -2969,9 +2969,9 @@ type DirectorySearchOpts struct {
 func (r *Directory) Search(ctx context.Context, pattern string, opts ...DirectorySearchOpts) ([]SearchResult, error) {
 	q := r.query.Select("search")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `regexp` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Regexp) {
-			q = q.Arg("regexp", opts[i].Regexp)
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
 		}
 		// `multiline` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Multiline) {
@@ -5070,8 +5070,8 @@ func (r *File) Name(ctx context.Context) (string, error) {
 
 // FileSearchOpts contains options for File.Search
 type FileSearchOpts struct {
-	// Interpret the pattern as a regular expression.
-	Regexp bool
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
 	// Enable searching across multiple lines.
 	Multiline bool
 }
@@ -5080,9 +5080,9 @@ type FileSearchOpts struct {
 func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpts) ([]SearchResult, error) {
 	q := r.query.Select("search")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `regexp` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Regexp) {
-			q = q.Arg("regexp", opts[i].Regexp)
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
 		}
 		// `multiline` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Multiline) {

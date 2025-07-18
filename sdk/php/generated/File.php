@@ -68,12 +68,12 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Searches for content matching the given pattern, which may be a regular expression or a literal string.
      */
-    public function search(string $pattern, ?bool $regexp = false, ?bool $multiline = false): array
+    public function search(string $pattern, ?bool $literal = false, ?bool $multiline = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
         $leafQueryBuilder->setArgument('pattern', $pattern);
-        if (null !== $regexp) {
-        $leafQueryBuilder->setArgument('regexp', $regexp);
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
         }
         if (null !== $multiline) {
         $leafQueryBuilder->setArgument('multiline', $multiline);
