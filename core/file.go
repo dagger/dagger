@@ -1,12 +1,16 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -19,13 +23,18 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	"github.com/tiborvass/replace"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/text/transform"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // File is a content-addressed file.
@@ -161,45 +170,50 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := file.readInto(ctx, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (file *File) readInto(ctx context.Context, w io.Writer) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
+		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer detach()
-
-	ref, err := bkRef(ctx, bk, file.LLB)
-	if err != nil {
-		return nil, err
-	}
 
 	// Stat the file and preallocate file contents buffer:
 	st, err := file.Stat(ctx)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	ref, err := bkRef(ctx, bk, file.LLB)
+	if err != nil {
+		return err
 	}
 
 	// Error on files that exceed MaxFileContentsSize:
 	fileSize := int(st.GetSize_())
 	if fileSize > buildkit.MaxFileContentsSize {
 		// TODO: move to proper error structure
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+		return fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
 	}
-
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
 
 	// Use a chunked reader to overcome issues when
 	// the input file exceeds MaxFileContentsChunkSize:
@@ -213,14 +227,179 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 			},
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Copy the chunk and increment offset for subsequent reads:
-		copy(contents[offset:], chunk)
+		n, err := w.Write(chunk)
+		if err != nil {
+			return err
+		}
+		if n < len(chunk) {
+			return fmt.Errorf("short write")
+		}
 		offset += len(chunk)
 	}
-	return contents, nil
+	return nil
+}
+
+func (file *File) Search(ctx context.Context, pattern string, isRE, multiline bool) ([]*SearchResult, error) {
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	rgArgs := []string{"--json"}
+	if !isRE {
+		rgArgs = append(rgArgs, "--fixed-strings")
+	}
+	if multiline {
+		rgArgs = append(rgArgs, "--multiline")
+	}
+	rgArgs = append(rgArgs, pattern)
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	results := []*SearchResult{}
+	rg := exec.Command("rg", rgArgs...)
+	in, err := rg.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer in.Close()
+	out, err := rg.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+	if err := rg.Start(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := rg.Wait(); err != nil {
+			slog.Error("failed to wait for rg", "error", err)
+		}
+	}()
+	eg := new(errgroup.Group)
+	eg.Go(func() error {
+		defer in.Close()
+		return file.readInto(ctx, in)
+	})
+	eg.Go(func() error {
+		dec := json.NewDecoder(out)
+		for {
+			var match rgJSON
+			if err := dec.Decode(&match); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+			if match.Type != "match" {
+				continue
+			}
+			data := match.Data
+			if len(match.Data.Path.Bytes) > 0 {
+				slog.Warn("skipping non-utf8 path",
+					"path", base64.StdEncoding.EncodeToString(data.Path.Bytes))
+				continue
+			}
+			if len(data.Lines.Bytes) > 0 {
+				slog.Warn("skipping non-utf8 path",
+					"path", base64.StdEncoding.EncodeToString(data.Lines.Bytes))
+				continue
+			}
+			results = append(results, &SearchResult{
+				FilePath:    file.File,
+				LineNumber:  data.LineNumber,
+				MatchedText: data.Lines.Text,
+			})
+		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (file *File) Replace(ctx context.Context, search, replacement string, startLine int, all bool) (*File, error) {
+	file = file.Clone()
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, file.Result, file)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	r, w := io.Pipe()
+
+	var replaced io.Reader
+	if all {
+		replaced = transform.NewReader(r, replace.String(search, replacement))
+	} else {
+		replaced = transform.NewReader(r, replace.StringN(search, replacement, 1))
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+
+	eg := new(errgroup.Group)
+	eg.Go(func() error {
+		defer w.Close()
+		return file.readInto(ctx, w)
+	})
+	eg.Go(func() error {
+		return MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+			resolvedPath, err := containerdfs.RootPath(root, file.File)
+			if err != nil {
+				return err
+			}
+			if err := os.Truncate(resolvedPath, 0); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = io.Copy(f, replaced)
+			return err
+		})
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.Result = snap
+	return file, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {

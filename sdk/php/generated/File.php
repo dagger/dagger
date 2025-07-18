@@ -66,6 +66,22 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Searches for content matching the given pattern, which may be a regular expression or a literal string.
+     */
+    public function search(string $pattern, ?bool $regexp = false, ?bool $multiline = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $regexp) {
+        $leafQueryBuilder->setArgument('regexp', $regexp);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
      * Retrieves the size of the file, in bytes.
      */
     public function size(): int
@@ -90,6 +106,23 @@ class File extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
         $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the file with content replaced with the given text.
+     */
+    public function withReplaced(string $search, string $replacement, ?int $startLine = 1, ?bool $all = false): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReplaced');
+        $innerQueryBuilder->setArgument('search', $search);
+        $innerQueryBuilder->setArgument('replacement', $replacement);
+        if (null !== $startLine) {
+        $innerQueryBuilder->setArgument('startLine', $startLine);
+        }
+        if (null !== $all) {
+        $innerQueryBuilder->setArgument('all', $all);
+        }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

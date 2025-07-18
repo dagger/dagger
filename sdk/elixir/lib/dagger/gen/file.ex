@@ -78,6 +78,34 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Searches for content matching the given pattern, which may be a regular expression or a literal string.
+  """
+  @spec search(t(), String.t(), [{:regexp, boolean() | nil}, {:multiline, boolean() | nil}]) ::
+          {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = file, pattern, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("regexp", optional_args[:regexp])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(file.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: file.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Retrieves the size of the file, in bytes.
   """
   @spec size(t()) :: {:ok, integer()} | {:error, term()}
@@ -115,6 +143,28 @@ defmodule Dagger.File do
   def with_name(%__MODULE__{} = file, name) do
     query_builder =
       file.query_builder |> QB.select("withName") |> QB.put_arg("name", name)
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
+  Retrieves the file with content replaced with the given text.
+  """
+  @spec with_replaced(t(), String.t(), String.t(), [
+          {:start_line, integer() | nil},
+          {:all, boolean() | nil}
+        ]) :: Dagger.File.t()
+  def with_replaced(%__MODULE__{} = file, search, replacement, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("withReplaced")
+      |> QB.put_arg("search", search)
+      |> QB.put_arg("replacement", replacement)
+      |> QB.maybe_put_arg("startLine", optional_args[:start_line])
+      |> QB.maybe_put_arg("all", optional_args[:all])
 
     %Dagger.File{
       query_builder: query_builder,
