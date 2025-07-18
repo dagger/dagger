@@ -63,7 +63,7 @@ html[data-theme="dark"] {
   --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
-  --ifm-navbar-background-color: #{$dagger-dark-mode-background-color};
+  --ifm-navbar-background-color: #{$inkberry-color};
   --ifm-navbar-link-color: white;
 
   // Make sure dropdown menus also have the correct background
@@ -231,7 +231,10 @@ html[data-theme="dark"] {
   background-color: var(--ifm-navbar-background-color) !important;
   box-shadow: none !important;
   border-bottom: none !important;
-  margin-bottom: 1.8rem;
+  
+  @include desktop {
+    margin-bottom: 1.1rem;
+  }
 }
 
 .theme-doc-sidebar-item-category {
