@@ -408,6 +408,10 @@ func Resource(ctx context.Context) *resource.Resource {
 // exit gracefully and flush output.
 type ExitError struct {
 	Code int
+
+	// An optional originating error, for any code paths that go looking for it,
+	// e.g. telemetry.End which looks for error origins.
+	Original error
 }
 
 var Fail = ExitError{Code: 1}
@@ -415,6 +419,10 @@ var Fail = ExitError{Code: 1}
 func (e ExitError) Error() string {
 	// Not actually printed anywhere.
 	return fmt.Sprintf("exit code %d", e.Code)
+}
+
+func (e ExitError) Unwrap() error {
+	return e.Original
 }
 
 const InstrumentationLibrary = "dagger.io/cli"
