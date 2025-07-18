@@ -178,34 +178,7 @@ type Runtime interface {
 	*/
 	HasModuleTypeDefs() bool
 
-	HasModuleTypeDefsObject() bool
-
-	/*
-		TypeDefs returns a container that is used to execute module code
-		to retrieve the types defined by the module.
-
-		This function will call the following exposed by the SDK:
-
-		```gql
-		  moduleTypeDefs(
-		      modSource: ModuleSource!
-		      introspectionJSON: File!
-		  ): Container!
-		```
-
-		If this function is not exposed, it will fallback to `Runtime`.
-	*/
 	TypeDefs(
-		context.Context,
-
-		// Current module dependencies.
-		*ModDeps,
-
-		// Current instance of the module source.
-		dagql.ObjectResult[*ModuleSource],
-	) (dagql.ObjectResult[*Container], error)
-
-	TypeDefsObject(
 		context.Context,
 
 		// Current module dependencies.

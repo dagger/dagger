@@ -1976,7 +1976,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific `moduleTypeDefs` function.
 		// If not, we will have circular dependency issues.
-		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefsObject() {
+		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2303,16 +2303,14 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	if runtimeImpl.HasModuleTypeDefsObject() {
+	if runtimeImpl.HasModuleTypeDefs() {
 		var resultInst dagql.ObjectResult[*core.Module]
-		resultInst, err = runtimeImpl.TypeDefsObject(ctx, mod.Deps, srcInstContentHashed)
+		resultInst, err = runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
 		initialized = resultInst.Self()
 	} else {
-		// get the typedefs container dedicated to get the module's definition.
-		// this will fall back to the runtime container if `moduleTypeDefs` is not defined.
 		typeDefs, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module runtime: %w", err)
@@ -2498,7 +2496,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 
 		// BEGIN: self call
-		if runtimeImpl.HasModuleTypeDefsObject() {
+		if runtimeImpl.HasModuleTypeDefs() {
 			mod.Deps = mod.Deps.Append(mod)
 		}
 		// END: self call
