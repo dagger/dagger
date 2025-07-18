@@ -23,34 +23,9 @@ func (sdk *runtimeModule) TypeDefs(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
-) (inst dagql.ObjectResult[*core.Container], rerr error) {
-	if !sdk.HasModuleTypeDefs() {
-		return sdk.Runtime(ctx, deps, source)
-	}
-
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs")
-	defer telemetry.End(span, func() error { return rerr })
-
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
-	}
-
-	return sdk.callModuleFn(ctx, "moduleTypeDefs", source, schemaJSONFile)
-}
-
-func (sdk *runtimeModule) HasModuleTypeDefsObject() bool {
-	_, ok := sdk.mod.funcs["moduleTypeDefsObject"]
-	return ok
-}
-
-func (sdk *runtimeModule) TypeDefsObject(
-	ctx context.Context,
-	deps *core.ModDeps,
-	source dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
-	if !sdk.HasModuleTypeDefsObject() {
-		return inst, fmt.Errorf("failed to get typedefs object: module %s does not implement moduleTypeDefsObject", sdk.mod.mod.Self().Name())
+	if !sdk.HasModuleTypeDefs() {
+		return inst, fmt.Errorf("failed to get typedefs object: module %s does not implement moduleTypeDefs", sdk.mod.mod.Self().Name())
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
@@ -68,7 +43,7 @@ func (sdk *runtimeModule) TypeDefsObject(
 
 	rerr = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
-			Field: "moduleTypeDefsObject",
+			Field: "moduleTypeDefs",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
@@ -96,15 +71,6 @@ func (sdk *runtimeModule) Runtime(
 		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	return sdk.callModuleFn(ctx, "moduleRuntime", source, schemaJSONFile)
-}
-
-func (sdk *runtimeModule) callModuleFn(
-	ctx context.Context,
-	fnName string,
-	source dagql.ObjectResult[*core.ModuleSource],
-	schemaJSONFile dagql.Result[*core.File],
-) (inst dagql.ObjectResult[*core.Container], rerr error) {
 	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
@@ -112,7 +78,7 @@ func (sdk *runtimeModule) callModuleFn(
 
 	err = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
-			Field: fnName,
+			Field: "moduleRuntime",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
