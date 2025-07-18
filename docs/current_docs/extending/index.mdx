@@ -19,7 +19,7 @@ When a Dagger module is loaded into a Dagger session, the Dagger API is dynamica
 Here's an example of a Dagger Function which calls a remote API method and returns the result:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="go" title="Go">
+<TabItem value="go" label="Go">
 
 Update the `main.go` file with the following code:
 
@@ -28,7 +28,7 @@ Update the `main.go` file with the following code:
 
 This Dagger Function includes the context as input and error as return in its signature.
 </TabItem>
-<TabItem value="python" title="Python">
+<TabItem value="python" label="Python">
 
 Update the `src/my_module/main.py` file with the following code:
 
@@ -48,21 +48,21 @@ the main object needs to be named `MyModule`.
 [@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
 [@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
 </TabItem>
-<TabItem value="typescript" title="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 Update the `src/index.ts` file with the following code:
 
 ```typescript file=../snippets/functions/functions-complex/typescript/index.ts
 ```
 </TabItem>
-<TabItem value="php" title="PHP">
+<TabItem value="php" label="PHP">
 
 Update the `src/MyModule.php` file with the following code:
 
 ```php file=../snippets/functions/functions-complex/php/src/MyModule.php
 ```
 </TabItem>
-<TabItem value="java" title="Java">
+<TabItem value="java" label="Java">
 
 Update the `src/main/java/io/dagger/modules/mymodule/MyModule.java` file with the following code:
 
@@ -94,7 +94,7 @@ dagger -c 'get-user'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
+```shell label="First type 'dagger' for interactive mode."
 get-user
 ```
 </TabItem>
