@@ -979,6 +979,18 @@ export type FileSearchOpts = {
   multiline?: boolean
 }
 
+export type FileWithReplacedOpts = {
+  /**
+   * Start replacing from this line.
+   */
+  startLine?: number
+
+  /**
+   * Replace all occurrences of the pattern.
+   */
+  all?: boolean
+}
+
 /**
  * The `FileID` scalar type represents an identifier for an object of type File.
  */
@@ -5623,6 +5635,26 @@ export class File extends BaseClient {
    */
   withName = (name: string): File => {
     const ctx = this._ctx.select("withName", { name })
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieves the file with content replaced with the given text.
+   * @param search The text to match.
+   * @param replacement The text to match.
+   * @param opts.startLine Start replacing from this line.
+   * @param opts.all Replace all occurrences of the pattern.
+   */
+  withReplaced = (
+    search: string,
+    replacement: string,
+    opts?: FileWithReplacedOpts,
+  ): File => {
+    const ctx = this._ctx.select("withReplaced", {
+      search,
+      replacement,
+      ...opts,
+    })
     return new File(ctx)
   }
 

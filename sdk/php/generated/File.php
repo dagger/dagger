@@ -110,6 +110,23 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves the file with content replaced with the given text.
+     */
+    public function withReplaced(string $search, string $replacement, ?int $startLine = 1, ?bool $all = false): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReplaced');
+        $innerQueryBuilder->setArgument('search', $search);
+        $innerQueryBuilder->setArgument('replacement', $replacement);
+        if (null !== $startLine) {
+        $innerQueryBuilder->setArgument('startLine', $startLine);
+        }
+        if (null !== $all) {
+        $innerQueryBuilder->setArgument('all', $all);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this file with its created/modified timestamps set to the given time.
      */
     public function withTimestamps(int $timestamp): File

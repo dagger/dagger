@@ -5446,6 +5446,36 @@ class File(Type):
         _ctx = self._select("withName", _args)
         return File(_ctx)
 
+    def with_replaced(
+        self,
+        search: str,
+        replacement: str,
+        *,
+        start_line: int | None = 1,
+        all: bool | None = False,
+    ) -> Self:
+        """Retrieves the file with content replaced with the given text.
+
+        Parameters
+        ----------
+        search:
+            The text to match.
+        replacement:
+            The text to match.
+        start_line:
+            Start replacing from this line.
+        all:
+            Replace all occurrences of the pattern.
+        """
+        _args = [
+            Arg("search", search),
+            Arg("replacement", replacement),
+            Arg("startLine", start_line, 1),
+            Arg("all", all, False),
+        ]
+        _ctx = self._select("withReplaced", _args)
+        return File(_ctx)
+
     def with_timestamps(self, timestamp: int) -> Self:
         """Retrieves this file with its created/modified timestamps set to the
         given time.

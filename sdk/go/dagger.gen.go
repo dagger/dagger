@@ -5156,6 +5156,37 @@ func (r *File) WithName(name string) *File {
 	}
 }
 
+// FileWithReplacedOpts contains options for File.WithReplaced
+type FileWithReplacedOpts struct {
+	// Start replacing from this line.
+	//
+	// Default: 1
+	StartLine int
+	// Replace all occurrences of the pattern.
+	All bool
+}
+
+// Retrieves the file with content replaced with the given text.
+func (r *File) WithReplaced(search string, replacement string, opts ...FileWithReplacedOpts) *File {
+	q := r.query.Select("withReplaced")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `startLine` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartLine) {
+			q = q.Arg("startLine", opts[i].StartLine)
+		}
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+	}
+	q = q.Arg("search", search)
+	q = q.Arg("replacement", replacement)
+
+	return &File{
+		query: q,
+	}
+}
+
 // Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
 	q := r.query.Select("withTimestamps")

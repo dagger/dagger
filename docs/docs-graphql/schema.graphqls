@@ -2343,6 +2343,21 @@ type File {
     name: String!
   ): File!
 
+  """Retrieves the file with content replaced with the given text."""
+  withReplaced(
+    """The text to match."""
+    search: String!
+
+    """The text to match."""
+    replacement: String!
+
+    """Start replacing from this line."""
+    startLine: Int = 1
+
+    """Replace all occurrences of the pattern."""
+    all: Boolean = false
+  ): File!
+
   """
   Retrieves this file with its created/modified timestamps set to the given time.
   """

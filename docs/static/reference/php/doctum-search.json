@@ -3111,6 +3111,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::withReplaced",
+			"p": "Dagger/File.html#method_withReplaced",
+			"d": "<p>Retrieves the file with content replaced with the given text.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::withTimestamps",
 			"p": "Dagger/File.html#method_withTimestamps",
 			"d": "<p>Retrieves this file with its created/modified timestamps set to the given time.</p>"

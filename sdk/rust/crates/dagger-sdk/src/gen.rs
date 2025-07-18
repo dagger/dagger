@@ -6586,6 +6586,15 @@ pub struct FileSearchOpts {
     #[builder(setter(into, strip_option), default)]
     pub regexp: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FileWithReplacedOpts {
+    /// Replace all occurrences of the pattern.
+    #[builder(setter(into, strip_option), default)]
+    pub all: Option<bool>,
+    /// Start replacing from this line.
+    #[builder(setter(into, strip_option), default)]
+    pub start_line: Option<isize>,
+}
 impl File {
     /// Retrieves the contents of the file.
     pub async fn contents(&self) -> Result<String, DaggerError> {
@@ -6710,6 +6719,51 @@ impl File {
     pub fn with_name(&self, name: impl Into<String>) -> File {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves the file with content replaced with the given text.
+    ///
+    /// # Arguments
+    ///
+    /// * `search` - The text to match.
+    /// * `replacement` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_replaced(&self, search: impl Into<String>, replacement: impl Into<String>) -> File {
+        let mut query = self.selection.select("withReplaced");
+        query = query.arg("search", search.into());
+        query = query.arg("replacement", replacement.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves the file with content replaced with the given text.
+    ///
+    /// # Arguments
+    ///
+    /// * `search` - The text to match.
+    /// * `replacement` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_replaced_opts(
+        &self,
+        search: impl Into<String>,
+        replacement: impl Into<String>,
+        opts: FileWithReplacedOpts,
+    ) -> File {
+        let mut query = self.selection.select("withReplaced");
+        query = query.arg("search", search.into());
+        query = query.arg("replacement", replacement.into());
+        if let Some(start_line) = opts.start_line {
+            query = query.arg("startLine", start_line);
+        }
+        if let Some(all) = opts.all {
+            query = query.arg("all", all);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
