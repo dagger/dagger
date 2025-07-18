@@ -55,7 +55,7 @@ func (s *fileSchema) Install() {
 			Doc(`Searches for content matching the given pattern, which may be a regular expression or a literal string.`).
 			Args(
 				dagql.Arg("pattern").Doc(`The text to match.`),
-				dagql.Arg("regexp").Doc(`Interpret the pattern as a regular expression.`),
+				dagql.Arg("literal").Doc(`Interpret the pattern as a literal string instead of a regular expression.`),
 				dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 			),
 		dagql.NodeFunc("withReplaced",
@@ -148,7 +148,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, args.Pattern, args.Regexp, args.Multiline)
+	return parent.Self().Search(ctx, args.Pattern, !args.Literal, args.Multiline)
 }
 
 type fileReplaceArgs struct {

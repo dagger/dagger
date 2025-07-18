@@ -59,7 +59,7 @@ func (s *directorySchema) Install() {
 			Doc(`Searches recursively for content matching the given pattern, which may be a regular expression or a literal string.`).
 			Args(
 				dagql.Arg("pattern").Doc(`The text to match.`),
-				dagql.Arg("regexp").Doc(`Interpret the pattern as a regular expression.`),
+				dagql.Arg("literal").Doc(`Interpret the pattern as a literal string instead of a regular expression.`),
 				dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 			),
 		dagql.Func("digest", s.digest).
@@ -334,14 +334,14 @@ type withPatchArgs struct {
 
 type searchArgs struct {
 	Pattern   string
-	Regexp    bool `default:"false"`
+	Literal   bool `default:"false"`
 	Multiline bool `default:"false"`
 
 	RawDagOpInternalArgs
 }
 
 func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, args.Pattern, args.Regexp, args.Multiline)
+	return parent.Self().Search(ctx, args.Pattern, !args.Literal, args.Multiline)
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {

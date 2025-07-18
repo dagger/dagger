@@ -478,7 +478,7 @@ func main() {
 			File("code.go")
 
 		// Search for variable assignments
-		results, err := file.Search(ctx, `\w+ :=`, dagger.FileSearchOpts{Regexp: true})
+		results, err := file.Search(ctx, `\w+ :=`)
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
 
@@ -521,7 +521,7 @@ func another() {
 		// Search for variable assignments
 		results, err := file.Search(ctx, ":= \"Alice\"\n\tage", dagger.FileSearchOpts{
 			Multiline: true,
-			Regexp:    true,
+			Literal:   true,
 		})
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
@@ -565,7 +565,6 @@ func another() {
 		// Search for variable assignments
 		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.FileSearchOpts{
 			Multiline: true,
-			Regexp:    true,
 		})
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
@@ -623,7 +622,7 @@ def hello_world():
 			File("test.py")
 
 		// Search for function definitions
-		results, err := file.Search(ctx, `def \w+\(\):`, dagger.FileSearchOpts{Regexp: true})
+		results, err := file.Search(ctx, `def \w+\(\):`)
 		require.NoError(t, err)
 		require.Len(t, results, 3)
 
@@ -685,7 +684,7 @@ def hello_world():
 			From(alpineImage).
 			File("/etc/alpine-release")
 
-		results, err := file.Search(ctx, "[0-9]+\\.[0-9]+", dagger.FileSearchOpts{Regexp: true})
+		results, err := file.Search(ctx, "[0-9]+\\.[0-9]+")
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
 		matchedText0, err := results[0].MatchedText(ctx)

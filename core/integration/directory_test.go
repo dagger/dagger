@@ -1663,7 +1663,7 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 			WithNewFile("lib/helper.go", "package lib\n\nfunc Helper() string {\n\treturn \"help\"\n}")
 
 		// Search for function definitions
-		results, err := dir.Search(ctx, `func \w+\(\)`, dagger.DirectorySearchOpts{Regexp: true})
+		results, err := dir.Search(ctx, `func \w+\(\)`)
 		require.NoError(t, err)
 		require.Len(t, results, 3)
 
@@ -1747,7 +1747,6 @@ func another() {
 		// Search for variable assignments
 		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.DirectorySearchOpts{
 			Multiline: true,
-			Regexp:    true,
 		})
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
