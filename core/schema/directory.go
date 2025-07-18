@@ -216,8 +216,40 @@ type subdirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) subdirectory(ctx context.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, args.Path)
+func (s *directorySchema) subdirectory(
+	ctx context.Context,
+	parent *core.Directory,
+	args subdirectoryArgs,
+) (res dagql.ObjectResult[*core.Directory], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return res, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return res, nil
+	}
+
+	dir, err := parent.Directory(ctx, args.Path)
+	if err != nil {
+		return res, err
+	}
+
+	res, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return res, err
+	}
+	if parent.IsContentHashed {
+		res, err = core.MakeDirectoryContentHashed(ctx, bk, res)
+		if err != nil {
+			return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+		}
+	}
+	return res, nil
 }
 
 type withNewDirectoryArgs struct {
