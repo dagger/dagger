@@ -512,7 +512,7 @@ func (m *MCP) selectionToToolResult(
 	// Handle scalars or arrays of scalars.
 	//
 	return toolStructuredResponse(map[string]any{
-		"result": val,
+		"result": val.Unwrap(),
 	})
 }
 
