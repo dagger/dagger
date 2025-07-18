@@ -32,7 +32,6 @@ var sdkFunctions = []string{
 	"codegen",
 	"moduleRuntime",
 	"moduleTypeDefs",
-	"moduleTypeDefsObject",
 	"requiredClientGenerationFiles",
 	"generateClient",
 }
