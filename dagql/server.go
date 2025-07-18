@@ -559,6 +559,21 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
 func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Selection) (map[string]any, error) {
+	if len(sels) == 0 {
+		return nil, nil
+	}
+
+	if len(sels) == 1 {
+		sel := sels[0]
+		// Resolve is in the hot path, so avoiding overhead of goroutines, sync.Map, etc. when there's only
+		// one selection (probably the most common case) likely pays off.
+		res, err := s.resolvePath(ctx, self, sel)
+		if err != nil {
+			return nil, gqlErrs(err)
+		}
+		return map[string]any{sel.Name(): res}, nil
+	}
+
 	results := new(sync.Map)
 
 	pool := pool.New().WithErrors()

@@ -71,6 +71,10 @@ message Call {
   // evaluate calls wherever, we need to track which view the call was actually
   // called in.
   string view = 10;
+
+  // Whether the digest was set to a custom value, as opposed to the default
+  // "recipe-based" digest
+  bool isCustomDigest = 11;
 }
 
 // Module represents a self-contained logical module that can be dynamically

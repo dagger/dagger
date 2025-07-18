@@ -286,6 +286,9 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
 	for _, def := range collectDefs(ctx, self) {
+		if def == nil {
+			continue
+		}
 		for _, op := range def.Def {
 			seenEffects[digest.FromBytes(op)] = true
 		}
@@ -293,6 +296,9 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 
 	var effectIDs []string
 	for _, def := range collectDefs(ctx, res) {
+		if def == nil {
+			continue
+		}
 		for _, opBytes := range def.Def {
 			dig := digest.FromBytes(opBytes)
 			if seenEffects[dig] {

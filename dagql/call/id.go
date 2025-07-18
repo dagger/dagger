@@ -272,6 +272,7 @@ func (id *ID) Append(
 
 	if customDigest != "" {
 		newID.pb.Digest = string(customDigest)
+		newID.pb.IsCustomDigest = true
 	} else {
 		var err error
 		newID.pb.Digest, err = newID.calcDigest()
@@ -298,6 +299,13 @@ func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 		customDigest,
 		id.args...,
 	)
+}
+
+func (id *ID) HasCustomDigest() bool {
+	if id == nil {
+		return false
+	}
+	return id.pb.IsCustomDigest
 }
 
 // WithArgument returns a new ID that's the same as before except with the
@@ -529,7 +537,7 @@ func (id *ID) calcDigest() (string, error) {
 
 	// Args
 	for _, arg := range id.pb.Args {
-		buf, err = appendArgumentBytes(arg, buf)
+		buf, err = AppendArgumentBytes(arg, buf)
 		if err != nil {
 			marshalBufPool.Put(bufPtr)
 			h.Reset()
@@ -575,8 +583,8 @@ func (id *ID) calcDigest() (string, error) {
 	return string(hexStr), nil
 }
 
-// appendArgumentBytes appends a binary representation of the given argument to the given byte slice.
-func appendArgumentBytes(arg *callpbv1.Argument, buf []byte) ([]byte, error) {
+// AppendArgumentBytes appends a binary representation of the given argument to the given byte slice.
+func AppendArgumentBytes(arg *callpbv1.Argument, buf []byte) ([]byte, error) {
 	var err error
 
 	buf = append(buf, []byte(arg.Name)...)
@@ -651,7 +659,7 @@ func appendLiteralBytes(lit *callpbv1.Literal, buf []byte) ([]byte, error) {
 		const prefix = '8'
 		buf = append(buf, prefix)
 		for _, arg := range v.Object.Values {
-			buf, err = appendArgumentBytes(arg, buf)
+			buf, err = AppendArgumentBytes(arg, buf)
 			if err != nil {
 				return nil, err
 			}

@@ -221,7 +221,12 @@ func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {
 	return secretEnvs
 }
 
-func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts, parent *buildkit.ExecutionMetadata) (_ *Container, rerr error) { //nolint:gocyclo
+//nolint:gocyclo
+func (container *Container) WithExec(
+	ctx context.Context,
+	opts ContainerExecOpts,
+	execMD *buildkit.ExecutionMetadata,
+) (_ *Container, rerr error) {
 	container = container.Clone()
 
 	query, err := CurrentQuery(ctx)
@@ -236,7 +241,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	secretEnvs := container.secretEnvs()
 
-	execMD, err := container.execMeta(ctx, opts, parent)
+	execMD, err = container.execMeta(ctx, opts, execMD)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +307,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				} else {
 					ref, cerr := active.Ref.Commit(ctx)
 					if cerr != nil {
-						rerr = fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err)
+						rerr = errors.Join(rerr, fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err))
 						continue
 					}
 					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opt.Worker)
@@ -313,16 +318,74 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				iref := res.Sys().(*worker.WorkerRef).ImmutableRef
 				switch i {
 				case 0:
-					container.FSResult = iref
+					rootfsDir := &Directory{
+						Result: iref,
+					}
+					if container.FS != nil {
+						rootfsDir.Dir = container.FS.Self().Dir
+						rootfsDir.Platform = container.FS.Self().Platform
+						rootfsDir.Services = container.FS.Self().Services
+					} else {
+						rootfsDir.Dir = "/"
+					}
+					container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+					if err != nil {
+						rerr = errors.Join(rerr, fmt.Errorf("failed to update rootfs: %w", err))
+						continue
+					}
+
 				case 1:
-					container.MetaResult = iref
+					container.Meta = &Directory{
+						Result: iref,
+					}
+
 				default:
 					mountIdx := i - 2
 					if mountIdx >= len(container.Mounts) {
 						// something is disastourously wrong, panic!
 						panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
 					}
-					container.Mounts[mountIdx].Result = iref
+					ctrMnt := container.Mounts[mountIdx]
+
+					err = handleMountValue(ctrMnt,
+						func(dirMnt *dagql.ObjectResult[*Directory]) error {
+							dir := &Directory{
+								Result:   iref,
+								Dir:      dirMnt.Self().Dir,
+								Platform: dirMnt.Self().Platform,
+								Services: dirMnt.Self().Services,
+							}
+							ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
+							if err != nil {
+								return fmt.Errorf("failed to update directory mount: %w", err)
+							}
+							container.Mounts[mountIdx] = ctrMnt
+							return nil
+						},
+						func(fileMnt *dagql.ObjectResult[*File]) error {
+							file := &File{
+								Result:   iref,
+								File:     fileMnt.Self().File,
+								Platform: fileMnt.Self().Platform,
+								Services: fileMnt.Self().Services,
+							}
+							ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
+							if err != nil {
+								return fmt.Errorf("failed to update file mount: %w", err)
+							}
+							container.Mounts[mountIdx] = ctrMnt
+							return nil
+						},
+						func(cache *CacheMountSource) error {
+							container.Mounts[mountIdx] = ctrMnt
+							return nil
+						},
+						func(tmpfs *TmpfsMountSource) error {
+							container.Mounts[mountIdx] = ctrMnt
+							return nil
+						},
+					)
+					rerr = errors.Join(rerr, err)
 				}
 			}
 
@@ -351,6 +414,15 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}()
 	if err != nil {
 		return nil, err
+	}
+
+	// NOTE: seems to be a longstanding bug in buildkit that selector on root mount doesn't work, fix here
+	for _, mnt := range mounts.Mounts {
+		if mnt.Dest != "/" {
+			continue
+		}
+		p.Root.Selector = mnt.Selector
+		break
 	}
 
 	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
@@ -410,16 +482,74 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		// put the ref to the right mount point
 		switch ref.MountIndex {
 		case 0:
-			container.FSResult = iref
+			rootfsDir := &Directory{
+				Result: iref,
+			}
+			if container.FS != nil {
+				rootfsDir.Dir = container.FS.Self().Dir
+				rootfsDir.Platform = container.FS.Self().Platform
+				rootfsDir.Services = container.FS.Self().Services
+			} else {
+				rootfsDir.Dir = "/"
+			}
+			updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update rootfs: %w", err)
+			}
+			container.FS = updatedRootFS
+
 		case 1:
-			container.MetaResult = iref
+			container.Meta = &Directory{
+				Result: iref,
+			}
+
 		default:
 			mountIdx := ref.MountIndex - 2
 			if mountIdx >= len(container.Mounts) {
 				// something is disastourously wrong, panic!
 				panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
 			}
-			container.Mounts[mountIdx].Result = iref
+			ctrMnt := container.Mounts[mountIdx]
+
+			err = handleMountValue(ctrMnt,
+				func(dirMnt *dagql.ObjectResult[*Directory]) error {
+					dir := &Directory{
+						Result:   iref,
+						Dir:      dirMnt.Self().Dir,
+						Platform: dirMnt.Self().Platform,
+						Services: dirMnt.Self().Services,
+					}
+					ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update directory mount: %w", err)
+					}
+					container.Mounts[mountIdx] = ctrMnt
+					return nil
+				},
+				func(fileMnt *dagql.ObjectResult[*File]) error {
+					file := &File{
+						Result:   iref,
+						File:     fileMnt.Self().File,
+						Platform: fileMnt.Self().Platform,
+						Services: fileMnt.Self().Services,
+					}
+					ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update file mount: %w", err)
+					}
+					container.Mounts[mountIdx] = ctrMnt
+					return nil
+				},
+				func(cache *CacheMountSource) error {
+					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
+				},
+				func(tmpfs *TmpfsMountSource) error {
+					return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// prevent the result from being released by the defer
@@ -478,7 +608,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", ErrNoCommand
 	}
 	file := NewFile(
-		container.Meta,
+		container.Meta.LLB,
 		filePath,
 		container.Platform,
 		container.Services,
