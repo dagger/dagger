@@ -63,7 +63,7 @@
     ]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": ">=20.0"
   },
   "resolutions": {
     "**/webpack-dev-server/**/path-to-regexp": "^0.1.12"
