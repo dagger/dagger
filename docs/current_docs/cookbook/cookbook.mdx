@@ -250,7 +250,7 @@ Besides helping with the final image size, mounts are more performant and resour
 
 ### Modify a copied directory or remote repository in a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::note
 When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
@@ -499,7 +499,7 @@ For examples of SSH-based cloning, including private or public Git repositories 
 
 ### Mount or copy a local or remote file to a container
 
-The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../extending/arguments.mdx#remote-repositories). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../extending/remote-repositories.mdx). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -711,7 +711,7 @@ Besides helping with the final image size, mounts are more performant and resour
 
 ### Copy a subset of a directory or remote repository to a container using filters specified at run-time
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
@@ -939,7 +939,7 @@ Copy the `data.json` host file to the runtime container and process it:
 
 ### Copy a subset of a directory or remote repository to a container using pre-defined filters
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
