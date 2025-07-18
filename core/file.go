@@ -17,13 +17,17 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	"github.com/tiborvass/replace"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/text/transform"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
@@ -336,6 +340,82 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 		return nil, err
 	}
 	return results, nil
+}
+
+func (file *File) Replace(ctx context.Context, search, replacement string, startLine int, all bool) (*File, error) {
+	file = file.Clone()
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, file.Result, file)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	r, w := io.Pipe()
+
+	var replaced io.Reader
+	if all {
+		replaced = transform.NewReader(r, replace.String(search, replacement))
+	} else {
+		replaced = transform.NewReader(r, replace.StringN(search, replacement, 1))
+	}
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+
+	eg := new(errgroup.Group)
+	eg.Go(func() error {
+		defer w.Close()
+		return file.readInto(ctx, w)
+	})
+	eg.Go(func() error {
+		return MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+			resolvedPath, err := containerdfs.RootPath(root, file.File)
+			if err != nil {
+				return err
+			}
+			if err := os.Truncate(resolvedPath, 0); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = io.Copy(f, replaced)
+			return err
+		})
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.Result = snap
+	return file, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
