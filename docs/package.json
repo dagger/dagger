@@ -47,7 +47,7 @@
     "@docusaurus/module-type-aliases": "^3.5.2",
     "@docusaurus/tsconfig": "^3.8.1",
     "@docusaurus/types": "^3.5.2",
-    "@types/node": "^18.0",
+    "@types/node": "^20.0",
     "markdownlint-cli": "^0.31.1"
   },
   "browserslist": {
@@ -63,7 +63,7 @@
     ]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": ">=20.0"
   },
   "resolutions": {
     "**/webpack-dev-server/**/path-to-regexp": "^0.1.12"
