@@ -94,7 +94,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
 			),
-		dagql.Func("directory", s.subdirectory).
+		dagql.NodeFunc("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
@@ -218,7 +218,7 @@ type subdirectoryArgs struct {
 
 func (s *directorySchema) subdirectory(
 	ctx context.Context,
-	parent *core.Directory,
+	parent dagql.ObjectResult[*core.Directory],
 	args subdirectoryArgs,
 ) (res dagql.ObjectResult[*core.Directory], err error) {
 	query, err := core.CurrentQuery(ctx)
@@ -234,7 +234,7 @@ func (s *directorySchema) subdirectory(
 		return res, nil
 	}
 
-	dir, err := parent.Directory(ctx, args.Path)
+	dir, err := parent.Self().Directory(ctx, args.Path)
 	if err != nil {
 		return res, err
 	}
@@ -243,10 +243,13 @@ func (s *directorySchema) subdirectory(
 	if err != nil {
 		return res, err
 	}
-	if parent.IsContentHashed {
+	if parent.Self().IsContentHashed {
 		res, err = core.MakeDirectoryContentHashed(ctx, bk, res)
 		if err != nil {
 			return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+		}
+		if res.ID().Digest() == parent.ID().Digest() {
+			return parent, nil
 		}
 	}
 	return res, nil
