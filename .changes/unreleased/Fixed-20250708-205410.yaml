@@ -1,6 +1,0 @@
-kind: Fixed
-body: Module import resolution now supports repository paths containing tilde characters (`~`), commonly used in Bitbucket Server for user-scoped repositories (e.g., `extranet.example.com/bitbucket/scm/~user/repo.git`)
-time: 2025-07-08T20:54:10.918446207Z
-custom:
-    Author: grouville
-    PR: "10692"

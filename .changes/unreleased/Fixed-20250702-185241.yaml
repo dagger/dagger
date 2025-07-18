@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Fix dockerfile builds with optional secrets
-time: 2025-07-02T18:52:41.225575113+01:00
-custom:
-    Author: jedevc
-    PR: "10675"

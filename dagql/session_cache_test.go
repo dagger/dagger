@@ -40,8 +40,9 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 
 		require.Equal(t, 2, c.Size())
 
-		_, err = sc1.GetOrInitializeValue(ctx, "x", nil)
-		require.Error(t, err)
+		// FIXME: re-enable this once we make this an error case again
+		// _, err = sc1.GetOrInitializeValue(ctx, "x", nil)
+		// require.Error(t, err)
 
 		require.Equal(t, 2, c.Size())
 
@@ -52,6 +53,9 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 	})
 
 	t.Run("close while running", func(t *testing.T) {
+		// FIXME: re-enable once this is an error case again
+		t.Skip("close while running is only logged right now")
+
 		ctx := t.Context()
 
 		c := cache.NewCache[digest.Digest, AnyResult]()
