@@ -25,7 +25,7 @@ Here's an example:
 <Tabs groupId="shell">
 
 <TabItem value="Dagger Shell">
-```shell title="First type 'dagger' for interactive mode."
+```shell label="First type 'dagger' for interactive mode."
 base=$(container | from alpine)
 env=$(env | with-container-input 'base' $base 'a base container' | with-container-output 'python-dev' 'a container with python dev tools')
 llm | with-env $env | with-prompt "You have an alpine container. Install tools to develop with Python." | env | output python-dev | as-container | terminal
@@ -59,15 +59,15 @@ Here, an instance of a `Container` is attached as an input to the `Env` environm
 Consider the following Dagger Function:
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="go" title="Go">
+<TabItem value="go" label="Go">
 ```go file=../quickstart/agent/snippets/part1/go/main.go
 ```
 </TabItem>
-<TabItem value="python" title="Python">
+<TabItem value="python" label="Python">
 ```python file=../quickstart/agent/snippets/part1/python/src/coding_agent/main.py
 ```
 </TabItem>
-<TabItem value="typescript" title="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 ```typescript file=../quickstart/agent/snippets/part1/typescript/src/index.ts
 ```
 </TabItem>

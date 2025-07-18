@@ -65,35 +65,35 @@ After successfully creating your organization, all future Dagger workflows can b
 Bootstrap a new Dagger module in Go, Python, TypeScript, PHP, or Java by running `dagger init` in the application's root directory.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="go" title="Go">
+<TabItem value="go" label="Go">
 
 ```shell
 dagger init --sdk=go --name=hello-dagger
 ```
 
 </TabItem>
-<TabItem value="python" title="Python">
+<TabItem value="python" label="Python">
 
 ```shell
 dagger init --sdk=python --name=hello-dagger
 ```
 
 </TabItem>
-<TabItem value="typescript" title="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 ```shell
 dagger init --sdk=typescript --name=hello-dagger
 ```
 
 </TabItem>
-<TabItem value="php" title="PHP">
+<TabItem value="php" label="PHP">
 
 ```shell
 dagger init --sdk=php --name=hello-dagger
 ```
 
 </TabItem>
-<TabItem value="java" title="Java">
+<TabItem value="java" label="Java">
 
 ```shell
 dagger init --sdk=java --name=hello-dagger
@@ -116,7 +116,7 @@ You should see information about two auto-generated Dagger Functions: `container
 Replace the generated Dagger module files as described below.
 
 <Tabs groupId="language" queryString="sdk">
-<TabItem value="go" title="Go">
+<TabItem value="go" label="Go">
 
 Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -188,7 +188,7 @@ func (m *HelloDagger) BuildEnv(
 ```
 
 </TabItem>
-<TabItem value="python" title="Python">
+<TabItem value="python" label="Python">
 
 Replace the generated `.dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -269,7 +269,7 @@ class HelloDagger:
 ```
 
 </TabItem>
-<TabItem value="typescript" title="TypeScript">
+<TabItem value="typescript" label="TypeScript">
 
 Replace the generated `.dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -343,7 +343,7 @@ export class HelloDagger {
 ```
 
 </TabItem>
-<TabItem value="php" title="PHP">
+<TabItem value="php" label="PHP">
 
 Replace the generated `.dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
 
@@ -430,7 +430,7 @@ class HelloDagger
 ```
 
 </TabItem>
-<TabItem value="java" title="Java">
+<TabItem value="java" label="Java">
 
 Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger module:
 
