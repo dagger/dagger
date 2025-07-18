@@ -100,7 +100,10 @@ func (s *LLMSession) reset(ctx context.Context) {
 			Privileged: true,
 			Writable:   true,
 		})).
-		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`))
+		WithSystemPrompt(`You are an interactive coding assistant.`).
+		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`).
+		WithSystemPrompt(`Use the Directory.search and File.search methods to grep for text in files.`).
+		WithSystemPrompt(`Use the File.withReplaced method for efficient text editing, rather than rewriting entire files.`))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
