@@ -151,6 +151,7 @@ func init() {
 		shellCmd,
 		clientCmd,
 		mcpCmd,
+		taskCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)
