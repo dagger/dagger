@@ -14,17 +14,17 @@ type environmentSchema struct {
 
 var _ SchemaResolvers = &environmentSchema{}
 
-func (s environmentSchema) Install() {
+func (s environmentSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("env", s.environment,
-			dagql.CachePerClientSchema[*core.Query, environmentArgs](s.srv)).
+			dagql.CachePerClientSchema[*core.Query, environmentArgs](srv)).
 			Doc(`Initialize a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
 			Doc("return all input values for the environment"),
@@ -47,7 +47,7 @@ func (s environmentSchema) Install() {
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("description").Doc("The description of the output"),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
 			Doc("The binding name"),
@@ -59,14 +59,14 @@ func (s environmentSchema) Install() {
 			Doc("The binding's string value"),
 		dagql.Func("isNull", s.bindingIsNull).
 			Doc("Returns true if the binding is null"),
-	}.Install(s.srv)
-	hook := core.EnvHook{Server: s.srv}
-	envObjType, ok := s.srv.ObjectType(new(core.Env).Type().Name())
+	}.Install(srv)
+	hook := core.EnvHook{Server: srv}
+	envObjType, ok := srv.ObjectType(new(core.Env).Type().Name())
 	if !ok {
 		panic("environment type not found after dagql install")
 	}
 	hook.ExtendEnvType(envObjType)
-	s.srv.AddInstallHook(hook)
+	srv.AddInstallHook(hook)
 }
 
 type environmentArgs struct {

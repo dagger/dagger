@@ -1,6 +1,7 @@
 package dagui
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -163,7 +164,7 @@ type SpanSnapshot struct {
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
-	ExtraAttributes map[string]any `json:",omitempty"`
+	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
 }
 
 type SpanLink struct {
@@ -243,9 +244,14 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	default:
 		if snapshot.ExtraAttributes == nil {
-			snapshot.ExtraAttributes = make(map[string]any)
+			snapshot.ExtraAttributes = make(map[string]json.RawMessage)
 		}
-		snapshot.ExtraAttributes[name] = val
+		payload, err := json.Marshal(val)
+		if err != nil {
+			slog.Warn("failed to marshal attribute", "attribute", name, "val", val)
+			return
+		}
+		snapshot.ExtraAttributes[name] = json.RawMessage(payload)
 	}
 }
 
@@ -274,7 +280,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if span.Reveal {
+		if span.Reveal || parent.ErrorOrigin == span {
 			changed = parent.RevealedSpans.Add(span) || changed
 		}
 		if causal && span.IsFailed() {

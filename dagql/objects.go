@@ -418,6 +418,14 @@ func (r ObjectResult[T]) MarshalJSON() ([]byte, error) {
 	return r.Result.MarshalJSON()
 }
 
+func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
+	derefableSelf, ok := any(r.self).(DerefableResult)
+	if !ok {
+		return r, true
+	}
+	return derefableSelf.DerefToResult(r.constructor, r.postCall)
+}
+
 func (r ObjectResult[T]) SetField(field reflect.Value) error {
 	return assign(field, r.Result)
 }

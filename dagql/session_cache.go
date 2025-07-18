@@ -3,7 +3,6 @@ package dagql
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
@@ -165,7 +164,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 
 	// if the session cache is closed, ensure we release the result so it doesn't leak
 	if c.isClosed {
-		err := fmt.Errorf("session cache is closed")
+		err := errors.New("session cache was closed during execution")
 		err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
 		return nil, err
 	}

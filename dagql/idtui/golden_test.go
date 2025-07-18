@@ -3,6 +3,7 @@ package idtui_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -175,16 +176,17 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
 					if s.Name == "Dep.getFiles" {
-						require.Equal(t, "Viztest.TraceFunctionCalls", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string), "@")[0])
-						require.Equal(t, "Dep.getFiles", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger/viztest/dep", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
+						require.Equal(t, "Viztest.TraceFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Dep.getFiles", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest/dep", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
 						depCalled = true
 					} else if s.Name == "Viztest.traceFunctionCalls" {
-						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, s.ExtraAttributes[telemetry.ModuleCallerRefAttr], "")
-						require.Equal(t, "Viztest.traceFunctionCalls", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest",
+							strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
 						rootCalled = true
 					}
 				}
@@ -200,16 +202,16 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
 					if s.Name == "Versioned.hello" {
-						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string), "@")[0])
-						require.Equal(t, "Versioned.hello", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Versioned.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
 						depCalled = true
 					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
-						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
-						require.Equal(t, "Viztest.traceRemoteFunctionCalls", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(s.ExtraAttributes[telemetry.ModuleRefAttr].(string), "@")[0])
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
 						rootCalled = true
 					}
 				}
@@ -226,16 +228,16 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
 					if s.Name == "DepAlias.fn" {
-						require.Equal(t, "RootMod.Fn", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
-						require.Equal(t, "DepAlias.fn", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						require.Equal(t, "RootMod.Fn", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "DepAlias.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
 						depCalled = true
 					} else if s.Name == "RootMod.fn" {
-						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerFunctionCallNameAttr])
-						require.Equal(t, "", s.ExtraAttributes[telemetry.ModuleCallerRefAttr].(string))
-						require.Equal(t, "RootMod.fn", s.ExtraAttributes[telemetry.ModuleFunctionCallNameAttr])
-						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", s.ExtraAttributes[telemetry.ModuleRefAttr].(string))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "RootMod.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
 						rootCalled = true
 					}
 				}
@@ -267,6 +269,18 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			}
 		})
 	}
+}
+
+func strAttr(t testing.TB, s *dagui.Span, name string) string {
+	return unmarshalAs[string](t, s.ExtraAttributes[name])
+}
+
+func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
+	var result T
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	return result
 }
 
 type Example struct {

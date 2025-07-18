@@ -1579,6 +1579,16 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
+  """Retrieves this directory with the given Git-compatible patch applied."""
+  withPatch(
+    """
+    Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex
+    1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1
+    @@\n-Hello\n+World\n").
+    """
+    patch: String!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """Return a snapshot with a symlink"""
   withSymlink(
     """Location of the file or directory to link to (e.g., "/existing/file")."""

@@ -138,6 +138,12 @@ func (m *Basics) Publish(ctx context.Context) (string, error) {
 		Publish(ctx, "ttl.sh/hello")
 }
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/main.go` file to include the function code above:
+
+```shell
+dagger init --sdk=go --name=basics
+```
 </TabItem>
 <TabItem value="python" label="Python">
 ```python
@@ -151,6 +157,12 @@ async def publish(self) -> str:
         .publish("ttl.sh/hello")
     )
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/basics/main.py` file to include the function code above:
+
+```shell
+dagger init --sdk=python --name=basics
+```
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 ```typescript
@@ -163,6 +175,11 @@ async publish(): Promise<string> {
     .withEntrypoint(["cat", "/hi.txt"])
     .publish("ttl.sh/hello")
 }
+```
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/index.ts` file to include the function code above:
+
+```shell
+dagger init --sdk=typescript --name=basics
 ```
 </TabItem>
 <TabItem value="php" label="PHP">
@@ -178,6 +195,12 @@ public function publish(): string
         ->publish('ttl.sh/hello');
 }
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/Basics.php` file to include the function code above:
+
+```shell
+dagger init --sdk=php --name=basics
+```
 </TabItem>
 <TabItem value="java" label="Java">
 ```java
@@ -191,6 +214,11 @@ public String publish()
       .withEntrypoint(List.of("cat", "/hi.txt"))
       .publish("ttl.sh/hello");
 }
+```
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/main/java/io/dagger/modules/basics/Basics.java` file to include the function code above:
+
+```shell
+dagger init --sdk=java --name=basics
 ```
 </TabItem>
 </Tabs>

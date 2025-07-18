@@ -9,22 +9,20 @@ import (
 	"github.com/moby/buildkit/identity"
 )
 
-type engineSchema struct {
-	srv *dagql.Server
-}
+type engineSchema struct{}
 
 var _ SchemaResolvers = &engineSchema{}
 
-func (s *engineSchema) Install() {
+func (s *engineSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("engine", s.engine).
 			Doc("The Dagger engine container configuration and state"),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
 			Doc("The local (on-disk) cache for the Dagger engine"),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.EngineCache]{
 		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
@@ -35,14 +33,14 @@ func (s *engineSchema) Install() {
 			Args(
 				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.EngineCacheEntrySet]{
 		dagql.Func("entries", s.cacheEntrySetEntries).
 			Doc("The list of individual cache entries in the set"),
-	}.Install(s.srv)
+	}.Install(srv)
 
-	dagql.Fields[*core.EngineCacheEntry]{}.Install(s.srv)
+	dagql.Fields[*core.EngineCacheEntry]{}.Install(srv)
 }
 
 func (s *engineSchema) engine(ctx context.Context, parent *core.Query, args struct{}) (*core.Engine, error) {
@@ -80,9 +78,13 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 	if err := query.RequireMainClient(ctx); err != nil {
 		return inst, err
 	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
 
 	if args.Key == "" {
-		err := s.srv.Select(ctx, parent, &inst,
+		err := srv.Select(ctx, parent, &inst,
 			dagql.Selector{
 				Field: "entrySet",
 				Args: []dagql.NamedInput{
