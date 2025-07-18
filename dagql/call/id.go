@@ -264,6 +264,7 @@ func (id *ID) Append(
 
 	if customDigest != "" {
 		newID.pb.Digest = string(customDigest)
+		newID.pb.IsCustomDigest = true
 	} else {
 		var err error
 		newID.pb.Digest, err = newID.calcDigest()
@@ -290,6 +291,13 @@ func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 		customDigest,
 		id.args...,
 	)
+}
+
+func (id *ID) HasCustomDigest() bool {
+	if id == nil {
+		return false
+	}
+	return id.pb.IsCustomDigest
 }
 
 // WithArgument returns a new ID that's the same as before except with the

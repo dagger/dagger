@@ -6090,6 +6090,29 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-chown" href="#Directory-chown"><code>chown</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Change the owner of the directory contents recursively. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path of the directory to change ownership of (e.g., &quot;/&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A user:group to set for the mounted directory and its contents.</p>
+                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-diff" href="#Directory-diff"><code>diff</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Return the difference between this directory and an another directory. The difference is encoded as a directory. </td>
                       </tr>
@@ -6350,6 +6373,12 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A user:group to set for the copied directory and its contents.</p>
+                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -6374,6 +6403,12 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Permission given to the copied file (e.g., 0600).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A user:group to set for the copied directory and its contents.</p>
+                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>If the group is omitted, it defaults to the same as the user.</p>
                               </div>
                             </div>
                           </div>
@@ -8149,6 +8184,25 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="File-chown" href="#File-chown"><code>chown</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Change the owner of the file recursively. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A user:group to set for the file.</p>
+                                <p>The user and group must be an ID (1000:1000), not a name (foo:bar).</p>
+                                <p>If the group is omitted, it defaults to the same as the user.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="File-contents" href="#File-contents"><code>contents</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Retrieves the contents of the file. </td>

@@ -375,7 +375,7 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, refs, _, err := getAllContainerMounts(ctr)
+	pbmounts, states, refs, _, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}

@@ -313,7 +313,7 @@ func NewContainerDagOp(
 	ctr *Container,
 	extraInputs []llb.State,
 ) (*Container, error) {
-	mounts, inputs, _, outputCount, err := getAllContainerMounts(ctr)
+	mounts, inputs, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
 	}
@@ -563,71 +563,99 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 // getAllContainerMounts gets the list of all mounts for a container, as well as all the
 // inputs that are part of it, and the total number of outputs. Each mount's
 // Input maps to an index in the returned states.
-func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []llb.State, refs []bkcache.ImmutableRef, outputCount int, _ error) {
+func getAllContainerMounts(ctx context.Context, container *Container) (
+	mounts []*pb.Mount, states []llb.State, refs []bkcache.ImmutableRef, outputCount int, _ error,
+) {
 	outputIdx := 0
-	inputIdxs := map[digest.Digest]pb.InputIndex{}
+	inputIdxs := map[string]pb.InputIndex{}
 
 	// addMount converts a ContainerMount and creates a corresponding buildkit
 	// mount, creating an input if required
 	addMount := func(mnt ContainerMount) error {
-		st, err := defToState(mnt.Source)
+		mount := &pb.Mount{
+			Dest:         mnt.Target,
+			Input:        pb.Empty,
+			Output:       pb.OutputIndex(outputIdx),
+			ContentCache: pb.MountContentCache_DEFAULT,
+		}
+		if mnt.Readonly {
+			mount.Readonly = true
+			mount.Output = pb.SkipOutput
+		}
+
+		var llb *pb.Definition
+		var res bkcache.ImmutableRef
+		handleMount(mnt,
+			func(dirMnt *dagql.ObjectResult[*Directory]) {
+				mount.Selector = dirMnt.Self().Dir
+				llb = dirMnt.Self().LLB
+				res = dirMnt.Self().Result
+			},
+			func(fileMnt *dagql.ObjectResult[*File]) {
+				mount.Selector = fileMnt.Self().File
+				llb = fileMnt.Self().LLB
+				res = fileMnt.Self().Result
+			},
+			func(cache *CacheMountSource) {
+				mount.Selector = cache.BasePath
+				llb = cache.Base
+				mount.Output = pb.SkipOutput
+				mount.MountType = pb.MountType_CACHE
+				mount.CacheOpt = &pb.CacheOpt{
+					ID: cache.ID,
+				}
+				switch cache.SharingMode {
+				case CacheSharingModeShared:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+				case CacheSharingModePrivate:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+				case CacheSharingModeLocked:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+				}
+			},
+			func(tmpfs *TmpfsMountSource) {
+				mount.Output = pb.SkipOutput
+				mount.MountType = pb.MountType_TMPFS
+				mount.TmpfsOpt = &pb.TmpfsOpt{
+					Size_: int64(tmpfs.Size),
+				}
+			},
+		)
+
+		st, err := defToState(llb)
 		if err != nil {
 			return err
 		}
 
-		mount := &pb.Mount{
-			Dest:         mnt.Target,
-			Selector:     mnt.SourcePath,
-			Output:       pb.OutputIndex(outputIdx),
-			ContentCache: pb.MountContentCache_DEFAULT,
-		}
-		if st.Output() == nil {
-			mount.Input = pb.Empty
-		} else {
-			dag, err := buildkit.DefToDAG(mnt.Source)
+		// track and cache this input index, since duplicates are unnecessary
+		// also buildkit's FileOp (which is underlying our DagOp) will
+		// remove them if we don't, which results in significant confusion
+		switch {
+		case res != nil:
+			indexKey := res.ID()
+			if idx, ok := inputIdxs[indexKey]; ok {
+				// we already track this input, reuse the index
+				mount.Input = idx
+			} else {
+				mount.Input = pb.InputIndex(len(states))
+				inputIdxs[indexKey] = mount.Input
+				states = append(states, st)
+				refs = append(refs, res)
+			}
+		case st.Output() != nil:
+			dag, err := buildkit.DefToDAG(llb)
 			if err != nil {
 				return err
 			}
-
-			if idx, ok := inputIdxs[*dag.OpDigest]; ok {
+			indexKey := dag.OpDigest.String()
+			if idx, ok := inputIdxs[indexKey]; ok {
+				// we already track this input, reuse the index
 				mount.Input = idx
 			} else {
-				// track and cache this input index, since duplicates are unnecessary
-				// also buildkit's FileOp (which is underlying our DagOp) will
-				// remove them if we don't, which results in significant confusion
 				mount.Input = pb.InputIndex(len(states))
-				inputIdxs[*dag.OpDigest] = mount.Input
+				inputIdxs[indexKey] = mount.Input
 				states = append(states, st)
-				refs = append(refs, mnt.Result)
-			}
-		}
-
-		if mnt.Readonly {
-			mount.Output = pb.SkipOutput
-			mount.Readonly = true
-		}
-
-		if mnt.CacheVolumeID != "" {
-			mount.Output = pb.SkipOutput
-			mount.MountType = pb.MountType_CACHE
-			mount.CacheOpt = &pb.CacheOpt{
-				ID: mnt.CacheVolumeID,
-			}
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case CacheSharingModePrivate:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case CacheSharingModeLocked:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-			}
-		}
-
-		if mnt.Tmpfs {
-			mount.Output = pb.SkipOutput
-			mount.MountType = pb.MountType_TMPFS
-			mount.TmpfsOpt = &pb.TmpfsOpt{
-				Size_: int64(mnt.Size),
+				refs = append(refs, res)
 			}
 		}
 
@@ -635,17 +663,44 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 		if mount.Output != pb.SkipOutput {
 			outputIdx++
 		}
-
 		return nil
 	}
 
-	// handle our normal mounts
-	if err := addMount(ContainerMount{Source: container.FS, Result: container.FSResult, Target: "/"}); err != nil {
+	// root mount
+	if err := addMount(ContainerMount{
+		Target:          "/",
+		DirectorySource: container.FS,
+	}); err != nil {
 		return nil, nil, nil, 0, err
 	}
-	if err := addMount(ContainerMount{Source: container.Meta, Result: container.MetaResult, Target: buildkit.MetaMountDestPath}); err != nil {
+
+	// meta mount
+	// TODO: meh
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	metaDir := &Directory{
+		Dir:      "/",
+		Platform: container.Platform,
+		Services: container.Services,
+	}
+	if container.Meta != nil {
+		metaDir.LLB = container.Meta.LLB
+		metaDir.Result = container.Meta.Result
+	}
+	metaDirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, metaDir)
+	if err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("failed to create meta directory: %w", err)
+	}
+	if err := addMount(ContainerMount{
+		Target:          buildkit.MetaMountDestPath,
+		DirectorySource: &metaDirRes,
+	}); err != nil {
 		return nil, nil, nil, 0, err
 	}
+
+	// other normal mounts
 	for _, mount := range container.Mounts {
 		if err := addMount(mount); err != nil {
 			return nil, nil, nil, 0, err
@@ -705,7 +760,11 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 
 // setAllContainerMounts is the reverse of getAllContainerMounts, and rewrites
 // the container mounts to the given states.
-func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *Container, outputs []llb.State) error {
+func (op *ContainerDagOp) setAllContainerMounts(
+	ctx context.Context,
+	container *Container,
+	outputs []llb.State,
+) error {
 	for mountIdx, mount := range op.Mounts {
 		if mount.Output == pb.SkipOutput {
 			continue
@@ -718,11 +777,65 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 
 		switch mountIdx {
 		case 0:
-			container.FS = def.ToPB()
+			rootfsDir := &Directory{
+				LLB: def.ToPB(),
+			}
+			if container.FS != nil {
+				rootfsDir.Dir = container.FS.Self().Dir
+				rootfsDir.Platform = container.FS.Self().Platform
+				rootfsDir.Services = container.FS.Self().Services
+			}
+			container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return fmt.Errorf("failed to update rootfs: %w", err)
+			}
+
 		case 1:
-			container.Meta = def.ToPB()
+			container.Meta = &Directory{
+				LLB: def.ToPB(),
+			}
+
 		default:
-			container.Mounts[mountIdx-2].Source = def.ToPB()
+			ctrMnt := container.Mounts[mountIdx-2]
+			err := handleMountValue(ctrMnt,
+				func(dirMnt *dagql.ObjectResult[*Directory]) error {
+					dir := &Directory{
+						LLB:      def.ToPB(),
+						Dir:      ctrMnt.DirectorySource.Self().Dir,
+						Platform: ctrMnt.DirectorySource.Self().Platform,
+						Services: ctrMnt.DirectorySource.Self().Services,
+					}
+					ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update directory mount: %w", err)
+					}
+					container.Mounts[mountIdx-2] = ctrMnt
+					return nil
+				},
+				func(fileMnt *dagql.ObjectResult[*File]) error {
+					file := &File{
+						LLB:      def.ToPB(),
+						File:     ctrMnt.FileSource.Self().File,
+						Platform: ctrMnt.FileSource.Self().Platform,
+						Services: ctrMnt.FileSource.Self().Services,
+					}
+					ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update file mount: %w", err)
+					}
+					container.Mounts[mountIdx-2] = ctrMnt
+					return nil
+				},
+				func(cache *CacheMountSource) error {
+					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
+				},
+				func(tmpfs *TmpfsMountSource) error {
+					return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
+				},
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -764,12 +877,23 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		var err error
 		switch mountIdx {
 		case 0:
-			ref, err = getResult(container.FS, container.FSResult)
+			ref, err = getResult(container.FS.Self().LLB, container.FS.Self().Result)
 		case 1:
-			ref, err = getResult(container.Meta, container.MetaResult)
+			var llb *pb.Definition
+			var res bkcache.ImmutableRef
+			if container.Meta != nil {
+				llb = container.Meta.LLB
+				res = container.Meta.Result
+			}
+			ref, err = getResult(llb, res)
 		default:
 			mnt := container.Mounts[mountIdx-2]
-			ref, err = getResult(mnt.Source, mnt.Result)
+			switch {
+			case mnt.DirectorySource != nil:
+				ref, err = getResult(mnt.DirectorySource.Self().LLB, mnt.DirectorySource.Self().Result)
+			case mnt.FileSource != nil:
+				ref, err = getResult(mnt.FileSource.Self().LLB, mnt.FileSource.Self().Result)
+			}
 		}
 		if err != nil {
 			return nil, err

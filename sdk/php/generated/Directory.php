@@ -47,6 +47,17 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Change the owner of the directory contents recursively.
+     */
+    public function chown(string $path, string $owner): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('owner', $owner);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
     public function diff(DirectoryId|Directory $other): Directory
@@ -244,6 +255,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         DirectoryId|Directory $directory,
         ?array $exclude = null,
         ?array $include = null,
+        ?string $owner = '',
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -254,19 +266,29 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Retrieves this directory plus the contents of the given file copied to the given path.
      */
-    public function withFile(string $path, FileId|File $source, ?int $permissions = null): Directory
-    {
+    public function withFile(
+        string $path,
+        FileId|File $source,
+        ?int $permissions = null,
+        ?string $owner = '',
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

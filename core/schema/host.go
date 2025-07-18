@@ -89,7 +89,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			defer layerRefs.Release(context.WithoutCancel(ctx))
 			var eg errgroup.Group
 			for _, layerRef := range layerRefs {
-				layerRef := layerRef
 				eg.Go(func() error {
 					// FileList is the secret method that actually forces an unlazy of blobs in the cases
 					// we want here...
@@ -104,7 +103,11 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			}
 
 			container := core.NewContainer(parent.Platform())
-			container.FS = ctrDef.ToPB()
+			rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
+			container.FS, err = core.UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update rootfs: %w", err)
+			}
 
 			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
 			if err != nil {
@@ -309,9 +312,8 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewObjectResultForCurrentID(ctx, srv,
-		core.NewDirectory(localPB, "/", query.Platform(), nil),
-	)
+	dir := core.NewDirectory(localPB, "/", query.Platform(), nil)
+	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -320,7 +322,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return i, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	return core.MakeDirectoryContentHashed(ctx, bk, dir)
+	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 
 type hostSocketArgs struct {
