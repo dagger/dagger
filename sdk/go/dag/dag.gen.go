@@ -318,6 +318,12 @@ func LoadHostFromID(id dagger.HostID) *dagger.Host {
 	return client.LoadHostFromID(id)
 }
 
+// Load a HostResource from its ID.
+func LoadHostResourceFromID(id dagger.HostResourceID) *dagger.HostResource {
+	client := initClient()
+	return client.LoadHostResourceFromID(id)
+}
+
 // Load a InputTypeDef from its ID.
 func LoadInputTypeDefFromID(id dagger.InputTypeDefID) *dagger.InputTypeDef {
 	client := initClient()

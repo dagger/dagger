@@ -902,6 +902,41 @@ impl HostId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct HostResourceId(pub String);
+impl From<&str> for HostResourceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for HostResourceId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<HostResourceId> for HostResource {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HostResourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<HostResourceId> for HostResourceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HostResourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<HostResourceId, DaggerError>(self) })
+    }
+}
+impl HostResourceId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct InputTypeDefId(pub String);
 impl From<&str> for InputTypeDefId {
     fn from(value: &str) -> Self {
@@ -1689,6 +1724,15 @@ impl Binding {
     pub fn as_git_repository(&self) -> GitRepository {
         let query = self.selection.select("asGitRepository");
         GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type HostResource
+    pub fn as_host_resource(&self) -> HostResource {
+        let query = self.selection.select("asHostResource");
+        HostResource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5904,6 +5948,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type HostResource in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The HostResource value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_host_resource_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<HostResourceId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withHostResourceInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired HostResource output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_host_resource_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withHostResourceOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type LLM in the environment
     ///
     /// # Arguments
@@ -7286,6 +7379,20 @@ impl Host {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Load a resource from the host. Resources are lazily typed and loaded.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Location of the resource. The address format is type-specific, and only validated when binding to a specific type
+    pub fn resource(&self, address: impl Into<String>) -> HostResource {
+        let mut query = self.selection.select("resource");
+        query = query.arg("address", address.into());
+        HostResource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a service that forwards traffic to a specified address via the host.
     ///
     /// # Arguments
@@ -7405,6 +7512,152 @@ impl Host {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct HostResource {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct HostResourceAsDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct HostResourceAsFileOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+impl HostResource {
+    /// Load the host resource as a container.
+    pub fn as_container(&self) -> Container {
+        let query = self.selection.select("asContainer");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_directory(&self) -> Directory {
+        let query = self.selection.select("asDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_directory_opts<'a>(&self, opts: HostResourceAsDirectoryOpts<'a>) -> Directory {
+        let mut query = self.selection.select("asDirectory");
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a file.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_file(&self) -> File {
+        let query = self.selection.select("asFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a file.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_file_opts<'a>(&self, opts: HostResourceAsFileOpts<'a>) -> File {
+        let mut query = self.selection.select("asFile");
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a git ref (branch, tag or commit)
+    pub fn as_git_ref(&self) -> GitRef {
+        let query = self.selection.select("asGitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a git repository.
+    pub fn as_git_repository(&self) -> GitRepository {
+        let query = self.selection.select("asGitRepository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a secret.
+    pub fn as_secret(&self) -> Secret {
+        let query = self.selection.select("asSecret");
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the host resource as a service.
+    pub fn as_service(&self) -> Service {
+        let query = self.selection.select("asService");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this HostResource.
+    pub async fn id(&self) -> Result<HostResourceId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -9337,6 +9590,22 @@ impl Query {
             }),
         );
         Host {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a HostResource from its ID.
+    pub fn load_host_resource_from_id(&self, id: impl IntoID<HostResourceId>) -> HostResource {
+        let mut query = self.selection.select("loadHostResourceFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        HostResource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

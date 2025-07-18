@@ -514,6 +514,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a HostResource from its ID.
+     */
+    public function loadHostResourceFromID(HostResourceId|HostResource $id): HostResource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHostResourceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\HostResource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a InputTypeDef from its ID.
      */
     public function loadInputTypeDefFromID(InputTypeDefId|InputTypeDef $id): InputTypeDef

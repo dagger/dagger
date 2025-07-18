@@ -59,6 +59,16 @@ class Host extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Load a resource from the host. Resources are lazily typed and loaded.
+     */
+    public function resource(string $address): HostResource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resource');
+        $innerQueryBuilder->setArgument('address', $address);
+        return new \Dagger\HostResource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a service that forwards traffic to a specified address via the host.
      */
     public function service(array $ports, ?string $host = 'localhost'): Service

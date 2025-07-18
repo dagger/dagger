@@ -72,6 +72,7 @@
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
+              <li><a href="#query-loadHostResourceFromID">loadHostResourceFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
@@ -158,6 +159,8 @@
               <li><a href="#definition-GitRepositoryID">GitRepositoryID</a></li>
               <li><a href="#definition-Host">Host</a></li>
               <li><a href="#definition-HostID">HostID</a></li>
+              <li><a href="#definition-HostResource">HostResource</a></li>
+              <li><a href="#definition-HostResourceID">HostResourceID</a></li>
               <li><a href="#definition-ImageLayerCompression">ImageLayerCompression</a></li>
               <li><a href="#definition-ImageMediaTypes">ImageMediaTypes</a></li>
               <li><a href="#definition-InputTypeDef">InputTypeDef</a></li>
@@ -2573,6 +2576,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadHostResourceFromID" class="operation operation-query" data-traverse-target="query-loadHostResourceFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadHostResourceFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a HostResource from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-HostResource"><code>HostResource!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-HostResourceID"><code>HostResourceID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadInputTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadInputTypeDefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3992,6 +4048,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGitRepository" href="#Binding-asGitRepository"><code>asGitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
                         <td> Retrieve the binding value, as type GitRepository </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asHostResource" href="#Binding-asHostResource"><code>asHostResource</code></a> - <span class="property-type"><a href="#definition-HostResource"><code>HostResource!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type HostResource </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asLLM" href="#Binding-asLLM"><code>asLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
@@ -7252,6 +7312,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHostResourceInput" href="#Env-withHostResourceInput"><code>withHostResourceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type HostResource in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-HostResourceID"><code>HostResourceID!</code></a></span></h6>
+                                <p>The HostResource value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHostResourceOutput" href="#Env-withHostResourceOutput"><code>withHostResourceOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired HostResource output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withLLMInput" href="#Env-withLLMInput"><code>withLLMInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type LLM in the environment </td>
                       </tr>
@@ -8800,6 +8906,23 @@
                         <td> A unique identifier for this Host. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Host-resource" href="#Host-resource"><code>resource</code></a> - <span class="property-type"><a href="#definition-HostResource"><code>HostResource!</code></a></span> </td>
+                        <td> Load a resource from the host. Resources are lazily typed and loaded. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the resource. The address format is type-specific, and only validated when binding to a specific type</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Host-service" href="#Host-service"><code>service</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
                         <td> Creates a service that forwards traffic to a specified address via the host. </td>
                       </tr>
@@ -8909,6 +9032,115 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HostResource" class="definition definition-object" data-traverse-target="definition-HostResource">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HostResource</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A resource to be loaded from the host using a standardized address. May be converted to a directory, container, secret, file...</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-asContainer" href="#HostResource-asContainer"><code>asContainer</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Load the host resource as a container. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="HostResource-asDirectory" href="#HostResource-asDirectory"><code>asDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Load the host resource as a directory. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="HostResource-asFile" href="#HostResource-asFile"><code>asFile</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Load the host resource as a file. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-asGitRef" href="#HostResource-asGitRef"><code>asGitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Load the host resource as a git ref (branch, tag or commit) </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-asGitRepository" href="#HostResource-asGitRepository"><code>asGitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Load the host resource as a git repository. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-asSecret" href="#HostResource-asSecret"><code>asSecret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td> Load the host resource as a secret. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-asService" href="#HostResource-asService"><code>asService</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td> Load the host resource as a service. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="HostResource-id" href="#HostResource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-HostResourceID"><code>HostResourceID!</code></a></span> </td>
+                        <td> A unique identifier for this HostResource. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-HostResourceID" class="definition definition-scalar" data-traverse-target="definition-HostResourceID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">HostResourceID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>HostResourceID</code> scalar type represents an identifier for an object of type HostResource.</p>
                 </div>
               </div>
             </div>

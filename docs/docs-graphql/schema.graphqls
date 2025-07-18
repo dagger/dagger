@@ -37,6 +37,9 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
+  """Retrieve the binding value, as type HostResource"""
+  asHostResource: HostResource!
+
   """Retrieve the binding value, as type LLM"""
   asLLM: LLM!
 
@@ -1978,6 +1981,29 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type HostResource in the environment"""
+  withHostResourceInput(
+    """The name of the binding"""
+    name: String!
+
+    """The HostResource value to assign to the binding"""
+    value: HostResourceID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired HostResource output to be assigned in the environment
+  """
+  withHostResourceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type LLM in the environment"""
   withLLMInput(
     """The name of the binding"""
@@ -2636,6 +2662,14 @@ type Host {
   """A unique identifier for this Host."""
   id: HostID!
 
+  """Load a resource from the host. Resources are lazily typed and loaded."""
+  resource(
+    """
+    Location of the resource. The address format is type-specific, and only validated when binding to a specific type
+    """
+    address: String!
+  ): HostResource!
+
   """
   Creates a service that forwards traffic to a specified address via the host.
   """
@@ -2703,6 +2737,41 @@ type Host {
 The `HostID` scalar type represents an identifier for an object of type Host.
 """
 scalar HostID
+
+"""
+A resource to be loaded from the host using a standardized address.
+May be converted to a directory, container, secret, file...
+"""
+type HostResource {
+  """Load the host resource as a container."""
+  asContainer: Container!
+
+  """Load the host resource as a directory."""
+  asDirectory(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): Directory!
+
+  """Load the host resource as a file."""
+  asFile(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): File!
+
+  """Load the host resource as a git ref (branch, tag or commit)"""
+  asGitRef: GitRef!
+
+  """Load the host resource as a git repository."""
+  asGitRepository: GitRepository!
+
+  """Load the host resource as a secret."""
+  asSecret: Secret!
+
+  """Load the host resource as a service."""
+  asService: Service!
+
+  """A unique identifier for this HostResource."""
+  id: HostResourceID!
+}
+
+"""
+The `HostResourceID` scalar type represents an identifier for an object of type HostResource.
+"""
+scalar HostResourceID
 
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
@@ -3551,6 +3620,9 @@ type Query {
 
   """Load a Host from its ID."""
   loadHostFromID(id: HostID!): Host!
+
+  """Load a HostResource from its ID."""
+  loadHostResourceFromID(id: HostResourceID!): HostResource!
 
   """Load a InputTypeDef from its ID."""
   loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!

@@ -141,6 +141,11 @@ class HostID(Scalar):
     type Host."""
 
 
+class HostResourceID(Scalar):
+    """The `HostResourceID` scalar type represents an identifier for an
+    object of type HostResource."""
+
+
 class InputTypeDefID(Scalar):
     """The `InputTypeDefID` scalar type represents an identifier for an
     object of type InputTypeDef."""
@@ -501,6 +506,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asGitRepository", _args)
         return GitRepository(_ctx)
+
+    def as_host_resource(self) -> "HostResource":
+        """Retrieve the binding value, as type HostResource"""
+        _args: list[Arg] = []
+        _ctx = self._select("asHostResource", _args)
+        return HostResource(_ctx)
 
     def as_llm(self) -> "LLM":
         """Retrieve the binding value, as type LLM"""
@@ -4496,6 +4507,49 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_host_resource_input(
+        self,
+        name: str,
+        value: "HostResource",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type HostResource in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The HostResource value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHostResourceInput", _args)
+        return Env(_ctx)
+
+    def with_host_resource_output(self, name: str, description: str) -> Self:
+        """Declare a desired HostResource output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withHostResourceOutput", _args)
+        return Env(_ctx)
+
     def with_llm_input(
         self,
         name: str,
@@ -6398,6 +6452,21 @@ class Host(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(HostID)
 
+    def resource(self, address: str) -> "HostResource":
+        """Load a resource from the host. Resources are lazily typed and loaded.
+
+        Parameters
+        ----------
+        address:
+            Location of the resource. The address format is type-specific, and
+            only validated when binding to a specific type
+        """
+        _args = [
+            Arg("address", address),
+        ]
+        _ctx = self._select("resource", _args)
+        return HostResource(_ctx)
+
     def service(
         self,
         ports: list[PortForward],
@@ -6502,6 +6571,98 @@ class Host(Type):
         ]
         _ctx = self._select("unixSocket", _args)
         return Socket(_ctx)
+
+
+@typecheck
+class HostResource(Type):
+    """A resource to be loaded from the host using a standardized address.
+    May be converted to a directory, container, secret, file..."""
+
+    def as_container(self) -> Container:
+        """Load the host resource as a container."""
+        _args: list[Arg] = []
+        _ctx = self._select("asContainer", _args)
+        return Container(_ctx)
+
+    def as_directory(
+        self,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+        no_cache: bool | None = False,
+    ) -> Directory:
+        """Load the host resource as a directory."""
+        _args = [
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("asDirectory", _args)
+        return Directory(_ctx)
+
+    def as_file(
+        self,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+        no_cache: bool | None = False,
+    ) -> File:
+        """Load the host resource as a file."""
+        _args = [
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("asFile", _args)
+        return File(_ctx)
+
+    def as_git_ref(self) -> GitRef:
+        """Load the host resource as a git ref (branch, tag or commit)"""
+        _args: list[Arg] = []
+        _ctx = self._select("asGitRef", _args)
+        return GitRef(_ctx)
+
+    def as_git_repository(self) -> GitRepository:
+        """Load the host resource as a git repository."""
+        _args: list[Arg] = []
+        _ctx = self._select("asGitRepository", _args)
+        return GitRepository(_ctx)
+
+    def as_secret(self) -> "Secret":
+        """Load the host resource as a secret."""
+        _args: list[Arg] = []
+        _ctx = self._select("asSecret", _args)
+        return Secret(_ctx)
+
+    def as_service(self) -> "Service":
+        """Load the host resource as a service."""
+        _args: list[Arg] = []
+        _ctx = self._select("asService", _args)
+        return Service(_ctx)
+
+    async def id(self) -> HostResourceID:
+        """A unique identifier for this HostResource.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        HostResourceID
+            The `HostResourceID` scalar type represents an identifier for an
+            object of type HostResource.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(HostResourceID)
 
 
 @typecheck
@@ -8898,6 +9059,14 @@ class Client(Root):
         _ctx = self._select("loadHostFromID", _args)
         return Host(_ctx)
 
+    def load_host_resource_from_id(self, id: HostResourceID) -> HostResource:
+        """Load a HostResource from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHostResourceFromID", _args)
+        return HostResource(_ctx)
+
     def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
         """Load a InputTypeDef from its ID."""
         _args = [
@@ -10229,6 +10398,8 @@ __all__ = [
     "GitRepositoryID",
     "Host",
     "HostID",
+    "HostResource",
+    "HostResourceID",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
