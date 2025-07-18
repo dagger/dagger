@@ -404,7 +404,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.FuncWithCacheKey("withDirectory", s.withDirectory, s.withDirectoryCacheKey).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/tmp/directory").`),
@@ -1773,6 +1773,22 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 	}
 
 	return parent.WithDirectory(ctx, path, dir.Self(), args.CopyFilter, args.Owner)
+}
+
+func (s *containerSchema) withDirectoryCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerWithDirectoryArgs,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// TODO: rough implementation, cleanup
+	cacheCfg.Digest = dagql.HashFrom(
+		parent.ID().Digest().String(),
+		args.Directory.ID().Digest().String(),
+		args.Path,
+		// TODO: rest of args
+	)
+	return &cacheCfg, nil
 }
 
 type containerWithFileArgs struct {
