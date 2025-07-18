@@ -56,6 +56,7 @@ func (s *fileSchema) Install() {
 			Args(
 				dagql.Arg("pattern").Doc(`The text to match.`),
 				dagql.Arg("regexp").Doc(`Interpret the pattern as a regular expression.`),
+				dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
@@ -136,7 +137,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, args.Pattern, args.Regexp)
+	return parent.Self().Search(ctx, args.Pattern, args.Regexp, args.Multiline)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {

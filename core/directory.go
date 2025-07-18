@@ -561,7 +561,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	return dir, nil
 }
 
-func (dir *Directory) Search(ctx context.Context, pattern string, isRE bool) ([]*SearchResult, error) {
+func (dir *Directory) Search(ctx context.Context, pattern string, isRE, multiline bool) ([]*SearchResult, error) {
 	ref, err := getRefOrEvaluate(ctx, dir.Result, dir)
 	if err != nil {
 		return nil, err
@@ -588,6 +588,9 @@ func (dir *Directory) Search(ctx context.Context, pattern string, isRE bool) ([]
 	rgArgs := []string{"--json"}
 	if !isRE {
 		rgArgs = append(rgArgs, "--fixed-strings")
+	}
+	if multiline {
+		rgArgs = append(rgArgs, "--multiline")
 	}
 	rgArgs = append(rgArgs, pattern)
 

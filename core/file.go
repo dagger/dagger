@@ -245,7 +245,7 @@ func (file *File) readInto(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
-func (file *File) Search(ctx context.Context, pattern string, isRE bool) ([]*SearchResult, error) {
+func (file *File) Search(ctx context.Context, pattern string, isRE, multiline bool) ([]*SearchResult, error) {
 	opt, ok := buildkit.CurrentOpOpts(ctx)
 	if !ok {
 		return nil, fmt.Errorf("no buildkit opts in context")
@@ -257,6 +257,9 @@ func (file *File) Search(ctx context.Context, pattern string, isRE bool) ([]*Sea
 	rgArgs := []string{"--json"}
 	if !isRE {
 		rgArgs = append(rgArgs, "--fixed-strings")
+	}
+	if multiline {
+		rgArgs = append(rgArgs, "--multiline")
 	}
 	rgArgs = append(rgArgs, pattern)
 

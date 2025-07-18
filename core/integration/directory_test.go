@@ -1686,6 +1686,89 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.Contains(t, matches, "lib/helper.go:3:func Helper() string {\n")
 	})
 
+	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, ":= \"Alice\"\n\tage", dagger.DirectorySearchOpts{Multiline: true})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedText(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.DirectorySearchOpts{
+			Multiline: true,
+			Regexp:    true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedText(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
 	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory()
 
