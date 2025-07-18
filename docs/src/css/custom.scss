@@ -506,3 +506,8 @@ html[data-theme="dark"] {
   overflow-x: auto; // Allow horizontal scrolling if needed
   max-width: 100%; // Ensure it doesn't exceed the container width
 }
+.flowchart svg {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
