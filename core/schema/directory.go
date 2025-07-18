@@ -103,7 +103,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
-		dagql.Func("directory", s.subdirectory).
+		dagql.NodeFunc("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
@@ -227,8 +227,43 @@ type subdirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) subdirectory(ctx context.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, args.Path)
+func (s *directorySchema) subdirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args subdirectoryArgs,
+) (res dagql.ObjectResult[*core.Directory], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return res, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return res, nil
+	}
+
+	dir, err := parent.Self().Directory(ctx, args.Path)
+	if err != nil {
+		return res, err
+	}
+
+	res, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return res, err
+	}
+	if parent.Self().IsContentHashed {
+		res, err = core.MakeDirectoryContentHashed(ctx, bk, res)
+		if err != nil {
+			return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+		}
+		if res.ID().Digest() == parent.ID().Digest() {
+			return parent, nil
+		}
+	}
+	return res, nil
 }
 
 type withNewDirectoryArgs struct {

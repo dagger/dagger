@@ -3986,9 +3986,9 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output1a := runCtrs(c1, hostDir1, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output1b := runCtrs(c1, hostDir1, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
-		require.NotEqual(t, output1a, output1b)
+
+		// these should be cached execs, since f is the same in both a and b
+		require.Equal(t, output1a, output1b)
 
 		// change /tmpdir/b/f
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
@@ -3998,8 +3998,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output2a := runCtrs(c2, hostDir2, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output2b := runCtrs(c2, hostDir2, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
+		// sanity check: those should be different execs, *not* cached because f changed between a and b
 		require.NotEqual(t, output2a, output2b)
 
 		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients

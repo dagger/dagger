@@ -45,6 +45,9 @@ type Directory struct {
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
+
+	// TODO: doc
+	IsContentHashed bool
 }
 
 func (*Directory) Type() *ast.Type {
@@ -113,6 +116,10 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Plat
 func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Services = slices.Clone(cp.Services)
+
+	// TODO: cleanup or at least explain
+	cp.IsContentHashed = false
+
 	return &cp
 }
 
