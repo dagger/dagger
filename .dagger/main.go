@@ -236,6 +236,7 @@ func (dev *DaggerDev) evaluator() *dagger.Evaluator {
 			dag.Evals().UndoChanges().AsEvaluatorEval(),
 			dag.Evals().CoreAPI().AsEvaluatorEval(),
 			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
+			dag.Evals().Responses().AsEvaluatorEval(),
 		})
 }
 
