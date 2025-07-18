@@ -825,5 +825,6 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
+		llb.SkipEdgeMerge,
 	)
 }
