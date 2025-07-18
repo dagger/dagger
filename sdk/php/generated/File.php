@@ -26,6 +26,16 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Change the owner of the file recursively.
+     */
+    public function chown(string $owner): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
+        $innerQueryBuilder->setArgument('owner', $owner);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the contents of the file.
      */
     public function contents(?int $offsetLines = null, ?int $limitLines = null): string
