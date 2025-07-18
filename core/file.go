@@ -213,9 +213,6 @@ func (file *File) readInto(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
 	}
 
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
-
 	// Use a chunked reader to overcome issues when
 	// the input file exceeds MaxFileContentsChunkSize:
 	var offset int
@@ -239,7 +236,6 @@ func (file *File) readInto(ctx context.Context, w io.Writer) error {
 		if n < len(chunk) {
 			return fmt.Errorf("short write")
 		}
-		copy(contents[offset:], chunk)
 		offset += len(chunk)
 	}
 	return nil
