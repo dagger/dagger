@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1232,6 +1233,42 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
+func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[string]string, error) {
+	dag, err := srv.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	envConfigDir, err := mod.GetSource().LoadContext(ctx, dag, ".", []string{
+		"*", ".*", "!.env.dagger.json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var envConfigContents string
+	dag.Select(ctx, envConfigDir, &envConfigContents,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(".env.dagger.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	var envConfig map[string]string
+	if err := json.Unmarshal([]byte(envConfigContents), &envConfig); err != nil {
+		return nil, err
+	}
+	return envConfig, nil
+}
+
 // Stitch in the given module to the list being served to the current client
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
@@ -1241,6 +1278,55 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+
+	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
+	// Find the eponym object (object with same name as module)
+	envConfig, err := srv.loadEnvConfig(ctx, mod)
+	if err != nil {
+		return err
+	}
+	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig)
+	err = func() error {
+		slog.Info("hooking into main module install", "module", mod.Name(), "module_bis", mod.OriginalName)
+		var mainObj *core.ObjectTypeDef
+		for _, typeDef := range mod.ObjectDefs {
+			if typeDef.AsObject.Valid {
+				objDef := typeDef.AsObject.Value
+				if strings.ToLower(objDef.OriginalName) == strings.ToLower(mod.OriginalName) {
+					mainObj = objDef
+					break
+				}
+			}
+		}
+
+		if mainObj == nil {
+			return fmt.Errorf("no main object found") // No eponym object found
+		}
+
+		// Check if it has a constructor
+		if !mainObj.Constructor.Valid {
+			slog.Info("main module has no constructor: %s", mod.Name())
+			return nil // No constructor
+		}
+
+		slog.Info("main module has a constructor: %s", mod.Name())
+
+		constructor := mainObj.Constructor.Value
+		dag, err := srv.Server(ctx)
+		if err != nil {
+			return err
+		}
+		for k, v := range envConfig {
+			slog.Info("injecting env config value", "key", k, "value", v)
+			if err := injectDefaultSecret(ctx, dag, constructor, k, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return fmt.Errorf("env override: %s", err.Error())
+	}
 
 	err = srv.serveModule(client, mod)
 	if err != nil {
@@ -1255,6 +1341,34 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		}
 	}
 	return nil
+}
+
+func injectDefaultSecret(ctx context.Context, srv *dagql.Server, fn *core.Function, argName, argValue string) error {
+	slog.Info("injecting secret construvtor arg %s with default value %s", argName, argValue)
+	for _, arg := range fn.Args {
+		if arg.OriginalName == argName {
+			var secretID core.SecretID
+			if err := srv.Select(ctx, srv.Root(), &secretID,
+				dagql.Selector{
+					Field: "secret",
+					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(argValue)}},
+				},
+				dagql.Selector{
+					Field: "id",
+				},
+			); err != nil {
+				return err
+			}
+			secretIDJSON, err := json.Marshal(secretID)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = secretIDJSON
+			slog.Info("injection complete. Default argument = %s", secretIDJSON)
+			return nil
+		}
+	}
+	return fmt.Errorf("Inject default secret: no such argument: %s", argName)
 }
 
 // not threadsafe, client.stateMu must be held when calling
