@@ -31,9 +31,9 @@ You must hold the `Admin` role of a Dagger Cloud organization to administer memb
 
 1. After authorizing Dagger Cloud for your GitHub account, you'll create your organization.
 
-    :::info Naming your organization
-    Organization names may contain alphanumeric characters and dashes and are unique across Dagger Cloud. We recommend using your company name or team name for your organization.
-    :::
+:::info Naming your organization
+Organization names may contain alphanumeric characters and dashes and are unique across Dagger Cloud. We recommend using your company name or team name for your organization.
+:::
 
 1. Review and select a Dagger Cloud subscription plan.
 
@@ -92,9 +92,11 @@ Once you have your token, you can use it to connect Dagger Cloud with your CI en
 
 - Add your Dagger Cloud token to your CI environment.
   - Store the Dagger Cloud token as a secret with your CI environment.
-    :::danger Keep your Dagger Cloud token private
-    You must store the Dagger Cloud token as a secret (not plaintext) with your CI environment and reference it in your CI workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
-    :::
+  
+:::danger Keep your Dagger Cloud token private
+You must store the Dagger Cloud token as a secret (not plaintext) with your CI environment and reference it in your CI workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
+:::
+
   - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
 - If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding workflow visualization in Dagger Cloud.
 

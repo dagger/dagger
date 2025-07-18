@@ -5,6 +5,7 @@ title: "Directory"
 import Directory from '../../partials/types/directory.mdx';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
 
 <Directory />
 
@@ -558,7 +559,10 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```go file=../../cookbook/snippets/mount-dir/go/main.go
 ```
 
+<CodeBlock
+language="go" title="Mount a directory to a container" file="../../cookbook/snippets/mount-dir/go/main.go" />
 </TabItem>
+
 <TabItem value="python" label="Python">
 
 ```python file=../../cookbook/snippets/mount-dir/python/main.py

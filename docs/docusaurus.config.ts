@@ -161,7 +161,8 @@ const config: Config = {
         "powershell",
         "java",
       ],
-      theme: prismThemes.dracula,
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.oneDark,
     },
     navbar: {
       logo: {

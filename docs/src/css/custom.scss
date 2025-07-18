@@ -435,8 +435,7 @@ h4 {
 
 // Style for pre elements with different modes
 html[data-theme="light"] pre {
-  background: white !important;
-  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  border: 1px solid rgb(223, 223, 224); // Obsidian color with transparency
   color: #{$inkberry-color};
 }
 
@@ -492,4 +491,18 @@ html[data-theme="dark"] {
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
+}
+
+.flowchart {
+  background-color: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  overflow-x: auto; // Allow horizontal scrolling if needed
+  max-width: 100%; // Ensure it doesn't exceed the container width
 }

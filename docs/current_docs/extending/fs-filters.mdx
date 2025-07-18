@@ -48,9 +48,9 @@ Pre-call filtering means that a directory is filtered before it's uploaded to th
 
 - Large files, such as audio/video files and other binary content. These files take time to upload. If they're not directly relevant, you'll usually want your Dagger Function to ignore them.
 
-  :::tip
-  The `.git` directory is a good example of both these cases. It contains a lot of data, including large binary objects, and for projects with a long version history, it can sometimes be larger than your actual source code.
-  :::
+:::tip
+The `.git` directory is a good example of both these cases. It contains a lot of data, including large binary objects, and for projects with a long version history, it can sometimes be larger than your actual source code.
+:::
 
 - Dependencies. If you're developing locally, you'll typically have your project dependencies installed locally: `node_modules` (Node.js), `.venv` (Python), `vendor` (PHP) and so on. When you call your Dagger Function locally, Dagger will upload all these installed dependencies as well. This is both bad practice and inefficient. Typically, you'll want your Dagger Function to ignore locally-installed dependencies and only operate on the project source code.
 
