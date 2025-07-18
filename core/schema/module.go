@@ -11,13 +11,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type moduleSchema struct {
-	dag *dagql.Server
-}
+type moduleSchema struct{}
 
 var _ SchemaResolvers = &moduleSchema{}
 
-func (s *moduleSchema) Install() {
+func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("module", s.module).
 			Doc(`Create a new module.`),
@@ -53,7 +51,7 @@ func (s *moduleSchema) Install() {
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCall]{
 		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
@@ -66,7 +64,7 @@ func (s *moduleSchema) Install() {
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Module]{
 		// sync is used by external dependencies like daggerverse
@@ -101,7 +99,7 @@ func (s *moduleSchema) Install() {
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
 		dagql.Func("name", s.currentModuleName).
@@ -123,7 +121,7 @@ func (s *moduleSchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("withDescription", s.functionWithDescription).
@@ -149,13 +147,13 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
+	dagql.Fields[*core.FunctionArg]{}.Install(dag)
 
-	dagql.Fields[*core.FunctionCallArgValue]{}.Install(s.dag)
+	dagql.Fields[*core.FunctionCallArgValue]{}.Install(dag)
 
-	dagql.Fields[*core.SourceMap]{}.Install(s.dag)
+	dagql.Fields[*core.SourceMap]{}.Install(dag)
 
 	dagql.Fields[*core.TypeDef]{
 		dagql.Func("withOptional", s.typeDefWithOptional).
@@ -222,20 +220,20 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("description").Doc(`A doc string for the member, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum member definition.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
+	dagql.Fields[*core.FieldTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ListTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) (dagql.Array[*core.EnumMemberTypeDef], error) {
 			return self.Members, nil
 		}).Deprecated("use members instead"),
-	}.Install(s.dag)
-	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(s.dag)
+	}.Install(dag)
+	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(dag)
 }
 
 func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}) (*core.TypeDef, error) {

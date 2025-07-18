@@ -11,7 +11,7 @@ import (
 )
 
 type SchemaResolvers interface {
-	Install()
+	Install(*dagql.Server)
 }
 
 func Syncer[T core.Evaluatable]() dagql.Field[T] {

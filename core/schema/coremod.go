@@ -45,25 +45,25 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
 		&environmentSchema{dag}, // install environment middleware first
-		&directorySchema{dag},
-		&fileSchema{dag},
-		&gitSchema{dag},
-		&containerSchema{dag},
-		&cacheSchema{dag},
-		&secretSchema{dag},
-		&serviceSchema{dag},
-		&hostSchema{dag},
-		&httpSchema{dag},
-		&platformSchema{dag},
-		&socketSchema{dag},
-		&moduleSourceSchema{dag},
-		&moduleSchema{dag},
-		&errorSchema{dag},
-		&engineSchema{dag},
-		&cloudSchema{dag},
+		&directorySchema{},
+		&fileSchema{},
+		&gitSchema{},
+		&containerSchema{},
+		&cacheSchema{},
+		&secretSchema{},
+		&serviceSchema{},
+		&hostSchema{},
+		&httpSchema{},
+		&platformSchema{},
+		&socketSchema{},
+		&moduleSourceSchema{},
+		&moduleSchema{},
+		&errorSchema{},
+		&engineSchema{},
+		&cloudSchema{},
 		&llmSchema{dag},
 	} {
-		schema.Install()
+		schema.Install(dag)
 	}
 	return nil
 }

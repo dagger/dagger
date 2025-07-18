@@ -53,13 +53,11 @@ func (err ErrSDKClientGeneratorNotImplemented) Error() string {
 	return fmt.Sprintf("%q SDK does not support client generation", err.SDK)
 }
 
-type moduleSourceSchema struct {
-	dag *dagql.Server
-}
+type moduleSourceSchema struct{}
 
 var _ SchemaResolvers = &moduleSourceSchema{}
 
-func (s *moduleSourceSchema) Install() {
+func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, dagql.CachePerClient).
 			Doc(`Create a new module source instance from a source ref string`).
@@ -70,7 +68,7 @@ func (s *moduleSourceSchema) Install() {
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Directory]{
 		dagql.NodeFunc("asModule", s.directoryAsModule).
@@ -87,7 +85,7 @@ func (s *moduleSourceSchema) Install() {
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
@@ -216,17 +214,17 @@ func (s *moduleSourceSchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`The path of the client to remove.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
-	dagql.Fields[*modules.ModuleConfigClient]{}.Install(s.dag)
+	dagql.Fields[*core.SDKConfig]{}.Install(dag)
+	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
 			Doc(`Set the list of paths to mark generated in version control.`),
 		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
 			Doc(`Set the list of paths to ignore in version control.`),
-	}.Install(s.dag)
+	}.Install(dag)
 }
 
 type moduleSourceArgs struct {
@@ -694,12 +692,17 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 	ctx context.Context,
 	bk *buildkit.Client,
 	src *core.ModuleSource) error {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	// If we have a blueprint module, load it
 	pcfg := src.ConfigBlueprint
 	if pcfg == nil {
 		return nil
 	}
-	blueprint, err := core.ResolveDepToSource(ctx, bk, s.dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+	blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
 	if err != nil {
 		return fmt.Errorf("failed to resolve dep to source: %w", err)
 	}
@@ -1473,6 +1476,11 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.ModuleSource], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	// If no blueprint is set, return without error
 	if parentSrc.Self().Blueprint.Self() == nil {
 		return parentSrc.Result, nil
@@ -1493,7 +1501,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 
 	// Update the blueprint by loading it fresh
 	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
-	err := s.dag.Select(ctx, s.dag.Root(), &bpUpdated,
+	err = dag.Select(ctx, dag.Root(), &bpUpdated,
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
@@ -1506,7 +1514,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	}
 
 	// Set the updated blueprint on the parent source
-	err = s.dag.Select(ctx, parentSrc, &inst,
+	err = dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
 			Field: "withBlueprint",
 			Args: []dagql.NamedInput{{

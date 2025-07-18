@@ -11,23 +11,21 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type cloudSchema struct {
-	srv *dagql.Server
-}
+type cloudSchema struct{}
 
 var _ SchemaResolvers = &cloudSchema{}
 
-func (s *cloudSchema) Install() {
+func (s *cloudSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("cloud", s.cloud).
 			Doc("Dagger Cloud configuration and state"),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Cloud]{
 		dagql.Func("traceURL", s.traceURL).
 			DoNotCache("This value changes every single run").
 			Doc("The trace URL for the current session"),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 func (s *cloudSchema) cloud(ctx context.Context, parent *core.Query, args struct{}) (*core.Cloud, error) {

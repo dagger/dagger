@@ -14,11 +14,9 @@ import (
 
 var _ SchemaResolvers = &httpSchema{}
 
-type httpSchema struct {
-	srv *dagql.Server
-}
+type httpSchema struct{}
 
-func (s *httpSchema) Install() {
+func (s *httpSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("http", s.http, dagql.CachePerClient).
 			Doc(`Returns a file containing an http remote url content.`).
@@ -29,7 +27,7 @@ func (s *httpSchema) Install() {
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type httpArgs struct {
@@ -60,6 +58,11 @@ func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args http
 }
 
 func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpArgs) (inst dagql.ObjectResult[*core.File], rerr error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
 	if args.InDagOp() {
 		cache := parent.Self().BuildkitCache()
 		snap, err := cache.Get(ctx, args.RefID, nil)
@@ -70,7 +73,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 
 		f := core.NewFile(nil, args.DagOpPath, parent.Self().Platform(), nil)
 		f.Result = snap
-		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 	}
 
 	filename, err := s.httpPath(ctx, parent.Self(), args)
@@ -84,7 +87,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 
 	var authHeader string
 	if args.AuthHeader.Valid {
-		secret, err := args.AuthHeader.Value.Load(ctx, s.srv)
+		secret, err := args.AuthHeader.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, err
 		}
@@ -100,7 +103,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	}
 
 	if args.ExperimentalServiceHost.Valid {
-		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
+		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, err
 		}
@@ -153,7 +156,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		))
 	ctxDagOp := dagql.ContextWithID(ctx, newID)
 
-	file, err := DagOpFile(ctxDagOp, s.srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
+	file, err := DagOpFile(ctxDagOp, srv, parent.Self(), args, s.http, WithPathFn(s.httpPath))
 	if err != nil {
 		return inst, err
 	}
@@ -163,5 +166,5 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForID(file, s.srv, newID)
+	return dagql.NewObjectResultForID(file, srv, newID)
 }

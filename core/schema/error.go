@@ -11,27 +11,25 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type errorSchema struct {
-	dag *dagql.Server
-}
+type errorSchema struct{}
 
 var _ SchemaResolvers = &errorSchema{}
 
-func (s *errorSchema) Install() {
+func (s *errorSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("error", s.error).
 			Doc(`Create a new error.`).
 			Args(
 				dagql.Arg("message").Doc(`A brief description of the error.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Error]{
 		dagql.Func("withValue", s.withValue).
 			Doc(`Add a value to the error.`),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.ErrorValue]{}.Install(s.dag)
+	dagql.Fields[*core.ErrorValue]{}.Install(dag)
 }
 
 func (s *errorSchema) error(ctx context.Context, _ *core.Query, args struct {
