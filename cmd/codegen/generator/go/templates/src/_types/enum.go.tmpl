@@ -8,6 +8,8 @@ func ({{ $enumName }}) IsEnum() {}
 
 func (v {{ $enumName }}) Name() string {
 	switch v {
+	case "":
+		return ""
 	{{- range $fields := .EnumValues | GroupEnumByValue }}
 	{{- $field := index $fields 0 }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
@@ -24,7 +26,14 @@ func (v {{ $enumName }}) Value() string {
 }
 
 func (v *{{ $enumName }}) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("unknown enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
@@ -33,6 +42,8 @@ func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	{{- range $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
