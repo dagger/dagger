@@ -472,7 +472,7 @@ var scrubs = []scrubber{
 	},
 	// version=
 	{
-		regexp.MustCompile(`version=v[a-f0-9.-]+`),
+		regexp.MustCompile(`version=v[a-fv0-9.-]+`), // "v" is in "dev" :)
 		"version=v0.18.13-250710134709-7edd4496ecc1",
 		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
 	},
