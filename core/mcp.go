@@ -537,7 +537,7 @@ func (m *MCP) selectionToToolResult(
 
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
-		return m.newState(obj)
+		return m.newState(ctx, srv, obj)
 	}
 
 	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
@@ -1667,11 +1667,32 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 
 const jsonSchemaIDAttr = "x-id-type"
 
-func (m *MCP) newState(target dagql.AnyObjectResult) (string, error) {
+func (m *MCP) newState(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult) (string, error) {
+	schema := srv.Schema()
 	typeName := target.Type().Name()
 	_, known := m.env.typeCounts[typeName]
 	res := map[string]any{
 		"result": m.env.Ingest(target, ""),
+	}
+	if displayer, ok := dagql.UnwrapAs[LLMDisplayer](target); ok {
+		res["display"] = displayer.LLMDisplay()
+	}
+	data := map[string]any{}
+	for _, field := range schema.Types[typeName].Fields {
+		trivial := field.Directives.ForName(trivialFieldDirectiveName) != nil
+		if !trivial {
+			continue
+		}
+		val, err := target.Select(ctx, srv, dagql.Selector{
+			Field: field.Name,
+		})
+		if err != nil {
+			return "", err
+		}
+		data[field.Name] = val.Unwrap()
+	}
+	if len(data) > 0 {
+		res["data"] = data
 	}
 	if !known {
 		res["hint"] = fmt.Sprintf("New methods available for type %q.", typeName)
