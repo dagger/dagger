@@ -1106,6 +1106,23 @@ export type HostTunnelOpts = {
  */
 export type HostID = string & { __HostID: never }
 
+export type HostResourceAsDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+export type HostResourceAsFileOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+/**
+ * The `HostResourceID` scalar type represents an identifier for an object of type HostResource.
+ */
+export type HostResourceID = string & { __HostResourceID: never }
+
 /**
  * Compression algorithm to use for image layers.
  */
@@ -2025,6 +2042,14 @@ export class Binding extends BaseClient {
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type HostResource
+   */
+  asHostResource = (): HostResource => {
+    const ctx = this._ctx.select("asHostResource")
+    return new HostResource(ctx)
   }
 
   /**
@@ -4829,6 +4854,38 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type HostResource in the environment
+   * @param name The name of the binding
+   * @param value The HostResource value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withHostResourceInput = (
+    name: string,
+    value: HostResource,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withHostResourceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired HostResource output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withHostResourceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withHostResourceOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type LLM in the environment
    * @param name The name of the binding
    * @param value The LLM value to assign to the binding
@@ -6377,6 +6434,15 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Load a resource from the host. Resources are lazily typed and loaded.
+   * @param address Location of the resource. The address format is type-specific, and only validated when binding to a specific type
+   */
+  resource = (address: string): HostResource => {
+    const ctx = this._ctx.select("resource", { address })
+    return new HostResource(ctx)
+  }
+
+  /**
    * Creates a service that forwards traffic to a specified address via the host.
    * @param ports Ports to expose via the service, forwarding through the host network.
    *
@@ -6429,6 +6495,94 @@ export class Host extends BaseClient {
   unixSocket = (path: string): Socket => {
     const ctx = this._ctx.select("unixSocket", { path })
     return new Socket(ctx)
+  }
+}
+
+/**
+ * A resource to be loaded from the host using a standardized address.
+ * May be converted to a directory, container, secret, file...
+ */
+export class HostResource extends BaseClient {
+  private readonly _id?: HostResourceID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: HostResourceID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this HostResource.
+   */
+  id = async (): Promise<HostResourceID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<HostResourceID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Load the host resource as a container.
+   */
+  asContainer = (): Container => {
+    const ctx = this._ctx.select("asContainer")
+    return new Container(ctx)
+  }
+
+  /**
+   * Load the host resource as a directory.
+   */
+  asDirectory = (opts?: HostResourceAsDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("asDirectory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load the host resource as a file.
+   */
+  asFile = (opts?: HostResourceAsFileOpts): File => {
+    const ctx = this._ctx.select("asFile", { ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Load the host resource as a git ref (branch, tag or commit)
+   */
+  asGitRef = (): GitRef => {
+    const ctx = this._ctx.select("asGitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load the host resource as a git repository.
+   */
+  asGitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("asGitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load the host resource as a secret.
+   */
+  asSecret = (): Secret => {
+    const ctx = this._ctx.select("asSecret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load the host resource as a service.
+   */
+  asService = (): Service => {
+    const ctx = this._ctx.select("asService")
+    return new Service(ctx)
   }
 }
 
@@ -8619,6 +8773,14 @@ export class Client extends BaseClient {
   loadHostFromID = (id: HostID): Host => {
     const ctx = this._ctx.select("loadHostFromID", { id })
     return new Host(ctx)
+  }
+
+  /**
+   * Load a HostResource from its ID.
+   */
+  loadHostResourceFromID = (id: HostResourceID): HostResource => {
+    const ctx = this._ctx.select("loadHostResourceFromID", { id })
+    return new HostResource(ctx)
   }
 
   /**

@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/content"
@@ -25,8 +29,10 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type hostSchema struct{}
@@ -140,6 +146,23 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		}).Doc("Retrieves a container builtin to the engine."),
 	}.Install(srv)
 
+	dagql.Fields[*core.HostResource]{
+		dagql.NodeFuncWithCacheKey("asContainer", s.resourceAsContainer, dagql.CachePerCall).
+			Doc(`Load the host resource as a container.`),
+		dagql.NodeFuncWithCacheKey("asDirectory", s.resourceAsDirectory, dagql.CacheAsRequested).
+			Doc(`Load the host resource as a directory.`),
+		dagql.NodeFuncWithCacheKey("asFile", s.resourceAsFile, dagql.CacheAsRequested).
+			Doc(`Load the host resource as a file.`),
+		dagql.NodeFuncWithCacheKey("asGitRef", s.resourceAsGitRef, dagql.CachePerClient).
+			Doc(`Load the host resource as a git ref (branch, tag or commit)`),
+		dagql.NodeFuncWithCacheKey("asGitRepository", s.resourceAsGitRepository, dagql.CachePerClient).
+			Doc(`Load the host resource as a git repository.`),
+		dagql.NodeFuncWithCacheKey("asSecret", s.resourceAsSecret, dagql.CachePerCall).
+			Doc(`Load the host resource as a secret.`),
+		dagql.NodeFuncWithCacheKey("asService", s.resourceAsService, dagql.CachePerClient).
+			Doc(`Load the host resource as a service.`),
+	}.Install(srv)
+
 	dagql.Fields[*core.Host]{
 		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
 		// a custom cache key function that uses a random value when that arg is true.
@@ -157,6 +180,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
+			),
+
+		dagql.Func("resource", s.resource).
+			Doc(`Load a resource from the host. Resources are lazily typed and loaded.`).
+			Args(
+				dagql.Arg("address").Doc(`Location of the resource. The address format is type-specific, and only validated when binding to a specific type`),
 			),
 
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
@@ -241,6 +270,499 @@ type hostDirectoryArgs struct {
 
 	core.CopyFilter
 	HostDirCacheConfig
+}
+
+func (s *hostSchema) resource(ctx context.Context, parent *core.Host, args struct {
+	Address dagql.String
+}) (*core.HostResource, error) {
+	addr := args.Address.String()
+	if addr == "" {
+		return nil, fmt.Errorf("resource cannot have empty address")
+	}
+	return &core.HostResource{
+		Address: addr,
+	}, nil
+}
+
+type resourceAsFileArgs struct {
+	core.CopyFilter
+	HostDirCacheConfig
+}
+
+func (s *hostSchema) resourceAsFile(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args resourceAsFileArgs,
+) (
+	inst dagql.ObjectResult[*core.File],
+	err error,
+) {
+	addr := r.Self().Address
+	if addr == "" {
+		return inst, fmt.Errorf("file address cannot be empty")
+	}
+	if _, err := gitutil.ParseURL(addr); err == nil {
+		return s.resourceAsRemoteFile(ctx, r, args)
+	}
+	return s.resourceAsLocalFile(ctx, r, args)
+}
+
+func (s *hostSchema) resourceAsRemoteFile(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args resourceAsFileArgs,
+) (
+	inst dagql.ObjectResult[*core.File],
+	err error,
+) {
+	gitURL, err := gitutil.ParseURL(r.Self().Address)
+	if err != nil {
+		return inst, err
+	}
+	q := queryRemoteGitRoot(gitURL)
+	if gitURL.Fragment == nil || gitURL.Fragment.Subdir == "" {
+		return inst, fmt.Errorf("no file path specified within git repository")
+	}
+	q = append(q, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.NewString(gitURL.Fragment.Subdir),
+			},
+		},
+	})
+	err = s.srv.Select(ctx, s.srv.Root(), &inst, q...)
+	return inst, err
+}
+
+func (s *hostSchema) resourceAsLocalFile(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args resourceAsFileArgs,
+) (
+	inst dagql.ObjectResult[*core.File],
+	err error,
+) {
+	path, err := getLocalPath(r.Self().Address)
+	if err != nil {
+		return inst, err
+	}
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(path),
+				},
+			},
+		},
+	)
+	return inst, err
+}
+
+type resourceAsDirectoryArgs struct {
+	core.CopyFilter
+	HostDirCacheConfig
+}
+
+func (s *hostSchema) resourceAsDirectory(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args resourceAsDirectoryArgs,
+) (
+	inst dagql.ObjectResult[*core.Directory],
+	err error,
+) {
+	var (
+		q    []dagql.Selector
+		addr = r.Self().Address
+	)
+	gitURL, err := gitutil.ParseURL(addr)
+	if err == nil {
+		// Remote directory (using git remote)
+		q = queryRemoteGitRoot(gitURL)
+		if gitURL.Fragment != nil && gitURL.Fragment.Subdir != "" {
+			q = append(q, dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.NewString(gitURL.Fragment.Subdir),
+					},
+				},
+			})
+		}
+	} else {
+		// Local directory
+		path, err := getLocalPath(addr)
+		if err != nil {
+			return inst, err
+		}
+		q = append(q,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.NewString(path),
+					},
+					// FIXME: include/exclude
+				},
+			},
+		)
+	}
+	err = s.srv.Select(ctx, s.srv.Root(), &inst, q...)
+	return inst, err
+}
+
+func queryRemoteGitRef(gitURL *gitutil.GitURL) []dagql.Selector {
+	q := queryRemoteGitRepository(gitURL)
+	// .head() or .ref()
+	if gitURL.Fragment == nil || gitURL.Fragment.Ref == "" {
+		q = append(q, dagql.Selector{
+			Field: "head",
+		})
+	} else {
+		q = append(q, dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString(gitURL.Fragment.Ref),
+				},
+			},
+		})
+	}
+	return q
+}
+
+// Build a query for selecting the root of a repo from a git url
+// The subdir path is left to the caller to process (might be a file or directory)
+func queryRemoteGitRoot(gitURL *gitutil.GitURL) []dagql.Selector {
+	q := queryRemoteGitRef(gitURL)
+	// .tree()
+	q = append(q, dagql.Selector{
+		Field: "tree",
+	})
+	return q
+}
+
+// Convert an address to an absolute local path:
+// - file:// is stripped if needed
+// - home directory is expanded
+// - relative path is expanded
+func getLocalPath(path string) (string, error) {
+	// allow `file://` scheme or no scheme
+	path = strings.TrimPrefix(path, "file://")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path, err = pathutil.ExpandHomeDir(homeDir, path)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand home directory: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		path, err = pathutil.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+	}
+	// make windows paths usable in the Linux engine container
+	path = filepath.ToSlash(path)
+
+	return path, nil
+}
+
+func (s *hostSchema) resourceAsContainer(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Container],
+	err error,
+) {
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "container",
+		},
+		dagql.Selector{
+			Field: "from",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "address",
+					Value: dagql.NewString(r.Self().Address),
+				},
+			},
+		},
+	)
+	return inst, err
+}
+
+func (s *hostSchema) resourceAsGitRepository(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.GitRepository],
+	err error,
+) {
+	var q []dagql.Selector
+	gitURL, err := gitutil.ParseURL(r.Self().Address)
+	if err == nil {
+		// Remote repository
+		if gitURL.Fragment != nil {
+			if gitURL.Fragment.Ref != "" {
+				return inst, fmt.Errorf("git repository address cannot contain ref")
+			}
+			if gitURL.Fragment.Subdir != "" {
+				return inst, fmt.Errorf("git repository address cannot contain subdir")
+			}
+		}
+		q = queryRemoteGitRepository(gitURL)
+	} else {
+		// Local repository
+		path, err := getLocalPath(r.Self().Address)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get local path: %w", err)
+		}
+		q = queryLocalGitRepository(path)
+	}
+	err = s.srv.Select(ctx, s.srv.Root(), &inst, q...)
+	return inst, err
+}
+
+func queryLocalGitRepository(path string) []dagql.Selector {
+	return []dagql.Selector{
+		{
+			Field: "host",
+		},
+		{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(path),
+				},
+			},
+		},
+		{
+			Field: "asGit",
+		},
+	}
+}
+
+func queryLocalGitRef(path, ref string) []dagql.Selector {
+	q := queryLocalGitRepository(path)
+	if ref == "" {
+		q = append(q, dagql.Selector{
+			Field: "head",
+		})
+	} else {
+		q = append(q, dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString(ref),
+				},
+			},
+		})
+	}
+	return q
+}
+
+func queryRemoteGitRepository(gitURL *gitutil.GitURL) []dagql.Selector {
+	return []dagql.Selector{
+		{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "url",
+					Value: dagql.NewString(gitURL.Remote()),
+				},
+			},
+		},
+	}
+}
+
+func (s *hostSchema) resourceAsGitRef(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.GitRef],
+	err error,
+) {
+	var (
+		addr = r.Self().Address
+		q    []dagql.Selector
+	)
+	gitURL, err := gitutil.ParseURL(addr)
+	if err == nil {
+		// Remote ref
+		if gitURL.Fragment != nil && gitURL.Fragment.Subdir != "" {
+			return inst, fmt.Errorf("git ref address cannot contain subdir")
+		}
+		q = queryRemoteGitRef(gitURL)
+	} else {
+		// Local ref
+		path, ref, _ := strings.Cut(addr, "#")
+		path, err = getLocalPath(path)
+		if err != nil {
+			return inst, err
+		}
+		q = queryLocalGitRef(path, ref)
+	}
+	err = s.srv.Select(ctx, s.srv.Root(), &inst, q...)
+	return inst, err
+}
+
+func (s *hostSchema) resourceAsSecret(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Secret],
+	err error,
+) {
+	var (
+		uri      string
+		cacheKey string
+	)
+	addr := r.Self().Address
+	if !strings.Contains(addr, ":") {
+		// case of e.g. `MY_ENV_SECRET`, which is shorthand for `env://MY_ENV_SECRET`
+		addr = "env://" + addr
+	}
+	// legacy secrets in the form of `--token env:MY_ENV_SECRET` instead of `env://MY_ENV_SECRET`
+	secretSource, val, _ := strings.Cut(addr, ":")
+	if !strings.HasPrefix(val, "//") {
+		addr = secretSource + "://" + val
+	}
+
+	addrWithoutQuery, queryValsStr, ok := strings.Cut(addr, "?")
+	if ok && len(queryValsStr) > 0 {
+		queryVals, err := url.ParseQuery(queryValsStr)
+		if err != nil {
+			return inst, err
+		}
+		if cacheKey := queryVals.Get("cacheKey"); cacheKey != "" {
+			cacheKey = cacheKey
+			queryVals.Del("cacheKey")
+			queryValsStr = queryVals.Encode()
+			if len(queryValsStr) > 0 {
+				addr = fmt.Sprintf("%s?%s", addrWithoutQuery, queryValsStr)
+			} else {
+				addr = addrWithoutQuery
+			}
+		}
+	}
+	uri = addr
+	err = s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "secret",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "uri",
+				Value: dagql.NewString(uri),
+			},
+			{
+				Name:  "cacheKey",
+				Value: dagql.Opt(dagql.String(cacheKey)),
+			},
+		},
+	})
+	return inst, err
+}
+
+func (s *hostSchema) resourceAsService(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.HostResource],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Service],
+	err error,
+) {
+	var (
+		addr = r.Self().Address
+		host string
+		// ports []core.PortForward
+		ports dagql.ArrayInput[dagql.InputObject[core.PortForward]]
+	)
+
+	if addr == "" {
+		return inst, fmt.Errorf("service address cannot be empty")
+	}
+	u, err := url.Parse(addr)
+	if err != nil {
+		return inst, err
+	}
+	switch u.Scheme {
+	case "tcp":
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			return inst, err
+		}
+		nPort, err := strconv.Atoi(port)
+		if err != nil {
+			return inst, err
+		}
+		host = host
+		ports = append(ports, dagql.InputObject[core.PortForward]{
+			Value: core.PortForward{
+				Backend:  nPort,
+				Frontend: &nPort,
+				Protocol: core.NetworkProtocolTCP,
+			},
+		})
+	case "udp":
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			return inst, err
+		}
+		nPort, err := strconv.Atoi(port)
+		if err != nil {
+			return inst, err
+		}
+		host = host
+		ports = append(ports, dagql.InputObject[core.PortForward]{
+			Value: core.PortForward{
+				Backend:  nPort,
+				Frontend: &nPort,
+				Protocol: core.NetworkProtocolUDP,
+			},
+		})
+	default:
+		return inst, fmt.Errorf("unsupported service address. Must be a valid tcp:// or udp:// URL")
+	}
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "service",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "host",
+					Value: dagql.Opt(dagql.NewString(host)),
+				},
+				{
+					Name:  "ports",
+					Value: ports,
+				},
+			},
+		},
+	)
+	return inst, err
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {

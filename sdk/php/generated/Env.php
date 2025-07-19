@@ -245,6 +245,29 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Create or update a binding of type HostResource in the environment
+     */
+    public function withHostResourceInput(string $name, HostResourceId|HostResource $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostResourceInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired HostResource output to be assigned in the environment
+     */
+    public function withHostResourceOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostResourceOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type LLM in the environment
      */
     public function withLLMInput(string $name, LLMId|LLM $value, string $description): Env

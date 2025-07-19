@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\Host | API</title>
+    <title>Dagger\HostResource | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_Host" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_HostResource" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Host</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>HostResource</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>Host    
+        <h1>HostResource    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>Host</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>HostResource</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>Information about the host environment.</p></p>                    </div>
+            <p><p>A resource to be loaded from the host using a standardized address.</p></p>            <p><p>May be converted to a directory, container, secret, file...</p></p>        </div>
             
         
     
@@ -143,12 +143,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asContainer">asContainer</a>()
+        
+                                            <p><p>Load the host resource as a container.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_directory">directory</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+                    <a href="#method_asDirectory">asDirectory</a>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
         
-                                            <p><p>Accesses a directory on the host.</p></p>                </div>
+                                            <p><p>Load the host resource as a directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -156,9 +166,39 @@
                     <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_file">file</a>(string $path, bool|null $noCache = false)
+                    <a href="#method_asFile">asFile</a>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
         
-                                            <p><p>Accesses a file on the host.</p></p>                </div>
+                                            <p><p>Load the host resource as a file.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asGitRepository">asGitRepository</a>()
+        
+                                            <p><p>Load the host resource as a git repository.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asSecret">asSecret</a>()
+        
+                                            <p><p>Load the host resource as a secret.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asService">asService</a>()
+        
+                                            <p><p>Load the host resource as a service.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -168,57 +208,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this Host.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_resource">resource</a>(string $address)
-        
-                                            <p><p>Load a resource from the host. Resources are lazily typed and loaded.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_service">service</a>(array $ports, string|null $host = &#039;localhost&#039;)
-        
-                                            <p><p>Creates a service that forwards traffic to a specified address via the host.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_setSecretFile">setSecretFile</a>(string $name, string $path)
-        
-                                            <p><p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_tunnel">tunnel</a>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
-        
-                                            <p><p>Creates a tunnel that forwards traffic from the host to a service.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_unixSocket">unixSocket</a>(string $path)
-        
-                                            <p><p>Accesses a Unix socket on the host.</p></p>                </div>
+                                            <p><p>A unique identifier for this HostResource.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -317,10 +307,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_directory">
-        <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+                    <h3 id="method_asContainer">
+        <div class="location">at line 20</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>asContainer</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -328,17 +318,44 @@
             
 
         <div class="method-description">
-                            <p><p>Accesses a directory on the host.</p></p>                        
+                            <p><p>Load the host resource as a container.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asDirectory">
+        <div class="location">at line 29</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>asDirectory</strong>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load the host resource as a directory.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
                     <tr>
                 <td>array|null</td>
                 <td>$exclude</td>
@@ -374,10 +391,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_file">
-        <div class="location">at line 42</div>
+                    <h3 id="method_asFile">
+        <div class="location">at line 47</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>file</strong>(string $path, bool|null $noCache = false)
+    <strong>asFile</strong>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
         </code>
     </h3>
     <div class="details">    
@@ -385,15 +402,20 @@
             
 
         <div class="method-description">
-                            <p><p>Accesses a file on the host.</p></p>                        
+                            <p><p>Load the host resource as a file.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>string</td>
-                <td>$path</td>
+                <td>array|null</td>
+                <td>$exclude</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$include</td>
                 <td></td>
             </tr>
                     <tr>
@@ -421,10 +443,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_id">
-        <div class="location">at line 55</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
-    <strong>id</strong>()
+                    <h3 id="method_asGitRepository">
+        <div class="location">at line 65</div>
+        <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+    <strong>asGitRepository</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -432,7 +454,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this Host.</p></p>                        
+                            <p><p>Load the host resource as a git repository.</p></p>                        
         </div>
         <div class="tags">
             
@@ -440,7 +462,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -453,99 +475,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_resource">
-        <div class="location">at line 64</div>
-        <code>                    <a href="../Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a>
-    <strong>resource</strong>(string $address)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a resource from the host. Resources are lazily typed and loaded.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$address</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_service">
+                    <h3 id="method_asSecret">
         <div class="location">at line 74</div>
-        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>service</strong>(array $ports, string|null $host = &#039;localhost&#039;)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Creates a service that forwards traffic to a specified address via the host.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>array</td>
-                <td>$ports</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$host</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_setSecretFile">
-        <div class="location">at line 89</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
-    <strong>setSecretFile</strong>(string $name, string $path)
+    <strong>asSecret</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -553,24 +486,9 @@
             
 
         <div class="method-description">
-                            <p><p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p></p>                <p><p>The file is limited to a size of 512000 bytes.</p></p>        
+                            <p><p>Load the host resource as a secret.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -589,10 +507,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_tunnel">
-        <div class="location">at line 100</div>
+                    <h3 id="method_asService">
+        <div class="location">at line 83</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
+    <strong>asService</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -600,29 +518,9 @@
             
 
         <div class="method-description">
-                            <p><p>Creates a tunnel that forwards traffic from the host to a service.</p></p>                        
+                            <p><p>Load the host resource as a service.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr></td>
-                <td>$service</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$native</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$ports</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -641,10 +539,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_unixSocket">
-        <div class="location">at line 116</div>
-        <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
-    <strong>unixSocket</strong>(string $path)
+                    <h3 id="method_id">
+        <div class="location">at line 92</div>
+        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+    <strong>id</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -652,25 +550,15 @@
             
 
         <div class="method-description">
-                            <p><p>Accesses a Unix socket on the host.</p></p>                        
+                            <p><p>A unique identifier for this HostResource.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a></td>
+            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
             <td></td>
         </tr>
     </table>

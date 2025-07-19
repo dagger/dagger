@@ -697,6 +697,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a HostResource from its ID.
+  """
+  @spec load_host_resource_from_id(t(), Dagger.HostResourceID.t()) :: Dagger.HostResource.t()
+  def load_host_resource_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadHostResourceFromID") |> QB.put_arg("id", id)
+
+    %Dagger.HostResource{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a InputTypeDef from its ID.
   """
   @spec load_input_type_def_from_id(t(), Dagger.InputTypeDefID.t()) :: Dagger.InputTypeDef.t()

@@ -67,6 +67,20 @@ defmodule Dagger.Host do
   end
 
   @doc """
+  Load a resource from the host. Resources are lazily typed and loaded.
+  """
+  @spec resource(t(), String.t()) :: Dagger.HostResource.t()
+  def resource(%__MODULE__{} = host, address) do
+    query_builder =
+      host.query_builder |> QB.select("resource") |> QB.put_arg("address", address)
+
+    %Dagger.HostResource{
+      query_builder: query_builder,
+      client: host.client
+    }
+  end
+
+  @doc """
   Creates a service that forwards traffic to a specified address via the host.
   """
   @spec service(t(), [Dagger.PortForward.t()], [{:host, String.t() | nil}]) :: Dagger.Service.t()

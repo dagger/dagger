@@ -718,6 +718,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\HostResource",
+			"p": "Dagger/HostResource.html",
+			"d": "<p>A resource to be loaded from the host using a standardized address.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\HostResourceId",
+			"p": "Dagger/HostResourceId.html",
+			"d": "<p>The <code>HostResourceID</code> scalar type represents an identifier for an object of type HostResource.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\InputTypeDef",
 			"p": "Dagger/InputTypeDef.html",
 			"d": "<p>A graphql input type, which is essentially just a group of named args.</p>",
@@ -1237,6 +1257,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asHostResource",
+			"p": "Dagger/Binding.html#method_asHostResource",
+			"d": "<p>Retrieve the binding value, as type HostResource</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asLLM",
 			"p": "Dagger/Binding.html#method_asLLM",
 			"d": "<p>Retrieve the binding value, as type LLM</p>"
@@ -1588,6 +1614,12 @@
 			"n": "Dagger\\Client::loadHostFromID",
 			"p": "Dagger/Client.html#method_loadHostFromID",
 			"d": "<p>Load a Host from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadHostResourceFromID",
+			"p": "Dagger/Client.html#method_loadHostResourceFromID",
+			"d": "<p>Load a HostResource from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2821,6 +2853,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withHostResourceInput",
+			"p": "Dagger/Env.html#method_withHostResourceInput",
+			"d": "<p>Create or update a binding of type HostResource in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withHostResourceOutput",
+			"p": "Dagger/Env.html#method_withHostResourceOutput",
+			"d": "<p>Declare a desired HostResource output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withLLMInput",
 			"p": "Dagger/Env.html#method_withLLMInput",
 			"d": "<p>Create or update a binding of type LLM in the environment</p>"
@@ -3367,6 +3411,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Host::resource",
+			"p": "Dagger/Host.html#method_resource",
+			"d": "<p>Load a resource from the host. Resources are lazily typed and loaded.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Host::service",
 			"p": "Dagger/Host.html#method_service",
 			"d": "<p>Creates a service that forwards traffic to a specified address via the host.</p>"
@@ -3388,6 +3438,48 @@
 			"n": "Dagger\\Host::unixSocket",
 			"p": "Dagger/Host.html#method_unixSocket",
 			"d": "<p>Accesses a Unix socket on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asContainer",
+			"p": "Dagger/HostResource.html#method_asContainer",
+			"d": "<p>Load the host resource as a container.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asDirectory",
+			"p": "Dagger/HostResource.html#method_asDirectory",
+			"d": "<p>Load the host resource as a directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asFile",
+			"p": "Dagger/HostResource.html#method_asFile",
+			"d": "<p>Load the host resource as a file.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asGitRepository",
+			"p": "Dagger/HostResource.html#method_asGitRepository",
+			"d": "<p>Load the host resource as a git repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asSecret",
+			"p": "Dagger/HostResource.html#method_asSecret",
+			"d": "<p>Load the host resource as a secret.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::asService",
+			"p": "Dagger/HostResource.html#method_asService",
+			"d": "<p>Load the host resource as a service.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\HostResource::id",
+			"p": "Dagger/HostResource.html#method_id",
+			"d": "<p>A unique identifier for this HostResource.</p>"
 		},
 		{
 			"t": "M",

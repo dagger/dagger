@@ -206,6 +206,9 @@ type GitRepositoryID string
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
+// The `HostResourceID` scalar type represents an identifier for an object of type HostResource.
+type HostResourceID string
+
 // The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
 type InputTypeDefID string
 
@@ -391,6 +394,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type HostResource
+func (r *Binding) AsHostResource() *HostResource {
+	q := r.query.Select("asHostResource")
+
+	return &HostResource{
 		query: q,
 	}
 }
@@ -4265,6 +4277,30 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type HostResource in the environment
+func (r *Env) WithHostResourceInput(name string, value *HostResource, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withHostResourceInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired HostResource output to be assigned in the environment
+func (r *Env) WithHostResourceOutput(name string, description string) *Env {
+	q := r.query.Select("withHostResourceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type LLM in the environment
 func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
 	assertNotNil("value", value)
@@ -6128,6 +6164,16 @@ func (r *Host) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Load a resource from the host. Resources are lazily typed and loaded.
+func (r *Host) Resource(address string) *HostResource {
+	q := r.query.Select("resource")
+	q = q.Arg("address", address)
+
+	return &HostResource{
+		query: q,
+	}
+}
+
 // HostServiceOpts contains options for Host.Service
 type HostServiceOpts struct {
 	// Upstream host to forward traffic to.
@@ -6212,6 +6258,169 @@ func (r *Host) UnixSocket(path string) *Socket {
 	return &Socket{
 		query: q,
 	}
+}
+
+// A resource to be loaded from the host using a standardized address.
+// May be converted to a directory, container, secret, file...
+type HostResource struct {
+	query *querybuilder.Selection
+
+	id *HostResourceID
+}
+
+func (r *HostResource) WithGraphQLQuery(q *querybuilder.Selection) *HostResource {
+	return &HostResource{
+		query: q,
+	}
+}
+
+// Load the host resource as a container.
+func (r *HostResource) AsContainer() *Container {
+	q := r.query.Select("asContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// HostResourceAsDirectoryOpts contains options for HostResource.AsDirectory
+type HostResourceAsDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load the host resource as a directory.
+func (r *HostResource) AsDirectory(opts ...HostResourceAsDirectoryOpts) *Directory {
+	q := r.query.Select("asDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// HostResourceAsFileOpts contains options for HostResource.AsFile
+type HostResourceAsFileOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load the host resource as a file.
+func (r *HostResource) AsFile(opts ...HostResourceAsFileOpts) *File {
+	q := r.query.Select("asFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
+// Load the host resource as a git ref (branch, tag or commit)
+func (r *HostResource) AsGitRef() *GitRef {
+	q := r.query.Select("asGitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Load the host resource as a git repository.
+func (r *HostResource) AsGitRepository() *GitRepository {
+	q := r.query.Select("asGitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Load the host resource as a secret.
+func (r *HostResource) AsSecret() *Secret {
+	q := r.query.Select("asSecret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Load the host resource as a service.
+func (r *HostResource) AsService() *Service {
+	q := r.query.Select("asService")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// A unique identifier for this HostResource.
+func (r *HostResource) ID(ctx context.Context) (HostResourceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HostResourceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HostResource) XXX_GraphQLType() string {
+	return "HostResource"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HostResource) XXX_GraphQLIDType() string {
+	return "HostResourceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HostResource) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HostResource) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // A graphql input type, which is essentially just a group of named args.
@@ -8873,6 +9082,16 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 	q = q.Arg("id", id)
 
 	return &Host{
+		query: q,
+	}
+}
+
+// Load a HostResource from its ID.
+func (r *Client) LoadHostResourceFromID(id HostResourceID) *HostResource {
+	q := r.query.Select("loadHostResourceFromID")
+	q = q.Arg("id", id)
+
+	return &HostResource{
 		query: q,
 	}
 }

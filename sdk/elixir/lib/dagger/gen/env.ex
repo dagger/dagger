@@ -381,6 +381,42 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type HostResource in the environment
+  """
+  @spec with_host_resource_input(t(), String.t(), Dagger.HostResource.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_host_resource_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withHostResourceInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired HostResource output to be assigned in the environment
+  """
+  @spec with_host_resource_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_host_resource_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withHostResourceOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type LLM in the environment
   """
   @spec with_llm_input(t(), String.t(), Dagger.LLM.t(), String.t()) :: Dagger.Env.t()

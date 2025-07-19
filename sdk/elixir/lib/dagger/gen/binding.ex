@@ -128,6 +128,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type HostResource
+  """
+  @spec as_host_resource(t()) :: Dagger.HostResource.t()
+  def as_host_resource(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asHostResource")
+
+    %Dagger.HostResource{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type LLM
   """
   @spec as_llm(t()) :: Dagger.LLM.t()

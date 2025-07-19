@@ -83,6 +83,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type HostResource
+     */
+    public function asHostResource(): HostResource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asHostResource');
+        return new \Dagger\HostResource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type LLM
      */
     public function asLLM(): LLM

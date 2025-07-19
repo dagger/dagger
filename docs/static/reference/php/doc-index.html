@@ -124,7 +124,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRef</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type GitRef</p></dd><dt><a href="Dagger/Binding.html#method_asGitRepository">
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRepository</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type GitRepository</p></dd><dt><a href="Dagger/Binding.html#method_asLLM">
+                    <dd><p>Retrieve the binding value, as type GitRepository</p></dd><dt><a href="Dagger/Binding.html#method_asHostResource">
+<abbr title="Dagger\Binding">Binding</abbr>::asHostResource</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type HostResource</p></dd><dt><a href="Dagger/Binding.html#method_asLLM">
 <abbr title="Dagger\Binding">Binding</abbr>::asLLM</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type LLM</p></dd><dt><a href="Dagger/Binding.html#method_asModule">
 <abbr title="Dagger\Binding">Binding</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -159,7 +161,19 @@
 <abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr>::activelyUsed</a>() &mdash; <em>Method in class <a href="Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></em></dt>
                     <dd><p>Whether the cache entry is actively being used.</p></dd><dt><a href="Dagger/Function_.html#method_args">
 <abbr title="Dagger\Function_">Function_</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/LLM.html#method_attempt">
+                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/HostResource.html#method_asContainer">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asContainer</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a container.</p></dd><dt><a href="Dagger/HostResource.html#method_asDirectory">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asDirectory</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a directory.</p></dd><dt><a href="Dagger/HostResource.html#method_asFile">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asFile</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a file.</p></dd><dt><a href="Dagger/HostResource.html#method_asGitRepository">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asGitRepository</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a git repository.</p></dd><dt><a href="Dagger/HostResource.html#method_asSecret">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asSecret</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a secret.</p></dd><dt><a href="Dagger/HostResource.html#method_asService">
+<abbr title="Dagger\HostResource">HostResource</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>Load the host resource as a service.</p></dd><dt><a href="Dagger/LLM.html#method_attempt">
 <abbr title="Dagger\LLM">LLM</abbr>::attempt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>create a branch in the LLM's history</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -468,7 +482,9 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::head</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details for HEAD.</p></dd><dt><a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Information about the host environment.</p></dd><dt><a href="Dagger/HostId.html"><abbr title="Dagger\HostId">HostId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p></dd><dt><a href="Dagger/LLM.html#method_history">
+                    <dd><p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p></dd><dt><a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A resource to be loaded from the host using a standardized address.</p></dd><dt><a href="Dagger/HostResourceId.html"><abbr title="Dagger\HostResourceId">HostResourceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>HostResourceID</code> scalar type represents an identifier for an object of type HostResource.</p></dd><dt><a href="Dagger/LLM.html#method_history">
 <abbr title="Dagger\LLM">LLM</abbr>::history</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the llm message history</p></dd><dt><a href="Dagger/LLM.html#method_historyJSON">
 <abbr title="Dagger\LLM">LLM</abbr>::historyJSON</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -551,7 +567,9 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitRepository.</p></dd><dt><a href="Dagger/Host.html#method_id">
 <abbr title="Dagger\Host">Host</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Host.</p></dd><dt><a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for this Host.</p></dd><dt><a href="Dagger/HostResource.html#method_id">
+<abbr title="Dagger\HostResource">HostResource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/HostResource.html"><abbr title="Dagger\HostResource">HostResource</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this HostResource.</p></dd><dt><a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A graphql input type, which is essentially just a group of named args.</p></dd><dt><a href="Dagger/InputTypeDef.html#method_id">
 <abbr title="Dagger\InputTypeDef">InputTypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this InputTypeDef.</p></dd><dt><a href="Dagger/InputTypeDefId.html"><abbr title="Dagger\InputTypeDefId">InputTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -662,7 +680,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadGitRepositoryFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a GitRepository from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadHostFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadHostFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Host from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadInputTypeDefFromID">
+                    <dd><p>Load a Host from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadHostResourceFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadHostResourceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a HostResource from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadInputTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadInputTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a InputTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadInterfaceTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadInterfaceTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -869,7 +889,9 @@
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved ref name at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_ref">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details of a ref.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
+                    <dd><p>Returns details of a ref.</p></dd><dt><a href="Dagger/Host.html#method_resource">
+<abbr title="Dagger\Host">Host</abbr>::resource</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
+                    <dd><p>Load a resource from the host. Resources are lazily typed and loaded.</p></dd><dt><a href="Dagger/Module.html#method_runtime">
 <abbr title="Dagger\Module">Module</abbr>::runtime</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.</p></dd><dt><a href="Dagger/ModuleSource.html#method_repoRootPath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::repoRootPath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1170,7 +1192,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withGitRepositoryInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type GitRepository in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitRepositoryOutput">
 <abbr title="Dagger\Env">Env</abbr>::withGitRepositoryOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired GitRepository output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMInput">
+                    <dd><p>Declare a desired GitRepository output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withHostResourceInput">
+<abbr title="Dagger\Env">Env</abbr>::withHostResourceInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type HostResource in the environment</p></dd><dt><a href="Dagger/Env.html#method_withHostResourceOutput">
+<abbr title="Dagger\Env">Env</abbr>::withHostResourceOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired HostResource output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMInput">
 <abbr title="Dagger\Env">Env</abbr>::withLLMInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type LLM in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMOutput">
 <abbr title="Dagger\Env">Env</abbr>::withLLMOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
