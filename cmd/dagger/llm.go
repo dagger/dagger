@@ -81,27 +81,27 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		s.skipEnv[k] = true
 	}
 
-	s.reset()
-	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
-		return nil, err
-	}
+	s.reset(ctx)
 
 	return s, nil
 }
 
-func (s *LLMSession) reset() {
-	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
+func (s *LLMSession) reset(ctx context.Context) {
+	s.updateLLMAndAgentVar(ctx, s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 		WithEnv(s.dag.Env(dagger.EnvOpts{
 			Privileged: true,
 			Writable:   true,
 		})).
-		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`)
+		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
-	cp := *s
-	cp.undo = s
-	return &cp
+	// FIXME: this was a half-baked feature, currently does more harm than good
+	// because we lose partial progress on interrupt
+	return s
+	// cp := *s
+	// cp.undo = s
+	// return &cp
 }
 
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
@@ -117,37 +117,21 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 	s.model = resolvedModel
 
-	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
+	s.updateLLMAndAgentVar(ctx, s.llm.WithPrompt(input))
+
+	prompted, err := s.llm.Sync(ctx)
 	if err != nil {
 		return s, err
 	}
 
-	s.llm = prompted
+	// NB: this is currently redundant since Sync updates LLM state in-place, but
+	// safest option is to respect the return value anyway in case it changes
+	s.updateLLMAndAgentVar(ctx, prompted)
 
 	if err := s.syncVarsFromLLM(ctx); err != nil {
 		return s, err
 	}
 
-	return s, nil
-}
-
-func (s *LLMSession) WithState(ctx context.Context, typeName, id string) (*LLMSession, error) {
-	s = s.Fork()
-
-	var llmID dagger.LLMID
-	updatedLLM := s.dag.QueryBuilder().
-		Select("loadLLMFromID").
-		Arg("id", s.llm).
-		Select(fmt.Sprintf("with%s", typeName)).
-		Arg("value", id).
-		Select("id").
-		Bind(&llmID)
-
-	if err := updatedLLM.Execute(ctx); err != nil {
-		return s, err
-	}
-
-	s.llm = s.dag.LoadLLMFromID(llmID)
 	return s, nil
 }
 
@@ -167,6 +151,14 @@ const (
 	lastValueVar = "_"
 )
 
+func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) error {
+	s.llm = llm
+	if err := s.assignShell(ctx, agentVar, s.llm); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
 	oldVars := s.syncedVars
@@ -179,6 +171,8 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
+			// from the agent var
 			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
 	}
@@ -253,14 +247,11 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}
-	s.llm = s.llm.WithEnv(s.dag.LoadEnvFromID(envID))
+	s.updateLLMAndAgentVar(ctx, s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
 	return nil
 }
 
 func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
-	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
-		return err
-	}
 	outputs, err := s.llm.Env().Outputs(ctx)
 	if err != nil {
 		return err
@@ -376,9 +367,9 @@ func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, e
 	return newStateToken(key), nil
 }
 
-func (s *LLMSession) Clear() *LLMSession {
+func (s *LLMSession) Clear(ctx context.Context) *LLMSession {
 	s = s.Fork()
-	s.reset()
+	s.reset(ctx)
 	return s
 }
 
@@ -427,7 +418,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
 		return s, err
 	}
 	s = s.Fork()
-	s.llm = compacted
+	s.updateLLMAndAgentVar(ctx, compacted)
 	return s, nil
 }
 
@@ -445,7 +436,7 @@ func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
 
 func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
 	s = s.Fork()
-	s.llm = s.llm.WithModel(model)
+	s.updateLLMAndAgentVar(ctx, s.llm.WithModel(model))
 	model, err := s.llm.Model(ctx)
 	if err != nil {
 		return nil, err
