@@ -96,7 +96,7 @@ container | from alpine | terminal
 
 ## Loading Modules
 
-Dagger Shell can load [modules](/features/modules), inspect their types, and run their functions. This works for both local and remote modules.
+Dagger Shell can load modules, inspect their types, and run their functions. This works for both local and remote modules.
 
 <VideoPlayer src="/img/current_docs/features/shell-module.webm" alt="Dagger Shell module loading" />
 
@@ -136,7 +136,7 @@ github.com/dagger/dagger/modules/wolfi |
 
 This loads `github.com/dagger/dagger/docs` into one pipeline, `github.com/dagger/dagger/modules/wolfi` into another, then combines them.
 
-This works by executing the module's [constructor function](/api/constructor/). It works exactly like executing any other function:
+This works by executing the module's [constructor function](../extending/constructors.mdx). It works exactly like executing any other function:
 
 - You can inspect it for arguments: `.help MODULE`
 - You can pass arguments: `MODULE --foo=bar --baz`
@@ -176,5 +176,5 @@ container | from nginx | with-directory /usr/share/nginx/html $build | terminal 
 
 ## Learn more
 
-- [Call the Dagger API using Dagger Shell](../api/clients-cli.mdx)
-- [Chain Dagger Functions using Dagger Shell](../api/chaining.mdx)
+- [Call the Dagger API using Dagger Shell](../extending/clients-cli.mdx)
+- [Chain Dagger Functions using Dagger Shell](../extending/chaining.mdx)

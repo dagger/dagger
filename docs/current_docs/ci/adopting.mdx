@@ -4,7 +4,7 @@ slug: /ci/adopting
 
 # Dagger for CI: Day 2
 
-Once you have [completed the quickstart](../quickstart/ci/index.mdx), and learned the basic concepts, it's time to take the next step: adopting Dagger in your project. We call this *daggerizing*. But how does one daggerize a project, exactly?
+Once you have [completed the quickstart](../quickstart/index.mdx), and learned the basic concepts, it's time to take the next step: adopting Dagger in your project. We call this *daggerizing*. But how does one daggerize a project, exactly?
 
 Every project is different, and every pipeline is a unique snowflake (usually that's not a good thing). So we can't give you an exact step-by-step guide of how to daggerize your project. But we can share the collective experience of the Dagger community, distilled into a simple framework.
 
@@ -72,12 +72,12 @@ When choosing the language to use for your pipeline, follow these principles:
 
 ### Implementing
 
-If you haven't already, make sure to [complete the Quickstart](../quickstart/ci/index.mdx), which will teach you how to daggerize an example pipeline.
+If you haven't already, make sure to [complete the Quickstart](../quickstart/index.mdx), which will teach you how to daggerize an example pipeline.
 
 Additionally, you can use the following resources:
 
-- Make your Dagger Functions smarter and more powerful, by adding services, secrets, error handling, custom types, and more. Find in-depth documentation in the [Dagger API reference](https://docs.dagger.io/api/reference) and the [Go](https://pkg.go.dev/dagger.io/dagger), [Python](https://dagger-io.readthedocs.org/), [TypeScript](reference/typescript/modules.md) and [PHP](https://docs.dagger.io/reference/php/) SDK documentation.
-- Learn more about key Dagger concepts like [function chaining](api/index.mdx#chaining), [just-in-time artifacts](api/return-values.mdx), and [pipeline visualization](features/visualization.mdx).
+- Make your Dagger Functions smarter and more powerful, by adding services, secrets, error handling, custom types, and more. Find in-depth documentation in the [Dagger API reference](https://docs.dagger.io/extending/reference) and the [Go](https://pkg.go.dev/dagger.io/dagger), [Python](https://dagger-io.readthedocs.org/), [TypeScript](reference/typescript/modules.md) and [PHP](https://docs.dagger.io/reference/php/) SDK documentation.
+- Learn more about key Dagger concepts like [function chaining](../extending/index.mdx), [just-in-time artifacts](../extending/return-types.mdx), and [pipeline visualization](../features/visualization.mdx).
 - [Explore the Daggerverse](https://daggerverse.dev) to find and reuse useful Dagger Functions developed by the Dagger community. For example, you can [scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy), [stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch), [build a Go project](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/golang), [generate GIFs of interactive terminal sessions](https://daggerverse.dev/mod/github.com/shykes/daggerverse/termcast), [integrate with Terraform](https://daggerverse.dev/mod/github.com/Excoriate/daggerverse/terraform), [play a game of yamlinvaders](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders), and more!
 
 ### Integrating with your dev toolchain
@@ -94,14 +94,14 @@ Here are a few guidelines:
 
 ### Integrating with CI
 
-Once your pipeline is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](integrations/ci.mdx).
+Once your pipeline is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](../integrations/ci.mdx).
 
 Since your daggerized pipelines are packaged as Dagger Modules, and modules only have one dependency - the `dagger` CLI - integrating your daggerized pipelines boils down to three steps:
 
 1. Decide which CI event should trigger which Dagger pipeline
 2. For each pipeline to trigger, determine how to map inputs from the CI environment into arguments to the Dagger functions composing the pipeline
 3. Write the resulting `dagger call` command for each pipeline.
-4. Find the [integration page for your CI platform](integrations/ci.mdx), and follow the instructions. For example: [GitHub](integrations/github.mdx), [GitLab CI](integrations/gitlab.mdx), [CircleCI](integrations/circleci.mdx), [Jenkins](integrations/jenkins.mdx), [Azure Pipelines](integrations/azure-pipelines.mdx), [AWS CodeBuild](integrations/aws-codebuild.mdx), [Argo Workflows](integrations/argo-workflows.mdx) and [Tekton](integrations/tekton.mdx).
+4. Find the [integration page for your CI platform](../integrations/ci.mdx), and follow the instructions. For example: [GitHub](../integrations/github.mdx), [GitLab CI](../integrations/gitlab.mdx), [CircleCI](../integrations/circleci.mdx), [Jenkins](../integrations/jenkins.mdx), [Azure Pipelines](../integrations/azure-pipelines.mdx), [AWS CodeBuild](../integrations/aws-codebuild.mdx), [Argo Workflows](../integrations/argo-workflows.mdx) and [Tekton](../integrations/tekton.mdx).
 
 A few important notes on CI integration:
 
@@ -149,4 +149,4 @@ As you develop your pipelines, you will find yourself writing more and more reus
 
 - For larger engineering organizations, as Dagger spreads to multiple teams, you can centralize shared modules into a dedicated repository, which can be imported from each team's pipelines. Remember, Dagger supports cross-language linking, so you can mix and match modules written in different languages without worrying about interoperability.
 
-- Finally, some of these modules may be suitable to be open-sourced and shared with the entire Dagger community, by [publishing it on the Daggerverse](https://docs.dagger.io/api/daggerverse).
+- Finally, some of these modules may be suitable to be open-sourced and shared with the entire Dagger community, by [publishing it on the Daggerverse](https://docs.dagger.io/extending/daggerverse).

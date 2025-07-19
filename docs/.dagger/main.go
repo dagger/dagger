@@ -38,7 +38,7 @@ type Docs struct {
 
 const (
 	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
+	generatedCliZenPath           = "docs/current_docs/reference/cli/index.mdx"
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
@@ -52,7 +52,7 @@ const (
 )
 
 const cliZenFrontmatter = `---
-slug: /reference/cli/
+title: "Overview"
 pagination_next: null
 pagination_prev: null
 ---
