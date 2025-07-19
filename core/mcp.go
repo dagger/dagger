@@ -491,8 +491,18 @@ func (m *MCP) selectionToToolResult(
 				return "", err
 			}
 			var res []any
+			var displays []string
 			for _, obj := range objs {
 				res = append(res, m.env.Ingest(obj, ""))
+				if displayer, ok := dagql.UnwrapAs[LLMDisplayer](obj); ok {
+					displays = append(displays, displayer.LLMDisplay())
+				}
+			}
+			if len(displays) > 0 {
+				return toolStructuredResponse(map[string]any{
+					"objects":   res,
+					"summaries": displays,
+				})
 			}
 			return toolStructuredResponse(map[string]any{
 				"objects": res,
