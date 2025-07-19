@@ -44,6 +44,13 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+
+<TabItem value="java" label="Java">
+
+```java file=./snippets/mount-dir/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 An alternative option is to copy the target directory in the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
@@ -75,6 +82,13 @@ Besides helping with the final image size, mounts are more performant and resour
 <TabItem value="php" label="PHP">
 
 ```php file=./snippets/copy-dir/php/src/MyModule.php
+```
+
+</TabItem>
+
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-dir/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -285,6 +299,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-modify-dir/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -423,6 +443,18 @@ For examples of SSH-based cloning, including private or public Git repositories 
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/clone-git-repository/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
+<TabItem value="Java (SSH)">
+
+```java file=./snippets/clone-git-repository-ssh/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -520,6 +552,12 @@ The following Dagger Function accepts a `File` argument, which could reference e
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/mount-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 An alternative option is to copy the target file to the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
@@ -544,6 +582,12 @@ Besides helping with the final image size, mounts are more performant and resour
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/copy-file/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -740,6 +784,12 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-filter-dir-post/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -839,6 +889,12 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/read-file-http/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -913,6 +969,12 @@ The following Dagger Function accepts a `File` argument and copies the specified
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-file-runtime/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -965,6 +1027,12 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/copy-filter-dir-pre/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/copy-filter-dir-pre/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1044,6 +1112,12 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/set-common-default-path/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -1119,6 +1193,12 @@ The following Dagger Function performs a multi-stage build.
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/multi-stage-build/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1169,6 +1249,12 @@ The following Dagger Function performs a matrix build.
 <TabItem value="php" label="PHP">
 
 ```php file=./snippets/builds/matrix-build/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/matrix-build/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1240,6 +1326,12 @@ The following Dagger Function builds a single image for different CPU architectu
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/multi-arch/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1289,6 +1381,12 @@ install the module first with `dagger install github.com/levlaz/daggerverse/cont
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/builds/multi-arch-cc/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/multi-arch-cc/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1345,6 +1443,12 @@ The following Dagger Function builds an image from a Dockerfile.
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/dockerfile/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1388,6 +1492,12 @@ The following function builds an image from a Dockerfile with a build context th
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/dockerfile-context/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1440,6 +1550,12 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) annotations](
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/oci-annotations/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1484,6 +1600,12 @@ The following Dagger Function adds [OpenContainer Initiative (OCI) labels](https
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/builds/oci-labels/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/oci-labels/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1545,6 +1667,12 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/builds/cache/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1591,6 +1719,12 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1739,6 +1873,12 @@ The following Dagger Function accepts a GitHub hosts configuration file as a `Se
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/secret-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1783,6 +1923,12 @@ The following code listing demonstrates how to inject a secret into a Dockerfile
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/secret-dockerfile/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/secret-dockerfile/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -1876,6 +2022,12 @@ The first Dagger Function below creates and returns an HTTP service. This servic
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/bind-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1920,6 +2072,12 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../api/snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/expose-dagger-services-to-host/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2003,6 +2161,12 @@ This implies that a service is already listening on a port on the host, out-of-b
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../api/snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/expose-host-services-to-dagger/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2100,6 +2264,12 @@ The following Dagger Function creates a service and binds it to an application c
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/test-against-db-service/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2144,6 +2314,12 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../api/snippets/services/start-stop-services/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/start-stop-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2194,6 +2370,12 @@ The following Dagger Function runs two services, service A and service B, that d
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/create-interdependent-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2240,6 +2422,12 @@ The following Dagger Function publishes a just-in-time container image to a priv
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/publish-image/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/publish-image/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2310,6 +2498,12 @@ The following Dagger Function tags a just-in-time container image multiple times
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/tag-publish-image/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -2377,6 +2571,12 @@ The following Dagger Function builds a just-in-time container image and loads it
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/load-image-host/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2425,6 +2625,12 @@ When a host directory or file is copied or mounted to a container's filesystem, 
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/export-file-dir/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/export-file-dir/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2495,6 +2701,12 @@ The following Dagger Function returns a just-in-time container. This can be expo
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/export-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2554,6 +2766,12 @@ The default location for the cache directory depends on the package manager (`~/
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/cache-dependencies/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2607,6 +2825,12 @@ The following Dagger Function demonstrates how to set a single environment varia
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/set-env-var/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 The following Dagger Function demonstrates how to set multiple environment variables in a container.
@@ -2627,6 +2851,12 @@ The following Dagger Function demonstrates how to set multiple environment varia
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/set-env-vars/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/set-env-vars/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2694,6 +2924,12 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../api/snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/services/persist-service-state/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -2814,6 +3050,19 @@ The following Dagger Function demonstrates how to handle errors in a workflow.
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/handle-errors/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+:::note
+`ExecutionException`, `DaggerQueryException`, `InterruptedException` are the three exception you might need
+to catch or throw. In the above code, it catches a `DaggerExecException`. This exception extends `DaggerQueryException`
+so you don't necessarily need to catch it, but in this case it gives you more information about the error by
+providing easy access to standard output and error, exit code and the failed command.
+:::
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2862,6 +3111,14 @@ The caveat with this approach is that forcing a zero exit code on a failure cach
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=./snippets/continue-after-errors/typescript/src/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/continue-after-errors/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+```java file=./snippets/continue-after-errors/java/src/main/java/io/dagger/modules/mymodule/TestResult.java
 ```
 
 </TabItem>
@@ -2937,6 +3194,12 @@ The following Dagger Function opens an interactive terminal session at different
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/debugging/java/terminal-container/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -2983,6 +3246,12 @@ The following Dagger Function clones Dagger's GitHub repository and opens an int
 ```
 
 </TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/debugging/java/terminal-directory-1/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 The container created to mount the directory can be customized using additional options. The following Dagger Function revised the previous example to demonstrate this, using an `ubuntu` container image and `bash` shell instead of the defaults.
@@ -3002,6 +3271,12 @@ The container created to mount the directory can be customized using additional 
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript file=../api/snippets/debugging/typescript/terminal-directory-2/index.ts
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../api/snippets/debugging/java/terminal-directory-2/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
