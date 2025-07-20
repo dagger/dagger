@@ -143,6 +143,11 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*Search
 		} else {
 			errs = errors.Join(errs, err)
 		}
+		if errBuf.Len() > 0 {
+			errs = errors.Join(errs, fmt.Errorf("ripgrep error: %s", errBuf.String()))
+		} else {
+			errs = errors.Join(errs, err)
+		}
 	}
 	return results, errs
 }

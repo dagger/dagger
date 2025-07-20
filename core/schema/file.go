@@ -62,12 +62,18 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("withReplaced",
 			DagOpFileWrapper(srv, s.withReplaced,
 				WithPathFn(keepParentFile[fileReplaceArgs]))).
-			Doc(`Retrieves the file with content replaced with the given text.`).
+			Doc(
+				`Retrieves the file with content replaced with the given text.`,
+				`If 'all' is true, all occurrences of the pattern will be replaced.`,
+				`If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.`,
+				`If neither are specified, and there are multiple matches for the pattern, this will error.`,
+				`If there are no matches for the pattern, this will error.`,
+			).
 			Args(
 				dagql.Arg("search").Doc(`The text to match.`),
 				dagql.Arg("replacement").Doc(`The text to match.`),
-				dagql.Arg("startLine").Doc(`Start replacing from this line.`),
 				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
+				dagql.Arg("firstAfter").Doc(`Replace the first match after the specified line.`),
 			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
@@ -157,8 +163,8 @@ func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core
 type fileReplaceArgs struct {
 	Search      string
 	Replacement string
-	StartLine   int  `default:"1"`
 	All         bool `default:"false"`
+	FirstAfter  *int
 
 	FSDagOpInternalArgs
 }
@@ -169,7 +175,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	dir, err := parent.Self().Replace(ctx, args.Search, args.Replacement, args.StartLine, args.All)
+	dir, err := parent.Self().Replace(ctx, args.Search, args.Replacement, args.FirstAfter, args.All)
 	if err != nil {
 		return inst, err
 	}

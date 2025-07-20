@@ -13,6 +13,8 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
@@ -22,12 +24,9 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	"github.com/tiborvass/replace"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/text/transform"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
@@ -342,7 +341,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 	return results, nil
 }
 
-func (file *File) Replace(ctx context.Context, search, replacement string, startLine int, all bool) (*File, error) {
+func (file *File) Replace(ctx context.Context, searchStr, replacementStr string, firstAfter *int, all bool) (*File, error) {
 	file = file.Clone()
 
 	opt, ok := buildkit.CurrentOpOpts(ctx)
@@ -358,7 +357,7 @@ func (file *File) Replace(ctx context.Context, search, replacement string, start
 		return nil, err
 	}
 
-	parentRef, err := getRefOrEvaluate(ctx, file.Result, file)
+	parentRef, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -368,48 +367,97 @@ func (file *File) Replace(ctx context.Context, search, replacement string, start
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
-	r, w := io.Pipe()
-
-	var replaced io.Reader
-	if all {
-		replaced = transform.NewReader(r, replace.String(search, replacement))
-	} else {
-		replaced = transform.NewReader(r, replace.StringN(search, replacement, 1))
+	// reuse Search internally so we get convenient line numbers for an error if
+	// there are multiple matches
+	matches, err := file.Search(ctx, SearchOpts{
+		Pattern:   searchStr,
+		Literal:   true,
+		Multiline: strings.ContainsRune(searchStr, '\n'),
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	// Search includes matches before *firstAfter, so drop those
+	if firstAfter != nil {
+		var matchesAfter []*SearchResult
+		for _, match := range matches {
+			if match.LineNumber >= *firstAfter {
+				matchesAfter = append(matchesAfter, match)
+			}
+		}
+		matches = matchesAfter
+	}
+
+	// Check for matches
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("search string not found")
+	}
+
+	// Load content into memory for simple bytes.Replace
+	//
+	// This is obviously less efficient than streaming, but: 1. it is far simpler
+	// (I tried streaming text/transform and hit cryptic errors), 2. we already
+	// faced the music on that with File.contents, 3. this will mostly be used for
+	// source code which is just fine to hold in memory, and 4. it is far simpler.
+	contents, err := file.Contents(ctx, firstAfter, nil)
+	if err != nil {
+		return nil, err
+	}
+	search := []byte(searchStr)
+	replacement := []byte(replacementStr)
+	if all {
+		contents = bytes.ReplaceAll(contents, []byte(search), []byte(replacement))
+	} else if firstAfter != nil {
+		contents = bytes.Replace(contents, []byte(search), []byte(replacement), 1)
+	} else if len(matches) == 1 {
+		contents = bytes.Replace(contents, []byte(search), []byte(replacement), 1)
+	} else if len(matches) > 0 {
+		matchedLines := make([]string, len(matches))
+		for i, match := range matches {
+			matchedLines[i] = strconv.Itoa(match.LineNumber)
+		}
+		return nil, fmt.Errorf("search string found multiple times (lines %s)", strings.Join(matchedLines, ", "))
+	}
+
+	// If we replaced after a certain line, bring the content before it back
+	if firstAfter != nil {
+		endLine := *firstAfter - 1
+		previous, err := file.Contents(ctx, nil, &endLine)
+		if err != nil {
+			return nil, err
+		}
+		contents = append(previous, contents...)
+	}
+
+	// Create a new layer for the replaced content
 	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("patch"))
 	if err != nil {
 		return nil, err
 	}
-
-	eg := new(errgroup.Group)
-	eg.Go(func() error {
-		defer w.Close()
-		return file.readInto(ctx, w)
-	})
-	eg.Go(func() error {
-		return MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
-			resolvedPath, err := containerdfs.RootPath(root, file.File)
-			if err != nil {
-				return err
-			}
-			if err := os.Truncate(resolvedPath, 0); err != nil {
-				return err
-			}
-			f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			_, err = io.Copy(f, replaced)
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		resolvedPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
 			return err
-		})
+		}
+		// We're in a new copy-on-write layer, so truncating and rewriting in-place
+		// should be fine; we don't need to worry about atomic writes, and this way
+		// we preserve permissions and other metadata.
+		if err := os.Truncate(resolvedPath, 0); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Write(contents)
+		return err
 	})
-	if err := eg.Wait(); err != nil {
+	if err != nil {
 		return nil, err
 	}
-
 	snap, err := newRef.Commit(ctx)
 	if err != nil {
 		return nil, err
