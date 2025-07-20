@@ -1689,7 +1689,14 @@ func (m *MCP) newState(ctx context.Context, srv *dagql.Server, target dagql.AnyO
 		if err != nil {
 			return "", err
 		}
-		data[field.Name] = val.Unwrap()
+		var datum any
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
+			datum = m.env.Ingest(obj, "")
+		} else {
+			// TODO: lists of objects?
+			datum = val.Unwrap()
+		}
+		data[field.Name] = datum
 	}
 	if len(data) > 0 {
 		res["data"] = data
