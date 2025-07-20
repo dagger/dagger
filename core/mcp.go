@@ -453,7 +453,7 @@ func (m *MCP) selectionToToolResult(
 			//
 			var objs []dagql.AnyResult
 			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
-				return "", fmt.Errorf("failed to sync: %w", err)
+				return "", err
 			}
 			var res []any
 			for _, obj := range objs {
