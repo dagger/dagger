@@ -1,13 +1,11 @@
 ---
-title: "Dagger Modules"
-description: "Dagger modules are the building blocks of your workflows. They can be composed together to create complex pipelines."
+title: "Components"
+description: "Dagger Modules are the building blocks of your workflows. They can be composed together to create complex pipelines."
 sidebar_label: "Overview"
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-## Components
 
 When you work with a Dagger Workflow, you are using Components that are comprised of one or more Dagger Modules. A Dagger Module is a collection of reusable code that can be shared and used across different workflows. Modules allow you to encapsulate functionality, making it easier to manage and maintain your code.
 
@@ -15,11 +13,11 @@ As part of developing a Dagger Module, you group your code into **functions**. A
 
 The recommended, and most common way, to interact with the Dagger API is through Dagger Functions. Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK.
 
-Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+Dagger Functions are packaged, shared and reused using Dagger Modules. A new Dagger Module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally using a Dagger SDK. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
-Here is an example of initializing a Dagger module:
+Here is an example of initializing a Dagger Module:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
