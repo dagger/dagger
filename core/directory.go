@@ -258,7 +258,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	_, err = execInMount(ctx, dir, ImmutableOp, func(root string) error {
+	_, err = execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, src)
 		if err != nil {
 			return err
@@ -421,7 +421,7 @@ func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content
 		permissions = 0o644
 	}
 
-	return execInMount(ctx, dir, SaveResultsWithDesc("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))), func(root string) error {
+	return execInMount(ctx, dir, func(root string) error {
 		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
 		if err != nil {
 			return err
@@ -460,7 +460,7 @@ func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content
 		}
 
 		return nil
-	})
+	}, withSavedSnapshot("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))))
 }
 
 func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, error) {
@@ -906,13 +906,13 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		permissions = 0755
 	}
 
-	return execInMount(ctx, dir, SaveResultsWithDesc("withNewDirectory %s", dest), func(root string) error {
+	return execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dest)
 		if err != nil {
 			return err
 		}
 		return os.MkdirAll(resolvedDir, permissions)
-	})
+	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -951,7 +951,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
-	return execInMount(ctx, dir, SaveResultsWithDesc("without %s", strings.Join(paths, ",")), func(root string) error {
+	return execInMount(ctx, dir, func(root string) error {
 		for _, p := range paths {
 			p = path.Join(dir.Dir, p)
 			var matches []string
@@ -976,7 +976,7 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 			}
 		}
 		return nil
-	})
+	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
@@ -1033,7 +1033,7 @@ func (dir *Directory) Root() (*Directory, error) {
 
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
 	dir = dir.Clone()
-	return execInMount(ctx, dir, SaveResultsWithDesc("symlink %s -> %s", linkName, target), func(root string) error {
+	return execInMount(ctx, dir, func(root string) error {
 		linkName = path.Join(dir.Dir, linkName)
 		linkDir, linkBasename := filepath.Split(linkName)
 		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
@@ -1046,7 +1046,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 		}
 		resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
 		return os.Symlink(target, resolvedLinkName)
-	})
+	}, withSavedSnapshot("symlink %s -> %s", linkName, target))
 }
 
 func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {

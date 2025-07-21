@@ -316,7 +316,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	file = file.Clone()
-	return execInMount(ctx, file, SaveResultsWithDesc("withTimestamps %d", unix), func(root string) error {
+	return execInMount(ctx, file, func(root string) error {
 		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
 		if err != nil {
 			return err
@@ -327,7 +327,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 			return err
 		}
 		return nil
-	})
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {

@@ -11,16 +11,18 @@ import (
 
 var errEmptyResultRef = fmt.Errorf("empty result reference")
 
-type ExecInMountSaveOpt func() (string, bool)
-
-func SaveResultsWithDesc(format string, a ...any) ExecInMountSaveOpt {
-	return func() (string, bool) {
-		return fmt.Sprintf(format, a...), true
-	}
+type execInMountOpt struct {
+	commitSnapshot bool
+	cacheDesc      string
 }
 
-func ImmutableOp() (string, bool) {
-	return "", false
+type execInMountOptFn func(opt *execInMountOpt)
+
+func withSavedSnapshot(format string, a ...any) execInMountOptFn {
+	return func(opt *execInMountOpt) {
+		opt.cacheDesc = fmt.Sprintf(format, a...)
+		opt.commitSnapshot = true
+	}
 }
 
 type fileOrDirectory interface {
@@ -31,7 +33,12 @@ type fileOrDirectory interface {
 }
 
 // execInMount is a helper used by Directory.execInMount and File.execInMount
-func execInMount[T fileOrDirectory](ctx context.Context, obj T, saveResultsOpt ExecInMountSaveOpt, f func(string) error) (T, error) {
+func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
+	var saveOpt execInMountOpt
+	for _, optFn := range optFns {
+		optFn(&saveOpt)
+	}
+
 	parentRef, err := getRefOrEvaluate(ctx, obj)
 	if err != nil {
 		return nil, err
@@ -47,16 +54,14 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, saveResultsOpt E
 		return nil, err
 	}
 
-	cacheDesc, saveResults := saveResultsOpt()
-
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
-	if saveResults {
-		if cacheDesc == "" {
-			panic("mutable op without cache description")
+	if saveOpt.commitSnapshot {
+		if saveOpt.cacheDesc == "" {
+			return nil, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(cacheDesc))
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(saveOpt.cacheDesc))
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +76,7 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, saveResultsOpt E
 	if err != nil {
 		return nil, err
 	}
-	if saveResults {
+	if saveOpt.commitSnapshot {
 		snap, err := newRef.Commit(ctx)
 		if err != nil {
 			return nil, err
