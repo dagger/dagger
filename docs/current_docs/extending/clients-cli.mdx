@@ -1,18 +1,22 @@
 ---
+title: "Dagger CLI"
+sidebar_label: "Dagger CLI"
 slug: /extending/cli
+description: "Learn how to use the Dagger CLI to call the Dagger API directly from the command line, including examples for various workflows."
 ---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-# Dagger CLI
 
 The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by external Dagger modules) directly from the command-line.
 
 You can call the API interactively (`dagger`) or non-interactively (`dagger -c`, `dagger call`, or `dagger core`).
 
+## Examples
+
 Here are a few examples:
 
-- Create a simple workflow that is fully satisfied by the core Dagger API, without needing to program a Dagger module:
+Create a simple workflow that is fully satisfied by the core Dagger API, without needing to program a Dagger module:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
@@ -54,7 +58,7 @@ Here are a few examples:
     </TabItem>
     </Tabs>
 
-- Use Dagger as an alternative to `docker run`.
+Use Dagger as an alternative to `docker run`.
 
     <Tabs>
     <TabItem value="System shell">
@@ -80,7 +84,7 @@ Here are a few examples:
     If only the core Dagger API is needed, the `-M` (`--no-mod`) flag can be provided. This results in quicker startup, because the Dagger CLI doesn't try to find and load a current module. This also makes `dagger -M` equivalent to `dagger core`.
     :::
 
-- Call one of the auto-generated Dagger Functions:
+Call one of the auto-generated Dagger Functions:
 
     <Tabs>
     <TabItem value="System shell">
@@ -104,7 +108,7 @@ Here are a few examples:
     When using the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
     :::
 
-- Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories and call their Dagger Functions as though you were calling them locally:
+Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories and call their Dagger Functions as though you were calling them locally:
 
     <Tabs>
     <TabItem value="System shell">
@@ -128,7 +132,7 @@ Here are a few examples:
     </TabItem>
     </Tabs>
 
-- List all the Dagger Functions available in a module using context-sensitive help:
+List all the Dagger Functions available in a module using context-sensitive help:
 
     <Tabs>
     <TabItem value="System shell">
@@ -148,7 +152,7 @@ Here are a few examples:
     </TabItem>
     </Tabs>
 
-- List all the optional and required arguments for a Dagger Function using context-sensitive help:
+List all the optional and required arguments for a Dagger Function using context-sensitive help:
 
     <Tabs>
     <TabItem value="System shell">

@@ -448,6 +448,34 @@ html[data-theme="dark"] pre {
   color: #f8f8f2; // Light color for code text in dark mode
 }
 
+// Remove top and bottom padding from header-searchbar
+.header-searchbar {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+// DocSearch button styling to match background color in both themes
+html[data-theme="light"] .DocSearch.DocSearch-Button {
+  background-color: #fff !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  
+  &:hover {
+    background-color: darken(#fff, 3%) !important;
+  }
+}
+
+html[data-theme="dark"] .DocSearch.DocSearch-Button {
+  background-color: #{$obsidian-color} !important;
+  border: none !important;
+  border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  
+  &:hover {
+    background-color: lighten($inkberry-color, 5%) !important;
+  }
+}
+
 // Ensure images don't get skewed and maintain aspect ratio
 .markdown img {
   max-width: 100%;

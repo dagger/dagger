@@ -19,7 +19,7 @@ When using Dagger to build a monorepo, you can choose between two common pattern
 
 ### Top-level Dagger Module
 
-Create a top-level Dagger Module for the monorepo, attach sub-modules for each component of the monorepo, and model the Dagger Module dependencies on the logical dependencies between components. This pattern is suitable when there are dependencies but differences between the projects in the monorepo (e.g. a monorepo with SDKs, CLIs, web applications, docs, all of which have different requirements).
+One common approach is to create a top-level Dagger Module for the monorepo, attach sub-modules for each component of the monorepo, and model the Dagger Module dependencies on the logical dependencies between components. This pattern is suitable when there are dependencies but differences between the projects in the monorepo (e.g. a monorepo with SDKs, CLIs, web applications, docs, all of which have different requirements).
 
 ```mermaid
 graph TD
@@ -33,13 +33,13 @@ graph TD
 
 Benefits of this pattern include:
 
-- Easier debugging: Sub-modules provide a way to separate, and therefore easily debug, the business logic for different workflows.
-- Code reuse: There may be opportunities for sub-modules in different projects to import each other to reuse existing functionality.
-- Improved performance: The top-level module of a project can orchestrate the sub-modules using the language’s native concurrency features.
+- **Easier debugging**: Sub-modules provide a way to separate, and therefore easily debug, the business logic for different workflows.
+- **Code reuse**: There may be opportunities for sub-modules in different projects to import each other to reuse existing functionality.
+- **Improved performance**: The top-level module of a project can orchestrate the sub-modules using the language’s native concurrency features.
 
 ## Shared Dagger Module
 
-Create a single, shared automation module which all projects use and contribute to. This pattern is suitable when there are significant commonalities between the projects in the monorepo (e.g. a monorepo with only micro-services or only front-end applications).
+An alternative approach is to create a single, shared automation module which all projects use and contribute to. This pattern is suitable when there are significant commonalities between the projects in the monorepo (e.g. a monorepo with only micro-services or only front-end applications).
 
 ```mermaid
 graph TD
@@ -51,10 +51,10 @@ graph TD
 
 Benefits of this pattern include:
 
-- Code reuse: This reduces code duplication and ensures a consistent CI environment for all projects. For example, the shared module could create a common build environment and leverage this for multiple projects in the monorepo.
-- Reduced onboarding friction: There is no need to create a new CI module when adding a new project or component. New projects can get started faster with their CI implementation.
-- Best practices: All projects benefit from the best practices implemented in the shared module.
-- Knowledge sharing: By contributing to a shared CI module, project teams can learn from each other's CI strategies.
+- **Code reuse**: This reduces code duplication and ensures a consistent CI environment for all projects. For example, the shared module could create a common build environment and leverage this for multiple projects in the monorepo.
+- **Reduced onboarding friction**: There is no need to create a new CI module when adding a new project or component. New projects can get started faster with their CI implementation.
+- **Best practices**: All projects benefit from the best practices implemented in the shared module.
+- **Knowledge sharing**: By contributing to a shared CI module, project teams can learn from each other's CI strategies.
 
 ## Optimizing monorepo builds
 
