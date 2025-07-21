@@ -23,7 +23,7 @@ func ImmutableOp() (string, bool) {
 	return "", false
 }
 
-type FileOrDirectory interface {
+type fileOrDirectory interface {
 	*File | *Directory
 	getResult() bkcache.ImmutableRef
 	setResult(bkcache.ImmutableRef)
@@ -31,7 +31,7 @@ type FileOrDirectory interface {
 }
 
 // execInMount is a helper used by Directory.execInMount and File.execInMount
-func execInMount[T FileOrDirectory](ctx context.Context, obj T, saveResultsOpt ExecInMountSaveOpt, f func(string) error) (T, error) {
+func execInMount[T fileOrDirectory](ctx context.Context, obj T, saveResultsOpt ExecInMountSaveOpt, f func(string) error) (T, error) {
 	parentRef, err := getRefOrEvaluate(ctx, obj)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func execInMount[T FileOrDirectory](ctx context.Context, obj T, saveResultsOpt E
 	return obj, nil
 }
 
-func getRefOrEvaluate[T FileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
+func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
 	ref := t.getResult()
 	if ref != nil {
 		return ref, nil
