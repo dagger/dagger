@@ -934,7 +934,7 @@ func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
 	src *core.ModuleSource,
 ) error {
 	return (func() (rerr error) {
-		ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load .gitignore patterns up to %q", src.Local.ContextDirectoryPath), telemetry.Internal())
+		ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load .gitignore patterns up to %q", src.Local.ContextDirectoryPath))
 		defer telemetry.End(span, func() error { return rerr })
 
 		lg := bklog.G(ctx).WithField("module", src.ModuleName)
@@ -957,7 +957,7 @@ func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
 			return fmt.Errorf("failed to load context directory with only .gitignore: %w", err)
 		}
 
-		gitIgnorePatterns, err := loadGitIgnoreInDirectory(ctx, contextDirectory.Result.Self(), ".")
+		gitIgnorePatterns, err := core.LoadGitIgnoreInDirectory(ctx, s.dag, contextDirectory)
 		if err != nil {
 			return fmt.Errorf("failed to load .gitignore in context directory %q: %w", src.Local.ContextDirectoryPath, err)
 		}
