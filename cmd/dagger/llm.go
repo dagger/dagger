@@ -49,7 +49,7 @@ func (m interpreterMode) ContentType() string {
 }
 
 type LLMSession struct {
-	undo       *LLMSession
+	// undo       *LLMSession
 	dag        *dagger.Client
 	llm        *dagger.LLM
 	model      string
