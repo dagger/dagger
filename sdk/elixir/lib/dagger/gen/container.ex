@@ -468,6 +468,20 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  The address this container was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   The platform this container executes and publishes as.
   """
   @spec platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}

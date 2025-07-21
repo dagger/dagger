@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
@@ -784,7 +785,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 			case Directory, File:
 				// Ignore on git urls since the flag will parse it directly.
 				// We just need to resolve the ref for "local" (contextual) paths.
-				if _, err := parseGitURL(value); err != nil {
+				if _, err := gitutil.ParseURL(value); err != nil {
 					if newPath, err := h.contextArgRef(value); err == nil {
 						return newPath, false, nil
 					}
