@@ -16,6 +16,20 @@ defmodule Dagger.Binding do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Retrieve the binding value, as type Address
+  """
+  @spec as_address(t()) :: Dagger.Address.t()
+  def as_address(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type CacheVolume
   """
   @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()

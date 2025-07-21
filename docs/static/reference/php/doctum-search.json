@@ -8,6 +8,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Address",
+			"p": "Dagger/Address.html",
+			"d": "<p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AddressId",
+			"p": "Dagger/AddressId.html",
+			"d": "<p>The <code>AddressID</code> scalar type represents an identifier for an object of type Address.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\Argument",
 			"p": "Dagger/Attribute/Argument.html",
 			"d": "",
@@ -1167,6 +1187,60 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Address::container",
+			"p": "Dagger/Address.html#method_container",
+			"d": "<p>Load a container from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::directory",
+			"p": "Dagger/Address.html#method_directory",
+			"d": "<p>Load a directory from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::file",
+			"p": "Dagger/Address.html#method_file",
+			"d": "<p>Load a file from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRef",
+			"p": "Dagger/Address.html#method_gitRef",
+			"d": "<p>Load a git ref (branch, tag or commit) from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRepository",
+			"p": "Dagger/Address.html#method_gitRepository",
+			"d": "<p>Load a git repository from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::id",
+			"p": "Dagger/Address.html#method_id",
+			"d": "<p>A unique identifier for this Address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::secret",
+			"p": "Dagger/Address.html#method_secret",
+			"d": "<p>Load a secret from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::service",
+			"p": "Dagger/Address.html#method_service",
+			"d": "<p>Load a service from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::value",
+			"p": "Dagger/Address.html#method_value",
+			"d": "<p>The address value</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Attribute\\Argument::__construct",
 			"p": "Dagger/Attribute/Argument.html#method___construct",
 			"d": null
@@ -1206,6 +1280,12 @@
 			"n": "Dagger\\Attribute\\ReturnsListOfType::__construct",
 			"p": "Dagger/Attribute/ReturnsListOfType.html#method___construct",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asAddress",
+			"p": "Dagger/Binding.html#method_asAddress",
+			"d": "<p>Retrieve the binding value, as type Address</p>"
 		},
 		{
 			"t": "M",
@@ -1353,6 +1433,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::address",
+			"p": "Dagger/Client.html#method_address",
+			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -1464,6 +1550,12 @@
 			"n": "Dagger\\Client::llm",
 			"p": "Dagger/Client.html#method_llm",
 			"d": "<p>Initialize a Large Language Model (LLM)</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadAddressFromID",
+			"p": "Dagger/Client.html#method_loadAddressFromID",
+			"d": "<p>Load a Address from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2049,6 +2141,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::originalAddress",
+			"p": "Dagger/Container.html#method_originalAddress",
+			"d": "<p>The address this container was originally loaded from, if any</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::platform",
 			"p": "Dagger/Container.html#method_platform",
 			"d": "<p>The platform this container executes and publishes as.</p>"
@@ -2481,6 +2579,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::originalAddress",
+			"p": "Dagger/Directory.html#method_originalAddress",
+			"d": "<p>The address this directory was originally loaded from, if any</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::sync",
 			"p": "Dagger/Directory.html#method_sync",
 			"d": "<p>Force evaluation in the engine.</p>"
@@ -2778,6 +2882,18 @@
 			"n": "Dagger\\Env::outputs",
 			"p": "Dagger/Env.html#method_outputs",
 			"d": "<p>return all output values for the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withAddressInput",
+			"p": "Dagger/Env.html#method_withAddressInput",
+			"d": "<p>Create or update a binding of type Address in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withAddressOutput",
+			"p": "Dagger/Env.html#method_withAddressOutput",
+			"d": "<p>Declare a desired Address output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -3105,6 +3221,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::originalAddress",
+			"p": "Dagger/File.html#method_originalAddress",
+			"d": "<p>The address this directory was originally loaded from, if any</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::size",
 			"p": "Dagger/File.html#method_size",
 			"d": "<p>Retrieves the size of the file, in bytes.</p>"
@@ -3345,6 +3467,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRef::originalAddress",
+			"p": "Dagger/GitRef.html#method_originalAddress",
+			"d": "<p>The address this git ref was originally loaded from, if any</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::ref",
 			"p": "Dagger/GitRef.html#method_ref",
 			"d": "<p>The resolved ref name at this ref.</p>"
@@ -3390,6 +3518,12 @@
 			"n": "Dagger\\GitRepository::latestVersion",
 			"p": "Dagger/GitRepository.html#method_latestVersion",
 			"d": "<p>Returns details for the latest semver tag.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::originalAddress",
+			"p": "Dagger/GitRepository.html#method_originalAddress",
+			"d": "<p>The address this git repository was originally loaded from, if any</p>"
 		},
 		{
 			"t": "M",
@@ -4281,6 +4415,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Secret::originalAddress",
+			"p": "Dagger/Secret.html#method_originalAddress",
+			"d": "<p>The address this directory was originally loaded from, if any</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Secret::plaintext",
 			"p": "Dagger/Secret.html#method_plaintext",
 			"d": "<p>The value of this secret.</p>"
@@ -4308,6 +4448,12 @@
 			"n": "Dagger\\Service::id",
 			"p": "Dagger/Service.html#method_id",
 			"d": "<p>A unique identifier for this Service.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Service::originalAddress",
+			"p": "Dagger/Service.html#method_originalAddress",
+			"d": "<p>The address this service was originally loaded from, if any</p>"
 		},
 		{
 			"t": "M",

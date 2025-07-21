@@ -42,7 +42,13 @@ import (
 type GitRepository struct {
 	Backend GitRepositoryBackend
 
-	DiscardGitDir bool
+	DiscardGitDir   bool
+	OriginalAddress *Address
+}
+
+func (repo *GitRepository) Clone() *GitRepository {
+	cp := *repo
+	return &cp
 }
 
 type GitRepositoryBackend interface {
@@ -77,7 +83,7 @@ func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error
 	if err != nil {
 		return nil, err
 	}
-	return &GitRef{repo, ref}, nil
+	return &GitRef{Repo: repo, Backend: ref}, nil
 }
 
 func (repo *GitRepository) Tags(ctx context.Context, patterns []string, sort string) ([]string, error) {
@@ -89,8 +95,9 @@ func (repo *GitRepository) Branches(ctx context.Context, patterns []string, sort
 }
 
 type GitRef struct {
-	Repo    *GitRepository
-	Backend GitRefBackend
+	Repo            *GitRepository
+	Backend         GitRefBackend
+	OriginalAddress *Address
 }
 
 type GitRefBackend interface {
@@ -113,6 +120,11 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
+}
+
+func (ref *GitRef) Clone() *GitRef {
+	cp := *ref
+	return &cp
 }
 
 func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {

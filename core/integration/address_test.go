@@ -1,13 +1,21 @@
-package main
+package core
 
 import (
+	"context"
 	"testing"
 
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSecretParse(t *testing.T) {
-	t.Parallel()
+type AddressSuite struct{}
+
+func TestAddress(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(AddressSuite{})
+}
+
+func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name             string
 		input            string
@@ -116,13 +124,12 @@ func TestSecretParse(t *testing.T) {
 			expectedCacheKey: "bar",
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			v := secretValue{}
-			err := v.Set(tc.input)
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			uri, err := c.Address(tc.input).Secret().URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedURI, v.uri)
-			require.Equal(t, tc.expectedCacheKey, v.cacheKey)
+			require.Equal(t, tc.expectedURI, uri)
+			// FIXME: can't test expected cache key, it's not exposed in the API
+			// test expected cache key digest instead?
 		})
 	}
 }

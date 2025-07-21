@@ -38,6 +38,20 @@ defmodule Dagger.Secret do
   end
 
   @doc """
+  The address this directory was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = secret) do
+    query_builder =
+      secret.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: secret.client
+    }
+  end
+
+  @doc """
   The value of this secret.
   """
   @spec plaintext(t()) :: {:ok, String.t()} | {:error, term()}

@@ -54,6 +54,20 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  The address this git ref was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   The resolved ref name at this ref.
   """
   @spec ref(t()) :: {:ok, String.t()} | {:error, term()}

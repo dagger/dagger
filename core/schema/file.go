@@ -67,6 +67,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
+		dagql.Func("originalAddress", s.originalAddress).
+			Doc(`The address this directory was originally loaded from, if any`),
 	}.Install(srv)
 }
 
@@ -175,4 +177,11 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 
 func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
 	return val.File, nil
+}
+
+func (s *fileSchema) originalAddress(ctx context.Context, parent *core.File, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("file was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }

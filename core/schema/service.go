@@ -137,6 +137,8 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("kill").Doc(`Immediately kill the service without waiting for a graceful exit`),
 			),
+		dagql.Func("originalAddress", s.originalAddress).
+			Doc(`The address this service was originally loaded from, if any`),
 	}.Install(srv)
 }
 
@@ -428,4 +430,11 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	<-ctx.Done()
 
 	return void, nil
+}
+
+func (s *serviceSchema) originalAddress(ctx context.Context, parent *core.Service, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("service was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }

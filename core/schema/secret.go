@@ -55,6 +55,8 @@ func (s *secretSchema) Install(srv *dagql.Server) {
 			Sensitive().
 			DoNotCache("Do not include plaintext secret in the cache.").
 			Doc(`The value of this secret.`),
+		dagql.Func("originalAddress", s.originalAddress).
+			Doc(`The address this directory was originally loaded from, if any`),
 	}.Install(srv)
 }
 
@@ -248,4 +250,11 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 	}
 
 	return string(plaintext), nil
+}
+
+func (s *secretSchema) originalAddress(ctx context.Context, parent *core.Secret, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("secret was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }

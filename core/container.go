@@ -93,6 +93,9 @@ type Container struct {
 	// Image reference
 	ImageRef string
 
+	// Original address
+	OriginalAddress *Address
+
 	// Ports to expose from the container.
 	Ports []Port
 
@@ -625,7 +628,7 @@ func (container *Container) Build(
 
 		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	}
-
+	container.OriginalAddress = dockerfileDir.OriginalAddress
 	return container, nil
 }
 

@@ -65,6 +65,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
+		dagql.Func("originalAddress", s.originalAddress).
+			Doc(`The address this directory was originally loaded from, if any`),
 		dagql.NodeFunc("withFile", DagOpDirectoryWrapper(srv, s.withFile, WithPathFn(keepParentDir[WithFileArgs]))).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
@@ -771,4 +773,11 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *directorySchema) originalAddress(ctx context.Context, parent *core.Directory, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("directory was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }

@@ -203,6 +203,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The address this directory was originally loaded from, if any
+     */
+    public function originalAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId
