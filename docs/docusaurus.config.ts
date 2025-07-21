@@ -178,7 +178,7 @@ const config: Config = {
           to: "/",
           label: "Docs",
           className: "navbar-blog-link",
-          activeBaseRegex: "^/$|^/(?!examples|extending|reference).*",
+          activeBaseRegex: "^/$|^/(?!examples|extending|reference|cookbook).*",
         },
         {
           position: "left",
@@ -200,6 +200,13 @@ const config: Config = {
           label: "Reference",
           className: "navbar-blog-link",
           activeBaseRegex: "^/reference/?.*",
+        },
+        {
+          position: "left",
+          to: "/cookbook",
+          label: "Cookbook",
+          className: "navbar-blog-link",
+          activeBaseRegex: "^/cookbook/?.*",
         },
         {
           position: "right",

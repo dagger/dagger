@@ -31,7 +31,7 @@ For these tools to cache properly, they need their own cache data (usually a dir
 ### Layer caching
 
 - _Layers are cached in sequence_, and a change in any one layer invalidates that and all subsequent layers. Pay attention to the order of your build operations, and sequence non-volatile operations before volatile ones to avoid invalidating the cache early.
-- It may sometimes be necessary to explicitly force execution of specific workflow operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/cookbook.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger workflow
+- It may sometimes be necessary to explicitly force execution of specific workflow operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/index.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger workflow
 
 ### Volume caching
 

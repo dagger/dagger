@@ -21,7 +21,6 @@ module.exports = {
       label: "Components",
       items: [
         "components/index",
-
         "components/objects/create-your-own",
         {
           type: "category",
@@ -76,7 +75,22 @@ module.exports = {
       items: [
         "extending/index",
         "extending/arguments",
+        "extending/default-paths",
+        "extending/secrets",
+        "extending/services",
         "extending/return-types",
+        "extending/chaining",
+      ],
+    },
+    {
+      type: "category",
+      label: "Custom Applications",
+      items: [
+        "extending/custom-applications/index",
+        "extending/custom-applications/go",
+        "extending/custom-applications/python",
+        "extending/custom-applications/typescript",
+        "extending/custom-applications/php",
       ],
     },
   ],
@@ -131,6 +145,20 @@ module.exports = {
       type: "category",
       label: "CI",
       items: ["ci/adopting"],
+    },
+  ],
+  cookbook: [
+    {
+      type: "category",
+      label: "Cookbook",
+      items: [
+        "cookbook/index",
+        "cookbook/filesystem",
+        "cookbook/build",
+        "cookbook/secrets",
+        "cookbook/services",
+        "cookbook/container-images",
+      ],
     },
   ],
   features: [
