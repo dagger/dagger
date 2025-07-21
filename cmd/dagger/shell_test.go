@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +29,7 @@ func TestGitSourceArgRef(t *testing.T) {
 		url := c.ArgRef("")
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
-			_, err := parseGitURL(url)
+			_, err := gitutil.ParseURL(url)
 			require.NoError(t, err)
 		})
 	}

@@ -117,6 +117,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
 			),
+		dagql.Func("originalAddress", s.repoOriginalAddress).
+			Doc(`The address this git repository was originally loaded from, if any`),
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
@@ -139,6 +141,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", DagOpWrapper(srv, s.fetchRef)).
 			Doc(`The resolved ref name at this ref.`),
+		dagql.Func("originalAddress", s.refOriginalAddress).
+			Doc(`The address this git ref was originally loaded from, if any`),
 	}.Install(srv)
 }
 
@@ -707,4 +711,18 @@ func (s *gitSchema) fetchRef(
 		return "", err
 	}
 	return dagql.NewString(ref), nil
+}
+
+func (s *gitSchema) refOriginalAddress(ctx context.Context, parent *core.GitRef, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("ref was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
+}
+
+func (s *gitSchema) repoOriginalAddress(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("repository was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }
