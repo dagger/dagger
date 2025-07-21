@@ -1,8 +1,37 @@
 ---
 title: "Custom Applications"
-
+sidebar_label: "Overview"
 slug: /extending/custom-applications
-description: "Learn how to extend Dagger by embedding it into your own applications, enabling custom workflows and integrations."
+description: "Learn how to extend Dagger by embedding it into your own applications for custom workflows and integrations."
 ---
 
-In addition to using the Dagger SDKs, you can also embed Dagger into your own applications. This allows you to create custom applications that can use Dagger's capabilities, such as building and running containers, managing secrets, and more.
+You can extend Dagger functionality by using the SDKs to create Dagger Modules. However, you can also embed a Dagger SDK directly into your application. Both approaches let you access Dagger features for container operations, secret management, and more.
+
+## Installing the SDK
+
+When using a Dagger SDK in your application:
+
+1. Install the SDK for your preferred language
+2. Initialize a Dagger client in your code
+3. Use Dagger API methods to implement your workflow
+4. Run your application with `dagger run`
+
+## SDK Examples
+
+The following SDKs are available for embedding Dagger into your application:
+
+- [**Go →**](./go.mdx)
+- [**Python →**](./python.mdx)
+- [**TypeScript →**](./typescript.mdx)
+- [**PHP →**](./php.mdx)
+
+## Differences
+
+Here is a quick summary of differences between these two approaches.
+
+|  | Dagger Functions | Custom applications |
+|:---|:---|:---|
+| Pre-initialized Dagger API client | Y | N |
+| Direct host access | N | Y |
+| Direct third-party module access | Y | N |
+| Cross-language interoperability | Y | N |

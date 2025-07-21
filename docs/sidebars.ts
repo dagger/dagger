@@ -18,7 +18,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Components",
+      label: "Types",
       items: [
         "components/index",
         "components/objects/create-your-own",
@@ -134,7 +134,6 @@ module.exports = {
       label: "Engine & Runtime",
       items: [
         "reference/engine-runtime/index",
-        "reference/engine-runtime/local-development",
         "reference/engine-runtime/performance-caching",
         "reference/engine-runtime/troubleshooting",
       ],
