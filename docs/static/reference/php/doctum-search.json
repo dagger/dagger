@@ -2737,6 +2737,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withCaller",
+			"p": "Dagger/Env.html#method_withCaller",
+			"d": "<p>Provide the calling object as an input to the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withCloudInput",
 			"p": "Dagger/Env.html#method_withCloudInput",
 			"d": "<p>Create or update a binding of type Cloud in the environment</p>"

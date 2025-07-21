@@ -4097,6 +4097,17 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	}
 }
 
+// Provide the calling object as an input to the environment
+func (r *Env) WithCaller(name string, description string) *Env {
+	q := r.query.Select("withCaller")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Cloud in the environment
 func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
 	assertNotNil("value", value)

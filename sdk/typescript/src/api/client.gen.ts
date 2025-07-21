@@ -4651,6 +4651,16 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Provide the calling object as an input to the environment
+   * @param name The name of the binding
+   * @param description The description of the input
+   */
+  withCaller = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCaller", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Cloud in the environment
    * @param name The name of the binding
    * @param value The Cloud value to assign to the binding

@@ -81,6 +81,17 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Provide the calling object as an input to the environment
+     */
+    public function withCaller(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCaller');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type Cloud in the environment
      */
     public function withCloudInput(string $name, CloudId|Cloud $value, string $description): Env

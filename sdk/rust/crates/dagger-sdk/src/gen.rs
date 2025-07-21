@@ -5569,6 +5569,22 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Provide the calling object as an input to the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - The description of the input
+    pub fn with_caller(&self, name: impl Into<String>, description: impl Into<String>) -> Env {
+        let mut query = self.selection.select("withCaller");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Cloud in the environment
     ///
     /// # Arguments

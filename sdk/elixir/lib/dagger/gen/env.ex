@@ -135,6 +135,23 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Provide the calling object as an input to the environment
+  """
+  @spec with_caller(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_caller(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCaller")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Cloud in the environment
   """
   @spec with_cloud_input(t(), String.t(), Dagger.Cloud.t(), String.t()) :: Dagger.Env.t()

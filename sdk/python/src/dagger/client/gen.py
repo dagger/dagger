@@ -4201,6 +4201,23 @@ class Env(Type):
         _ctx = self._select("withCacheVolumeOutput", _args)
         return Env(_ctx)
 
+    def with_caller(self, name: str, description: str) -> Self:
+        """Provide the calling object as an input to the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCaller", _args)
+        return Env(_ctx)
+
     def with_cloud_input(
         self,
         name: str,

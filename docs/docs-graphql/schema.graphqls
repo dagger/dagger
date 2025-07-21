@@ -1829,6 +1829,15 @@ type Env {
     description: String!
   ): Env!
 
+  """Provide the calling object as an input to the environment"""
+  withCaller(
+    """The name of the binding"""
+    name: String!
+
+    """The description of the input"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Cloud in the environment"""
   withCloudInput(
     """The name of the binding"""
