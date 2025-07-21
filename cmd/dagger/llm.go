@@ -83,6 +83,14 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 
 	s.reset(ctx)
 
+	// figure out what the model resolved to
+	model, err := s.llm.Model(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	s.model = model
+
 	return s, nil
 }
 
