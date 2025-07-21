@@ -114,6 +114,90 @@ of type `Directory` to [automatically ignore or include files in the
 directory].
 :::
 
+### Directory evaluation
+
+When relying on default paths in Dagger Shell, it's important to know that the source file or directory is re-evaluated on each command execution within the shell session. This differs from passing the source explicitly as an argument, where it's evaluated once and cached. This re-evaluation can lead to unintended behavior where changes to the source directory during the session (such as through exports or logs) invalidate the cache, causing the entire pipeline to re-execute.
+
+For example, given the following Dagger Function:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+func (m *MyModule) Test(
+    ctx context.Context,
+    // +optional
+    // +defaultPath="/"
+    // +ignore=["build"]
+    source *dagger.Directory,
+) (*TestResult, error) {
+  // ...
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+@object_type
+class MyModule:
+    @function
+    async def test(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/"), Ignore(["build"])] | None,
+    ) -> "TestResult":
+        # ...
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+class MyModule {
+  async test(
+    @argument({ defaultPath: "/", ignore: ["build"] }) source?: Directory,
+    ): Promise<TestResult> {
+      // ...
+  }
+}
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php
+class MyModule {
+    public function test(
+      #[DefaultPath('/')]
+      #[Ignore('build')]
+      ?Directory $source = null,
+      ): TestResult {
+        // ...
+    }
+}
+```
+</TabItem>
+</Tabs>
+
+The command below results in the directory being evaluated multiple times (due to a combination of default path usage and cache invalidation from the export):
+
+```shell
+dagger shell <<'EOM'
+    result=$(test)
+    $result | report | export "build/test-report"
+    .exit $($result | exit-code)
+EOM
+```
+
+The command below evaluates the directory once (and then subsequently uses it from the cache, since the directory is explicitly passed):
+
+```shell
+dagger shell <<'EOM'
+    result=$(test --source=".")
+    $result | report | export "build/test-report"
+    .exit $($result | exit-code)
+EOM
+```
+
 ## Filters
 
 When you pass a directory to a Dagger Function as argument, Dagger uploads everything in that directory tree to the Dagger Engine. For large monorepos or directories containing large-sized files, this can significantly slow down your Dagger Function while filesystem contents are transferred. To mitigate this problem, Dagger lets you apply filters to control which files and directories are uploaded.
