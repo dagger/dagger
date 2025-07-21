@@ -94,7 +94,6 @@ The following sections contain examples of how a `Directory` argument is resolve
 It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx).
 :::
 
-:::caution
 When relying on default paths in Dagger Shell, it's important to know that the source directory is re-evaluated on each command execution within the shell session. This differs from passing the source directory explicitly as an argument, where it's evaluated once and cached. This re-evaluation can lead to unintended behavior where changes to the source directory during the session (such as through exports or logs) invalidate the cache, causing the entire pipeline to re-execute.
 
 For example, given the following Dagger Function:
@@ -176,4 +175,3 @@ dagger shell <<'EOM'
     .exit $($result | exit-code)
 EOM
 ```
-:::
