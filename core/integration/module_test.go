@@ -5196,7 +5196,7 @@ bar/*.go
 			},
 			{
 				path: "yamlFiles",
-				want: "bar.yaml\n",
+				want: "a.md\nbar.yaml\n",
 			},
 		}
 
@@ -5210,7 +5210,7 @@ bar/*.go
 			WithNewFile("foo.xml", "<>").
 			WithNewFile("script.py", "print('hello')").
 			WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz").WithNewFile("d.go", "package main").WithNewFile("sub.py", "")).
-			WithDirectory("yamlFiles", c.Directory().WithNewFile("foo.yaml", "foo").WithNewFile("bar.yaml", "bar"))
+			WithDirectory("yamlFiles", c.Directory().WithNewFile("foo.yaml", "foo").WithNewFile("bar.yaml", "bar").WithNewFile("a.md", "a"))
 
 		modGen := c.Container().From(golangImage).
 			WithExec([]string{"apk", "add", "git"}).
@@ -5306,7 +5306,7 @@ dagger.json
 			},
 		}
 
-		expectedModuleDir := "dagger.gen.go\ngo.mod\ngo.sum\nmain.go\n"
+		expectedModuleDir := "go.mod\ngo.sum\nmain.go\n"
 		c := connect(ctx, t)
 
 		repo := c.Directory().
