@@ -317,26 +317,6 @@ func (m *JavaSdk) ModuleTypeDefsObject(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Module, error) {
-	return dag.Module().
-			WithDescription("MyJavaModule example").
-			WithObject(
-				dag.TypeDef().WithObject("MyJavaModule").
-					WithFunction(
-						dag.Function("containerEcho", dag.TypeDef().WithObject("Container")).
-							WithArg("stringArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
-					WithFunction(
-						dag.Function("print", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
-							WithArg("stringArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
-					WithFunction(
-						dag.Function("base", dag.TypeDef().WithObject("Container")))),
-		nil
-}
-
-func (m *JavaSdk) ModuleTypeDefs(
-	ctx context.Context,
-	modSource *dagger.ModuleSource,
-	introspectionJSON *dagger.File,
-) (*dagger.Container, error) {
 	if err := m.setModuleConfig(ctx, modSource, introspectionJSON); err != nil {
 		return nil, err
 	}
@@ -346,23 +326,51 @@ func (m *JavaSdk) ModuleTypeDefs(
 	if err != nil {
 		return nil, err
 	}
-	// Build the executable jar
-	jar, err := m.buildTypeDefsJar(ctx, mvnCtr)
+
+	typeDefsCtr, err := m.buildTypeDefs(ctx, mvnCtr)
 	if err != nil {
 		return nil, err
 	}
 
-	javaCtr, err := m.jreContainer(ctx)
+	jsonTypeDefs, err := typeDefsCtr.File(filepath.Join(m.moduleConfig.modulePath(), "target", "generated", "io", "dagger", "gen", "entrypoint", "type-defs.json")).Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	javaCtr = javaCtr.
-		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
-		WithWorkdir(ModDirPath).
-		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
 
-	return javaCtr, nil
+	return dag.Module().FromJSON(jsonTypeDefs), nil
 }
+
+//func (m *JavaSdk) ModuleTypeDefs(
+//	ctx context.Context,
+//	modSource *dagger.ModuleSource,
+//	introspectionJSON *dagger.File,
+//) (*dagger.Container, error) {
+//	if err := m.setModuleConfig(ctx, modSource, introspectionJSON); err != nil {
+//		return nil, err
+//	}
+//
+//	// Get a container with the user module sources and the SDK packages built and installed
+//	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+//	if err != nil {
+//		return nil, err
+//	}
+//	// Build the executable jar
+//	jar, err := m.buildTypeDefsJar(ctx, mvnCtr)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	javaCtr, err := m.jreContainer(ctx)
+//	if err != nil {
+//		return nil, err
+//	}
+//	javaCtr = javaCtr.
+//		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
+//		WithWorkdir(ModDirPath).
+//		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
+//
+//	return javaCtr, nil
+//}
 
 func (m *JavaSdk) ModuleRuntime(
 	ctx context.Context,
@@ -436,48 +444,48 @@ func (m *JavaSdk) buildTypeDefs(
 }
 
 // buildTypeDefsJar builds and returns the generated jar to register types
-func (m *JavaSdk) buildTypeDefsJar(
-	ctx context.Context,
-	ctr *dagger.Container,
-) (*dagger.File, error) {
-	templateDir := dag.CurrentModule().Source().Directory("template")
-	typeDefsPomXML, err := m.replace(ctx, templateDir,
-		"typedefs/pom.xml",
-		repl{"dagger-module-typedefs-placeholder", m.moduleConfig.kebabName + "-typedefs"},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	typeDefsCtr, err := m.buildTypeDefs(ctx, ctr)
-	if err != nil {
-		return nil, err
-	}
-
-	return m.finalJar(ctx,
-		typeDefsCtr.
-			WithWorkdir(filepath.Join(m.moduleConfig.modulePath(), "typedefs")).
-			WithExec([]string{"mkdir", "-p", "src/main/java/io/dagger/gen/entrypoint"}).
-			WithExec([]string{
-				"cp",
-				"../target/generated/io/dagger/gen/entrypoint/TypeDefs.java",
-				"src/main/java/io/dagger/gen/entrypoint/TypeDefs.java",
-			}).
-			WithNewFile("pom.xml", typeDefsPomXML).
-			WithExec(m.mavenCommand(
-				"mvn",
-				"versions:set-property",
-				"-DgenerateBackupPoms=false",
-				"-Dproperty=dagger.module.deps",
-				fmt.Sprintf("-DnewVersion=%s", m.moduleConfig.moduleVersion),
-			)).
-			WithExec(m.mavenCommand(
-				"mvn",
-				"clean",
-				"package",
-				"-DskipTests")),
-		filepath.Join(m.moduleConfig.modulePath(), "typedefs"))
-}
+//func (m *JavaSdk) buildTypeDefsJar(
+//	ctx context.Context,
+//	ctr *dagger.Container,
+//) (*dagger.File, error) {
+//	templateDir := dag.CurrentModule().Source().Directory("template")
+//	typeDefsPomXML, err := m.replace(ctx, templateDir,
+//		"typedefs/pom.xml",
+//		repl{"dagger-module-typedefs-placeholder", m.moduleConfig.kebabName + "-typedefs"},
+//	)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	typeDefsCtr, err := m.buildTypeDefs(ctx, ctr)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return m.finalJar(ctx,
+//		typeDefsCtr.
+//			WithWorkdir(filepath.Join(m.moduleConfig.modulePath(), "typedefs")).
+//			WithExec([]string{"mkdir", "-p", "src/main/java/io/dagger/gen/entrypoint"}).
+//			WithExec([]string{
+//				"cp",
+//				"../target/generated/io/dagger/gen/entrypoint/TypeDefs.java",
+//				"src/main/java/io/dagger/gen/entrypoint/TypeDefs.java",
+//			}).
+//			WithNewFile("pom.xml", typeDefsPomXML).
+//			WithExec(m.mavenCommand(
+//				"mvn",
+//				"versions:set-property",
+//				"-DgenerateBackupPoms=false",
+//				"-Dproperty=dagger.module.deps",
+//				fmt.Sprintf("-DnewVersion=%s", m.moduleConfig.moduleVersion),
+//			)).
+//			WithExec(m.mavenCommand(
+//				"mvn",
+//				"clean",
+//				"package",
+//				"-DskipTests")),
+//		filepath.Join(m.moduleConfig.modulePath(), "typedefs"))
+//}
 
 // finalJar will return the jar corresponding to the user module built
 // In order to have the final container as minimal as possible, we just want to be able to run a jar.
@@ -489,6 +497,7 @@ func (m *JavaSdk) finalJar(
 	ctr *dagger.Container,
 	rootDir string,
 ) (*dagger.File, error) {
+	_ = ctr.File("pom.xml")
 	artifactID, err := ctr.
 		WithExec(m.mavenCommand("mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.artifactId", "-q", "-DforceStdout")).
 		Stdout(ctx)

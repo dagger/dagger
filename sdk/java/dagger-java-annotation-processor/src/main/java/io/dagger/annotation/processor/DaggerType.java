@@ -20,6 +20,10 @@ public abstract class DaggerType {
 
   abstract CodeBlock toJavaType();
 
+  abstract String toKind();
+
+  abstract String toName();
+
   CodeBlock toClass() {
     return CodeBlock.of("$L.class", toJavaType());
   }
@@ -129,6 +133,16 @@ public abstract class DaggerType {
     CodeBlock toJavaType() {
       return CodeBlock.of("$T", ClassName.bestGuess(qualifiedName));
     }
+
+    @Override
+    String toKind() {
+      return "ENUM_KIND";
+    }
+
+    @Override
+    public String toName() {
+      return simpleName;
+    }
   }
 
   public static class Kind extends DaggerType {
@@ -185,6 +199,36 @@ public abstract class DaggerType {
         default -> throw new RuntimeException("not implemented for %s type".formatted(simpleName));
       };
     }
+
+    @Override
+    String toKind() {
+      return switch (simpleName) {
+        case "boolean" -> "BOOLEAN_KIND";
+        case "Boolean" -> "BOOLEAN_KIND";
+        case "byte" -> "INTEGER_KIND";
+        case "Byte" -> "INTEGER_KIND";
+        case "short" -> "INTEGER_KIND";
+        case "Short" -> "INTEGER_KIND";
+        case "int" -> "INTEGER_KIND";
+        case "Integer" -> "INTEGER_KIND";
+        case "long" -> "INTEGER_KIND";
+        case "Long" -> "INTEGER_KIND";
+        case "char" -> "INTEGER_KIND";
+        case "Character" -> "INTEGER_KIND";
+        case "float" -> "FLOAT_KIND";
+        case "Float" -> "FLOAT_KIND";
+        case "double" -> "FLOAT_KIND";
+        case "Double" -> "FLOAT_KIND";
+        case "void" -> "VOID_KIND";
+        case "String" -> "STRING_KIND";
+        default -> throw new RuntimeException("not implemented for %s type".formatted(simpleName));
+      };
+    }
+
+    @Override
+    public String toName() {
+      return simpleName;
+    }
   }
 
   public static class Scalar extends DaggerType {
@@ -205,6 +249,16 @@ public abstract class DaggerType {
     CodeBlock toJavaType() {
       return CodeBlock.of("$T", ClassName.bestGuess(qualifiedName));
     }
+
+    @Override
+    String toKind() {
+      return "SCALAR_KIND";
+    }
+
+    @Override
+    public String toName() {
+      return simpleName;
+    }
   }
 
   public static class Object extends DaggerType {
@@ -224,6 +278,16 @@ public abstract class DaggerType {
     @Override
     CodeBlock toJavaType() {
       return CodeBlock.of("$T", ClassName.bestGuess(qualifiedName));
+    }
+
+    @Override
+    String toKind() {
+      return "OBJECT_KIND";
+    }
+
+    @Override
+    public String toName() {
+      return simpleName;
     }
   }
 
@@ -261,6 +325,16 @@ public abstract class DaggerType {
     boolean isList() {
       return true;
     }
+
+    @Override
+    String toKind() {
+      return "LIST_KIND";
+    }
+
+    @Override
+    public String toName() {
+      return "list";
+    }
   }
 
   public static class Array extends DaggerType {
@@ -283,6 +357,16 @@ public abstract class DaggerType {
     @Override
     CodeBlock toJavaType() {
       return CodeBlock.of("$L[]", of(innerName).toJavaType());
+    }
+
+    @Override
+    String toKind() {
+      return "LIST_KIND";
+    }
+
+    @Override
+    public String toName() {
+      return "array";
     }
   }
 }
