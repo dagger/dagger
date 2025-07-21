@@ -736,16 +736,16 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 					slog.Warn("failed to unmarshal span attributes", "error", err)
 					continue
 				}
-				var isLLM bool
+				var isNoise bool
 				for _, attr := range spanAttrs {
-					if attr.Key == "dagger.io/llm" {
+					if attr.Key == "dagger.io/llm" || attr.Key == telemetry.LogsVerboseAttr {
 						if attr.Value.GetBoolValue() {
-							isLLM = true
+							isNoise = true
 							break
 						}
 					}
 				}
-				if isLLM {
+				if isNoise {
 					// don't show logs from the LLM spans themselves
 					continue
 				}
