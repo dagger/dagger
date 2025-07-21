@@ -31,6 +31,8 @@ type Env struct {
 	privileged bool
 	// The env supports declaring new outputs.
 	writable bool
+	// The env has a fixed set of tools determined by the inputs
+	staticTools bool
 }
 
 func (*Env) Type() *ast.Type {
@@ -84,6 +86,13 @@ func (env *Env) IsPrivileged() bool {
 func (env *Env) Writable() *Env {
 	env = env.Clone()
 	env.writable = true
+	return env
+}
+
+// Return a copy of the environment with static tools
+func (env *Env) Static() *Env {
+	env = env.Clone()
+	env.staticTools = true
 	return env
 }
 

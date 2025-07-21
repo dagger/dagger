@@ -1031,270 +1031,273 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		}),
 	})
 
-	builtins = append(builtins, LLMTool{
-		Name:        "list_methods",
-		Description: "List the methods that can be selected.",
-		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
-			"required":             []string{},
-			"additionalProperties": false,
-		},
-		Strict: true,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
-			type toolDesc struct {
-				Name         string            `json:"name"`
-				Returns      string            `json:"returns"`
-				RequiredArgs map[string]string `json:"required_args,omitempty"`
-			}
-			var methods []toolDesc
-			for _, method := range allMethods {
-				reqArgs := map[string]string{}
-				var returns string
-				if method.Field != nil {
-					returns = method.Field.Type.String()
-					for _, arg := range method.Field.Arguments {
-						if arg.DefaultValue != nil || !arg.Type.NonNull {
-							// optional
-							continue
-						}
-						reqArgs[arg.Name] = arg.Type.String()
-					}
-				}
-				methods = append(methods, toolDesc{
-					Name:         method.Name,
-					RequiredArgs: reqArgs,
-					Returns:      returns,
-				})
-			}
-			sort.Slice(methods, func(i, j int) bool {
-				return methods[i].Name < methods[j].Name
-			})
-			return toolStructuredResponse(methods)
-		}),
-	})
-
-	if len(allMethods) > 0 {
+	if m.env.staticTools {
+	} else {
 		builtins = append(builtins, LLMTool{
-			Name:        "select_methods",
-			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by list_methods.",
+			Name:        "list_methods",
+			Description: "List the methods that can be selected.",
 			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"methods": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type":        "string",
-							"description": "The name of the method to select, as seen in list_methods.",
-						},
-						"description": "The methods to select.",
-					},
-				},
-				"required":             []string{"methods"},
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 			Strict: true,
-			Call: ToolFunc(srv, func(ctx context.Context, args struct {
-				Methods []string
-			}) (any, error) {
-				methodCounts := make(map[string]int)
-				for _, toolName := range args.Methods {
-					methodCounts[toolName]++
+			Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
+				type toolDesc struct {
+					Name         string            `json:"name"`
+					Returns      string            `json:"returns"`
+					RequiredArgs map[string]string `json:"required_args,omitempty"`
 				}
-				// perform a sanity check; some LLMs will do silly things like request
-				// the same tool 3 times when told to call it 3 times
-				for tool, count := range methodCounts {
-					if count > 1 {
-						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
-					}
-				}
-				type methodDef struct {
-					Name        string         `json:"name"`
-					Returns     string         `json:"returns,omitempty"`
-					Description string         `json:"description"`
-					Schema      map[string]any `json:"argsSchema"`
-				}
-				var selectedMethods []methodDef
-				var unknownMethods []string
-				for methodName := range methodCounts {
-					method, found := allMethods[methodName]
-					if found {
-						var returns string
-						if method.Field != nil {
-							returns = method.Field.Type.String()
+				var methods []toolDesc
+				for _, method := range allMethods {
+					reqArgs := map[string]string{}
+					var returns string
+					if method.Field != nil {
+						returns = method.Field.Type.String()
+						for _, arg := range method.Field.Arguments {
+							if arg.DefaultValue != nil || !arg.Type.NonNull {
+								// optional
+								continue
+							}
+							reqArgs[arg.Name] = arg.Type.String()
 						}
-						selectedMethods = append(selectedMethods, methodDef{
-							Name:        method.Name,
-							Returns:     returns,
-							Description: method.Description,
-							Schema:      method.Schema,
-						})
-					} else {
-						unknownMethods = append(unknownMethods, methodName)
 					}
+					methods = append(methods, toolDesc{
+						Name:         method.Name,
+						RequiredArgs: reqArgs,
+						Returns:      returns,
+					})
 				}
-				if len(unknownMethods) > 0 {
-					return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
-				}
-				for _, method := range selectedMethods {
-					m.selectedMethods[method.Name] = true
-				}
-				sort.Slice(selectedMethods, func(i, j int) bool {
-					return selectedMethods[i].Name < selectedMethods[j].Name
+				sort.Slice(methods, func(i, j int) bool {
+					return methods[i].Name < methods[j].Name
 				})
-				res := map[string]any{
-					"added_methods": selectedMethods,
-				}
-				if len(unknownMethods) > 0 {
-					res["unknown_methods"] = unknownMethods
-				}
-				return toolStructuredResponse(res)
+				return toolStructuredResponse(methods)
 			}),
 		})
 
-		builtins = append(builtins, LLMTool{
-			Name:        "call_method",
-			Description: "Call a method on an object. Methods must be selected with `select_methods` before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"method": map[string]any{
-						"type":        "string",
-						"description": "The name of the method to call.",
-					},
-					"self": map[string]any{
-						"type":        []string{"string", "null"},
-						"description": "The object to call the method on. Not specified for top-level methods.",
-					},
-					"args": map[string]any{
-						"type":                 []string{"object", "null"},
-						"description":          "The arguments to pass to the method.",
-						"additionalProperties": true,
-					},
-				},
-				"required":             []string{"method", "self", "args"},
-				"additionalProperties": false,
-			},
-			Strict: false,
-			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-				var call struct {
-					Self   string         `json:"self"`
-					Method string         `json:"method"`
-					Args   map[string]any `json:"args"`
-				}
-				pl, err := json.Marshal(argsAny)
-				if err != nil {
-					return nil, err
-				}
-				if err := json.Unmarshal(pl, &call); err != nil {
-					return nil, err
-				}
-				if call.Args == nil {
-					call.Args = make(map[string]any)
-				}
-				// Add self parameter to the method call
-				if call.Self != "" {
-					call.Args["self"] = call.Self
-					matches := idRegex.FindStringSubmatch(call.Self)
-					if matches == nil {
-						return nil, fmt.Errorf("invalid ID format: %q", call.Self)
-					}
-					typeName := matches[idRegex.SubexpIndex("type")]
-					if !strings.Contains(call.Method, ".") {
-						// allow omitting the TypeName. prefix, which models are more prone
-						// to guessing
-						call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
-					}
-				}
-				var method LLMTool
-				method, found := allMethods[call.Method]
-				if !found {
-					return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
-				}
-				if !m.selectedMethods[call.Method] {
-					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
-				}
-				return method.Call(ctx, call.Args)
-			},
-		}, LLMTool{
-			Name: "chain_methods",
-			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
-
-NOTE: you must select methods before chaining them`,
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"self": map[string]any{
-						"type":        []string{"string", "null"},
-						"description": "The object to call the method on. Not specified for top-level methods.",
-					},
-					"chain": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"method": map[string]any{
-									"type":        "string",
-									"description": "The name of the method to call.",
-								},
-								"args": map[string]any{
-									"type":                 "object",
-									"description":          "The arguments to pass to the method.",
-									"additionalProperties": true,
-								},
+		if len(allMethods) > 0 {
+			builtins = append(builtins, LLMTool{
+				Name:        "select_methods",
+				Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by list_methods.",
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"methods": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type":        "string",
+								"description": "The name of the method to select, as seen in list_methods.",
 							},
-							"required": []string{"method", "args"},
+							"description": "The methods to select.",
 						},
-						"description": "The chain of method calls.",
 					},
+					"required":             []string{"methods"},
+					"additionalProperties": false,
 				},
-				"required":             []string{"chain", "self"},
-				"additionalProperties": false,
-			},
-			Strict: false,
-			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-				var toolArgs struct {
-					Self  string        `json:"self"`
-					Chain []ChainedCall `json:"chain"`
-				}
-				pl, err := json.Marshal(argsAny)
-				if err != nil {
-					return nil, err
-				}
-				if err := json.Unmarshal(pl, &toolArgs); err != nil {
-					return nil, err
-				}
-				if err := m.validateAndNormalizeChain(toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
-					return nil, err
-				}
-				var res any
-				for i, call := range toolArgs.Chain {
-					var tool LLMTool
-					tool, found := allMethods[call.Method]
-					if !found {
-						return nil, fmt.Errorf("tool not found: %q", call.Method)
+				Strict: true,
+				Call: ToolFunc(srv, func(ctx context.Context, args struct {
+					Methods []string
+				}) (any, error) {
+					methodCounts := make(map[string]int)
+					for _, toolName := range args.Methods {
+						methodCounts[toolName]++
+					}
+					// perform a sanity check; some LLMs will do silly things like request
+					// the same tool 3 times when told to call it 3 times
+					for tool, count := range methodCounts {
+						if count > 1 {
+							return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
+						}
+					}
+					type methodDef struct {
+						Name        string         `json:"name"`
+						Returns     string         `json:"returns,omitempty"`
+						Description string         `json:"description"`
+						Schema      map[string]any `json:"argsSchema"`
+					}
+					var selectedMethods []methodDef
+					var unknownMethods []string
+					for methodName := range methodCounts {
+						method, found := allMethods[methodName]
+						if found {
+							var returns string
+							if method.Field != nil {
+								returns = method.Field.Type.String()
+							}
+							selectedMethods = append(selectedMethods, methodDef{
+								Name:        method.Name,
+								Returns:     returns,
+								Description: method.Description,
+								Schema:      method.Schema,
+							})
+						} else {
+							unknownMethods = append(unknownMethods, methodName)
+						}
+					}
+					if len(unknownMethods) > 0 {
+						return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
+					}
+					for _, method := range selectedMethods {
+						m.selectedMethods[method.Name] = true
+					}
+					sort.Slice(selectedMethods, func(i, j int) bool {
+						return selectedMethods[i].Name < selectedMethods[j].Name
+					})
+					res := map[string]any{
+						"added_methods": selectedMethods,
+					}
+					if len(unknownMethods) > 0 {
+						res["unknown_methods"] = unknownMethods
+					}
+					return toolStructuredResponse(res)
+				}),
+			})
+
+			builtins = append(builtins, LLMTool{
+				Name:        "call_method",
+				Description: "Call a method on an object. Methods must be selected with `select_methods` before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"method": map[string]any{
+							"type":        "string",
+							"description": "The name of the method to call.",
+						},
+						"self": map[string]any{
+							"type":        []string{"string", "null"},
+							"description": "The object to call the method on. Not specified for top-level methods.",
+						},
+						"args": map[string]any{
+							"type":                 []string{"object", "null"},
+							"description":          "The arguments to pass to the method.",
+							"additionalProperties": true,
+						},
+					},
+					"required":             []string{"method", "self", "args"},
+					"additionalProperties": false,
+				},
+				Strict: false,
+				Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+					var call struct {
+						Self   string         `json:"self"`
+						Method string         `json:"method"`
+						Args   map[string]any `json:"args"`
+					}
+					pl, err := json.Marshal(argsAny)
+					if err != nil {
+						return nil, err
+					}
+					if err := json.Unmarshal(pl, &call); err != nil {
+						return nil, err
 					}
 					if call.Args == nil {
 						call.Args = make(map[string]any)
 					}
-					args := maps.Clone(call.Args)
-					if i > 0 {
-						if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
-							// override, since the whole point is to chain from the previous
-							// value; any value here is surely mistaken or hallucinated
-							args["self"] = m.env.Ingest(obj, "")
+					// Add self parameter to the method call
+					if call.Self != "" {
+						call.Args["self"] = call.Self
+						matches := idRegex.FindStringSubmatch(call.Self)
+						if matches == nil {
+							return nil, fmt.Errorf("invalid ID format: %q", call.Self)
 						}
-					} else {
-						args["self"] = toolArgs.Self
+						typeName := matches[idRegex.SubexpIndex("type")]
+						if !strings.Contains(call.Method, ".") {
+							// allow omitting the TypeName. prefix, which models are more prone
+							// to guessing
+							call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
+						}
 					}
-					res, err = tool.Call(ctx, args)
+					var method LLMTool
+					method, found := allMethods[call.Method]
+					if !found {
+						return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
+					}
+					if !m.selectedMethods[call.Method] {
+						return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
+					}
+					return method.Call(ctx, call.Args)
+				},
+			}, LLMTool{
+				Name: "chain_methods",
+				Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
+
+NOTE: you must select methods before chaining them`,
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"self": map[string]any{
+							"type":        []string{"string", "null"},
+							"description": "The object to call the method on. Not specified for top-level methods.",
+						},
+						"chain": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"method": map[string]any{
+										"type":        "string",
+										"description": "The name of the method to call.",
+									},
+									"args": map[string]any{
+										"type":                 "object",
+										"description":          "The arguments to pass to the method.",
+										"additionalProperties": true,
+									},
+								},
+								"required": []string{"method", "args"},
+							},
+							"description": "The chain of method calls.",
+						},
+					},
+					"required":             []string{"chain", "self"},
+					"additionalProperties": false,
+				},
+				Strict: false,
+				Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
+					var toolArgs struct {
+						Self  string        `json:"self"`
+						Chain []ChainedCall `json:"chain"`
+					}
+					pl, err := json.Marshal(argsAny)
 					if err != nil {
-						return nil, fmt.Errorf("call %q: %w", call.Method, err)
+						return nil, err
 					}
-				}
-				return res, nil
-			},
-		})
+					if err := json.Unmarshal(pl, &toolArgs); err != nil {
+						return nil, err
+					}
+					if err := m.validateAndNormalizeChain(toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
+						return nil, err
+					}
+					var res any
+					for i, call := range toolArgs.Chain {
+						var tool LLMTool
+						tool, found := allMethods[call.Method]
+						if !found {
+							return nil, fmt.Errorf("tool not found: %q", call.Method)
+						}
+						if call.Args == nil {
+							call.Args = make(map[string]any)
+						}
+						args := maps.Clone(call.Args)
+						if i > 0 {
+							if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
+								// override, since the whole point is to chain from the previous
+								// value; any value here is surely mistaken or hallucinated
+								args["self"] = m.env.Ingest(obj, "")
+							}
+						} else {
+							args["self"] = toolArgs.Self
+						}
+						res, err = tool.Call(ctx, args)
+						if err != nil {
+							return nil, fmt.Errorf("call %q: %w", call.Method, err)
+						}
+					}
+					return res, nil
+				},
+			})
+		}
 	}
 
 	if returnTool, ok := m.returnBuiltin(); ok {
@@ -1349,6 +1352,20 @@ NOTE: you must select methods before chaining them`,
 			return res, nil
 		}
 	}
+
+	if m.env.staticTools {
+		staticTools := slices.Collect(maps.Values(allMethods))
+		for i := range staticTools {
+			// sanitize tool names; Foo.bar is more intuitive for call_method form
+			staticTools[i].Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).
+				ReplaceAllString(staticTools[i].Name, "_")
+		}
+		sort.Slice(staticTools, func(i, j int) bool {
+			return staticTools[i].Name < staticTools[j].Name
+		})
+		builtins = append(builtins, staticTools...)
+	}
+
 	return builtins, nil
 }
 
