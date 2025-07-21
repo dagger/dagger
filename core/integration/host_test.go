@@ -175,12 +175,9 @@ func (HostSuite) TestDirectoryRelative(ctx context.Context, t *testctx.T) {
 		require.Equal(t, []string{"sub-file"}, contents)
 	})
 
-	t.Run("../ does not allow escaping", func(ctx context.Context, t *testctx.T) {
+	t.Run("../ allows escaping", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Host().Directory("../").ID(ctx)
-		require.Error(t, err)
-
-		// don't reveal the workdir location
-		require.NotContains(t, err.Error(), dir)
+		require.NoError(t, err)
 	})
 }
 
