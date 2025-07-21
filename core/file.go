@@ -32,8 +32,9 @@ type File struct {
 	LLB    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
-	File     string
-	Platform Platform
+	File            string
+	Platform        Platform
+	OriginalAddress *Address
 
 	// Services necessary to provision the file.
 	Services ServiceBindings

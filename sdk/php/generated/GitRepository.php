@@ -73,6 +73,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The address this git repository was originally loaded from, if any
+     */
+    public function originalAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a ref.
      */
     public function ref(string $name): GitRef
