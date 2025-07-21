@@ -370,7 +370,7 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, count, err := getAllContainerMounts(ctr)
+	pbmounts, states, refs, count, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
@@ -378,6 +378,11 @@ func (svc *Service) startContainer(
 	inputs := make([]bkcache.ImmutableRef, count)
 	eg, egctx := errgroup.WithContext(ctx)
 	for i, st := range states {
+		if ref := refs[i]; ref != nil {
+			inputs[i] = ref
+			continue
+		}
+
 		def, err := st.Marshal(egctx)
 		if err != nil {
 			return nil, err
