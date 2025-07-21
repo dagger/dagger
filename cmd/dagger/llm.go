@@ -98,6 +98,8 @@ func (s *LLMSession) reset(ctx context.Context) {
 func (s *LLMSession) Fork() *LLMSession {
 	// FIXME: this was a half-baked feature, currently does more harm than good
 	// because we lose partial progress on interrupt
+	//
+	// see https://github.com/dagger/dagger/pull/10765
 	return s
 	// cp := *s
 	// cp.undo = s
