@@ -52,12 +52,11 @@ const (
 )
 
 const cliZenFrontmatter = `---
-title: "Overview"
-pagination_next: null
-pagination_prev: null
+title: "CLI Reference"
+description: "Learn how to use the Dagger CLI to run composable workflows in containers."
 ---
 
-# CLI Reference
+## dagger
 `
 
 // Build the docs website
