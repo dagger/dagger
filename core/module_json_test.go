@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -9,15 +10,459 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const defaultModuleJson = `{
+  "description": "A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.",
+  "enums": [],
+  "interfaces": [],
+  "name": "",
+  "objects": [
+    {
+      "kind": "OBJECT_KIND",
+      "optional": false,
+      "values": {
+        "Constructor": null,
+        "Description": "",
+        "Fields": [],
+        "Functions": [
+          {
+            "Args": [
+              {
+                "DefaultPath": "",
+                "DefaultValue": null,
+                "Description": "",
+                "Ignore": null,
+                "Name": "stringArg",
+                "OriginalName": "stringArg",
+                "SourceMap": {
+                  "Column": 34,
+                  "Filename": "main.go",
+                  "Line": 25,
+                  "Module": ""
+                },
+                "TypeDef": {
+                  "kind": "STRING_KIND",
+                  "optional": false
+                }
+              }
+            ],
+            "Description": "Returns a container that echoes whatever string argument is provided",
+            "Name": "containerEcho",
+            "OriginalName": "ContainerEcho",
+            "ParentOriginalName": "MyModule",
+            "ReturnType": {
+              "kind": "OBJECT_KIND",
+              "optional": false,
+              "values": {
+                "Constructor": null,
+                "Description": "",
+                "Fields": [],
+                "Functions": [],
+                "Name": "Container",
+                "OriginalName": "Container",
+                "SourceMap": null,
+                "SourceModuleName": ""
+              }
+            },
+            "SourceMap": {
+              "Column": 1,
+              "Filename": "main.go",
+              "Line": 25,
+              "Module": ""
+            }
+          },
+          {
+            "Args": [
+              {
+                "DefaultPath": "",
+                "DefaultValue": null,
+                "Description": "",
+                "Ignore": null,
+                "Name": "directoryArg",
+                "OriginalName": "directoryArg",
+                "SourceMap": {
+                  "Column": 49,
+                  "Filename": "main.go",
+                  "Line": 30,
+                  "Module": ""
+                },
+                "TypeDef": {
+                  "kind": "OBJECT_KIND",
+                  "optional": false,
+                  "values": {
+                    "Constructor": null,
+                    "Description": "",
+                    "Fields": [],
+                    "Functions": [],
+                    "Name": "Directory",
+                    "OriginalName": "Directory",
+                    "SourceMap": null,
+                    "SourceModuleName": ""
+                  }
+                }
+              },
+              {
+                "DefaultPath": "",
+                "DefaultValue": "\"foo\"",
+                "Description": "",
+                "Ignore": null,
+                "Name": "pattern",
+                "OriginalName": "pattern",
+                "SourceMap": {
+                  "Column": 81,
+                  "Filename": "main.go",
+                  "Line": 30,
+                  "Module": ""
+                },
+                "TypeDef": {
+                  "kind": "STRING_KIND",
+                  "optional": false
+                }
+              }
+            ],
+            "Description": "Returns lines that match a pattern in the files of the provided Directory",
+            "Name": "grepDir",
+            "OriginalName": "GrepDir",
+            "ParentOriginalName": "MyModule",
+            "ReturnType": {
+              "kind": "STRING_KIND",
+              "optional": false
+            },
+            "SourceMap": {
+              "Column": 1,
+              "Filename": "main.go",
+              "Line": 30,
+              "Module": ""
+            }
+          }
+        ],
+        "Name": "MyModule",
+        "OriginalName": "MyModule",
+        "SourceMap": {
+          "Column": 6,
+          "Filename": "main.go",
+          "Line": 22,
+          "Module": ""
+        },
+        "SourceModuleName": ""
+      }
+    }
+  ],
+  "originalName": ""
+}`
+
+const defaultModuleJsonShort = `{
+  "description": "A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.",
+  "objects": [
+    {
+      "kind": "OBJECT_KIND",
+      "values": {
+        "Functions": [
+          {
+            "Args": [
+              {
+                "Name": "stringArg",
+                "OriginalName": "stringArg",
+                "SourceMap": {
+                  "Column": 34,
+                  "Filename": "main.go",
+                  "Line": 25
+                },
+                "TypeDef": {
+                  "kind": "STRING_KIND"
+                }
+              }
+            ],
+            "Description": "Returns a container that echoes whatever string argument is provided",
+            "Name": "containerEcho",
+            "OriginalName": "ContainerEcho",
+            "ParentOriginalName": "MyModule",
+            "ReturnType": {
+              "kind": "OBJECT_KIND",
+              "optional": false,
+              "values": {
+                "Name": "Container",
+                "OriginalName": "Container"
+              }
+            },
+            "SourceMap": {
+              "Column": 1,
+              "Filename": "main.go",
+              "Line": 25
+            }
+          },
+          {
+            "Args": [
+              {
+                "Name": "directoryArg",
+                "OriginalName": "directoryArg",
+                "SourceMap": {
+                  "Column": 49,
+                  "Filename": "main.go",
+                  "Line": 30
+                },
+                "TypeDef": {
+                  "kind": "OBJECT_KIND",
+                  "values": {
+                    "Name": "Directory",
+                    "OriginalName": "Directory"
+                  }
+                }
+              },
+              {
+                "DefaultValue": "\"foo\"",
+                "Name": "pattern",
+                "OriginalName": "pattern",
+                "SourceMap": {
+                  "Column": 81,
+                  "Filename": "main.go",
+                  "Line": 30
+                },
+                "TypeDef": {
+                  "kind": "STRING_KIND"
+                }
+              }
+            ],
+            "Description": "Returns lines that match a pattern in the files of the provided Directory",
+            "Name": "grepDir",
+            "OriginalName": "GrepDir",
+            "ParentOriginalName": "MyModule",
+            "ReturnType": {
+              "kind": "STRING_KIND"
+            },
+            "SourceMap": {
+              "Column": 1,
+              "Filename": "main.go",
+              "Line": 30
+            }
+          }
+        ],
+        "Name": "MyModule",
+        "OriginalName": "MyModule",
+        "SourceMap": {
+          "Column": 6,
+          "Filename": "main.go",
+          "Line": 22
+        }
+      }
+    }
+  ]
+}`
+
+func TestModuleJSON_toJson(t *testing.T) {
+	td, err := (&TypeDef{}).
+		WithObject("MyModule",
+			"",
+			&SourceMap{Filename: "main.go", Line: 22, Column: 6}).
+		WithFunction(
+			NewFunction("ContainerEcho",
+				(&TypeDef{}).WithObject("Container", "", nil)).
+				WithDescription("Returns a container that echoes whatever string argument is provided").
+				WithSourceMap(&SourceMap{Filename: "main.go", Line: 25, Column: 1}).
+				WithArg("stringArg", (&TypeDef{}).WithKind(TypeDefKindString), "", nil, "", nil, &SourceMap{Filename: "main.go", Line: 25, Column: 34}))
+	require.NoError(t, err)
+	td, err = td.WithFunction(
+		NewFunction("GrepDir",
+			(&TypeDef{}).WithKind(TypeDefKindString)).
+			WithDescription("Returns lines that match a pattern in the files of the provided Directory").
+			WithSourceMap(&SourceMap{Filename: "main.go", Line: 30, Column: 1}).
+			WithArg("directoryArg", (&TypeDef{}).WithObject("Directory", "", nil), "", nil, "", nil, &SourceMap{Filename: "main.go", Line: 30, Column: 49}).
+			WithArg("pattern", (&TypeDef{}).WithKind(TypeDefKindString), "", JSON("\"foo\""), "", nil, &SourceMap{Filename: "main.go", Line: 30, Column: 81}))
+	require.NoError(t, err)
+
+	m, err := (&Module{}).
+		WithDescription("A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.").
+		WithObject(t.Context(), td)
+	require.NoError(t, err)
+
+	str, err := m.ToJSONString()
+	require.NoError(t, err)
+
+	var prettyJSON map[string]interface{}
+	_ = json.Unmarshal([]byte(str), &prettyJSON)
+	prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
+	prettyString := string(prettyBytes)
+
+	assert.Equal(t, defaultModuleJson, prettyString)
+}
+
+func TestModuleJSON_loopJson(t *testing.T) {
+	m, err := ModuleFromJSONString(defaultModuleJsonShort)
+	require.NoError(t, err)
+	str, err := m.ToJSONString()
+	require.NoError(t, err)
+
+	var prettyJSON map[string]interface{}
+	_ = json.Unmarshal([]byte(str), &prettyJSON)
+	prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
+	prettyString := string(prettyBytes)
+
+	assert.Equal(t, defaultModuleJson, prettyString)
+}
+
+func TestModuleJSON_fromJson(t *testing.T) {
+	m, err := ModuleFromJSONString(defaultModuleJsonShort)
+	require.NoError(t, err)
+	assert.Equal(t, "", m.NameField)
+	assert.Equal(t, "", m.OriginalName)
+	assert.Equal(t, "A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.", m.Description)
+	assert.Len(t, m.ObjectDefs, 1)
+	assert.Len(t, m.InterfaceDefs, 0)
+	assert.Len(t, m.EnumDefs, 0)
+	obj := m.ObjectDefs[0].AsObject.Value
+	assert.Equal(t, "MyModule", obj.Name)
+	assert.Len(t, obj.Functions, 2)
+	fs, err := obj.Functions[0].FieldSpec(t.Context(), m)
+	require.NoError(t, err)
+	assert.Equal(t, "containerEcho", fs.Name)
+	assert.Equal(t, JSON("\"foo\""), obj.Functions[1].Args[1].DefaultValue)
+	require.NoError(t, err)
+}
+
+func TestModuleJSON_ok(t *testing.T) {
+	m, err := ModuleFromJSONString(`{
+  "name": "",
+  "originalName": "",
+  "description": "MyJavaModule example",
+  "interfaces": [],
+  "enums": [],
+  "objects": [
+    {
+      "kind": "OBJECT_KIND",
+      "optional": false,
+      "values": {
+        "Name": "MyJavaModule",
+        "OriginalName": "MyJavaModule",
+        "SourceModuleName": "",
+        "Description": "MyJavaModule main object",
+        "Constructor": null,
+        "Fields": [],
+        "Functions": [
+          {
+            "Name": "containerEcho",
+            "OriginalName": "containerEcho",
+            "ParentOriginalName": "MyJavaModule",
+            "Description": "Returns a container that echoes whatever string argument is provided",
+            "ReturnType": {
+              "kind": "OBJECT_KIND",
+              "values": {
+                "Name": "Container",
+                "Description": "",
+                "SourceModuleName": "",
+                "Constructor": null,
+                "Fields": [],
+                "Functions": [],
+                "SourceMap": null
+              }
+            },
+            "Args": [
+              {
+                "Name": "stringArg",
+                "OriginalName": "stringArg",
+                "TypeDef": {
+                  "kind": "STRING_KIND"
+                },
+                "Description": "",
+                "DefaultValue": null,
+                "DefaultPath": "",
+                "Ignore": null,
+                "SourceMap": {
+                  "Column": 1,
+                  "Line": 1,
+                  "Filename": "",
+                  "Module": ""
+                }
+              }
+            ],
+            "SourceMap": {
+              "Column": 1,
+              "Line": 1,
+              "Filename": "",
+              "Module": ""
+            }
+          },
+          {
+            "Name": "print",
+            "OriginalName": "print",
+            "ParentOriginalName": "MyJavaModule",
+            "Description": "",
+            "ReturnType": {
+              "kind": "STRING_KIND"
+            },
+            "Args": [
+              {
+                "Name": "stringArg",
+                "OriginalName": "stringArg",
+                "TypeDef": {
+                  "kind": "STRING_KIND"
+                },
+                "Description": "",
+                "DefaultValue": null,
+                "DefaultPath": "",
+                "Ignore": null,
+                "SourceMap": {
+                  "Column": 1,
+                  "Line": 1,
+                  "Filename": "",
+                  "Module": ""
+                }
+              }
+            ],
+            "SourceMap": {
+              "Column": 1,
+              "Line": 1,
+              "Filename": "",
+              "Module": ""
+            }
+          },
+          {
+            "Name": "base",
+            "OriginalName": "base",
+            "ParentOriginalName": "MyJavaModule",
+            "Description": "",
+            "ReturnType": {
+              "kind": "OBJECT_KIND",
+              "values": {
+                "Name": "Container",
+                "Description": "",
+                "SourceModuleName": "",
+                "Constructor": null,
+                "Fields": [],
+                "Functions": [],
+                "SourceMap": null
+              }
+            },
+            "Args": [],
+            "SourceMap": {
+              "Column": 1,
+              "Line": 1,
+              "Filename": "",
+              "Module": ""
+            }
+          }
+        ],
+        "SourceMap": {
+          "Column": 1,
+          "Line": 1,
+          "Filename": "",
+          "Module": ""
+        }
+      }
+    }
+  ]
+}`)
+	require.NoError(t, err)
+	assert.Equal(t, "MyJavaModule example", m.Description)
+}
+
 func TestModuleJSON_BasicModule(t *testing.T) {
 	// Test basic module with just name and description
 	module := &Module{
-		NameField:    "TestModule",
-		OriginalName: "TestModule",
-		Description:  "A test module for JSON serialization",
-		ObjectDefs:   []*TypeDef{},
+		NameField:     "TestModule",
+		OriginalName:  "TestModule",
+		Description:   "A test module for JSON serialization",
+		ObjectDefs:    []*TypeDef{},
 		InterfaceDefs: []*TypeDef{},
-		EnumDefs:     []*TypeDef{},
+		EnumDefs:      []*TypeDef{},
 	}
 
 	// Test marshaling
@@ -56,10 +501,10 @@ func TestModuleJSON_ModuleWithObjectDefs(t *testing.T) {
 	userObjectDef := NewObjectTypeDef("User", "A user object")
 	userObjectDef.Fields = []*FieldTypeDef{
 		{
-			Name:        "name",
+			Name:         "name",
 			OriginalName: "name",
-			Description: "User's name",
-			TypeDef:     stringType,
+			Description:  "User's name",
+			TypeDef:      stringType,
 		},
 	}
 
@@ -240,16 +685,16 @@ func TestModuleJSON_ComplexModule(t *testing.T) {
 	userObjectDef := NewObjectTypeDef("User", "A user object")
 	userObjectDef.Fields = []*FieldTypeDef{
 		{
-			Name:        "name",
+			Name:         "name",
 			OriginalName: "name",
-			Description: "User's name",
-			TypeDef:     stringType,
+			Description:  "User's name",
+			TypeDef:      stringType,
 		},
 		{
-			Name:        "status",
+			Name:         "status",
 			OriginalName: "status",
-			Description: "User's status",
-			TypeDef:     enumTypeDef,
+			Description:  "User's status",
+			TypeDef:      enumTypeDef,
 		},
 	}
 	userTypeDef := &TypeDef{
