@@ -398,6 +398,30 @@ func (m *MCP) call(ctx context.Context,
 		stdio.Close()
 	}()
 
+	// Capture logs produced by the tool call and append them to the result
+	defer func() {
+		logs, err := m.captureLogs(ctx)
+		if err != nil {
+			res += fmt.Sprintf("\n\nFailed to capture logs: %v", err)
+		} else if len(logs) > 0 {
+			if len(logs) > llmLastLogs {
+				skipped := len(logs) - llmLastLogs
+				logs = append(
+					[]string{fmt.Sprintf("... skipped %d lines ...", skipped)},
+					logs[skipped:]...,
+				)
+			}
+			if !strings.HasSuffix(res, "\n") {
+				// avoid double trailing linebreak (e.g. pretty JSON)
+				res += "\n"
+			}
+			res += fmt.Sprintf(`\n<logs>\n%s\n</logs>`,
+				// avoid double trailing linebreak
+				strings.TrimSuffix(strings.Join(logs, "\n"), "\n"),
+			)
+		}
+	}()
+
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
 	argsMap, ok := args.(map[string]any)
@@ -604,29 +628,6 @@ func (m *MCP) toolCallToSelection(
 const llmLastLogs = 10
 
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
-	defer func() {
-		logs, err := m.captureLogs(ctx)
-		if err != nil {
-			res += fmt.Sprintf("\n\nFailed to capture logs: %v", err)
-		} else if len(logs) > 0 {
-			if len(logs) > llmLastLogs {
-				skipped := len(logs) - llmLastLogs
-				logs = append(
-					[]string{fmt.Sprintf("... skipped %d lines ...", skipped)},
-					logs[skipped:]...,
-				)
-			}
-			if !strings.HasSuffix(res, "\n") {
-				// avoid double trailing linebreak (e.g. pretty JSON)
-				res += "\n"
-			}
-			res += fmt.Sprintf(`\n<logs>\n%s\n</logs>`,
-				// avoid double trailing linebreak
-				strings.TrimSuffix(strings.Join(logs, "\n"), "\n"),
-			)
-		}
-	}()
-
 	var tool *LLMTool
 	for _, t := range tools {
 		if t.Name == toolCall.Function.Name {
