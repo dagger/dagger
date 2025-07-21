@@ -111,6 +111,23 @@ func (env *Env) DeclareOutput(name string, typ dagql.Type, description string) e
 	return errors.New("environment is not writable")
 }
 
+// Add the calling object as an input binding to the environment
+func (env *Env) WithCaller(ctx context.Context, name, description string) (*Env, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fc, err := query.CurrentFunctionCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := env.srv.Load(ctx, fc.ParentID)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithInput(name, obj, description), nil
+}
+
 // Add an input (read-only) binding to the environment
 func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()

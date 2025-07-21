@@ -35,6 +35,12 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Doc("return all output values for the environment"),
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
+		dagql.Func("withCaller", s.withCaller).
+			Doc("Provide the calling object as an input to the environment").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("description").Doc("The description of the input"),
+			),
 		dagql.Func("withStringInput", s.withStringInput).
 			Doc("Create or update an input value of type string").
 			Args(
@@ -116,6 +122,13 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 
 func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Outputs(), nil
+}
+
+func (s environmentSchema) withCaller(ctx context.Context, env *core.Env, args struct {
+	Name        string
+	Description string
+}) (*core.Env, error) {
+	return env.WithCaller(ctx, args.Name, args.Description)
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
