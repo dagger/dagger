@@ -59,6 +59,7 @@ var (
 	silent                   bool
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
 	debug                    bool
 	progress                 string
 	interactive              bool
@@ -436,6 +437,7 @@ func main() {
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
 	opts.Debug = debug                             // show everything
+	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath

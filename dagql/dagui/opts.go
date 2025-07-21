@@ -15,6 +15,10 @@ type FrontendOpts struct {
 	// Verbosity is the level of detail to show in the TUI.
 	Verbosity int
 
+	// A distinct option from Verbosity just for disabling the 'reveal: true'
+	// mechanism - mostly for tests.
+	RevealNoisySpans bool
+
 	// Don't show things that completed beneath this duration. (default 100ms)
 	TooFastThreshold time.Duration
 

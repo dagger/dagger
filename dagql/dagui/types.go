@@ -175,7 +175,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			verbosity = v
 		}
 
-		if verbosity < ShowSpammyVerbosity {
+		if verbosity < ShowSpammyVerbosity && !opts.RevealNoisySpans {
 			// Process revealed spans before normal children
 			for _, revealed := range span.RevealedSpans.Order {
 				if revealed.Passthrough && !opts.Debug {
