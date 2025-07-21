@@ -415,7 +415,7 @@ func (m *MCP) call(ctx context.Context,
 				// avoid double trailing linebreak (e.g. pretty JSON)
 				res += "\n"
 			}
-			res += fmt.Sprintf(`\n<logs>\n%s\n</logs>`,
+			res += fmt.Sprintf("\n<logs>\n%s\n</logs>",
 				// avoid double trailing linebreak
 				strings.TrimSuffix(strings.Join(logs, "\n"), "\n"),
 			)
