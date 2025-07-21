@@ -2,9 +2,18 @@ module.exports = {
   current: [
     {
       type: "category",
-      label: "Getting Started",
+      label: "What is Dagger?",
       items: [
         "index",
+        "features/modules",
+        "features/services",
+        "features/llm",
+      ],
+    },
+    {
+      type: "category",
+      label: "Getting Started",
+      items: [
         "installation",
         "quickstart/core-concepts/index",
         "quickstart/index",
@@ -14,11 +23,11 @@ module.exports = {
     {
       type: "category",
       label: "Use Cases",
-      items: ["use-cases/modern-ci", "use-cases/agentic-ci"],
+      items: ["use-cases/agentic-ci", "use-cases/monorepos"],
     },
     {
       type: "category",
-      label: "Types",
+      label: "Components",
       items: [
         "components/index",
         "components/objects/create-your-own",
