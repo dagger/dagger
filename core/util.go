@@ -536,10 +536,12 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //     Otherwise, the pattern is recursive.
 //     If pattern is already starting with **, not change needed.
 //     If the pattern starts with *, it's not recursive but only matches the directory itself.
+//     Example: foo/bar stays foo/bar but foo becomes **/foo
 //
 //   - If a pattern is negative exclusion (starts with `!`) or targets directory only
 //     (ends with `/`), we treat is as a regular path then readd the exclusion to make
 //     sure the recusive pattern is applied if needed.
+//     Example: !foo becomes foo then **/foo then !**/foo
 func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []string {
 	ignorePatterns := []string{}
 
