@@ -641,7 +641,14 @@ func (llm *LLM) Sync(ctx context.Context) error {
 		return err
 	}
 	llm.once.Do(func() {
-		llm.err = llm.loop(ctx)
+		err := llm.loop(ctx)
+		if err != nil && ctx.Err() == nil {
+			// Consider an interrupt to be successful, so we can still use the result
+			// of a partially completed sequence (e.g. accessing its Env). The user
+			// must append another prompt to interject and continue. (This matches the
+			// behavior of Claude Code and presumably other chat agents.)
+			llm.err = err
+		}
 	})
 	return llm.err
 }

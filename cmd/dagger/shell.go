@@ -230,10 +230,6 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initial context: %w", err)
 	}
 
-	// silently attempt to initialize llm to populate $agent.
-	// swallow errors, discard logs.
-	_, _ = h.llm(context.Background())
-
 	h.initwd = *wd
 	h.wd = h.initwd
 
@@ -325,6 +321,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Start the shell loop (either in LLM mode or normal shell mode)
 	Frontend.Shell(ctx, h)
@@ -420,8 +417,9 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		// initialize LLM session if not already initialized
 		llm, err := h.llmMaybe()
 		if err != nil {
-			sb.WriteString(out.String(err.Error()).Bold().Foreground(termenv.ANSIRed).String())
+			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
 			sb.WriteString(out.String(" ").String())
+			fg = termenv.ANSIRed
 		} else if llm != nil {
 			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
 			sb.WriteString(out.String(" ").String())
@@ -501,6 +499,7 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	defer h.llmL.Unlock()
 
 	if err != nil {
+		slog.Error("failed to initialize LLM", "error", err)
 		h.llmErr = err
 		return nil, err
 	}
