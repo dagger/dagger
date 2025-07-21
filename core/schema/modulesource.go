@@ -1945,7 +1945,6 @@ func (s *moduleSourceSchema) runCodegen(
 		return res, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
 	}
 
-	// BEGIN: self call
 	// If possible, add the types defined by the module itself to the "deps" so that they can be
 	// part of the code generation.
 	// This is not really a dependency as it's the module itself, but that will allow to generate
@@ -1965,7 +1964,6 @@ func (s *moduleSourceSchema) runCodegen(
 			deps = mod.Self().Deps.Append(mod.Self())
 		}
 	}
-	// END: self call
 
 	// run codegen to get the generated context directory
 	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInstContentHashed)
@@ -2285,7 +2283,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		}
 		initialized = resultInst.Self()
 	} else {
-		typeDefs, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+		mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
@@ -2301,7 +2299,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				ctx,
 				mod,
 				nil,
-				typeDefs,
+				mod.Runtime,
 				core.NewFunction("", &core.TypeDef{
 					Kind:     core.TypeDefKindObject,
 					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2341,12 +2339,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		}
 	}
 
-	mtd, err := initialized.ToJSONString()
-	if err != nil {
-		return nil, err
-	}
-	slog.ExtraDebug("ModuleTypeDefs", "json", mtd)
-
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
 	for _, obj := range initialized.ObjectDefs {
@@ -2372,6 +2364,32 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
+
+	if runtimeImpl.HasModuleTypeDefs() {
+		// append module types to the module itself so self calls are possible
+		mod.Deps = mod.Deps.Append(mod)
+	}
+
+	if mod.Runtime.Self() == nil {
+		// mod.Runtime is required for the module to be correctly loaded and usable.
+		// So set it if it doesn't yet exist (because moduleTypeDefs does not create it)
+		mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+		if err != nil {
+			return nil, err
+		}
+		var runtimeRes dagql.ID[*core.Container]
+		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
+		// mod.Runtime exists, but it's expected the cache has been filled.
+		// If the SDK is not defining moduleTypeDefs, then a function will be called against the module and creates all
+		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
+		// invoked.
+		if err = dag.Select(ctx, mod.Runtime, &runtimeRes, dagql.Selector{
+			Field: "sync",
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	return mod, nil
 }
 
@@ -2439,28 +2457,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	modName := src.Self().ModuleName
 
 	if src.Self().SDKImpl != nil {
-		runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
-		if !ok {
-			return inst, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
-		}
-
 		mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
 		if err != nil {
 			return inst, err
-		}
-
-		// BEGIN: self call
-		if runtimeImpl.HasModuleTypeDefs() {
-			mod.Deps = mod.Deps.Append(mod)
-		}
-		// END: self call
-
-		// pre-load the module Runtime
-		if mod.Runtime.Self() == nil {
-			mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-			if err != nil {
-				return inst, err
-			}
 		}
 
 		mod.ResultID = dagql.CurrentID(ctx)
