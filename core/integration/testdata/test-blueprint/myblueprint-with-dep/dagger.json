@@ -1,0 +1,13 @@
+{
+  "name": "myblueprint-with-dep",
+  "engineVersion": "v0.18.12",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "../myblueprint"
+    }
+  ]
+}

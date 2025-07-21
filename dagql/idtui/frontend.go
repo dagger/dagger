@@ -26,7 +26,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/prompt"
 )
 
 type (
@@ -83,15 +83,13 @@ type Frontend interface {
 	LogExporter() sdklog.Exporter
 	MetricExporter() sdkmetric.Exporter
 
-	// ConnectedToEngine is called when the CLI connects to an engine.
-	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
 
 	// Shell is called when the CLI enters interactive mode.
 	Shell(ctx context.Context, handler ShellHandler)
 
-	session.PromptHandler
+	prompt.PromptHandler
 }
 
 // ShellHandler defines the interface for handling shell interactions

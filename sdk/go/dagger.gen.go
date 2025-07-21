@@ -690,6 +690,7 @@ type Container struct {
 	envVariable *string
 	exitCode    *int
 	export      *string
+	exportImage *Void
 	id          *ContainerID
 	imageRef    *string
 	label       *string
@@ -1055,6 +1056,49 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// ContainerExportImageOpts contains options for Container.ExportImage
+type ContainerExportImageOpts struct {
+	// Identifiers for other platform specific containers.
+	//
+	// Used for multi-platform image.
+	PlatformVariants []*Container
+	// Force each layer of the exported image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the exported image's layers.
+	//
+	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Exports the container as an image to the host's container image store.
+func (r *Container) ExportImage(ctx context.Context, name string, opts ...ContainerExportImageOpts) error {
+	if r.exportImage != nil {
+		return nil
+	}
+	q := r.query.Select("exportImage")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+		}
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return q.Execute(ctx)
 }
 
 // Retrieves the list of exposed ports.
@@ -3073,6 +3117,18 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the given Git-compatible patch applied.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Directory) WithPatch(patch string) *Directory {
+	q := r.query.Select("withPatch")
+	q = q.Arg("patch", patch)
 
 	return &Directory{
 		query: q,
@@ -5886,6 +5942,15 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Returns details for the latest semver tag.
+func (r *GitRepository) LatestVersion() *GitRef {
+	q := r.query.Select("latestVersion")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // Returns details of a ref.
 func (r *GitRepository) Ref(name string) *GitRef {
 	q := r.query.Select("ref")
@@ -7393,6 +7458,15 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The blueprint referenced by the module source.
+func (r *ModuleSource) Blueprint() *ModuleSource {
+	q := r.query.Select("blueprint")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // The ref to clone the root of the git repo from. Only valid for git sources.
 func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	if r.cloneRef != nil {
@@ -7770,6 +7844,17 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Set a blueprint for the module source.
+func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
+	assertNotNil("blueprint", blueprint)
+	q := r.query.Select("withBlueprint")
+	q = q.Arg("blueprint", blueprint)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with a new client to generate.
 func (r *ModuleSource) WithClient(generator string, outputDir string) *ModuleSource {
 	q := r.query.Select("withClient")
@@ -7841,10 +7926,28 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Update the blueprint module to the latest version.
+func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
+	q := r.query.Select("withUpdateBlueprint")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update one or more module dependencies.
 func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Remove the current blueprint from the module source.
+func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
+	q := r.query.Select("withoutBlueprint")
 
 	return &ModuleSource{
 		query: q,

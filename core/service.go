@@ -35,6 +35,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 const (
@@ -57,7 +58,7 @@ type Service struct {
 	NoInit                        bool
 
 	// TunnelUpstream is the service that this service is tunnelling to.
-	TunnelUpstream *dagql.Instance[*Service]
+	TunnelUpstream dagql.ObjectResult[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward
 
@@ -84,9 +85,6 @@ func (svc *Service) Clone() *Service {
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
 	}
-	if cp.TunnelUpstream != nil {
-		cp.TunnelUpstream.Self = cp.TunnelUpstream.Self.Clone()
-	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
 	return &cp
@@ -109,7 +107,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	}
 
 	switch {
-	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
+	case svc.TunnelUpstream.Self() != nil: // host=>container (127.0.0.1)
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
@@ -135,12 +133,12 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	}
 
 	switch {
-	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
+	case svc.TunnelUpstream.Self() != nil, len(svc.HostSockets) > 0:
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, id, svc.TunnelUpstream != nil)
+		running, err := svcs.Get(ctx, id, svc.TunnelUpstream.Self() != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -175,7 +173,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 
 			port = svc.Container.Ports[0].Port
 		}
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream.Self() != nil:
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
@@ -232,7 +230,7 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream != nil)
+	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream.Self() != nil)
 	return err
 }
 
@@ -245,7 +243,7 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	if err != nil {
 		return err
 	}
-	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream != nil)
+	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
 }
 
 type ServiceIO struct {
@@ -288,7 +286,7 @@ func (svc *Service) Start(
 	switch {
 	case svc.Container != nil:
 		return svc.startContainer(ctx, id, interactive, sio)
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
 		return svc.startReverseTunnel(ctx, id)
@@ -304,10 +302,10 @@ func (svc *Service) startContainer(
 	interactive bool,
 	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
-	var cleanups buildkit.Cleanups
+	var cleanup cleanups.Cleanups
 	defer func() {
 		if rerr != nil {
-			cleanups.Run()
+			cleanup.Run()
 		}
 	}()
 
@@ -347,11 +345,11 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
-	cleanups.Add("detach deps", buildkit.Infallible(detachDeps))
+	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
 	var domain string
 	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
+		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -423,12 +421,12 @@ func (svc *Service) startContainer(
 		return cache.New(ctx, ref, nil)
 	}, runtime.GOOS)
 	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
-		cleanups.Add("release active ref", func() error {
+		cleanup.Add("release active ref", func() error {
 			return active.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}
 	for _, o := range p.OutputRefs {
-		cleanups.Add("release output ref", func() error {
+		cleanup.Add("release output ref", func() error {
 			return o.Ref.Release(context.WithoutCancel(ctx))
 		})
 	}
@@ -571,7 +569,7 @@ func (svc *Service) startContainer(
 		})
 
 		// run all cleanups, discarding container
-		cleanups.Run()
+		cleanup.Run()
 	}()
 
 	signalSvc := func(ctx context.Context, sig syscall.Signal) error {
@@ -716,7 +714,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self, true)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
@@ -904,7 +902,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	Service  dagql.Instance[*Service]
+	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
 }

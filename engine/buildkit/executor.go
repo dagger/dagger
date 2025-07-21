@@ -23,6 +23,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -237,13 +238,13 @@ type Namespaced interface {
 func NewPlainNS(id string) Namespaced {
 	return &networkNamespace{
 		id:      id,
-		cleanup: &Cleanups{},
+		cleanup: &cleanups.Cleanups{},
 	}
 }
 
 type networkNamespace struct {
 	id      string
-	cleanup *Cleanups
+	cleanup *cleanups.Cleanups
 }
 
 var _ Namespaced = (*networkNamespace)(nil)
@@ -262,7 +263,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		return nil, fmt.Errorf("no default network provider found")
 	}
 
-	cleanup := &Cleanups{}
+	cleanup := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, cleanup.Run())
@@ -281,7 +282,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		netNSJobs:        make(chan func()),
 		cleanups:         cleanup,
 	}
-	cleanup.Add("mark run state done", Infallible(func() {
+	cleanup.Add("mark run state done", cleanups.Infallible(func() {
 		close(state.done)
 	}))
 
@@ -293,7 +294,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	w.mu.Lock()
 	w.running[id] = state
 	w.mu.Unlock()
-	cleanup.Add("delete run state", Infallible(func() {
+	cleanup.Add("delete run state", cleanups.Infallible(func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()

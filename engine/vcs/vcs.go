@@ -688,7 +688,7 @@ var vcsPaths = []*vcsPath{
 
 	// General syntax for any server.
 	{
-		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
+		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		ping: true,
 		repo: "https://{root}",
 		// for static analysis of general servers (GitLab ref with .git for example)

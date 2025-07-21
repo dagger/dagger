@@ -5452,7 +5452,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*A = "A", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
 				},
 			},
 		},
@@ -5461,8 +5461,8 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 			src: `import { object, func } from "@dagger.io/dagger"
 
 export enum MyEnum {
-  MyEnumA = "MyEnumA",
-	MyEnumB = "MyEnumB",
+  A = "MyEnumA",
+	B = "MyEnumB",
 }
 
 @object()
@@ -5492,7 +5492,7 @@ export class Dep {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/src/index.ts:3:13\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
 				},
 				typescript: []string{
 					// struct
@@ -5507,7 +5507,7 @@ export class Dep {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/src/index.ts:3:13\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
 				},
 			},
 		},
@@ -5766,6 +5766,60 @@ func (m *Test) ReadFile(
 		require.NoError(t, err)
 		require.Equal(t, newContent, res2.Test.ReadFile)
 	})
+}
+
+func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	moduleSrc := `package main
+
+import (
+  "context"
+)
+
+type Test struct{}
+
+func (m *Test) RunNoisy(ctx context.Context) error {
+	_, err := dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"sh", "-c", ` + "`" + `
+			for i in $(seq 100); do
+				for j in $(seq 1024); do
+					echo -n x
+					echo -n y >/dev/stderr
+				done
+				echo
+			done
+			exit 42
+		` + "`" + `}).
+		Sync(ctx)
+	return err
+}
+`
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+	require.NoError(t, err)
+
+	c := connect(ctx, t)
+
+	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	_, err = testutil.QueryWithClient[struct {
+		Test struct {
+			RunNoisy any
+		}
+	}](c, t, `{test{runNoisy}}`, nil)
+	var execError *dagger.ExecError
+	require.ErrorAs(t, err, &execError)
+
+	// if we get `2` here, that means we're getting the less helpful error:
+	// process "/runtime" did not complete successfully: exit code: 2
+	require.Equal(t, 42, execError.ExitCode)
+	require.Contains(t, execError.Stdout, "xxxxx")
+	require.Contains(t, execError.Stderr, "yyyyy")
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

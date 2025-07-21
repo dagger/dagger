@@ -4,7 +4,7 @@ import "fmt"
 
 type PanicError struct {
 	Cause     any
-	Self      Object
+	Self      AnyResult
 	Selection Selection
 	Stack     []byte
 }

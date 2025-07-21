@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -23,8 +24,9 @@ const (
 	IsDagOpArgName = "isDagOp"
 )
 
-func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
+func collectDefs(ctx context.Context, val dagql.AnyResult) []*pb.Definition {
 	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
+		ctx := dagql.ContextWithID(ctx, val.ID())
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 			slog.Warn("failed to get LLB definitions", "err", err)
 			return nil
@@ -39,11 +41,11 @@ var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
 	ctx context.Context,
-	self dagql.Object,
+	self dagql.AnyObjectResult,
 	id *call.ID,
 ) (
 	context.Context,
-	func(res dagql.Typed, cached bool, rerr error),
+	func(res dagql.AnyResult, cached bool, rerr error),
 ) {
 	if dagql.IsSkipped(ctx) || isIntrospection(id) || isMeta(id) || isDagOp(id) {
 		// introspection+meta are very uninteresting spans
@@ -68,6 +70,38 @@ func AroundFunc(
 		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
+
+	// if inside a module call, add call trace metadata. this is useful
+	// since within a single span, we can correlate the caller's and callee's
+	// module and functions calls
+	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
+		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
+
+		if callerRef != nil && calleeRef != nil {
+			var callerRefAttr string
+			if len(callerRef.ref) > 0 {
+				callerRefAttr = fmt.Sprintf("%s@%s", callerRef.ref, callerRef.version)
+			}
+
+			callerFn := callerRef.functionName
+			calleeFn := calleeRef.functionName
+
+			if callerRef.typeName != "" {
+				callerFn = fmt.Sprintf("%s.%s", callerRef.typeName, callerRef.functionName)
+			}
+
+			if calleeRef.typeName != "" {
+				calleeFn = fmt.Sprintf("%s.%s", calleeRef.typeName, calleeRef.functionName)
+			}
+			attrs = append(attrs,
+				attribute.String(telemetry.ModuleRefAttr, fmt.Sprintf("%s@%s", calleeRef.ref, calleeRef.version)),
+				attribute.String(telemetry.ModuleFunctionCallNameAttr, calleeFn),
+				attribute.String(telemetry.ModuleCallerRefAttr, callerRefAttr),
+				attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, callerFn),
+			)
+		}
+	}
+
 	if idInputs, err := id.Inputs(); err != nil {
 		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
 	} else {
@@ -84,7 +118,7 @@ func AroundFunc(
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
-	return ctx, func(res dagql.Typed, cached bool, err error) {
+	return ctx, func(res dagql.AnyResult, cached bool, err error) {
 		defer telemetry.End(span, func() error { return err })
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
@@ -92,8 +126,99 @@ func AroundFunc(
 	}
 }
 
+type moduleCallRef struct {
+	ref          string
+	version      string
+	functionName string
+	typeName     string
+}
+
+func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*moduleCallRef, *moduleCallRef) {
+	cm, _ := q.MainClientCallerMetadata(ctx)
+	fc, _ := q.CurrentFunctionCall(ctx)
+	m, _ := q.CurrentModule(ctx)
+	sd, _ := q.CurrentServedDeps(ctx)
+
+	call := callID.Call()
+	calleeModule := call.Module
+
+	var callerRef, calleeRef = &moduleCallRef{}, &moduleCallRef{}
+	// there's a caller
+
+	var ms *ModuleSource
+	if m != nil {
+		ms = m.GetSource()
+	} else if m, ok := sd.LookupDep(calleeModule.Name); ok {
+		ms = m.GetSource()
+	}
+
+	if ms == nil {
+		return nil, nil
+	}
+
+	if fc != nil {
+		callerRef.functionName = fc.Name
+		callerRef.typeName = fc.ParentName
+		if ms.Git != nil {
+			callerRef.ref, callerRef.version, _ = strings.Cut(ms.AsString(), "@")
+		} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+			callerRef.ref = path.Join(gremote, ms.SourceRootSubpath)
+			if gref, ok := cm.Labels["dagger.io/git.ref"]; ok {
+				callerRef.version = gref
+			}
+		} else {
+			// we don't a way to identify the caller ref and version. this could happen
+			// when calling local modules outside a git repo for example
+			return nil, nil
+		}
+	}
+
+	calleeRef.functionName = call.Field
+	calleeRef.version = call.Module.Pin
+	calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
+	calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
+
+	var voidType Void
+	if callID.Receiver() != nil {
+		calleeRef.typeName = callID.Receiver().Type().NamedType()
+	} else if call.Type.NamedType == voidType.TypeName() {
+		// it's a top level module function call so set the ParentName as the callee type
+		calleeRef.typeName = callerRef.typeName
+	}
+
+	// if it doesn't have a pin, it's a local callee module
+	if calleeRef.version == "" {
+		if ms.Git != nil {
+			subPath := ms.SourceRootSubpath
+			calleeRef.ref = path.Join(calleeRef.ref, subPath)
+		} else {
+			if ms.Local != nil {
+				calleeRef.ref = strings.ReplaceAll(calleeRef.ref, ms.Local.ContextDirectoryPath, "")
+				if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+					calleeRef.ref = path.Join(gremote, calleeRef.ref)
+				} else {
+					return nil, nil
+				}
+			} else if gremote, ok := cm.Labels["dagger.io/git.remote"]; ok {
+				subPath := ms.SourceRootSubpath
+				calleeRef.ref = path.Join(gremote, subPath)
+			} else {
+				return nil, nil
+			}
+		}
+
+		// if not within a function and a local call, use the git ref as the version
+		if gr, ok := cm.Labels["dagger.io/git.ref"]; fc == nil && ok {
+			calleeRef.version = gr
+		} else {
+			calleeRef.version = callerRef.version
+		}
+	}
+	return callerRef, calleeRef
+}
+
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached bool, err error, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
@@ -108,7 +233,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 	// This allows the UI to "simplify" the returned object's ID back to the
 	// current call's ID, so we can show the user myMod().unit().stdout()
 	// instead of container().from().[...].stdout().
-	if obj, ok := dagql.UnwrapAs[dagql.Object](res); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.AnyResult](res); ok {
 		// Don't consider loadFooFromID to be a 'creator' as that would only
 		// obfuscate the real ID.
 		//
@@ -130,7 +255,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 }
 
 // logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call.ID) {
+func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectResult, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
@@ -153,7 +278,7 @@ func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object) {
+func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, self dagql.AnyObjectResult) {
 	// Keep track of which effects were already installed prior to the call so we
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)

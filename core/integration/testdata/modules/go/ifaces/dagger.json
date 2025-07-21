@@ -1,6 +1,9 @@
 {
   "name": "caller",
-  "sdk": "go",
+  "engineVersion": "v0.18.12",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "impl",
@@ -10,7 +13,5 @@
       "name": "test",
       "source": "test"
     }
-  ],
-  "source": ".",
-  "engineVersion": "v0.12.0"
+  ]
 }

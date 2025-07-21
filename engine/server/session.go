@@ -53,6 +53,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type daggerSession struct {
@@ -236,7 +237,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 ) error {
 	slog.ExtraDebug("initializing new session", "session", clientMetadata.SessionID)
 	defer slog.ExtraDebug("initialized new session", "session", clientMetadata.SessionID)
@@ -327,11 +328,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
-	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
-		slog.Error("error releasing dagql cache", "error", err)
-		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
-	}
-
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
@@ -396,6 +392,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
+	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
+
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
@@ -433,7 +434,7 @@ type ClientInitOpts struct {
 func (srv *Server) initializeDaggerClient(
 	ctx context.Context,
 	client *daggerClient,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit+session attachable state for the client
@@ -499,7 +500,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit job: %w", err)
 	}
 	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", buildkit.Infallible(client.job.CloseProgress))
+	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
 
 	client.job.SessionID = client.buildkitSession.ID()
 	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
@@ -596,11 +597,11 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
-		client.mod = modInst.Self
+		client.mod = modInst.Self()
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self.EngineVersion
+		engineVersion := client.mod.Source.Self().EngineVersion
 		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can
@@ -731,7 +732,7 @@ func (srv *Server) getOrInitClient(
 	}
 
 	// cleanup to do if this method fails
-	failureCleanups := &buildkit.Cleanups{}
+	failureCleanups := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, failureCleanups.Run())

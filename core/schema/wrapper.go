@@ -14,7 +14,7 @@ func DagOpWrapper[T dagql.Typed, A DagOpInternalArgsIface, R dagql.Typed](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[T, A, R],
 ) dagql.NodeFuncHandler[T, A, R] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
+	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (inst R, err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
@@ -29,15 +29,16 @@ func DagOpWrapper[T dagql.Typed, A DagOpInternalArgsIface, R dagql.Typed](
 func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	ctx context.Context,
 	srv *dagql.Server,
-	self dagql.Instance[T],
+	self dagql.ObjectResult[T],
 	args A,
 	fn dagql.NodeFuncHandler[T, A, R],
 ) (inst R, err error) {
-	deps, err := extractLLBDependencies(ctx, self.Self)
+	deps, err := extractLLBDependencies(ctx, self.Self())
 	if err != nil {
 		return inst, err
 	}
 	filename := "output.json"
+
 	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
 		ID:       currentIDForRawDagOp(ctx, filename),
 		Filename: filename,
@@ -51,18 +52,18 @@ type PathFunc[T dagql.Typed, A any] func(ctx context.Context, val T, args A) (st
 // JSON, so we'd just end up with a cached ID instead of the actual content.
 func DagOpFileWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	fn dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.File]],
 	opts ...DagOpOptsFn[T, A],
-) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
+) dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.File]] {
+	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (inst dagql.ObjectResult[*core.File], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		file, err := DagOpFile(ctx, srv, self.Self, args, "", fn, opts...)
+		file, err := DagOpFile(ctx, srv, self.Self(), args, fn, opts...)
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, file)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 	}
 }
 
@@ -76,8 +77,7 @@ func DagOpFile[T dagql.Typed, A any](
 	srv *dagql.Server,
 	self T,
 	args A,
-	data string,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	fn dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.File]],
 	opts ...DagOpOptsFn[T, A],
 ) (*core.File, error) {
 	o := getOpts(opts...)
@@ -98,9 +98,8 @@ func DagOpFile[T dagql.Typed, A any](
 	}
 
 	return core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:   currentIDForFSDagOp(ctx, filename, data),
+		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-		Data: data,
 	}, deps)
 }
 
@@ -108,18 +107,18 @@ func DagOpFile[T dagql.Typed, A any](
 // similar to DagOpFileWrapper.
 func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	fn dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]],
 	opts ...DagOpOptsFn[T, A],
-) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
-	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
+) dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]] {
+	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (inst dagql.ObjectResult[*core.Directory], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		dir, err := DagOpDirectory(ctx, srv, self.Self, args, "", fn, opts...)
+		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 }
 
@@ -132,6 +131,14 @@ type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])
 func WithPathFn[T dagql.Typed, A any](pfn PathFunc[T, A]) DagOpOptsFn[T, A] {
 	return func(o *DagOpOpts[T, A]) {
 		o.pfn = pfn
+	}
+}
+
+func WithStaticPath[T dagql.Typed, A any](pathVal string) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.pfn = func(_ context.Context, _ T, _ A) (string, error) {
+			return pathVal, nil
+		}
 	}
 }
 
@@ -152,7 +159,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	self T,
 	args A,
 	data string,
-	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	fn dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]],
 	opts ...DagOpOptsFn[T, A],
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
@@ -173,25 +180,24 @@ func DagOpDirectory[T dagql.Typed, A any](
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
 		// FIXME: using this in the cache key means we effectively disable
 		// buildkit content caching
-		ID:   currentIDForFSDagOp(ctx, filename, data),
+		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-		Data: data,
 	}, deps)
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
 	srv *dagql.Server,
-	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
-) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
-	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
+) dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]] {
+	return func(ctx context.Context, self dagql.ObjectResult[*core.Container], args A) (inst dagql.ObjectResult[*core.Container], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		ctr, err := DagOpContainer(ctx, srv, self.Self, args, fn)
+		ctr, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, ctr)
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}
 }
 
@@ -200,7 +206,7 @@ func DagOpContainer[A any](
 	srv *dagql.Server,
 	ctr *core.Container,
 	args A,
-	fn dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]],
+	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
 ) (*core.Container, error) {
 	argDigest, err := core.DigestOf(args)
 	if err != nil {
@@ -262,20 +268,17 @@ func currentIDForRawDagOp(
 
 const (
 	FSDagOpPathArgName = "dagOpPath"
-	FSDagOpDataArgName = "dagOpData"
 )
 
 type FSDagOpInternalArgs struct {
 	DagOpInternalArgs
 
 	DagOpPath string `internal:"true" default:"" name:"dagOpPath"`
-	DagOpData string `internal:"true" default:"" name:"dagOpData"`
 }
 
 func currentIDForFSDagOp(
 	ctx context.Context,
 	path string,
-	data string,
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
 
@@ -288,11 +291,6 @@ func currentIDForFSDagOp(
 		WithArgument(call.NewArgument(
 			FSDagOpPathArgName,
 			call.NewLiteralString(path),
-			false,
-		)).
-		WithArgument(call.NewArgument(
-			FSDagOpDataArgName,
-			call.NewLiteralString(data),
 			false,
 		))
 }

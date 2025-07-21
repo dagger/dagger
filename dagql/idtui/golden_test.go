@@ -3,6 +3,7 @@ package idtui_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -64,6 +65,14 @@ func TestTelemetry(t *testing.T) {
 }
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
+	// setup a git repo so function call tests can pick up the right metadata
+	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
+	if co, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to initialize viztest git repo: %v: (%s)", err, co)
+	}
+	t.Cleanup(func() {
+		exec.Command("rm", "-rf", ".git").Run()
+	})
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -159,6 +168,83 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
+		// local module calls local module fn
+		{
+			Function: "trace-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Dep.getFiles" {
+						require.Equal(t, "Viztest.TraceFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Dep.getFiles", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest/dep", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						depCalled = true
+					} else if s.Name == "Viztest.traceFunctionCalls" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest",
+							strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// local module calls remote module fn
+		{
+			Function: "trace-remote-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Versioned.hello" {
+						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Versioned.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// remote module calls local module fn
+		{
+			Module:   "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875",
+			Function: "fn",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "DepAlias.fn" {
+						require.Equal(t, "RootMod.Fn", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "DepAlias.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					} else if s.Name == "RootMod.fn" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "RootMod.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {
@@ -183,6 +269,18 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			}
 		})
 	}
+}
+
+func strAttr(t testing.TB, s *dagui.Span, name string) string {
+	return unmarshalAs[string](t, s.ExtraAttributes[name])
+}
+
+func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
+	var result T
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	return result
 }
 
 type Example struct {
@@ -365,6 +463,18 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`\b\d+:\d+:\d+\b`),
 		"12:34:56",
 		"XX:XX:XX",
+	},
+	// *.dagger.local
+	{
+		regexp.MustCompile(`[a-z0-9]+\.[a-z0-9]+\.dagger\.local`),
+		"iujpijlqnc7me.tun3vdbg35c6q.dagger.local",
+		"xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local",
+	},
+	// version=
+	{
+		regexp.MustCompile(`version=v[a-f0-9.-]+`),
+		"version=v0.18.13-250710134709-7edd4496ecc1",
+		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
 	},
 	// Trailing whitespace
 	{

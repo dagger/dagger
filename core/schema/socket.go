@@ -5,12 +5,10 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type socketSchema struct {
-	srv *dagql.Server
-}
+type socketSchema struct{}
 
 var _ SchemaResolvers = &socketSchema{}
 
-func (s *socketSchema) Install() {
-	dagql.Fields[*core.Socket]{}.Install(s.srv)
+func (s *socketSchema) Install(srv *dagql.Server) {
+	dagql.Fields[*core.Socket]{}.Install(srv)
 }

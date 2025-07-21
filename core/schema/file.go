@@ -10,13 +10,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type fileSchema struct {
-	srv *dagql.Server
-}
+type fileSchema struct{}
 
 var _ SchemaResolvers = &fileSchema{}
 
-func (s *fileSchema) Install() {
+func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("file", s.file).
 			Doc(`Creates a file with the specified contents.`).
@@ -25,7 +23,7 @@ func (s *fileSchema) Install() {
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
@@ -63,13 +61,13 @@ func (s *fileSchema) Install() {
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.Func("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", DagOpFileWrapper(srv, s.withTimestamps, WithPathFn(keepParentFile[fileWithTimestampsArgs]))).
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
@@ -158,8 +156,23 @@ func (s *fileSchema) exportLegacy(ctx context.Context, parent *core.File, args f
 
 type fileWithTimestampsArgs struct {
 	Timestamp int
+
+	DagOpInternalArgs
 }
 
-func (s *fileSchema) withTimestamps(ctx context.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
-	return parent.WithTimestamps(ctx, args.Timestamp)
+func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileWithTimestampsArgs) (inst dagql.ObjectResult[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+
+	f, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+}
+
+func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
+	return val.File, nil
 }

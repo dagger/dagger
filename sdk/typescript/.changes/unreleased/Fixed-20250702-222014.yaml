@@ -1,7 +1,0 @@
-kind: Fixed
-body: Correctly flush custom span on execution failure so it's properly displayed
-  on Dagger Cloud.
-time: 2025-07-02T22:20:14.226107+02:00
-custom:
-  Author: TomChv
-  PR: "10677"

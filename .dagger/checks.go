@@ -33,6 +33,11 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
 	routes.Add(dev.checksForSDK("sdk/dotnet", dev.SDK().Dotnet)...)
 
+	if len(targets) == 0 {
+		for route := range routes.children {
+			targets = append(targets, route)
+		}
+	}
 	eg := errgroup.Group{}
 	for _, check := range routes.Get(targets...) {
 		ctx, span := Tracer().Start(ctx, check.Name)

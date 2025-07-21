@@ -13,7 +13,7 @@ type llmSchema struct {
 
 var _ SchemaResolvers = &llmSchema{}
 
-func (s llmSchema) Install() {
+func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("llm", s.llm, dagql.CachePerSession).
 			Experimental("LLM support is not yet stabilized").
@@ -22,7 +22,7 @@ func (s llmSchema) Install() {
 				dagql.Arg("model").Doc("Model to use"),
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM"),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 	dagql.Fields[*core.LLM]{
 		dagql.Func("model", s.model).
 			Doc("return the model used by the llm"),
@@ -52,8 +52,8 @@ func (s llmSchema) Install() {
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
 			),
-		dagql.NodeFunc("__mcp", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.Nullable[core.Void], error) {
-			return dagql.Null[core.Void](), self.Self.MCP(ctx, s.srv)
+		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
+			return dagql.Null[core.Void](), self.MCP(ctx, srv)
 		}).
 			Doc("instantiates an mcp server"),
 		dagql.Func("withPromptFile", s.withPromptFile).
@@ -68,15 +68,15 @@ func (s llmSchema) Install() {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
-		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
-			var zero dagql.ID[*core.LLM]
-			var inst dagql.Instance[*core.LLM]
-			if err := s.srv.Select(ctx, self, &inst, dagql.Selector{
+		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
+			var inst dagql.Result[*core.LLM]
+			if err := srv.Select(ctx, self, &inst, dagql.Selector{
 				Field: "loop",
 			}); err != nil {
-				return zero, err
+				return res, err
 			}
-			return dagql.NewID[*core.LLM](inst.ID()), nil
+			id := dagql.NewID[*core.LLM](inst.ID())
+			return dagql.NewResultForCurrentID(ctx, id)
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
@@ -90,8 +90,8 @@ func (s llmSchema) Install() {
 			Doc("returns the type of the current state"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
-	}.Install(s.srv)
-	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
+	}.Install(srv)
+	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 }
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	Env core.EnvID
@@ -100,7 +100,7 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(env.Self), nil
+	return llm.WithEnv(env.Self()), nil
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
@@ -163,7 +163,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPromptFile(ctx, file.Self)
+	return llm.WithPromptFile(ctx, file.Self())
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

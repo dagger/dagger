@@ -104,10 +104,10 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 				return nil, err
 			}
 		} else {
-			if mod.InstanceID == nil {
+			if mod.ResultID == nil {
 				return nil, fmt.Errorf("current module has no instance ID")
 			}
-			execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+			execMD.EncodedModuleID, err = mod.ResultID.Encode()
 			if err != nil {
 				return nil, err
 			}

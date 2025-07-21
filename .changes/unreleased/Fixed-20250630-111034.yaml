@@ -1,6 +1,0 @@
-kind: Fixed
-body: WithSymlink now returns "file exists" error when attempting to overwrite an existing symlink.
-time: 2025-06-30T11:10:34.880061239-07:00
-custom:
-    Author: alexcb
-    PR: "10664"

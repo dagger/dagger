@@ -294,6 +294,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git",
 			},
 		},
+		{
+			"extranet.example.com/bitbucket/scm/~user/daggerverse.git/pvc_migrate",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://extranet.example.com/bitbucket/scm/~user/daggerverse",
+				Root: "extranet.example.com/bitbucket/scm/~user/daggerverse.git",
+			},
+		},
 	}
 
 	for _, test := range tests {

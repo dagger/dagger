@@ -48,8 +48,11 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 	}, nil
 }
 
-var xxh3Regexp = regexp.MustCompile("@xxh3:[a-f0-9]{16}")
+var xxh3Regexp = regexp.MustCompile(`@xxh3:[a-f0-9]{16}`)
+var traceIDRegexp = regexp.MustCompile(`[a-f0-9]{2}-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}`)
 
 func stabilizeContent(content string) string {
-	return xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
+	content = xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
+	content = traceIDRegexp.ReplaceAllString(content, "00-00000000000000000000000000000000-0000000000000000-00")
+	return content
 }

@@ -195,9 +195,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 								c.PrintErrln("Stderr:")
 								c.PrintErrln(ex.Stderr)
 							}
-							return ExitError{Code: ex.ExitCode}
+							return ExitError{Code: ex.ExitCode, Original: err}
 						}
-						return Fail
+						return ExitError{Code: 1, Original: err}
 					}
 
 					return nil

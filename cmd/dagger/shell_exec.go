@@ -197,7 +197,6 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				// part of the script triggered it.
 				attrs := []attribute.KeyValue{
 					attribute.Bool(telemetry.UIPassthroughAttr, false),
-					attribute.Bool(telemetry.UIRevealAttr, true),
 				}
 				var he *HandlerError
 				if errors.As(rerr, &he) {

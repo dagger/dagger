@@ -334,7 +334,7 @@ func WrapError(ctx context.Context, baseErr error, client *Client) error {
 	return baseErr
 }
 
-func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string) ([]byte, error) {
+func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
@@ -350,16 +350,16 @@ func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable
 		},
 	}
 
-	if req.Range.Length > MaxExecErrorOutputBytes {
-		req.Range.Offset = int(stat.Size_) - MaxExecErrorOutputBytes
-		req.Range.Length = MaxExecErrorOutputBytes
+	if limit != -1 && req.Range.Length > limit {
+		req.Range.Offset = int(stat.Size_) - limit
+		req.Range.Length = limit
 	}
 	contents, err := cacheutil.ReadFile(ctx, mntable, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
 	}
-	if len(contents) >= MaxExecErrorOutputBytes {
-		truncMsg := fmt.Sprintf(TruncationMessage, int(stat.Size_)-MaxExecErrorOutputBytes)
+	if limit != -1 && len(contents) >= limit {
+		truncMsg := fmt.Sprintf(TruncationMessage, int(stat.Size_)-limit)
 		copy(contents, truncMsg)
 	}
 	return contents, nil

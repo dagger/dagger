@@ -82,6 +82,7 @@ type moduleConfig struct {
 	// Module config
 	name    string
 	subPath string
+	modPath string
 	sdk     string
 
 	// Location of the SDK library
@@ -111,6 +112,11 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	cfg.subPath, err = modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config source subpath: %w", err)
+	}
+
+	cfg.modPath, err = modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
 	}
 
 	// We retrieve the SDK because if it's set, that means the module is implementing
@@ -409,6 +415,10 @@ func (c *moduleConfig) hasFile(name string) bool {
 // Return the path to the module source.
 func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
+}
+
+func (c *moduleConfig) moduleRootPath() string {
+	return filepath.Join(ModSourceDirPath, c.modPath)
 }
 
 // Return the path to the SDK directory inside the module source.

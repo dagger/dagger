@@ -22,7 +22,8 @@ import (
 
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/engine/session/h2c"
 )
 
 func main() {
@@ -275,9 +276,9 @@ func mainSession() error {
 		// sockets
 		client.SocketProvider{EnableHostNetworkAccess: true},
 		// host=>container networking
-		session.NewTunnelListenerAttachable(ctx),
+		h2c.NewTunnelListenerAttachable(ctx),
 		// Git attachable
-		session.NewGitAttachable(ctx),
+		git.NewGitAttachable(ctx),
 	}
 	// filesync
 	filesyncer, err := client.NewFilesyncer()

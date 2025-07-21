@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
@@ -91,7 +92,7 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	p := pool.New().WithContext(ctx)
 	state.cleanups.Add("stopping namespace workers", p.Wait)
-	state.cleanups.Add("canceling namespace workers", Infallible(func() { cancel(fmt.Errorf("cleanup container: %w", context.Canceled)) }))
+	state.cleanups.Add("canceling namespace workers", cleanups.Infallible(func() { cancel(fmt.Errorf("cleanup container: %w", context.Canceled)) }))
 
 	for range workerPoolSize {
 		p.Go(func(ctx context.Context) (rerr error) {

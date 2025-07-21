@@ -20,17 +20,17 @@ const (
 // Canonical examples include loading client filesystem data or referencing client-side sockets/ports.
 func CachePerClient[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectResult[P],
 	args A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
 	return CachePerClientObject(ctx, inst, args, cacheCfg)
 }
 
-// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Result.
 func CachePerClientObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ AnyObjectResult,
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -50,17 +50,17 @@ func CachePerClientObject[A any](
 // It should be used when the operation should be run for each session, but not more than once for a given session.
 func CachePerSession[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectResult[P],
 	args A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
 	return CachePerSessionObject(ctx, inst, args, cacheCfg)
 }
 
-// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Result.
 func CachePerSessionObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ AnyObjectResult,
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -89,7 +89,7 @@ const (
 	CacheTypePerCall
 )
 
-func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i Instance[T], a A, cc CacheConfig) (*CacheConfig, error) {
+func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i ObjectResult[T], a A, cc CacheConfig) (*CacheConfig, error) {
 	switch a.CacheType() {
 	case CacheTypePerClient:
 		return CachePerClient(ctx, i, a, cc)
@@ -106,7 +106,7 @@ func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i I
 // always re-running.
 func CachePerCall[P Typed, A any](
 	_ context.Context,
-	_ Instance[P],
+	_ ObjectResult[P],
 	_ A,
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
@@ -120,10 +120,10 @@ func CachePerCall[P Typed, A any](
 //
 // This should be used only in scenarios where literally the schema is all that
 // determines the result, irrespective of what client is making the call.
-func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, CacheConfig) (*CacheConfig, error) {
 	return func(
 		ctx context.Context,
-		_ Instance[P],
+		_ ObjectResult[P],
 		_ A,
 		cfg CacheConfig,
 	) (*CacheConfig, error) {
@@ -140,10 +140,10 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, Instance[
 //
 // This should be used by anything that should invalidate when the schema
 // changes, but also has an element of per-client dynamism.
-func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, CacheConfig) (*CacheConfig, error) {
 	return func(
 		ctx context.Context,
-		_ Instance[P],
+		_ ObjectResult[P],
 		_ A,
 		cfg CacheConfig,
 	) (*CacheConfig, error) {

@@ -10,6 +10,9 @@ import (
 type Test struct {
 	IfaceField CustomIface
 
+	// +private
+	Dep *dagger.Dep
+
 	IfaceFieldNeverSet CustomIface
 
 	// +private
@@ -209,6 +212,29 @@ func (m *Test) IfaceListArgs(ctx context.Context, ifaces []CustomIface, otherIfa
 func (m *Test) WithIface(iface CustomIface) *Test {
 	m.IfaceField = iface
 	return m
+}
+
+func (m *Test) DepWithIface(ctx context.Context, iface CustomIface) (*Test, error) {
+	if m.Dep == nil {
+		m.Dep = dag.Dep()
+	}
+
+	id, err := iface.(interface {
+		ID(context.Context) (CustomIfaceID, error)
+	}).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	loadedIface := dag.LoadDepCustomIfaceFromID(dagger.DepCustomIfaceID(id))
+
+	m.Dep = m.Dep.WithIface(loadedIface)
+
+	return m, nil
+}
+
+func (m *Test) DepIfaceStr(ctx context.Context) (string, error) {
+	return m.Dep.IfaceFieldStr(ctx)
 }
 
 func (m *Test) WithOptionalPragmaIface(

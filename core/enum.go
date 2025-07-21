@@ -18,6 +18,8 @@ type ModuleEnumType struct {
 	mod     *Module
 }
 
+var _ ModType = &ModuleEnumType{}
+
 func (m *ModuleEnumType) SourceMod() Mod {
 	if m.mod == nil {
 		return nil
@@ -32,7 +34,7 @@ func (m *ModuleEnumType) TypeDef() *TypeDef {
 	}
 }
 
-func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if value == nil {
 		slog.Warn("%T.ConvertFromSDKResult: got nil value", m)
 		return nil, nil
@@ -47,7 +49,12 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 		if err != nil {
 			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
 		}
-		return enum.DecodeInput(value)
+		val, err := enum.DecodeInput(value)
+		if err != nil {
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
+		}
+
+		return dagql.NewResultForCurrentID(ctx, val)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -80,7 +87,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 

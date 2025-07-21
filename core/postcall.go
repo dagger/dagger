@@ -68,18 +68,18 @@ func ResourceTransferPostCall(
 		return nil, fmt.Errorf("failed to get source client dagql server: %w", err)
 	}
 
-	secrets, err := dagql.LoadIDInstances(srcClientCtx, srcDag, secretIDs)
+	secrets, err := dagql.LoadIDResults(srcClientCtx, srcDag, secretIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load secret instances: %w", err)
 	}
 
 	type secretWithPlaintext struct {
-		inst      dagql.Instance[*Secret]
+		inst      dagql.ObjectResult[*Secret]
 		plaintext []byte
 	}
 	var namedSecrets []secretWithPlaintext
 	for _, secret := range secrets {
-		isNamed := secret.Self.Name != ""
+		isNamed := secret.Self().Name != ""
 		if !isNamed {
 			continue
 		}
