@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/engine/slog"
+
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -1974,7 +1976,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific `moduleTypeDefs` function.
 		// If not, we will have circular dependency issues.
-		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() {
+		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefsObject() {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2311,7 +2313,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	} else {
 		// get the typedefs container dedicated to get the module's definition.
 		// this will fall back to the runtime container if `moduleTypeDefs` is not defined.
-		typeDefs, err := runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
+		typeDefs, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
@@ -2367,9 +2369,16 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		}
 	}
 
+	mtd, err := initialized.ToJSONString()
+	if err != nil {
+		return nil, err
+	}
+	slog.ExtraDebug("ModuleTypeDefs", "json", mtd)
+
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
 	for _, obj := range initialized.ObjectDefs {
+		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.AsObject.Value.SourceModuleName, "originalName", obj.AsObject.Value.OriginalName, "name", obj.AsObject.Value.Name)
 		mod, err = mod.WithObject(ctx, obj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
@@ -2489,7 +2498,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 
 		// BEGIN: self call
-		if runtimeImpl.HasModuleTypeDefs() {
+		if runtimeImpl.HasModuleTypeDefsObject() {
 			mod.Deps = mod.Deps.Append(mod)
 		}
 		// END: self call

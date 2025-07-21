@@ -7,74 +7,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-/*
-
-Generated JSON
-
-{
-  "kind": "OBJECT_KIND",
-  "optional": false,
-  "values": {
-    "Constructor": null,
-    "Description": "PrintModule desc",
-    "Fields": [],
-    "Functions": [
-      {
-        "Args": [
-          {
-            "DefaultPath": "",
-            "DefaultValue": "",
-            "Description": "",
-            "Ignore": null,
-            "Name": "stringArg",
-            "OriginalName": "stringArg",
-            "SourceMap": null,
-            "TypeDef": {
-              "kind": "STRING_KIND",
-              "optional": false
-            }
-          }
-        ],
-        "Description": "",
-        "Name": "containerEcho",
-        "OriginalName": "ContainerEcho",
-        "ParentOriginalName": "PrintModule",
-        "ReturnType": {
-          "kind": "OBJECT_KIND",
-          "optional": false,
-          "values": {
-            "Constructor": null,
-            "Description": "",
-            "Fields": [],
-            "Functions": [],
-            "Name": "Container",
-            "OriginalName": "Container",
-            "SourceMap": null,
-            "SourceModuleName": ""
-          }
-        },
-        "SourceMap": {
-          "Column": 1,
-          "Filename": "main.go",
-          "Line": 10,
-          "Module": ""
-        }
-      }
-    ],
-    "Name": "PrintModule",
-    "OriginalName": "PrintModule",
-    "SourceMap": {
-      "Column": 6,
-      "Filename": "main.go",
-      "Line": 8,
-      "Module": ""
-    },
-    "SourceModuleName": ""
-  }
-}
-
-*/
-
 // TypeDefJSON represents the JSON structure for TypeDef serialization
 type TypeDefJSON struct {
 	Kind     string      `json:"kind"`
@@ -161,19 +93,26 @@ func (t *TypeDef) UnmarshalJSON(data []byte) error {
 		}
 		t.AsList = dagql.NonNull(&listTypeDef)
 	case TypeDefKindObject:
-		var objectTypeDef ObjectTypeDef
+		objectTypeDef := ObjectTypeDef{
+			Fields:    make([]*FieldTypeDef, 0),
+			Functions: make([]*Function, 0),
+		}
 		if err := json.Unmarshal(valuesJSON, &objectTypeDef); err != nil {
 			return fmt.Errorf("failed to unmarshal object values: %w", err)
 		}
 		t.AsObject = dagql.NonNull(&objectTypeDef)
 	case TypeDefKindInterface:
-		var interfaceTypeDef InterfaceTypeDef
+		interfaceTypeDef := InterfaceTypeDef{
+			Functions: make([]*Function, 0),
+		}
 		if err := json.Unmarshal(valuesJSON, &interfaceTypeDef); err != nil {
 			return fmt.Errorf("failed to unmarshal interface values: %w", err)
 		}
 		t.AsInterface = dagql.NonNull(&interfaceTypeDef)
 	case TypeDefKindInput:
-		var inputTypeDef InputTypeDef
+		inputTypeDef := InputTypeDef{
+			Fields: make([]*FieldTypeDef, 0),
+		}
 		if err := json.Unmarshal(valuesJSON, &inputTypeDef); err != nil {
 			return fmt.Errorf("failed to unmarshal input values: %w", err)
 		}
@@ -185,7 +124,9 @@ func (t *TypeDef) UnmarshalJSON(data []byte) error {
 		}
 		t.AsScalar = dagql.NonNull(&scalarTypeDef)
 	case TypeDefKindEnum:
-		var enumTypeDef EnumTypeDef
+		enumTypeDef := EnumTypeDef{
+			Members: make([]*EnumMemberTypeDef, 0),
+		}
 		if err := json.Unmarshal(valuesJSON, &enumTypeDef); err != nil {
 			return fmt.Errorf("failed to unmarshal enum values: %w", err)
 		}

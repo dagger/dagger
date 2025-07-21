@@ -64,6 +64,9 @@ func (p *JSON) UnmarshalJSON(bs []byte) error {
 	if p == nil {
 		return fmt.Errorf("cannot unmarshal into nil JSON")
 	}
+	if string(bs) == "null" {
+		return nil
+	}
 	// mirroring MarshalJSON, unmarshal to a *string*
 	var s string
 	if err := json.Unmarshal(bs, &s); err != nil {
