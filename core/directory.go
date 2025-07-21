@@ -466,7 +466,7 @@ func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content
 func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, error) {
 	dir = dir.Clone()
 
-	parentRef, err := getRefOrEvaluate(ctx, dir.Result, dir)
+	parentRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
