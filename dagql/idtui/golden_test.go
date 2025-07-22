@@ -81,7 +81,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-log-native", Fail: true},
 		{Function: "encapsulate"},
 		{Function: "fail-encapsulated", Fail: true},
-		{Function: "pending", Fail: true},
+		{Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Function: "list", Args: []string{"--dir", "."}},
 		{Function: "object-lists"},
 		{Function: "nested-calls"},
@@ -159,11 +159,11 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
 
 		// Python SDK tests
-		{Module: "./viztest/python", Function: "pending", Fail: true},
+		{Module: "./viztest/python", Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Module: "./viztest/python", Function: "custom-span"},
 
 		// TypeScript SDK tests
-		{Module: "./viztest/typescript", Function: "pending", Fail: true},
+		{Module: "./viztest/typescript", Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
@@ -290,6 +290,8 @@ type Example struct {
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
+	// used for tests that need to see through errors (e.g. 'pending')
+	RevealNoisySpans bool
 	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
@@ -316,6 +318,10 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	if ex.Verbosity > 0 {
 		daggerArgs = append(daggerArgs, "-"+strings.Repeat("v", ex.Verbosity))
+	}
+
+	if ex.RevealNoisySpans {
+		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")
 	}
 
 	// NOTE: we care about CACHED states for these tests, so we need some way for
@@ -472,7 +478,7 @@ var scrubs = []scrubber{
 	},
 	// version=
 	{
-		regexp.MustCompile(`version=v[a-f0-9.-]+`),
+		regexp.MustCompile(`version=v[a-fv0-9.-]+`), // "v" is in "dev" :)
 		"version=v0.18.13-250710134709-7edd4496ecc1",
 		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
 	},
