@@ -153,7 +153,7 @@ type MCP struct {
 	// Never show these functions, grouped by type
 	blockedMethods map[string][]string
 	// The last value returned by a function.
-	lastResult dagql.AnyResult
+	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
 	// The last log ID that we've seen
@@ -216,7 +216,7 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.AnyObjectResult, error)
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-func (m *MCP) LastResult() dagql.AnyResult {
+func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
@@ -529,10 +529,19 @@ func (m *MCP) selectionToToolResult(
 		return "", fmt.Errorf("failed to sync: %w", err)
 	}
 
+	m.lastResult = val
+
+	res, err := m.outputToLLM(ctx, srv, val)
+	if err != nil {
+		return "", err
+	}
+	return res, nil
+}
+
+func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
 	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 		// Handle ID results by turning them back into Objects, since these are
 		// typically implementation details hinting to SDKs to unlazy the call.
-		//
 		syncedObj, err := srv.Load(ctx, id.ID())
 		if err != nil {
 			return "", fmt.Errorf("failed to load synced object: %w", err)
@@ -540,16 +549,47 @@ func (m *MCP) selectionToToolResult(
 		val = syncedObj
 	}
 
-	m.lastResult = val
-
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
 		return m.newState(ctx, srv, obj)
 	}
 
+	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
+		var res []any
+		var displays []string
+		for i := 1; i <= list.Len(); i++ {
+			// Handle arrays of objects by ingesting each object ID.
+			val, err := list.Nth(i)
+			if err != nil {
+				return "", fmt.Errorf("failed to get ID for object %d: %w", i, err)
+			}
+			if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
+				// Refer to objects by their IDs
+				res = append(res, m.env.Ingest(obj, ""))
+			} else if resT, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
+				// Unwrap any Result[T]s
+				res = append(res, resT.Unwrap())
+			} else {
+				// Not really sure what else there would be, but...
+				res = append(res, val)
+			}
+			if displayer, ok := dagql.UnwrapAs[LLMDisplayer](val); ok {
+				displays = append(displays, displayer.LLMDisplay())
+			}
+		}
+		if len(displays) > 0 {
+			return toolStructuredResponse(map[string]any{
+				"results":   res,
+				"summaries": displays,
+			})
+		}
+		return toolStructuredResponse(map[string]any{
+			"results": res,
+		})
+	}
+
 	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
 		// Handle strings by guarding against non-utf8 or giant payloads.
-		//
 		bytes := []byte(str.String())
 		if !utf8.Valid(bytes) {
 			return toolStructuredResponse(map[string]any{
@@ -561,17 +601,21 @@ func (m *MCP) selectionToToolResult(
 		return str.String(), nil
 	}
 
-	// Handle null response.
 	if val == nil {
+		// Handle null response.
 		return toolStructuredResponse(map[string]any{
 			"result": nil,
 		})
 	}
 
+	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
+		// Unwrap any Result[T]s
+		val = anyRes.Unwrap()
+	}
+
 	// Handle scalars or arrays of scalars.
-	//
 	return toolStructuredResponse(map[string]any{
-		"result": val.Unwrap(),
+		"result": val,
 	})
 }
 
