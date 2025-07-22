@@ -89,6 +89,7 @@ func (dev *DaggerDev) introspection(installer func(*dagger.Container) *dagger.Co
 	return dag.
 		Go(dev.Source).
 		Env().
+		With(installer).
 		WithExec([]string{"go", "run", "./cmd/introspect", "introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "/schema.json",
 		}).
