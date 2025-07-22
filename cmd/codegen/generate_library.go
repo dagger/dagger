@@ -34,14 +34,7 @@ func GenerateLibrary(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating %s SDK library\n", "language", cfg.Lang)
+	slog.Info("generating SDK library\n", "language", cfg.Lang)
 
 	return Generate(ctx, cfg, generator.GenerateLibrary)
-}
-
-func init() {
-	// Generation flags
-	generateLibraryCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
-	generateLibraryCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
-	generateLibraryCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 }

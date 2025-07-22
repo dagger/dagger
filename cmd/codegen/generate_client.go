@@ -72,18 +72,12 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating %s SDK client\n", "language", cfg.Lang)
+	slog.Info("generating SDK client\n", "language", cfg.Lang)
 
 	return Generate(ctx, cfg, generator.GenerateClient)
 }
 
 func init() {
-	// Generation flags
-	generateClientCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
-	generateClientCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
-	generateClientCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
-	generateClientCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
-
 	// Specific client generation flags
 	generateClientCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module to generate code for")
 }

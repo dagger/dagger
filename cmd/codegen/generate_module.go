@@ -61,18 +61,12 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating %s module: %s\n", "language", cfg.Lang, "module-name", cfg.ModuleConfig.ModuleName)
+	slog.Info("generating module\n", "language", cfg.Lang, "module-name", cfg.ModuleConfig.ModuleName)
 
 	return Generate(ctx, cfg, generator.GenerateModule)
 }
 
 func init() {
-	// Generation flags
-	generateModuleCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
-	generateModuleCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
-	generateModuleCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
-	generateModuleCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
-
 	// Specific module generation flags
 	generateModuleCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
 	generateModuleCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")

@@ -87,13 +87,11 @@ func (dev *DaggerDev) codegenBinary() *dagger.File {
 
 func (dev *DaggerDev) introspection(installer func(*dagger.Container) *dagger.Container) *dagger.File {
 	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: distconsts.AlpineVersion,
+		Go(dev.Source).
+		Env().
+		WithExec([]string{"go", "run", "./cmd/introspect", "introspect"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "/schema.json",
 		}).
-		Container().
-		With(installer).
-		WithFile("/usr/local/bin/codegen", dev.codegenBinary()).
-		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
 }
 

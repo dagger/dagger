@@ -17,10 +17,15 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(introspectCmd)
 	rootCmd.AddCommand(generateClientCmd)
 	rootCmd.AddCommand(generateModuleCmd)
 	rootCmd.AddCommand(generateLibraryCmd)
+
+	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
+	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
+	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
+	rootCmd.Flags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
+
 }
 
 func main() {
