@@ -769,6 +769,65 @@ func (m *Test) ToPlatforms(platforms []string) []dagger.Platform {
 		})
 	})
 
+	t.Run("build args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("Dockerfile", `
+FROM scratch
+
+ARG OS=linux
+ARG ARCH=amd64
+
+ENV PLATFORM=${OS}/${ARCH}
+`,
+			)
+
+		t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "must be formatted as name=value")
+		})
+
+		t.Run("missing name", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "cannot have an empty name")
+		})
+
+		t.Run("single value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/amd64", out)
+		})
+
+		t.Run("multiple values", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin,ARCH=arm64",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/arm64", out)
+		})
+	})
+
 	t.Run("enum args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
