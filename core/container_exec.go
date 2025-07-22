@@ -327,16 +327,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			rerr = buildkit.RichError{
 				ExecError: rerr.(*errdefs.ExecError),
 				Origin:    opt.CauseCtx,
-				Terminal: func(ctx context.Context, svcID *call.ID) error {
-					return container.Terminal(ctx, svcID, &TerminalArgs{
-						Cmd:                           container.DefaultTerminalCmd.Args,
-						ExperimentalPrivilegedNesting: container.DefaultTerminalCmd.ExperimentalPrivilegedNesting,
-						InsecureRootCapabilities:      container.DefaultTerminalCmd.InsecureRootCapabilities,
-					})
+				Mounts:    mounts.Mounts,
+				ExecMD:    execMD,
+				Meta:      metaSpec,
+				Terminal: func(ctx context.Context, richErr *buildkit.RichError) error {
+					return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
 				},
-				Mounts: mounts.Mounts,
-				ExecMD: execMD,
-				Meta:   metaSpec,
 			}
 		} else {
 			// Only release actives if err is nil.

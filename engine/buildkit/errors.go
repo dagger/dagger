@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/call"
 	bkexecutor "github.com/moby/buildkit/executor"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
@@ -72,7 +71,7 @@ type RichError struct {
 	ExecMD *ExecutionMetadata
 	Meta   *bkexecutor.Meta
 
-	Terminal func(ctx context.Context, svcID *call.ID) error // more bits
+	Terminal func(ctx context.Context, richErr *RichError) error
 }
 
 func (e RichError) Unwrap() error {
@@ -134,30 +133,14 @@ func (e RichError) DebugTerminal(ctx context.Context, client *Client) error {
 		return nil
 	}
 
-	// XXX:
-	// We default to "/bin/sh" if the client doesn't provide a command.
-	// debugCommand := []string{"/bin/sh"}
-	// if len(client.InteractiveCommand) > 0 {
-	// 	debugCommand = client.InteractiveCommand
-	// }
+	meta := *e.Meta
+	meta.Args = []string{"/bin/sh"}
+	if len(client.InteractiveCommand) > 0 {
+		meta.Args = client.InteractiveCommand
+	}
+	e.Meta = &meta
 
-	// XXX: show error
-	// output := idtui.NewOutput(term.Stderr)
-	// fmt.Fprint(term.Stderr,
-	// 	output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
-	// dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
-	// fmt.Fprint(term.Stderr, dump.Newline)
-	// if err := dump.DumpID(output, execMD.CallID); err != nil {
-	// 	return fmt.Errorf("failed to serialize service ID: %w", err)
-	// }
-	// fmt.Fprint(term.Stderr, dump.Newline)
-	// fmt.Fprintf(term.Stderr,
-	// 	output.String("! %s").Foreground(termenv.ANSIYellow).String(), e.Error())
-	// fmt.Fprint(term.Stderr, dump.Newline)
-
-	// XXX: preserve Meta / ExecMD in terminal call
-
-	return e.Terminal(ctx, e.ExecMD.CallID)
+	return e.Terminal(ctx, &e)
 }
 
 func getExecMeta(ctx context.Context, client *Client, metaMount bksolver.Result) (stdout []byte, stderr []byte, exitCode int, _ error) {

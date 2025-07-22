@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -33,6 +34,23 @@ func (container *Container) Terminal(
 	ctx context.Context,
 	svcID *call.ID,
 	args *TerminalArgs,
+) error {
+	return container.terminal(ctx, svcID, args, nil)
+}
+
+func (container *Container) TerminalError(
+	ctx context.Context,
+	svcID *call.ID,
+	richErr *buildkit.RichError,
+) error {
+	return container.terminal(ctx, svcID, nil, richErr)
+}
+
+func (container *Container) terminal(
+	ctx context.Context,
+	svcID *call.ID,
+	args *TerminalArgs,
+	richErr *buildkit.RichError,
 ) error {
 	container = container.Clone()
 
@@ -60,16 +78,28 @@ func (container *Container) Terminal(
 	defer term.Close(bkgwpb.UnknownExitStatus)
 
 	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprint(
-		term.Stderr,
-		output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
-	)
+	if richErr == nil {
+		fmt.Fprint(
+			term.Stderr,
+			output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
+		)
+	} else {
+		fmt.Fprint(
+			term.Stderr,
+			output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ",
+		)
+	}
 	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
 	fmt.Fprint(term.Stderr, dump.Newline)
 	if err := dump.DumpID(output, svcID); err != nil {
 		return fmt.Errorf("failed to serialize service ID: %w", err)
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
+	if richErr != nil {
+		fmt.Fprintf(term.Stderr,
+			output.String("! %s").Foreground(termenv.ANSIYellow).String(), richErr.Error())
+		fmt.Fprint(term.Stderr, dump.Newline)
+	}
 
 	// Inject a custom shell prompt `dagger:<cwd>$`
 	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",
@@ -77,14 +107,20 @@ func (container *Container) Terminal(
 		output.String(`$(pwd | sed "s|^$HOME|~|")`).Faint().String(),
 	))
 
-	svc, err := container.AsService(ctx, ContainerAsServiceArgs{
-		Args:                          args.Cmd,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
-		InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
-	})
+	var svc *Service
+	if richErr == nil {
+		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
+			Args:                          args.Cmd,
+			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
+			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
+		})
+	} else {
+		svc, err = container.AsRecoveredService(ctx, richErr)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
+
 	eg, egctx := errgroup.WithContext(ctx)
 	runningSvc, err := svc.Start(
 		ctx,

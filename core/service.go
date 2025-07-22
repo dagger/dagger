@@ -56,6 +56,8 @@ type Service struct {
 	ExperimentalPrivilegedNesting bool
 	InsecureRootCapabilities      bool
 	NoInit                        bool
+	ExecMD                        *buildkit.ExecutionMetadata
+	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
@@ -325,12 +327,15 @@ func (svc *Service) startContainer(
 
 	ctr := svc.Container
 
-	execMD, err := ctr.execMeta(ctx, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
-		NoInit:                        svc.NoInit,
-	}, nil)
-	if err != nil {
-		return nil, err
+	execMD := svc.ExecMD
+	if execMD == nil {
+		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
+			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+			NoInit:                        svc.NoInit,
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -370,19 +375,24 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, refs, count, err := getAllContainerMounts(ctr)
+	pbmounts, states, refs, _, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
 
-	inputs := make([]bkcache.ImmutableRef, count)
+	inputs := make([]bkcache.ImmutableRef, len(states))
 	eg, egctx := errgroup.WithContext(ctx)
-	for i, st := range states {
-		if ref := refs[i]; ref != nil {
-			inputs[i] = ref
+	for _, pbmount := range pbmounts {
+		if pbmount.Input == pb.Empty {
 			continue
 		}
 
+		if ref := refs[pbmount.Input]; ref != nil {
+			inputs[pbmount.Input] = ref
+			continue
+		}
+
+		st := states[pbmount.Input]
 		def, err := st.Marshal(egctx)
 		if err != nil {
 			return nil, err
@@ -404,7 +414,7 @@ func (svc *Service) startContainer(
 				return err
 			}
 			if ref != nil {
-				inputs[i] = ref.Sys().(*worker.WorkerRef).ImmutableRef
+				inputs[pbmount.Input] = ref.Sys().(*worker.WorkerRef).ImmutableRef
 			}
 			return nil
 		})
@@ -436,22 +446,26 @@ func (svc *Service) startContainer(
 		})
 	}
 
-	meta, err := ctr.metaSpec(ctx, ContainerExecOpts{
-		Args:                          svc.Args,
-		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
-		NoInit:                        svc.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	meta := svc.ExecMeta
+	if meta == nil {
+		meta, err = ctr.metaSpec(ctx, ContainerExecOpts{
+			Args:                          svc.Args,
+			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
+			NoInit:                        svc.NoInit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		meta.Hostname = fullHost
 	}
-	meta.Hostname = fullHost
 	if interactive {
 		meta.Tty = true
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
 
 	// XXX: is this correct? confused.
+	// this definitely doesn't work for -i
 	ctx, span := Tracer(ctx).Start(
 		// The parent is the call site that triggered it to start.
 		ctx,
@@ -511,7 +525,6 @@ func (svc *Service) startContainer(
 						Cols: winSize.Cols,
 					}
 				}
-
 			}
 		}()
 	}
