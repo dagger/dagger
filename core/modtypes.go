@@ -182,7 +182,7 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		if err != nil {
 			return nil, err
 		}
-		nullable.Value = val.Unwrap()
+		nullable.Value = val
 		nullable.Valid = true
 	}
 	return dagql.NewResultForCurrentID(ctx, nullable)
