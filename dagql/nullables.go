@@ -254,6 +254,11 @@ func (n Nullable[T]) DerefToResult(
 	if !n.Valid {
 		return nil, false
 	}
+	if anyRes, ok := any(n.Value).(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes, true
+	}
+
 	return Result[T]{
 		constructor: constructor,
 		self:        n.Value,
@@ -302,6 +307,11 @@ func (n DynamicNullable) DerefToResult(
 	if !n.Valid {
 		return nil, false
 	}
+	if anyRes, ok := n.Value.(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes, true
+	}
+
 	return Result[Typed]{
 		constructor: constructor,
 		self:        n.Value,
