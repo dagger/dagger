@@ -496,7 +496,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		}
 
 		eg.Go(func() error {
-			return s.loadLocalModuleIgnorePatterns(ctx, bk, localSrc)
+			return s.loadLocalModuleIgnorePatterns(ctx, localSrc)
 		})
 		if err := eg.Wait(); err != nil {
 			return inst, err
@@ -930,9 +930,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 // and returns the list of patterns that should be ignored by the module
 func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
 	ctx context.Context,
-	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	return (func() (rerr error) {
 		ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load .gitignore patterns up to %q", src.Local.ContextDirectoryPath))
 		defer telemetry.End(span, func() error { return rerr })
@@ -942,7 +946,7 @@ func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
 
 		var contextDirectory dagql.ObjectResult[*core.Directory]
 
-		err := s.dag.Select(ctx, s.dag.Root(), &contextDirectory,
+		err := dag.Select(ctx, dag.Root(), &contextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
@@ -957,7 +961,7 @@ func (s *moduleSourceSchema) loadLocalModuleIgnorePatterns(
 			return fmt.Errorf("failed to load context directory with only .gitignore: %w", err)
 		}
 
-		gitIgnorePatterns, err := core.LoadGitIgnoreInDirectory(ctx, s.dag, contextDirectory)
+		gitIgnorePatterns, err := core.LoadGitIgnoreInDirectory(ctx, contextDirectory)
 		if err != nil {
 			return fmt.Errorf("failed to load .gitignore in context directory %q: %w", src.Local.ContextDirectoryPath, err)
 		}

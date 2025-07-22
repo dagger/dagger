@@ -546,7 +546,7 @@ func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []strin
 	ignorePatterns := []string{}
 
 	// Split gitignore files by line
-	ignorePatternsLines := strings.Split(string(gitIgnoreContent), "\n")
+	ignorePatternsLines := strings.Split(gitIgnoreContent, "\n")
 
 	for _, linePattern := range ignorePatternsLines {
 		// ignore comments, negatives and empty lines
@@ -579,7 +579,7 @@ func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []strin
 			relativePattern = "!" + relativePattern
 		}
 		if isDirOnly {
-			relativePattern = relativePattern + "/"
+			relativePattern += "/"
 		}
 
 		ignorePatterns = append(ignorePatterns, relativePattern)
@@ -591,12 +591,17 @@ func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []strin
 // Load git ignore patterns in the current directory and all its children
 // It assumes that the given `dir` only contains `.gitignore` files and directories that may
 // contain `.gitignore` files.
-func LoadGitIgnoreInDirectory(ctx context.Context, server *dagql.Server, dir dagql.ObjectResult[*Directory]) ([]string, error) {
+func LoadGitIgnoreInDirectory(ctx context.Context, dir dagql.ObjectResult[*Directory]) ([]string, error) {
 	result := []string{}
 	name := dir.Self().Dir
 
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	var entries dagql.Array[dagql.String]
-	err := server.Select(ctx, dir, &entries,
+	err = dag.Select(ctx, dir, &entries,
 		dagql.Selector{
 			Field: "glob",
 			Args: []dagql.NamedInput{
@@ -620,11 +625,11 @@ func LoadGitIgnoreInDirectory(ctx context.Context, server *dagql.Server, dir dag
 		}
 
 		var content dagql.String
-		err = server.Select(ctx, dir, &content,
+		err = dag.Select(ctx, dir, &content,
 			dagql.Selector{
 				Field: "file",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(entryValue)},
+					{Name: "path", Value: entryValue},
 				},
 			},
 			dagql.Selector{
