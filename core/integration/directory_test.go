@@ -1625,6 +1625,247 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "World")
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches
+		require.Contains(t, matches, "file1.txt:1:Hello, World!\n")
+		require.Contains(t, matches, "file1.txt:3:World is great.")
+		require.Contains(t, matches, "subdir/file3.txt:2:World tour.")
+	})
+
+	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("main.go", "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}").
+			WithNewFile("test.go", "package main\n\nfunc TestSomething() {\n\t// test code\n}").
+			WithNewFile("lib/helper.go", "package lib\n\nfunc Helper() string {\n\treturn \"help\"\n}")
+
+		// Search for function definitions
+		results, err := dir.Search(ctx, `func \w+\(\)`)
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Collect all matches to check they're all present
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches (order doesn't matter)
+		// Note: matches may have trailing newlines, so we use partial matches
+		require.Contains(t, matches, "main.go:3:func main() {\n")
+		require.Contains(t, matches, "test.go:3:func TestSomething() {\n")
+		require.Contains(t, matches, "lib/helper.go:3:func Helper() string {\n")
+	})
+
+	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, ":= \"Alice\"\n\tage", dagger.DirectorySearchOpts{Multiline: true})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.DirectorySearchOpts{
+			Multiline: true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory()
+
+		results, err := dir.Search(ctx, "anything")
+		require.NoError(t, err)
+		require.Empty(t, results)
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello, World!")
+
+		results, err := dir.Search(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, results)
+	})
+
+	t.Run("search in subdirectory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("root.txt", "Root content").
+			WithNewFile("sub/file.txt", "Subdirectory content").
+			WithNewFile("sub/deep/file.txt", "Deep subdirectory content")
+
+		subdir := dir.Directory("sub")
+		results, err := subdir.Search(ctx, "ubdirectory")
+		require.NoError(t, err)
+		require.Equal(t, len(results), 2)
+
+		// Get all file paths
+		var filePaths []string
+		for _, result := range results {
+			path, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			filePaths = append(filePaths, path)
+		}
+
+		// Check that we have the expected files (order doesn't matter)
+		require.Contains(t, filePaths, "file.txt")
+		require.Contains(t, filePaths, "deep/file.txt")
+	})
+
+	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello\nhello\nHELLO")
+
+		results, err := dir.Search(ctx, "Hello")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, lineNumber0)
+	})
+
+	t.Run("multiple matches in one file", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("code.go", `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello")
+	fmt.Println("World")
+}`)
+
+		results, err := dir.Search(ctx, "fmt")
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		lineNumber1, err := results[1].LineNumber(ctx)
+		require.NoError(t, err)
+		lineNumber2, err := results[2].LineNumber(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 3, lineNumber0)
+		require.Equal(t, 6, lineNumber1)
+		require.Equal(t, 7, lineNumber2)
+	})
+
+	t.Run("binary files are skipped", func(ctx context.Context, t *testctx.T) {
+		dir := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "mkdir -p /testdir && echo 'text content' > /testdir/text.txt && dd if=/dev/urandom of=/testdir/binary.bin bs=1024 count=1 && echo 'text content' >> /testdir/binary.bin"}).
+			Directory("/testdir")
+
+		results, err := dir.Search(ctx, "content")
+		require.NoError(t, err)
+
+		files := []string{}
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			files = append(files, filePath)
+		}
+		require.Equal(t, []string{"text.txt"}, files)
+	})
+}
+
 func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

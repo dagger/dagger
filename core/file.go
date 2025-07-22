@@ -1,12 +1,15 @@
 package core
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -20,6 +23,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
@@ -166,7 +170,50 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context) ([]byte, error) {
+func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, error) {
+	r, err := file.Reader(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+
+	if offset != nil || limit != nil {
+		br := bufio.NewReader(r)
+		lineNum := 1
+		readLines := 0
+		for {
+			line, err := br.ReadBytes('\n')
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+
+			if offset == nil || lineNum > *offset {
+				buf.Write(line)
+				readLines++
+				if limit != nil && readLines == *limit {
+					break
+				}
+			}
+
+			if err == io.EOF {
+				break
+			}
+
+			lineNum++
+		}
+	} else {
+		_, err := io.Copy(&buf, r)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// Reader returns an io.Reader for the file contents
+func (file *File) Reader(ctx context.Context) (io.Reader, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -175,58 +222,121 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
 	defer detach()
 
-	ref, err := bkRef(ctx, bk, file.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	// Stat the file and preallocate file contents buffer:
+	// Stat the file to get its size
 	st, err := file.Stat(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Error on files that exceed MaxFileContentsSize:
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	ref, err := bkRef(ctx, bk, file.LLB)
+	if err != nil {
+		return nil, err
+	}
+
+	// Error on files that exceed MaxFileContentsSize
 	fileSize := int(st.GetSize_())
 	if fileSize > buildkit.MaxFileContentsSize {
-		// TODO: move to proper error structure
 		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
 	}
 
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
+	return &fileReader{
+		ref:      ref,
+		filename: file.File,
+		size:     fileSize,
+		ctx:      ctx,
+	}, nil
+}
 
-	// Use a chunked reader to overcome issues when
-	// the input file exceeds MaxFileContentsChunkSize:
-	var offset int
-	for offset < fileSize {
-		chunk, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: file.File,
-			Range: &bkgw.FileRange{
-				Offset: offset,
-				Length: buildkit.MaxFileContentsChunkSize,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
+type fileReader struct {
+	ref      bkgw.Reference
+	filename string
+	size     int
+	offset   int
+	ctx      context.Context
+}
 
-		// Copy the chunk and increment offset for subsequent reads:
-		copy(contents[offset:], chunk)
-		offset += len(chunk)
+func (r *fileReader) Read(p []byte) (n int, err error) {
+	if r.offset >= r.size {
+		return 0, io.EOF
 	}
-	return contents, nil
+
+	// Calculate how much to read - either the buffer size or remaining file size
+	remaining := r.size - r.offset
+	chunkSize := min(remaining, len(p), buildkit.MaxFileContentsChunkSize)
+
+	chunk, err := r.ref.ReadFile(r.ctx, bkgw.ReadRequest{
+		Filename: r.filename,
+		Range: &bkgw.FileRange{
+			Offset: r.offset,
+			Length: chunkSize,
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	// Copy the chunk to the provided buffer
+	n = copy(p, chunk)
+	r.offset += n
+
+	if r.offset >= r.size {
+		return n, io.EOF
+	}
+
+	return n, nil
+}
+
+func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(file.File))
+		if err != nil {
+			return err
+		}
+		rgArgs := []string{"--json"}
+		rgArgs = append(rgArgs, opts.RipgrepArgs()...)
+		rgArgs = append(rgArgs, filepath.Base(file.File))
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = runRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {

@@ -446,7 +446,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		container.Platform,
 		container.Services,
 	)
-	content, err := file.Contents(ctx)
+	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return "", err
 	}

@@ -565,7 +565,7 @@ func (llm *LLM) WithPrompt(
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
 func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
-	contents, err := file.Contents(ctx)
+	contents, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

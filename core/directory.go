@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,7 +25,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
-	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -523,6 +523,75 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	}
 	dir.Result = snap
 	return dir, nil
+}
+
+func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []string, globs []string) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	const maxResults = 1000
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		rgArgs := []string{
+			"--json",
+			// Avoid logging too many results; we check
+			fmt.Sprintf("--max-count=%d", maxResults+1),
+		}
+		rgArgs = append(rgArgs, opts.RipgrepArgs()...)
+		for _, glob := range globs {
+			rgArgs = append(rgArgs, "--glob="+glob)
+		}
+		for _, path := range paths {
+			rgArgs = append(rgArgs, path)
+		}
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = runRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	// If the content is not requested, reduce down to just listing filenames.
+	if !opts.Content {
+		filesOnly := []*SearchResult{}
+		seen := map[string]bool{}
+		for _, result := range results {
+			if !seen[result.FilePath] {
+				filesOnly = append(filesOnly, &SearchResult{
+					FilePath: result.FilePath,
+				})
+				seen[result.FilePath] = true
+			}
+		}
+		results = filesOnly
+	}
+	if len(results) > maxResults {
+		return nil, fmt.Errorf("too many results")
+	}
+	return results, nil
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
@@ -1125,7 +1194,7 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 func validateFileName(file string) error {
 	baseFileName := filepath.Base(file)
 	if len(baseFileName) > 255 {
-		return errors.Errorf("File name length exceeds the maximum supported 255 characters")
+		return errors.New("File name length exceeds the maximum supported 255 characters")
 	}
 	return nil
 }
