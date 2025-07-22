@@ -16,9 +16,15 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves the contents of the file.
      */
-    public function contents(): string
+    public function contents(?int $offset = null, ?int $limit = null): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
+        if (null !== $offset) {
+        $leafQueryBuilder->setArgument('offset', $offset);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'contents');
     }
 
@@ -63,6 +69,51 @@ class File extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Searches for content matching the given regular expression or literal string.
+     *
+     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+     */
+    public function search(
+        string $pattern,
+        ?bool $literal = false,
+        ?bool $multiline = false,
+        ?bool $dotall = false,
+        ?bool $ignoreCase = false,
+        ?bool $filesOnly = false,
+        ?int $limit = null,
+        ?array $paths = null,
+        ?array $globs = null,
+    ): array {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        if (null !== $dotall) {
+        $leafQueryBuilder->setArgument('dotall', $dotall);
+        }
+        if (null !== $ignoreCase) {
+        $leafQueryBuilder->setArgument('ignoreCase', $ignoreCase);
+        }
+        if (null !== $filesOnly) {
+        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $globs) {
+        $leafQueryBuilder->setArgument('globs', $globs);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
     }
 
     /**
