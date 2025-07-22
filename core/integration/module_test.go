@@ -5047,25 +5047,25 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, "go.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\nmain.go\n", out)
 		})
 
 		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
@@ -5077,7 +5077,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
@@ -5085,12 +5085,8 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.NoError(t, err)
 			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
-			// Verify the directories exist but files are correctlyignored
+			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "dagger/\nquerybuilder/\ntelemetry/\n", out)
-
-			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "", out)
 		})
