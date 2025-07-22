@@ -14,7 +14,6 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -49,6 +48,13 @@ func (*File) Type() *ast.Type {
 
 func (*File) TypeDescription() string {
 	return "A file."
+}
+
+func (file *File) getResult() bkcache.ImmutableRef {
+	return file.Result
+}
+func (file *File) setResult(ref bkcache.ImmutableRef) {
+	file.Result = ref
 }
 
 var _ HasPBDefinitions = (*File)(nil)
@@ -310,28 +316,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	file = file.Clone()
-
-	fileCacheRef, err := getRefOrEvaluate(ctx, file.Result, file)
-	if err != nil {
-		return nil, err
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	newRef, err := query.BuildkitCache().New(ctx, fileCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("WithTimestamps %d", unix)))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+	return execInMount(ctx, file, func(root string) error {
 		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
 		if err != nil {
 			return err
@@ -342,16 +327,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 			return err
 		}
 		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	file.Result = snap
-	return file, nil
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {

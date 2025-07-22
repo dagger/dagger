@@ -509,10 +509,17 @@ func (m *MCP) selectionToToolResult(
 		return str.String(), nil
 	}
 
+	// Handle null response.
+	if val == nil {
+		return toolStructuredResponse(map[string]any{
+			"result": nil,
+		})
+	}
+
 	// Handle scalars or arrays of scalars.
 	//
 	return toolStructuredResponse(map[string]any{
-		"result": val,
+		"result": val.Unwrap(),
 	})
 }
 
