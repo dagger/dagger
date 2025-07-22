@@ -3416,6 +3416,43 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 			require.NoError(t, err)
 		})
 	})
+
+	t.Run("optional secret field on module object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pythonSource(`
+import base64
+import dagger
+from dagger import dag, field, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    def getobj(self, *, top_secret: dagger.Secret | None = None) -> "Obj":
+        return Obj(top_secret=top_secret)
+
+
+@object_type
+class Obj:
+    top_secret: dagger.Secret | None = field(default=None)
+
+    @function
+    async def getSecret(self) -> str:
+        plaintext = await self.top_secret.plaintext()
+        return base64.b64encode(plaintext.encode()).decode()
+`)).
+			With(daggerInitPython()).
+			WithEnvVariable("TOP_SECRET", "omg").
+			With(daggerCall("getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		decodeOut, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+		require.NoError(t, err)
+		require.Equal(t, "omg", string(decodeOut))
+	})
 }
 
 func (ModuleSuite) TestUnicodePath(ctx context.Context, t *testctx.T) {
