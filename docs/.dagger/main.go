@@ -56,7 +56,6 @@ title: "CLI Reference"
 description: "Learn how to use the Dagger CLI to run composable workflows in containers."
 ---
 
-## dagger
 `
 
 // Build the docs website
@@ -97,7 +96,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			From("tmknom/markdownlint:"+markdownlintVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
-			WithMountedFile("/src/.markdownlintignore", d.Source.File(".markdownlintignore")).
+			WithMountedFile("/src/.markdownlintignore", d.Source.File("docs/.markdownlintignore")).
 			WithWorkdir("/src").
 			WithExec([]string{
 				"markdownlint",
