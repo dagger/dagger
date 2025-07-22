@@ -19,7 +19,7 @@ Expected stderr:
   ┆ file: Host.file(path: "/app/dagql/idtui/golden_test.go"): File!
   ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
   ┆ contextFile: Directory.file(path: "main.go"): File!
-  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", exclude: [], noCache: true): Directory!
+  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", exclude: ["internal/", "dagger.gen.go", "internal/dagger", "internal/querybuilder", "internal/telemetry", ".env", "broken-dep/dagger.gen.go", "broken-dep/internal/dagger", "broken-dep/internal/querybuilder", "broken-dep/internal/telemetry", "broken-dep/broken/dagger.gen.go", "broken-dep/broken/internal/dagger", "broken-dep/broken/internal/querybuilder", "broken-dep/broken/internal/telemetry", "dep/dagger.gen.go", "dep/internal/dagger", "dep/internal/querybuilder", "dep/internal/telemetry", "dep/.env", "dep/nested-dep/dagger.gen.go", "dep/nested-dep/internal/dagger", "dep/nested-dep/internal/querybuilder", "dep/nested-dep/internal/telemetry", "dep/nested-dep/.env", "python/sdk", "python/.venv", "python/**/__pycache__", "typescript/sdk", "typescript/**/node_modules/**", "typescript/**/.pnpm-store/**"], noCache: true): Directory!
   ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
