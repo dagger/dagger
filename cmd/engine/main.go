@@ -415,13 +415,6 @@ func main() { //nolint:gocyclo
 			go logTraceMetrics(context.Background())
 		}
 
-		bklog.G(ctx).Debug("starting optional cache mount synchronization")
-		err = srv.SolverCache.StartCacheMountSynchronization(ctx)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
-			// continue on, doesn't need to be fatal
-		}
-
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
@@ -458,15 +451,6 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		// TODO:(sipsma) make timeouts configurable
-		bklog.G(ctx).Debug("stopping cache manager")
-		stopCacheCtx, cancelCacheCtx := context.WithTimeout(context.Background(), 600*time.Second)
-		defer cancelCacheCtx()
-		stopCacheErr := srv.SolverCache.Close(stopCacheCtx)
-		if stopCacheErr != nil {
-			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
-		}
-		err = errors.Join(err, stopCacheErr)
 		cancelNetworking(errors.New("shutdown"))
 
 		bklog.G(ctx).Infof("stopping server")

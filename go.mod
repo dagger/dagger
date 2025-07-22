@@ -69,7 +69,6 @@ require (
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
-	github.com/klauspost/compress v1.18.0
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.1.2
 	github.com/mackerelio/go-osstat v0.2.6
@@ -265,6 +264,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
