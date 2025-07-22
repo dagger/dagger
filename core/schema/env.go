@@ -25,6 +25,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 				dagql.Arg("static").Doc("Instead of a dynamic method set, provide all methods of all inputs as static tools"),
 			),
+		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
@@ -33,6 +34,8 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Doc("retrieve an input value by name"),
 		dagql.Func("outputs", s.outputs).
 			Doc("return all output values for the environment"),
+		dagql.Func("withoutOutputs", s.withoutOutputs).
+			Doc("Return a new environment without any outputs"),
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
 		dagql.Func("withCaller", s.withCaller).
@@ -96,6 +99,21 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	return env, nil
 }
 
+func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	fc, err := query.CurrentFunctionCall(ctx)
+	if err != nil {
+		return res, err
+	}
+	if fc.EnvID == nil {
+		return res, fmt.Errorf("no environment found in context")
+	}
+	return dagql.NewID[*core.Env](fc.EnvID).Load(ctx, s.srv)
+}
+
 func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Inputs(), nil
 }
@@ -122,6 +140,10 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 
 func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Outputs(), nil
+}
+
+func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, args struct{}) (*core.Env, error) {
+	return env.WithoutOutputs(), nil
 }
 
 func (s environmentSchema) withCaller(ctx context.Context, env *core.Env, args struct {

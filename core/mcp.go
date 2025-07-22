@@ -32,6 +32,99 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Hide functions from the largest and most commonly used core types, to prevent
+// tool bloat
+var defaultBlockedMethods = map[string][]string{
+	"Query": {
+		"currentFunctionCall",
+		"currentModule",
+		"currentTypeDefs",
+		"defaultPlatform",
+		"engine",
+		"env",
+		"error",
+		"function",
+		"generatedCode",
+		"llm",
+		"loadSecretFromName",
+		"module",
+		"moduleSource",
+		"secret",
+		"setSecret",
+		"sourceMap",
+		"typeDef",
+		"version",
+	},
+	"Container": {
+		"build",
+		"defaultArgs",
+		"entrypoint",
+		"envVariable",
+		"envVariables",
+		"experimentalWithAllGPUs",
+		"experimentalWithGPU",
+		"export",
+		"exportImage",
+		"exposedPorts",
+		"imageRef",
+		"import",
+		"label",
+		"labels",
+		"mounts",
+		"pipeline",
+		"platform",
+		"rootfs",
+		"terminal",
+		"up",
+		"user",
+		"withAnnotation",
+		"withDefaultTerminalCmd",
+		"withFiles",
+		"withFocus",
+		"withMountedCache",
+		"withMountedDirectory",
+		"withMountedFile",
+		"withMountedSecret",
+		"withMountedTemp",
+		"withRootfs",
+		"withoutAnnotation",
+		"withoutDefaultArgs",
+		"withoutEnvVariable",
+		"withoutExposedPort",
+		"withoutFile",
+		"withoutFocus",
+		"withoutMount",
+		"withoutRegistryAuth",
+		"withoutSecretVariable",
+		"withoutUnixSocket",
+		"withoutUser",
+		"withoutWorkdir",
+		"workdir",
+	},
+	"Directory": {
+		// Nice to have, confusing
+		"asModule",
+		"asModuleSource",
+		// Side effect
+		"export",
+		// Nice to have
+		"name",
+		// Side effect
+		"terminal",
+		// Nice to have, confusing
+		"withFiles",
+		"withTimestamps",
+		"withoutDirectory",
+		"withoutFile",
+		"withoutFiles",
+	},
+	"File": {
+		"export",
+		"withName",
+		"withTimestamps",
+	},
+}
+
 // A frontend for LLM tool calling
 type LLMTool struct {
 	// Tool name
@@ -53,8 +146,12 @@ type LLMTool struct {
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
 	env *Env
+	// Track the original envID so we can access it via currentEnv()
+	envID EnvID
 	// Only show these functions, if non-empty
 	selectedMethods map[string]bool
+	// Never show these functions, grouped by type
+	blockedMethods map[string][]string
 	// The last value returned by a function.
 	lastResult dagql.AnyResult
 	// Indicates that the model has returned
@@ -64,9 +161,14 @@ type MCP struct {
 }
 
 func newMCP(env *Env) *MCP {
+	blocked := maps.Clone(defaultBlockedMethods)
+	for typeName, methods := range blocked {
+		blocked[typeName] = slices.Clone(methods)
+	}
 	return &MCP{
 		env:             env,
 		selectedMethods: map[string]bool{},
+		blockedMethods:  blocked,
 	}
 }
 
@@ -81,6 +183,10 @@ func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()
 	cp.selectedMethods = maps.Clone(cp.selectedMethods)
+	cp.blockedMethods = maps.Clone(cp.blockedMethods)
+	for typeName, methods := range cp.blockedMethods {
+		cp.blockedMethods[typeName] = slices.Clone(methods)
+	}
 	cp.returned = false
 	return &cp
 }
@@ -190,108 +296,9 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			// never a reason to call "sync" since we call it automatically
 			continue
 		}
-		// Hide functions from the largest and most commonly used core types,
-		// to prevent tool bloat
-		switch typeDef.Name {
-		case "Query":
-			switch field.Name {
-			case
-				"currentFunctionCall",
-				"currentModule",
-				"currentTypeDefs",
-				"defaultPlatform",
-				"engine",
-				"env",
-				"error",
-				"function",
-				"generatedCode",
-				"llm",
-				"loadSecretFromName",
-				"module",
-				"moduleSource",
-				"secret",
-				"setSecret",
-				"sourceMap",
-				"typeDef",
-				"version":
-				continue
-			}
-		case "Container":
-			switch field.Name {
-			case
-				"build",
-				"defaultArgs",
-				"entrypoint",
-				"envVariable",
-				"envVariables",
-				"experimentalWithAllGPUs",
-				"experimentalWithGPU",
-				"export",
-				"exposedPorts",
-				"imageRef",
-				"import",
-				"label",
-				"labels",
-				"mounts",
-				"pipeline",
-				"platform",
-				"rootfs",
-				"terminal",
-				"up",
-				"user",
-				"withAnnotation",
-				"withDefaultTerminalCmd",
-				"withFiles",
-				"withFocus",
-				"withMountedCache",
-				"withMountedDirectory",
-				"withMountedFile",
-				"withMountedSecret",
-				"withMountedTemp",
-				"withRootfs",
-				"withoutAnnotation",
-				"withoutDefaultArgs",
-				"withoutEnvVariable",
-				"withoutExposedPort",
-				"withoutFile",
-				"withoutFocus",
-				"withoutMount",
-				"withoutRegistryAuth",
-				"withoutSecretVariable",
-				"withoutUnixSocket",
-				"withoutUser",
-				"withoutWorkdir",
-				"workdir":
-				continue
-			}
-		case "Directory":
-			switch field.Name {
-			case
-				// Nice to have, confusing
-				"asModule",
-				"asModuleSource",
-				// Side effect
-				"export",
-				// Nice to have
-				"name",
-				// Side effect
-				"terminal",
-				// Nice to have, confusing
-				"withFiles",
-				"withTimestamps",
-				"withoutDirectory",
-				"withoutFile",
-				"withoutFiles":
-				continue
-			}
-		case "File":
-			switch field.Name {
-			case
-				"export",
-				"withName",
-				"withTimestamps":
-				continue
-			}
+		// Skip explicitly blocked methods
+		if slices.Contains(m.blockedMethods[typeDef.Name], field.Name) {
+			continue
 		}
 		if field.Directives.ForName(trivialFieldDirectiveName) != nil {
 			// skip trivial fields on objects, only expose "real" functions
@@ -637,6 +644,19 @@ func (m *MCP) toolCallToSelection(
 
 const llmLastLogs = 10
 
+func (m *MCP) BlockFunction(typeName, funcName string) error {
+	obj, ok := m.env.srv.ObjectType(typeName)
+	if !ok {
+		return fmt.Errorf("object type %q not found", typeName)
+	}
+	_, ok = obj.FieldSpec(funcName, m.env.srv.View)
+	if !ok {
+		return fmt.Errorf("function %q not found on type %q", funcName, typeName)
+	}
+	m.blockedMethods[typeName] = append(m.blockedMethods[typeName], funcName)
+	return nil
+}
+
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
 	var tool *LLMTool
 	for _, t := range tools {
@@ -656,7 +676,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		return res, true
 	}
 
-	result, err := tool.Call(ctx, toolCall.Function.Arguments)
+	result, err := tool.Call(EnvToContext(ctx, m.envID), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}

@@ -1195,6 +1195,7 @@ type FunctionCall struct {
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
 
 	ParentID *call.ID
+	EnvID    *call.ID
 }
 
 func (*FunctionCall) Type() *ast.Type {

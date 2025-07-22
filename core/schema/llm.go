@@ -68,6 +68,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
+		dagql.Func("withBlockedFunction", s.withBlockedFunction).
+			Doc("Return a new LLM with the specified tool disabled").
+			Args(
+				dagql.Arg("typeName").Doc("The type name whose field will be disabled"),
+				dagql.Arg("fieldName").Doc("The field name to disable"),
+			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
 			var inst dagql.Result[*core.LLM]
 			if err := srv.Select(ctx, self, &inst, dagql.Selector{
@@ -100,7 +106,7 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(env.Self()), nil
+	return llm.WithEnv(args.Env, env.Self()), nil
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
@@ -154,6 +160,13 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.WithoutDefaultSystemPrompt(), nil
+}
+
+func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args struct {
+	TypeName  string
+	FieldName string
+}) (*core.LLM, error) {
+	return llm.WithBlockedFunction(args.TypeName, args.FieldName)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {

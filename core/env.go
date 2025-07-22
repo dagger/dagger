@@ -42,6 +42,20 @@ func (*Env) Type() *ast.Type {
 	}
 }
 
+type envKey struct{}
+
+func EnvToContext(ctx context.Context, env EnvID) context.Context {
+	return context.WithValue(ctx, envKey{}, env)
+}
+
+func EnvFromContext(ctx context.Context) (res EnvID, ok bool) {
+	env, ok := ctx.Value(envKey{}).(EnvID)
+	if !ok {
+		return res, false
+	}
+	return env, true
+}
+
 func NewEnv(srv *dagql.Server) *Env {
 	return &Env{
 		srv:           srv,
@@ -165,6 +179,15 @@ func (env *Env) Outputs() []*Binding {
 		res = append(res, v)
 	}
 	return res
+}
+
+// Remove all outputs from the environment and prevent new ones from being
+// declared
+func (env *Env) WithoutOutputs() *Env {
+	env = env.Clone()
+	clear(env.outputsByName)
+	env.writable = false
+	return env
 }
 
 // List all inputs in the environment

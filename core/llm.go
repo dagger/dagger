@@ -589,6 +589,15 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	return llm
 }
 
+// Disable the default system prompt
+func (llm *LLM) WithBlockedFunction(typeName, funcName string) (*LLM, error) {
+	llm = llm.Clone()
+	if err := llm.mcp.BlockFunction(typeName, funcName); err != nil {
+		return nil, err
+	}
+	return llm, nil
+}
+
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	if err := llm.Sync(ctx); err != nil {
@@ -979,9 +988,10 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	return JSON(result), nil
 }
 
-func (llm *LLM) WithEnv(env *Env) *LLM {
+func (llm *LLM) WithEnv(id EnvID, env *Env) *LLM {
 	llm = llm.Clone()
 	llm.mcp = env.Clone().MCP()
+	llm.mcp.envID = id
 	return llm
 }
 
