@@ -78,7 +78,7 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 			slog.Info("running post-command:", "args", strings.Join(cmd.Args, " "))
 			err := cmd.Run()
 			if err != nil {
-				slog.Error("post-command failed:", "error", err)
+				slog.Error("post-command failed", "error", err)
 				return err
 			}
 		}

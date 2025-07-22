@@ -72,7 +72,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating SDK client\n", "language", cfg.Lang)
+	slog.Info("generating SDK client", "language", cfg.Lang)
 
 	return Generate(ctx, cfg, generator.GenerateClient)
 }

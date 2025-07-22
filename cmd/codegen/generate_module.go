@@ -61,7 +61,7 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating module\n", "language", cfg.Lang, "module-name", cfg.ModuleConfig.ModuleName)
+	slog.Info("generating module", "language", cfg.Lang, "module-name", cfg.ModuleConfig.ModuleName)
 
 	return Generate(ctx, cfg, generator.GenerateModule)
 }

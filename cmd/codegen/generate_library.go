@@ -34,7 +34,7 @@ func GenerateLibrary(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generating SDK library\n", "language", cfg.Lang)
+	slog.Info("generating SDK library", "language", cfg.Lang)
 
 	return Generate(ctx, cfg, generator.GenerateLibrary)
 }
