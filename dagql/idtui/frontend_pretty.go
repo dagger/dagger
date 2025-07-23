@@ -1888,7 +1888,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, toggler.String()+" ")
 
 	if r.Debug {
-		fmt.Fprintf(out, out.String(" %s").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
+		fmt.Fprintf(out, out.String("%s ").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
 	}
 
 	if span.Message != "" {
