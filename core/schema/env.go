@@ -38,11 +38,10 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Doc("Return a new environment without any outputs"),
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
-		dagql.Func("withCaller", s.withCaller).
-			Doc("Provide the calling object as an input to the environment").
+		dagql.Func("withHostfs", s.withHostfs).
+			Doc("Return a new environment with a new host filesystem").
 			Args(
-				dagql.Arg("name").Doc("The name of the binding"),
-				dagql.Arg("description").Doc("The description of the input"),
+				dagql.Arg("hostfs").Doc("The directory to set as the host filesystem"),
 			),
 		dagql.Func("withStringInput", s.withStringInput).
 			Doc("Create or update an input value of type string").
@@ -86,7 +85,17 @@ type environmentArgs struct {
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
-	env := core.NewEnv(s.srv)
+	var hostfs dagql.ObjectResult[*core.Directory]
+	if mod, err := parent.CurrentModule(ctx); err == nil {
+		hostfs = mod.GetSource().ContextDirectory
+	} else {
+		if err := s.srv.Select(ctx, s.srv.Root(), &hostfs, dagql.Selector{
+			Field: "directory",
+		}); err != nil {
+			return nil, err
+		}
+	}
+	env := core.NewEnv(hostfs)
 	if args.Privileged {
 		env = env.Privileged()
 	}
@@ -146,11 +155,14 @@ func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, ar
 	return env.WithoutOutputs(), nil
 }
 
-func (s environmentSchema) withCaller(ctx context.Context, env *core.Env, args struct {
-	Name        string
-	Description string
+func (s environmentSchema) withHostfs(ctx context.Context, env *core.Env, args struct {
+	Hostfs core.DirectoryID
 }) (*core.Env, error) {
-	return env.WithCaller(ctx, args.Name, args.Description)
+	dir, err := args.Hostfs.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithHostfs(dir), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {

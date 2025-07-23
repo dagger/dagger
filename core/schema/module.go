@@ -544,7 +544,7 @@ func (s *moduleSchema) currentModule(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return &core.CurrentModule{Module: mod}, nil
+	return &core.CurrentModule{Meta: mod}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
@@ -687,7 +687,7 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Module.NameField, nil
+	return curMod.Meta.NameField, nil
 }
 
 func (s *moduleSchema) currentModuleSource(
@@ -700,7 +700,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	curSrc := curMod.Self().Module.Source
+	curSrc := curMod.Self().Meta.Source
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}

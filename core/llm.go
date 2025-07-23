@@ -61,6 +61,9 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
+	// The environment accessible to the LLM, exposed over MCP
+	mcp *MCP
+
 	maxAPICalls int
 	apiCalls    int
 
@@ -77,9 +80,6 @@ type LLM struct {
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
-
-	// The environment accessible to the LLM, exposed over MCP
-	mcp *MCP
 }
 
 type LLMEndpoint struct {
@@ -444,14 +444,79 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, model string, maxAPICalls int, srv *dagql.Server) (*LLM, error) {
+func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+	deps, err := query.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var env dagql.ObjectResult[*Env]
+	if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
+		Field: "env",
+	}); err != nil {
+		return nil, err
+	}
 	return &LLM{
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv(srv).MCP(),
+		mcp:         newMCP(env, deps),
 		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
+}
+
+func (llm *LLM) WithModule(mod *Module) *LLM {
+	cp := llm.Clone()
+	cp.mcp.modules = cp.mcp.modules.Append(mod)
+	return cp
+}
+
+// Add the calling object as an input binding to the environment
+func (llm *LLM) WithCaller(ctx context.Context, name, description string) (*LLM, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fc, err := query.CurrentFunctionCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := srv.Load(ctx, fc.ParentID)
+	if err != nil {
+		return nil, err
+	}
+	var newEnv dagql.ObjectResult[*Env]
+	if err := srv.Select(ctx, llm.mcp.env, &newEnv, dagql.Selector{
+		Field: "with" + obj.Type().Name() + "Input",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "name",
+				Value: dagql.String(name),
+			},
+			{
+				Name:  "value",
+				Value: dagql.NewDynamicID(fc.ParentID, obj),
+			},
+			{
+				Name:  "description",
+				Value: dagql.String(description),
+			},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return llm.WithEnv(newEnv), nil
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -516,8 +581,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *LLM) ToolsDoc() (string, error) {
-	tools, err := llm.mcp.Tools()
+func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
+	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -549,7 +614,7 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 ) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Input(key); found {
+		if binding, found := llm.mcp.Input(key); found {
 			return binding.String()
 		}
 		// leave unexpanded, perhaps it refers to an object var
@@ -590,9 +655,9 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 }
 
 // Disable the default system prompt
-func (llm *LLM) WithBlockedFunction(typeName, funcName string) (*LLM, error) {
+func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName string) (*LLM, error) {
 	llm = llm.Clone()
-	if err := llm.mcp.BlockFunction(typeName, funcName); err != nil {
+	if err := llm.mcp.BlockFunction(ctx, typeName, funcName); err != nil {
 		return nil, err
 	}
 	return llm, nil
@@ -763,7 +828,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools()
+		tools, err := llm.mcp.Tools(ctx)
 		if err != nil {
 			return err
 		}
@@ -988,14 +1053,13 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	return JSON(result), nil
 }
 
-func (llm *LLM) WithEnv(id EnvID, env *Env) *LLM {
+func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.Clone().MCP()
-	llm.mcp.envID = id
+	llm.mcp.env = env
 	return llm
 }
 
-func (llm *LLM) Env() *Env {
+func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 	return llm.mcp.env
 }
 
@@ -1030,7 +1094,6 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 		Key:          name,
 		Value:        llm.mcp.LastResult(),
 		ExpectedType: llm.mcp.LastResult().Type().Name(),
-		env:          llm.mcp.env,
 	}
 	res.Valid = true
 	return res, nil

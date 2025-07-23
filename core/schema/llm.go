@@ -47,10 +47,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("model").Doc("The model to use"),
 			),
+		dagql.Func("withModule", s.withModule).
+			Doc("load a module and expose its functions to the model"),
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("append a prompt to the llm context").
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
+			),
+		dagql.Func("withCaller", s.withCaller).
+			Doc("Provide the calling object as an input to the LLM environment").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("description").Doc("The description of the input"),
 			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
 			return dagql.Null[core.Void](), self.MCP(ctx, srv)
@@ -106,12 +114,19 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(args.Env, env.Self()), nil
+	return llm.WithEnv(env), nil
 }
 
-func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+func (s *llmSchema) withCaller(ctx context.Context, llm *core.LLM, args struct {
+	Name        string
+	Description string
+}) (*core.LLM, error) {
+	return llm.WithCaller(ctx, args.Name, args.Description)
+}
+
+func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
 	if err := llm.Sync(ctx); err != nil {
-		return nil, err
+		return res, err
 	}
 	return llm.Env(), nil
 }
@@ -146,6 +161,16 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	return llm.WithModel(args.Model), nil
 }
 
+func (s *llmSchema) withModule(ctx context.Context, llm *core.LLM, args struct {
+	Module core.ModuleID
+}) (*core.LLM, error) {
+	mod, err := args.Module.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithModule(mod.Self()), nil
+}
+
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
 }) (*core.LLM, error) {
@@ -166,7 +191,7 @@ func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args
 	TypeName  string
 	FieldName string
 }) (*core.LLM, error) {
-	return llm.WithBlockedFunction(args.TypeName, args.FieldName)
+	return llm.WithBlockedFunction(ctx, args.TypeName, args.FieldName)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
@@ -203,7 +228,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLLM(ctx, model, maxAPICalls, s.srv)
+	return parent.NewLLM(ctx, model, maxAPICalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
@@ -223,7 +248,7 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.ToolsDoc()
+	return llm.ToolsDoc(ctx)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
