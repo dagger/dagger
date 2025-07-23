@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"regexp"
 	"slices"
@@ -238,18 +239,36 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-func (m *MCP) modules() *ModDeps {
-	return m.env.Self().deps
+func (m *MCP) Schema(ctx context.Context) (*dagql.Server, error) {
+	return m.env.Self().deps.Schema(ctx)
 }
 
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
-	srv, err := m.modules().Schema(ctx)
+	srv, err := m.Schema(ctx)
 	if err != nil {
 		return nil, err
 	}
 	allTools := map[string]LLMTool{}
 	if err := m.allTypeTools(srv, allTools); err != nil {
 		return nil, err
+	}
+	for _, mod := range m.env.Self().installedModules {
+		for _, obj := range mod.ObjectDefs {
+			def := obj.AsObject.Value
+			var hasRequiredArgs bool
+			if def.Constructor.Valid {
+				for _, arg := range def.Constructor.Value.Args {
+					if !arg.TypeDef.Optional && arg.DefaultPath == "" {
+						hasRequiredArgs = true
+						break
+					}
+				}
+			}
+			if hasRequiredArgs {
+				// FIXME: better error
+				return nil, fmt.Errorf("module %s constructor has required arguments", mod.Name())
+			}
+		}
 	}
 	return m.Builtins(srv, allTools)
 }
@@ -575,6 +594,32 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 		val = syncedObj
 	}
 
+	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
+		log.Println("!!! UPDATING TO NEW ENVIRONMENT")
+		oldFS := m.env.Self().Hostfs.Self()
+		newFS := newEnv.Self().Hostfs.Self()
+		diffFS, err := newFS.Diff(ctx, oldFS)
+		if err != nil {
+			return "", fmt.Errorf("failed to diff filesystems: %w", err)
+		}
+		entries, err := diffFS.Entries(ctx, ".")
+		if err != nil {
+			return "", fmt.Errorf("failed to get diff entries: %w", err)
+		}
+		msg := "Environment updated."
+		log.Println("!!! FILES CHANGED IN ENVIRONMENT:", entries)
+		if len(entries) > 0 {
+			msg += "\n\nFiles changed:\n- " + strings.Join(entries, "\n- ")
+		}
+		// Swap out the Env for the updated one
+		m.env = newEnv
+		// FIXME: improve?
+		// FIXME:
+		// FIXME:
+		// FIXME:
+		return msg, nil
+	}
+
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
 		return m.newState(ctx, srv, obj)
@@ -715,7 +760,7 @@ func (m *MCP) toolCallToSelection(
 const llmLastLogs = 10
 
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
-	srv, err := m.modules().Schema(ctx)
+	srv, err := m.Schema(ctx)
 	if err != nil {
 		return fmt.Errorf("load schema: %w", err)
 	}
