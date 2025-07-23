@@ -1,21 +1,93 @@
 ---
-slug: /features/visualization
+slug: /features/observability
 description: "Visualize workflows in real-time"
+toc_max_heading_level: 2
 ---
-
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 import VideoPlayer from '../../src/components/VideoPlayer';
 
-# Visualization
+# Observability
+
+## Interactive terminal
+
+Workflow failures can be both frustrating and lead to wasted resources as the team seeks to understand what went wrong and why. Dagger's interactive debugging feature is an invaluable tool in this situation.
+
+Dagger lets users drop in to an interactive shell when a workflow run fails, with all the context at the point of failure. This is similar to a debugger experience, but without needing to set breakpoints explicitly. No changes are required to your code.
+
+Here's an example of a workflow run failing, and Dagger opening an interactive terminal at the point of failure:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/debugging-1/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/debugging-1/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/debugging-1/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/debugging-1/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/debugging-1/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+See it in action:
+
+<VideoPlayer src="/img/current_docs/features/debug-interactive.webm" alt="Interactive debugging" />
+
+## Breakpoints
+
+You can also set one or more explicit breakpoints in your workflow, which then starts an interactive terminal session at each breakpoint. This lets you inspect a directory or a container at any point in your workflow run, with all the necessary context available to you.
+
+Here's another example, which opens an interactive terminal at two different points in a workflow run to inspect the built container:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/debugging-2/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/debugging-2/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/debugging-2/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=./snippets/debugging-2/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/debugging-2/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+See it in action:
+
+<VideoPlayer src="/img/current_docs/features/debug-breakpoints.webm" alt="Debugging with breakpoints" />
+
+## Visualization
 
 Dagger works by building up a DAG of operations and evaluating them, often in parallel. By nature, this is a difficult thing to display. It's easy to show the output of one operation at a time, but as soon as you have parallelism, you'll get jumbled output that's hard to understand.
 
 This quickly creates the need to visualize your workflows to understand and measure what's going on. Dagger includes two features for this purpose - a [Terminal UI](#terminal-ui) and [Dagger Cloud's Traces](#traces).
 
-## Terminal UI
+### Terminal UI
 
 The [Dagger CLI](../extending/clients-cli.mdx) includes a real-time visualization feature called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
 
-### Rapid iteration
+#### Rapid iteration
 
 The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback.
 
@@ -28,11 +100,11 @@ The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A pa
 - A red X or green check indicates whether the call succeeded or failed
 - A call's duration is rendered after its name
 
-### Errors
+#### Errors
 
 Error logs appear at the top, directly below the progress report. In most cases, this tells you exactly what went wrong and where without any extra sleuthing.
 
-### Telemetry
+#### Telemetry
 
 The TUI also provides real-time telemetry to give you a complete view of your workflow's performance. It allows you to monitor:
 
@@ -56,7 +128,7 @@ The TUI is driven by [OpenTelemetry](https://opentelemetry.io/) and is essential
 Dagger automatically detects OpenTelemetry resource attributes. By utilizing the standard [`OTEL_RESOURCE_ATTRIBUTES` environment variable](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/), operators can now set custom resource attributes to annotate Traces, providing more detailed and contextual information for monitoring and debugging.
 :::
 
-## Traces
+### Traces
 
 [Dagger Cloud](https://dagger.cloud) provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
 
@@ -73,7 +145,13 @@ Here's an example of it in action:
 
 <VideoPlayer src="/img/current_docs/features/trace.webm" alt="Dagger Trace" />
 
-### OpenTelemetry
+This feature can also be used for end-to-end monitoring of agent prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+Here's an example of it in action:
+
+<VideoPlayer src="/img/current_docs/features/llm-cloud-trace.webm" alt="LLM observability example" />
+
+#### OpenTelemetry
 
 Dagger uses [OpenTelemetry](https://opentelemetry.io/) (OTel) as its telemetry protocol -- both the [TUI](#terminal-ui) and [Traces](#traces) are powered by OTel. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
 
@@ -98,7 +176,7 @@ You can drill down into the details of a specific group by clicking it. This dir
 
 ![Trace details](/img/current_docs/features/trace-details.png)
 
-### Timeline view
+#### Timeline view
 
 With the timeline view you can:
 
@@ -119,8 +197,3 @@ To make it easier to navigate through Trace logs (some of which can contain thou
 If there are any errors, they are now highlighted in a separate section in the Trace log, making them easier to spot immediately. The error view also provides more context around where and why the issue occurred. This means you can see not just the error, but also the related steps that led up to it.
 
 ![Trace error](/img/current_docs/features/trace-error.png)
-
-## Learn more
-
-- [Create a Dagger Cloud account](https://dagger.cloud)
-- [Configure Traces for your Dagger workflows](../reference/configuration/cloud.mdx)

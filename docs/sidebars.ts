@@ -3,7 +3,23 @@ module.exports = {
     {
       type: "category",
       label: "What is Dagger?",
-      items: ["index", "features/index"],
+      items: [
+        "index",
+        "components",
+        {
+          type: "category",
+          label: "Features",
+          items: [
+            "features/programmability",
+            "features/reusability",
+            "features/performance",
+            "features/observability",
+            "features/security",
+            "features/llm",
+            "features/shell",
+          ],
+        }
+        ],
     },
     {
       type: "category",
@@ -170,13 +186,6 @@ module.exports = {
         "cookbook/services",
         "cookbook/container-images",
       ],
-    },
-  ],
-  features: [
-    {
-      type: "category",
-      label: "Features",
-      items: ["features/index"],
     },
   ],
 };
