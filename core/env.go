@@ -16,6 +16,13 @@ type Env struct {
 	// The environment's host filesystem
 	Hostfs dagql.ObjectResult[*Directory] `field:"true"`
 
+	// The full module dependency chain for the environment, including the core
+	// module and any dependencies from the environment's creator
+	deps *ModDeps
+	// The modules explicitly installed into the environment, to be exposed as
+	// tools that implicitly call the constructor with the environment's hostfs
+	installedModules []*Module
+
 	// Input values
 	inputsByName map[string]*Binding
 	// Output values
@@ -49,9 +56,10 @@ func EnvFromContext(ctx context.Context) (res dagql.ObjectResult[*Env], ok bool)
 	return env, true
 }
 
-func NewEnv(hostfs dagql.ObjectResult[*Directory]) *Env {
+func NewEnv(hostfs dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
 	return &Env{
 		Hostfs:        hostfs,
+		deps:          deps,
 		inputsByName:  map[string]*Binding{},
 		outputsByName: map[string]*Binding{},
 	}
@@ -72,6 +80,13 @@ func (env *Env) WithHostfs(dir dagql.ObjectResult[*Directory]) *Env {
 	cp := *env
 	cp.Hostfs = dir
 	return &cp
+}
+
+func (env *Env) WithModule(mod *Module) *Env {
+	cp := env.Clone()
+	cp.deps = cp.deps.Append(mod)
+	cp.installedModules = append(cp.installedModules, mod)
+	return cp
 }
 
 func (env *Env) Privileged() *Env {

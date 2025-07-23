@@ -445,10 +445,6 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 }
 
 func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
-	deps, err := query.CurrentServedDeps(ctx)
-	if err != nil {
-		return nil, err
-	}
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -462,16 +458,10 @@ func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (
 	return &LLM{
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         newMCP(env, deps),
+		mcp:         newMCP(env),
 		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
-}
-
-func (llm *LLM) WithModule(mod *Module) *LLM {
-	cp := llm.Clone()
-	cp.mcp.modules = cp.mcp.modules.Append(mod)
-	return cp
 }
 
 // Add the calling object as an input binding to the environment

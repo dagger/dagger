@@ -43,6 +43,8 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("hostfs").Doc("The directory to set as the host filesystem"),
 			),
+		dagql.Func("withModule", s.withModule).
+			Doc("load a module and expose its functions to the model"),
 		dagql.Func("withStringInput", s.withStringInput).
 			Doc("Create or update an input value of type string").
 			Args(
@@ -89,13 +91,18 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	if mod, err := parent.CurrentModule(ctx); err == nil {
 		hostfs = mod.GetSource().ContextDirectory
 	} else {
+		// FIXME: inherit from somewhere?
 		if err := s.srv.Select(ctx, s.srv.Root(), &hostfs, dagql.Selector{
 			Field: "directory",
 		}); err != nil {
 			return nil, err
 		}
 	}
-	env := core.NewEnv(hostfs)
+	deps, err := parent.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env := core.NewEnv(hostfs, deps)
 	if args.Privileged {
 		env = env.Privileged()
 	}
@@ -163,6 +170,16 @@ func (s environmentSchema) withHostfs(ctx context.Context, env *core.Env, args s
 		return nil, err
 	}
 	return env.WithHostfs(dir), nil
+}
+
+func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {
+	Module core.ModuleID
+}) (*core.Env, error) {
+	mod, err := args.Module.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithModule(mod.Self()), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {

@@ -47,8 +47,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("model").Doc("The model to use"),
 			),
-		dagql.Func("withModule", s.withModule).
-			Doc("load a module and expose its functions to the model"),
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("append a prompt to the llm context").
 			Args(
@@ -159,16 +157,6 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Model string
 }) (*core.LLM, error) {
 	return llm.WithModel(args.Model), nil
-}
-
-func (s *llmSchema) withModule(ctx context.Context, llm *core.LLM, args struct {
-	Module core.ModuleID
-}) (*core.LLM, error) {
-	mod, err := args.Module.Load(ctx, s.srv)
-	if err != nil {
-		return nil, err
-	}
-	return llm.WithModule(mod.Self()), nil
 }
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {

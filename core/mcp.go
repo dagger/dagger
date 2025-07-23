@@ -146,8 +146,6 @@ type LLMTool struct {
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
 	env dagql.ObjectResult[*Env]
-	// Modules installed into the context
-	modules *ModDeps
 	// Only show these functions, if non-empty
 	selectedMethods map[string]bool
 	// Never show these functions, grouped by type
@@ -166,14 +164,13 @@ type MCP struct {
 	idByHash map[digest.Digest]string
 }
 
-func newMCP(env dagql.ObjectResult[*Env], modules *ModDeps) *MCP {
+func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	blocked := maps.Clone(defaultBlockedMethods)
 	for typeName, methods := range blocked {
 		blocked[typeName] = slices.Clone(methods)
 	}
 	return &MCP{
 		env:             env,
-		modules:         modules,
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
 		objsByID:        map[string]*Binding{},
@@ -241,8 +238,12 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
+func (m *MCP) modules() *ModDeps {
+	return m.env.Self().deps
+}
+
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
-	srv, err := m.modules.Schema(ctx)
+	srv, err := m.modules().Schema(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +715,7 @@ func (m *MCP) toolCallToSelection(
 const llmLastLogs = 10
 
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
-	srv, err := m.modules.Schema(ctx)
+	srv, err := m.modules().Schema(ctx)
 	if err != nil {
 		return fmt.Errorf("load schema: %w", err)
 	}
