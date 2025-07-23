@@ -21,6 +21,7 @@ class Host extends Client\AbstractObject implements Client\IdAble
         ?array $exclude = null,
         ?array $include = null,
         ?bool $noCache = false,
+        ?bool $applyGitIgnore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -32,6 +33,9 @@ class Host extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
+        }
+        if (null !== $applyGitIgnore) {
+        $innerQueryBuilder->setArgument('applyGitIgnore', $applyGitIgnore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

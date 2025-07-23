@@ -1065,6 +1065,11 @@ export type HostDirectoryOpts = {
    * If true, the directory will always be reloaded from the host.
    */
   noCache?: boolean
+
+  /**
+   * If true, gitignore patterns will be applied to the directory.
+   */
+  applyGitIgnore?: boolean
 }
 
 export type HostFileOpts = {
@@ -6360,6 +6365,7 @@ export class Host extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.noCache If true, the directory will always be reloaded from the host.
+   * @param opts.applyGitIgnore If true, gitignore patterns will be applied to the directory.
    */
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
