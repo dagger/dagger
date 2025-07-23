@@ -293,10 +293,10 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludesPatterns = append(excludesPatterns, args.Exclude...)
 	}
 
-	// If applygitIgnore pattern is set set, we load all the .gitgnore patterns inside the context directory (
-	// if ContextDirectoryPath is set) or the git repo if .git is found.
+	// If ApplyGitIgnore is set, we load all the .gitgnore patterns inside the context directory
+	// (if ContextDirectoryPath is set) or the git repo if .git is found.
 	var dotGitIgnoreParentPath string
-	if args.ApplyGitIgnore == true {
+	if args.ApplyGitIgnore {
 		var parentPath string
 
 		if args.ContextDirectoryPath != "" {
