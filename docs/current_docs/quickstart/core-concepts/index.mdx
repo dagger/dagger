@@ -101,7 +101,7 @@ Check if the file exists, as shown below:
 <VideoPlayer src="/img/current_docs/quickstart/basics/terminal-2.webm" alt="Terminal file check demonstration" />
 
 :::tip INTERACTIVE CONTAINER DEBUGGING
-The `terminal` function is very useful for [debugging and experimenting](../../features/debugging.mdx), since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
+The `terminal` function is very useful for [debugging and experimenting](../../features/observability.mdx), since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
 :::
 
 ## Chain functions in the shell
@@ -119,7 +119,7 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
 
 ## Write custom functions
 
-As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../../extending/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../../features/modules.mdx).
+As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../../extending/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules].
 
 :::tip IDE INTEGRATION
 <PartialIde />
@@ -511,7 +511,7 @@ Dagger Functions are fully "sandboxed" and do not have direct access to the host
 
 ## Install other modules
 
-You can group Dagger Functions into [modules](../../features/modules.mdx) and share them with others - your team, your company, or the broader Dagger community. And just as others can use your modules, you too can use modules created and shared by others, to speed up your development and take advantage of best practices. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.
+You can group Dagger Functions into [modules](../../features/reusability.mdx) and share them with others - your team, your company, or the broader Dagger community. And just as others can use your modules, you too can use modules created and shared by others, to speed up your development and take advantage of best practices. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.
 
 ![Daggerverse](/img/current_docs/quickstart/basics/daggerverse.jpg)
 
@@ -584,10 +584,10 @@ Dagger Functions can call other Dagger Functions, across languages. For example,
 
 ## Speed things up
 
-One of Dagger's most powerful features is its ability to [cache data across workflow runs](../../features/caching.mdx). Dagger caches two types of data:
+One of Dagger's most powerful features is its ability to [cache data across workflow runs]. Dagger caches two types of data:
 
-- [Layers](../../features/caching.mdx#layer-caching): Build instructions and the results of some API calls.
-- [Volumes](../../features/caching.mdx#volume-caching): Contents of Dagger filesystem volumes.
+- [Layers]: Build instructions and the results of some API calls.
+- [Volumes]: Contents of Dagger filesystem volumes.
 
 Taken together, these two types of caching significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
 
