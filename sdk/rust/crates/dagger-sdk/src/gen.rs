@@ -7256,6 +7256,9 @@ pub struct Host {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
+    /// If true, gitignore patterns will be applied to the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub apply_git_ignore: Option<bool>,
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
@@ -7328,6 +7331,9 @@ impl Host {
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
+        }
+        if let Some(apply_git_ignore) = opts.apply_git_ignore {
+            query = query.arg("applyGitIgnore", apply_git_ignore);
         }
         Directory {
             proc: self.proc.clone(),
