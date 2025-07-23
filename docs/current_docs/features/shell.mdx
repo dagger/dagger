@@ -1,6 +1,7 @@
 ---
 slug: /features/shell
 description: "Iterate faster with familiar Bash-like syntax and autocomplete"
+toc_max_heading_level: 2
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -13,12 +14,10 @@ It's the simplest and fastest way to run Dagger workflows directly from the comm
 
 You can use it for builds, tests, ephemeral environments, deployments, or any other task you want to automate from the terminal.
 
-## Sandboxing
-
+:::important
 Dagger Shell commands run as sandboxed functions, accessing host resources (files, secrets, services) only when explicitly provided as arguments.
 This can make commands slightly more verbose, but also more repeatable, giving you confidence to iterate quickly without second-guessing.
-
-### Example
+:::
 
 Here's an example of Dagger Shell in action:
 
@@ -43,7 +42,7 @@ container |
 
 <VideoPlayer src="/img/current_docs/features/shell-build.webm" alt="Shell build example" />
 
-## Bash frontend, Dagger backend
+## Behavior
 
 Dagger Shell uses the Bash syntax as a frontend, but its behavior is quite different in the backend:
 
@@ -94,7 +93,7 @@ container | from alpine | terminal
 </TabItem>
 </Tabs>
 
-## Loading Modules
+## Modules
 
 Dagger Shell can load modules, inspect their types, and run their functions. This works for both local and remote modules.
 
@@ -119,8 +118,6 @@ server | up
 ```
 
 This builds the docs server defined in the module, and runs it as an ephemeral service [on your machine](http://localhost:8080).
-
-## Composing modules
 
 You can load multiple modules in the same session, each scoped to a single pipeline, then combine those pipelines into a bigger pipeline. For example:
 
@@ -173,8 +170,3 @@ container | from nginx | with-directory /usr/share/nginx/html $build | terminal 
 </Tabs>
 
 <VideoPlayer src="/img/current_docs/features/shell-variables.webm" alt="Dagger Shell variables" />
-
-## Learn more
-
-- [Call the Dagger API using Dagger Shell](../extending/clients-cli.mdx)
-- [Chain Dagger Functions using Dagger Shell](../extending/chaining.mdx)

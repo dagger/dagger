@@ -1,6 +1,7 @@
 ---
 slug: /features/security
 description: "Security-first design"
+toc_max_heading_level: 2
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -20,7 +21,7 @@ Dagger’s security model treats the top-level module (i.e., the main function o
 By requiring typed arguments such as `Directory`, `Socket`, `Service`, or `Secret`, Dagger ensures users understand exactly what they are sharing with a Dagger Function. This explicit access design helps prevent malicious or untrusted modules from inadvertently obtaining sensitive data.
 :::
 
-## Secrets
+## Secrets protection
 
 Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secrets can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
@@ -80,7 +81,3 @@ dagger call github-api --token=op://infra/github/credential
 ```
 
 <VideoPlayer src="/img/current_docs/features/secrets-1password.webm" alt="Secret from 1Password" />
-
-## Learn more
-
-- [Use secrets as function arguments](../extending/arguments.mdx#secret-arguments)
