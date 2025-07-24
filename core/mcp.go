@@ -677,6 +677,10 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 			return "", fmt.Errorf("failed to diff filesystems: %w", err)
 		}
 		msg := "Environment updated."
+		// remove directories
+		entries = slices.DeleteFunc(entries, func(s string) bool {
+			return strings.HasSuffix(s, "/")
+		})
 		if len(entries) > 0 {
 			msg += "\n\nFiles changed:\n- " + strings.Join(entries, "\n- ")
 		}
