@@ -286,28 +286,29 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 		if isNull {
 			return nil
 		}
-		if typeName == "" || typeName == "Query" {
+		switch typeName {
+		case "", "Query", "Void":
 			return nil
-		}
-		if typeName == "String" {
+		case "String":
 			str, err := bnd.AsString(ctx)
 			if err != nil {
 				return err
 			}
 			return s.assignShellString(ctx, name, str)
+		default:
+			var objID string
+			if err :=
+				s.dag.QueryBuilder().
+					Select("loadBindingFromID").
+					Arg("id", bnd).
+					Select("as" + typeName).
+					Select("id").
+					Bind(&objID).
+					Execute(ctx); err != nil {
+				return err
+			}
+			return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
 		}
-		var objID string
-		if err :=
-			s.dag.QueryBuilder().
-				Select("loadBindingFromID").
-				Arg("id", bnd).
-				Select("as" + typeName).
-				Select("id").
-				Bind(&objID).
-				Execute(ctx); err != nil {
-			return err
-		}
-		return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
 	}
 
 	// assign all outputs
