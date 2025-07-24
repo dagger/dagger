@@ -130,7 +130,7 @@ func TestTypeDefJSON_EnumType(t *testing.T) {
 	typeDef := &TypeDef{
 		Kind:     TypeDefKindEnum,
 		Optional: false,
-		AsEnum: dagql.NonNull(enumDef),
+		AsEnum:   dagql.NonNull(enumDef),
 	}
 
 	jsonStr, err := typeDef.ToJSONString()
@@ -218,7 +218,7 @@ func TestTypeDefJSON_InvalidJSON(t *testing.T) {
 	// Test invalid JSON handling
 	invalidJSONs := []string{
 		`{"kind":"INVALID_KIND","optional":false}`,
-		`{"optional":false}`, // missing kind
+		`{"optional":false}`,           // missing kind
 		`{"kind":"","optional":false}`, // empty kind
 		`invalid json`,
 	}
