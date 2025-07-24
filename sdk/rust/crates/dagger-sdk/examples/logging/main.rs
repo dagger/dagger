@@ -22,7 +22,7 @@ async fn main() -> eyre::Result<()> {
                     exclude: Some(vec!["node_modules", "ci/"]),
                     include: None,
                     no_cache: None,
-                    apply_git_ignore: None,
+                    ignore_vcs: None,
                 },
             );
 

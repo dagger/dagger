@@ -2665,8 +2665,10 @@ type Host {
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
 
-    """If true, gitignore patterns will be applied to the directory."""
-    applyGitIgnore: Boolean = false
+    """
+    Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).
+    """
+    ignoreVCS: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""

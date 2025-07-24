@@ -7256,12 +7256,12 @@ pub struct Host {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
-    /// If true, gitignore patterns will be applied to the directory.
-    #[builder(setter(into, strip_option), default)]
-    pub apply_git_ignore: Option<bool>,
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).
+    #[builder(setter(into, strip_option), default)]
+    pub ignore_vcs: Option<bool>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -7332,8 +7332,8 @@ impl Host {
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
-        if let Some(apply_git_ignore) = opts.apply_git_ignore {
-            query = query.arg("applyGitIgnore", apply_git_ignore);
+        if let Some(ignore_vcs) = opts.ignore_vcs {
+            query = query.arg("ignoreVCS", ignore_vcs);
         }
         Directory {
             proc: self.proc.clone(),

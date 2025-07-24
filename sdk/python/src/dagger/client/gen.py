@@ -6429,7 +6429,7 @@ class Host(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
         no_cache: bool | None = False,
-        apply_git_ignore: bool | None = False,
+        ignore_vcs: bool | None = False,
     ) -> Directory:
         """Accesses a directory on the host.
 
@@ -6445,15 +6445,16 @@ class Host(Type):
             ["app/", "package.*"]).
         no_cache:
             If true, the directory will always be reloaded from the host.
-        apply_git_ignore:
-            If true, gitignore patterns will be applied to the directory.
+        ignore_vcs:
+            Respect filter rules from source control ignore files when inside
+            a repo (only .gitignore is supported).
         """
         _args = [
             Arg("path", path),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("noCache", no_cache, False),
-            Arg("applyGitIgnore", apply_git_ignore, False),
+            Arg("ignoreVCS", ignore_vcs, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)

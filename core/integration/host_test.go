@@ -299,7 +299,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 }
 
-func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
+func (HostSuite) TestDirectoryIgnoreVCS(ctx context.Context, t *testctx.T) {
 	dir := t.TempDir()
 
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
@@ -342,7 +342,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 
 	t.Run("apply git ignore", func(ctx context.Context, t *testctx.T) {
 		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{
-			ApplyGitIgnore: true,
+			IgnoreVCS: true,
 		})
 
 		rootHostDir, err := hostDir.Entries(ctx)
@@ -360,7 +360,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 
 	t.Run("correctly apply parent .gitignore when children path is given", func(ctx context.Context, t *testctx.T) {
 		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"), dagger.HostDirectoryOpts{
-			ApplyGitIgnore: true,
+			IgnoreVCS: true,
 		}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"b.md", "e.txt", "h.yaml"}, subDirEntries)
@@ -374,7 +374,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir2, "foo.go"), []byte("1"), 0o600))
 
 		entries, err := c.Host().Directory(dir2, dagger.HostDirectoryOpts{
-			ApplyGitIgnore: true,
+			IgnoreVCS: true,
 		}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".gitignore", "bar.txt", "foo.go"}, entries)

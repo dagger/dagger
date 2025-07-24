@@ -6114,8 +6114,8 @@ type HostDirectoryOpts struct {
 	Include []string
 	// If true, the directory will always be reloaded from the host.
 	NoCache bool
-	// If true, gitignore patterns will be applied to the directory.
-	ApplyGitIgnore bool
+	// Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).
+	IgnoreVCS bool
 }
 
 // Accesses a directory on the host.
@@ -6134,9 +6134,9 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
 		}
-		// `applyGitIgnore` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ApplyGitIgnore) {
-			q = q.Arg("applyGitIgnore", opts[i].ApplyGitIgnore)
+		// `ignoreVCS` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IgnoreVCS) {
+			q = q.Arg("ignoreVCS", opts[i].IgnoreVCS)
 		}
 	}
 	q = q.Arg("path", path)
