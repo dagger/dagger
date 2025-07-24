@@ -32,7 +32,6 @@ func (loader *Loader) Close() error {
 }
 
 type Backend interface {
-	ID() string
 	Loader(context.Context) (*Loader, error)
 }
 

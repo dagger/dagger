@@ -71,6 +71,10 @@ func (dc *daggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 	return tlsConn, nil
 }
 
+func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
+	return true, nil // assume always available
+}
+
 func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
 	client, err := cloud.NewClient(ctx)
 	if err != nil {
@@ -80,7 +84,7 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 	return d.create(ctx, client)
 }
 
-func (d *daggerCloudDriver) ImageLoader() imageload.Backend {
+func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
 	return nil
 }
 
