@@ -20,7 +20,52 @@ const defaultModuleJson = `{
       "kind": "OBJECT_KIND",
       "optional": false,
       "values": {
-        "Constructor": null,
+        "Constructor": {
+          "Args": [
+            {
+              "DefaultPath": "",
+              "DefaultValue": "\"foo\"",
+              "Description": "",
+              "Ignore": null,
+              "Name": "stringArg",
+              "OriginalName": "stringArg",
+              "SourceMap": {
+                "Column": 34,
+                "Filename": "main.go",
+                "Line": 22,
+                "Module": ""
+              },
+              "TypeDef": {
+                "kind": "STRING_KIND",
+                "optional": false
+              }
+            }
+          ],
+          "Description": "Creates a new MyModule",
+          "Name": "",
+          "OriginalName": "",
+          "ParentOriginalName": "MyModule",
+          "ReturnType": {
+            "kind": "OBJECT_KIND",
+            "optional": false,
+            "values": {
+              "Constructor": null,
+              "Description": "",
+              "Fields": [],
+              "Functions": [],
+              "Name": "MyModule",
+              "OriginalName": "MyModule",
+              "SourceMap": null,
+              "SourceModuleName": ""
+            }
+          },
+          "SourceMap": {
+            "Column": 6,
+            "Filename": "main.go",
+            "Line": 22,
+            "Module": ""
+          }
+        },
         "Description": "",
         "Fields": [],
         "Functions": [
@@ -156,6 +201,39 @@ const defaultModuleJsonShort = `{
     {
       "kind": "OBJECT_KIND",
       "values": {
+		"Constructor": {
+          "Args": [
+            {
+              "DefaultValue": "\"foo\"",
+              "Name": "stringArg",
+              "OriginalName": "stringArg",
+              "SourceMap": {
+                "Column": 34,
+                "Filename": "main.go",
+                "Line": 22
+              },
+              "TypeDef": {
+                "kind": "STRING_KIND"
+              }
+            }
+          ],
+          "Description": "Creates a new MyModule",
+          "Name": "",
+          "OriginalName": "",
+          "ParentOriginalName": "MyModule",
+          "ReturnType": {
+            "kind": "OBJECT_KIND",
+            "values": {
+              "Name": "MyModule",
+              "OriginalName": "MyModule"
+            }
+          },
+          "SourceMap": {
+            "Column": 6,
+            "Filename": "main.go",
+            "Line": 22
+          }
+        },
         "Functions": [
           {
             "Args": [
@@ -267,6 +345,14 @@ func TestModuleJSON_toJson(t *testing.T) {
 			WithSourceMap(&SourceMap{Filename: "main.go", Line: 30, Column: 1}).
 			WithArg("directoryArg", (&TypeDef{}).WithObject("Directory", "", nil), "", nil, "", nil, &SourceMap{Filename: "main.go", Line: 30, Column: 49}).
 			WithArg("pattern", (&TypeDef{}).WithKind(TypeDefKindString), "", JSON("\"foo\""), "", nil, &SourceMap{Filename: "main.go", Line: 30, Column: 81}))
+	require.NoError(t, err)
+
+	td, err = td.WithObjectConstructor(
+		NewFunction("New", // this will be emptied by the WithObjectConstructor call
+			(&TypeDef{}).WithObject("MyModule", "", nil)).
+			WithDescription("Creates a new MyModule").
+			WithSourceMap(&SourceMap{Filename: "main.go", Line: 22, Column: 6}).
+			WithArg("stringArg", (&TypeDef{}).WithKind(TypeDefKindString), "", JSON("\"foo\""), "", nil, &SourceMap{Filename: "main.go", Line: 22, Column: 34}))
 	require.NoError(t, err)
 
 	m, err := (&Module{}).

@@ -100,6 +100,16 @@ func (t *TypeDef) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(valuesJSON, &objectTypeDef); err != nil {
 			return fmt.Errorf("failed to unmarshal object values: %w", err)
 		}
+		// trick to have constructor working
+		var withConstructor struct {
+			Constructor *Function
+		}
+		if err := json.Unmarshal(valuesJSON, &withConstructor); err != nil {
+			return fmt.Errorf("failed to unmarshal constructor values: %w", err)
+		}
+		if withConstructor.Constructor != nil {
+			objectTypeDef.Constructor = dagql.NonNull(withConstructor.Constructor)
+		}
 		t.AsObject = dagql.NonNull(&objectTypeDef)
 	case TypeDefKindInterface:
 		interfaceTypeDef := InterfaceTypeDef{
