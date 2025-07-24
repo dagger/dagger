@@ -517,7 +517,9 @@ func (m *MCP) call(ctx context.Context,
 			for _, arg := range def.Value.Args {
 				if arg.DefaultPath != "" {
 					dir := m.env.Self().Hostfs
-					if path.Clean(arg.DefaultPath) != "/" {
+					switch path.Clean(arg.DefaultPath) {
+					case ".", "/":
+					default:
 						if err := srv.Select(ctx, dir, &dir, dagql.Selector{
 							Field: "directory", // TODO: handle files too
 							Args: []dagql.NamedInput{
