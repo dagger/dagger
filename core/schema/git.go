@@ -141,16 +141,13 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", DagOpWrapper(srv, s.fetchRef)).
 			Doc(`The resolved ref name at this ref.`),
-<<<<<<< HEAD
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
 			Args(
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
-=======
 		dagql.Func("originalAddress", s.refOriginalAddress).
 			Doc(`The address this git ref was originally loaded from, if any`),
->>>>>>> 5d20a7ee6 (address(): a unified address to load containers, directories, secrets, etc.)
 	}.Install(srv)
 }
 
@@ -721,7 +718,6 @@ func (s *gitSchema) fetchRef(
 	}
 	return dagql.NewString(ref), nil
 }
-
 
 type mergeBaseArgs struct {
 	Other core.GitRefID
