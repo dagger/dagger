@@ -1268,6 +1268,14 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
 }
 
+func (container *Container) runUnderPath(subdir string, fn func(dir *Directory) error) error {
+	dir, _, err := locatePath(container, subdir, NewDirectory)
+	if err != nil {
+		return err
+	}
+	return fn(dir)
+}
+
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
 	return container.Config, nil
 }
@@ -1328,6 +1336,17 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
+}
+
+func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	dir, targetPath := filepath.Split(filepath.Clean(targetPath))
+	exists := false
+	err := container.runUnderPath(dir, func(dir *Directory) error {
+		var err error
+		exists, err = dir.Exists(ctx, srv, targetPath, targetType, doNotFollowSymlinks)
+		return err
+	})
+	return exists, err
 }
 
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {

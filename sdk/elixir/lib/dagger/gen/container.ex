@@ -184,6 +184,24 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = container, path, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(container.client, query_builder)
+  end
+
+  @doc """
   The exit code of the last executed command
 
   Returns an error if no command was executed

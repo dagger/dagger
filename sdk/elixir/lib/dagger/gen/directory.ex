@@ -148,6 +148,24 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = directory, path, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
   Writes the contents of the directory to a path on the host.
   """
   @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::

@@ -688,6 +688,7 @@ type Container struct {
 	query *querybuilder.Selection
 
 	envVariable *string
+	exists      *bool
 	exitCode    *int
 	export      *string
 	exportImage *Void
@@ -960,6 +961,38 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	}
 
 	return convert(response), nil
+}
+
+// ContainerExistsOpts contains options for Container.Exists
+type ContainerExistsOpts struct {
+	// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+	ExpectedType ExistsType
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// check if a file or directory exists
+func (r *Container) Exists(ctx context.Context, path string, opts ...ContainerExistsOpts) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expectedType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedType) {
+			q = q.Arg("expectedType", opts[i].ExpectedType)
+		}
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The exit code of the last executed command
@@ -2626,6 +2659,7 @@ type Directory struct {
 	query *querybuilder.Selection
 
 	digest *string
+	exists *bool
 	export *string
 	id     *DirectoryID
 	name   *string
@@ -2813,6 +2847,38 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	}
 
 	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// DirectoryExistsOpts contains options for Directory.Exists
+type DirectoryExistsOpts struct {
+	// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+	ExpectedType ExistsType
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// check if a file or directory exists
+func (r *Directory) Exists(ctx context.Context, path string, opts ...DirectoryExistsOpts) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expectedType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedType) {
+			q = q.Arg("expectedType", opts[i].ExpectedType)
+		}
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10351,6 +10417,61 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// File type.
+type ExistsType string
+
+func (ExistsType) IsEnum() {}
+
+func (v ExistsType) Name() string {
+	switch v {
+	case ExistsTypeRegularType:
+		return "REGULAR_TYPE"
+	case ExistsTypeDirectoryType:
+		return "DIRECTORY_TYPE"
+	case ExistsTypeSymlinkType:
+		return "SYMLINK_TYPE"
+	default:
+		return ""
+	}
+}
+
+func (v ExistsType) Value() string {
+	return string(v)
+}
+
+func (v *ExistsType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ExistsType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "DIRECTORY_TYPE":
+		*v = ExistsTypeDirectoryType
+	case "REGULAR_TYPE":
+		*v = ExistsTypeRegularType
+	case "SYMLINK_TYPE":
+		*v = ExistsTypeSymlinkType
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Tests path is a regular file
+	ExistsTypeRegularType ExistsType = "REGULAR_TYPE"
+
+	// Tests path is a directory
+	ExistsTypeDirectoryType ExistsType = "DIRECTORY_TYPE"
+
+	// Tests path is a symlink
+	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
 )
 
 // Compression algorithm to use for image layers.

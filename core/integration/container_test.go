@@ -5375,3 +5375,14 @@ func (m *Test) Try(ctx context.Context) error {
 	require.NoError(t, err)
 	require.Contains(t, out, "No such object")
 }
+
+func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/sub").
+		WithNewFile("subdir/data", "contents")
+	exists, err := ctr.Exists(ctx, "subdir/data")
+	require.NoError(t, err)
+	require.Equal(t, true, exists)
+}
