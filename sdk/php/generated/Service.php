@@ -51,6 +51,15 @@ class Service extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The address this service was originally loaded from, if any
+     */
+    public function originalAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the list of ports provided by the service.
      */
     public function ports(): array

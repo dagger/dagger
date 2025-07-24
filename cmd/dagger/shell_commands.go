@@ -688,6 +688,7 @@ Without arguments, the current working directory is replaced by the initial cont
 
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"address",
 			"llm",
 			"cache-volume",
 			"container",
