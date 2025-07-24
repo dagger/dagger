@@ -1,11 +1,7 @@
----
-title: "Mount or copy a directory"
-description: "Learn how to mount or copy directories and remote repositories to containers using Dagger."
-cookbook_tag: filesystem
----
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+
+### Mount or copy a directory or remote repository to a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../..//extending/remote-repositories.mdx). It mounts the specified directory to the `/src` path in a container and returns the modified container.
 

@@ -1,11 +1,7 @@
----
-title: "Copy subset directory"
-description: "Learn how to copy a subset of a directory or remote repository to a container using filters specified at run-time."
-cookbook_tag: filesystem
----
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+
+### Copy a subset of a directory or remote repository to a container using filters specified at run-time
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../..//extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
 

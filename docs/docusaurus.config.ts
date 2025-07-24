@@ -4,6 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
+import path from "path";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
@@ -28,15 +29,6 @@ const config: Config = {
 
   onBrokenLinks: "throw",
   onBrokenMarkdownLinks: "throw",
-
-  // webpack: {
-  //   resolve: {
-  //     alias: {
-  //       '@cookbook': path.resolve(__dirname, 'current_docs/partials/cookbook'),
-  //       '@partials': path.resolve(__dirname, 'current_docs/partials'),
-  //     },
-  //   },
-  // },
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -66,7 +58,10 @@ const config: Config = {
           sidebarCollapsible: false,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
           remarkPlugins: [
-            [remarkCodeImport, { allowImportingFromOutside: true }],
+            [remarkCodeImport, { 
+              allowImportingFromOutside: true,
+              rootDir: path.resolve(__dirname, 'current_docs')
+            }],
             [remarkTemplate, { version: daggerVersion }],
           ],
         },
@@ -78,6 +73,26 @@ const config: Config = {
     ],
   ],
   plugins: [
+    // Custom webpack configuration for path aliases
+    function (context, options) {
+      return {
+        name: "custom-webpack-config",
+        configureWebpack(config, isServer, utils) {
+          return {
+            resolve: {
+              alias: {
+                '@cookbookPartials': path.resolve(__dirname, 'current_docs/partials/cookbook'),
+                '@cookbookSnippets': path.resolve(__dirname, 'current_docs/cookbook/snippets'),
+                '@partials': path.resolve(__dirname, 'current_docs/partials'),
+                '@snippets': path.resolve(__dirname, 'current_docs/snippets'),
+                '@components': path.resolve(__dirname, 'current_docs/components'),
+                '@examples': path.resolve(__dirname, 'current_docs/examples'),
+              },
+            },
+          };
+        },
+      };
+    },
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content

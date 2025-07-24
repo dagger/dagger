@@ -1,5 +1,6 @@
 ---
-title: "Filesystem"
+title: "Filesystem Cookbook"
+sidebar_label: "Filesystem"
 slug: /cookbook/filesystem
 description: "Learn how to mount or copy directories and remote repositories to containers using Dagger."
 ---
@@ -7,52 +8,32 @@ description: "Learn how to mount or copy directories and remote repositories to 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-import CloneRemoteGit from "@site/current_docs/partials/cookbook/clone-remote-git.mdx";
-import MountCopyDirectory from "@site/current_docs/partials/cookbook/mount-copy-directory.mdx";
-import ModifyCopiedDirectory from "@site/current_docs/partials/cookbook/modify-copied-directory.mdx";
-import CopySubsetDirectory from "@site/current_docs/partials/cookbook/copy-subset-directory.mdx";
-import CopyPredefinedFilters from "@site/current_docs/partials/cookbook/copy-predefined-filters.mdx";
-import MountCopyFile from "@site/current_docs/partials/cookbook/mount-copy-file.mdx";
-import CopyFileRuntime from "@site/current_docs/partials/cookbook/copy-file-runtime.mdx";
-import RequestFileHttp from "@site/current_docs/partials/cookbook/request-file-http.mdx";
-import SetModuleDefault from "@site/current_docs/partials/cookbook/set-module-default.mdx";
-
-# Filesystem Cookbook
+import CloneRemoteGit from "@cookbookPartials/clone-remote-git.mdx";
+import MountCopyDirectory from "@cookbookPartials/mount-copy-directory.mdx";
+import ModifyCopiedDirectory from "@cookbookPartials/modify-copied-directory.mdx";
+import CopySubsetDirectory from "@cookbookPartials/copy-subset-directory.mdx";
+import CopyPredefinedFilters from "@cookbookPartials/copy-predefined-filters.mdx";
+import MountCopyFile from "@cookbookPartials/mount-copy-file.mdx";
+import CopyFileRuntime from "@cookbookPartials/copy-file-runtime.mdx";
+import RequestFileHttp from "@cookbookPartials/request-file-http.mdx";
+import SetModuleDefault from "@cookbookPartials/set-module-default.mdx";
 
 This page contains practical examples for working with files and directories in Dagger. Each section below provides code examples in multiple languages and demonstrates different approaches to filesystem operations.
 
-## Clone remote Git
-
 <CloneRemoteGit />
-
-## Mount or copy a directory
 
 <MountCopyDirectory />
 
-## Modify a copied directory
-
 <ModifyCopiedDirectory />
-
-## Copy subset directory
 
 <CopySubsetDirectory />
 
-## Copy predefined filters
-
 <CopyPredefinedFilters />
-
-## Mount or copy file
 
 <MountCopyFile />
 
-## Copy file runtime
-
 <CopyFileRuntime />
 
-## Request file HTTP
-
 <RequestFileHttp />
-
-## Set module default
 
 <SetModuleDefault />

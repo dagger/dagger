@@ -1,11 +1,7 @@
----
-title: "Modify a copied directory"
-description: "Learn how to modify a copied directory or remote repository in a container using Dagger."
-cookbook_tag: filesystem
----
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+
+### Modify a copied directory or remote repository in a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../..//extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 

@@ -1,11 +1,7 @@
----
-title: "Clone remote Git"
-description: "Learn how to clone a remote Git repository into a container using Dagger."
-cookbook_tag: filesystem
----
-
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+
+### Clone a remote Git repository into a container
 
 The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
 

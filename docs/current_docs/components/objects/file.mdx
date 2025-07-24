@@ -1,14 +1,26 @@
 ---
 title: "File"
+description: "Learn about the File type in Dagger and how to use it for filesystem operations."
 ---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+import MountCopyFile from "@cookbookPartials/mount-copy-file.mdx";
+import CopyFileRuntime from "@cookbookPartials/copy-file-runtime.mdx";
+import RequestFileHttp from "@cookbookPartials/request-file-http.mdx";
 
 The `File` type represents a single file. Some of its important fields are:
 
-### Common operations
+## Common operations
 
 | Field | Description |
 |-------|-------------|
 | `contents` | Returns the contents of the file |
 | `export` | Writes the file to a path on the host |
 
-### Examples
+## Examples
+
+<MountCopyFile />
+<CopyFileRuntime />
+<RequestFileHttp />
