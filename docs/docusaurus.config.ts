@@ -87,6 +87,10 @@ const config: Config = {
                 '@snippets': path.resolve(__dirname, 'current_docs/snippets'),
                 '@components': path.resolve(__dirname, 'current_docs/components'),
                 '@examples': path.resolve(__dirname, 'current_docs/examples'),
+                '@features': path.resolve(__dirname, 'current_docs/features'),
+                '@reference': path.resolve(__dirname, 'current_docs/reference'),
+                '@extending': path.resolve(__dirname, 'current_docs/extending'),
+                '@cookbook': path.resolve(__dirname, 'current_docs/cookbook'),
               },
             },
           };
