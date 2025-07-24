@@ -17,29 +17,30 @@ func TestGetGitIgnoreIncludePaths(t *testing.T) {
 			name:       "root",
 			parentPath: "/",
 			hostPath:   "/",
-			expected:   []string{"/**/.gitignore"},
+			expected:   []string{"**/.gitignore"},
 		},
 		{
 			name:       "same root",
 			parentPath: "/foo/bar",
 			hostPath:   "/foo/bar",
-			expected:   []string{"/foo/bar/**/.gitignore"},
+			expected:   []string{"**/.gitignore"},
 		},
 		{
 			name:       "parent path is a parent directory",
 			parentPath: "/foo",
 			hostPath:   "/foo/bar/baz",
-			expected:   []string{"/foo/.gitignore", "/foo/bar/.gitignore", "/foo/bar/baz/**/.gitignore"},
+			expected:   []string{".gitignore", "bar/.gitignore", "bar/baz/**/.gitignore"},
 		},
 		{
 			name:       "parent path is / and host path is a children directory",
 			parentPath: "/",
 			hostPath:   "/foo/bar/baz",
-			expected:   []string{"/.gitignore", "/foo/.gitignore", "/foo/bar/.gitignore", "/foo/bar/baz/**/.gitignore"},
+			expected:   []string{".gitignore", "/foo/.gitignore", "/foo/bar/.gitignore", "/foo/bar/baz/**/.gitignore"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			result := getGitIgnoreIncludePaths(tc.parentPath, tc.hostPath)
+			result, err := getGitIgnoreIncludePaths(tc.parentPath, tc.hostPath)
+			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
 		})
 	}

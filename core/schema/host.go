@@ -378,6 +378,11 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
+	gitIgnoreIncludePath, err := getGitIgnoreIncludePaths(parentPath, hostPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
+	}
+
 	var directory dagql.ObjectResult[*core.Directory]
 	err = srv.Select(ctx, srv.Root(), &directory,
 		dagql.Selector{Field: "host"},
@@ -386,7 +391,7 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(parentPath)},
 				{Name: "include", Value: dagql.ArrayInput[dagql.String](
-					dagql.NewStringArray(getGitIgnoreIncludePaths(parentPath, hostPath)...),
+					dagql.NewStringArray(gitIgnoreIncludePath...),
 				)},
 			},
 		},
