@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -1217,6 +1216,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
+// FIXME: POC of loading .env.dagger.json
 func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[string]string, error) {
 	dag, err := srv.Server(ctx)
 	if err != nil {
@@ -1228,8 +1228,11 @@ func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[str
 	if err != nil {
 		return nil, err
 	}
-	var envConfigContents string
-	dag.Select(ctx, envConfigDir, &envConfigContents,
+	var (
+		envConfigContents string
+		envConfig         = map[string]string{}
+	)
+	if err := dag.Select(ctx, envConfigDir, &envConfigContents,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
@@ -1242,11 +1245,10 @@ func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[str
 		dagql.Selector{
 			Field: "contents",
 		},
-	)
-	if err != nil {
-		return nil, err
+	); err != nil {
+		// FIXME: gracefully handle non-existent file, without dropping legit errors
+		return envConfig, nil
 	}
-	var envConfig map[string]string
 	if err := json.Unmarshal([]byte(envConfigContents), &envConfig); err != nil {
 		return nil, err
 	}
@@ -1264,54 +1266,14 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	defer client.stateMu.Unlock()
 
 	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
-	// Find the eponym object (object with same name as module)
 	envConfig, err := srv.loadEnvConfig(ctx, mod)
 	if err != nil {
 		return err
 	}
-	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig)
-	err = func() error {
-		slog.Info("hooking into main module install", "module", mod.Name(), "module_bis", mod.OriginalName)
-		var mainObj *core.ObjectTypeDef
-		for _, typeDef := range mod.ObjectDefs {
-			if typeDef.AsObject.Valid {
-				objDef := typeDef.AsObject.Value
-				if strings.ToLower(objDef.OriginalName) == strings.ToLower(mod.OriginalName) {
-					mainObj = objDef
-					break
-				}
-			}
-		}
-
-		if mainObj == nil {
-			return fmt.Errorf("no main object found") // No eponym object found
-		}
-
-		// Check if it has a constructor
-		if !mainObj.Constructor.Valid {
-			slog.Info("main module has no constructor: %s", mod.Name())
-			return nil // No constructor
-		}
-
-		slog.Info("main module has a constructor: %s", mod.Name())
-
-		constructor := mainObj.Constructor.Value
-		dag, err := srv.Server(ctx)
-		if err != nil {
-			return err
-		}
-		for k, v := range envConfig {
-			slog.Info("injecting env config value", "key", k, "value", v)
-			if err := injectDefaultSecret(ctx, dag, constructor, k, v); err != nil {
-				return err
-			}
-		}
-		return nil
-	}()
-	if err != nil {
-		return fmt.Errorf("env override: %s", err.Error())
+	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig, "module.Name", mod.Name(), "module.OriginalName", mod.OriginalName)
+	if err := mod.OverrideArgs(ctx, envConfig); err != nil {
+		return err
 	}
-
 	err = srv.serveModule(client, mod)
 	if err != nil {
 		return err
