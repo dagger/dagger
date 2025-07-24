@@ -182,7 +182,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 					for _, child := range revealed.ChildSpans.Order {
 						// HACK: it's hacky to mutate the span snapshot directly here, the intent
 						// is for ShouldShow to pick it up.
-						child.Reveal = !child.Hidden(opts)
+						child.Reveal = true
 						if child.ActorEmoji == "" && revealed.ActorEmoji != "" {
 							child.ActorEmoji = revealed.ActorEmoji
 						}
