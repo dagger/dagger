@@ -33,6 +33,7 @@
     "posthog-docusaurus": "^2.0.4",
     "posthog-js": "^1.256.2",
     "prism-react-renderer": "^2.4.1",
+    "raw-loader": "^4.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "remark-code-import": "^1.2.0",

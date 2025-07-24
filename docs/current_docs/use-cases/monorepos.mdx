@@ -29,7 +29,7 @@ graph TD
     A[Top-level orchestrator module] --> E[Docs module]
 ```
 
-### Benefits
+#### Benefits
 
 Benefits of this pattern include:
 
@@ -37,7 +37,7 @@ Benefits of this pattern include:
 - **Code reuse**: There may be opportunities for sub-modules in different projects to import each other to reuse existing functionality.
 - **Improved performance**: The top-level module of a project can orchestrate the sub-modules using the language’s native concurrency features.
 
-## Shared Dagger Module
+### Shared Dagger Module
 
 An alternative approach is to create a single, shared automation module which all projects use and contribute to. This pattern is suitable when there are significant commonalities between the projects in the monorepo (e.g. a monorepo with only micro-services or only front-end applications).
 
@@ -47,7 +47,7 @@ graph TD
     A[Shared module] --> C[Microservice 2]
     A[Shared module] --> D[Microservice 3]
 ```
-### Benefits
+#### Benefits
 
 Benefits of this pattern include:
 
