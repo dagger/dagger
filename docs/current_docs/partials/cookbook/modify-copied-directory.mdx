@@ -4,7 +4,7 @@ description: "Learn how to modify a copied directory or remote repository in a c
 cookbook_tag: filesystem
 ---
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../../extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../..//extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::warning
 When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container **do not automatically transfer back to the host**. 
@@ -13,31 +13,31 @@ Data flows only one way between Dagger operations, because they are connected in
 :::
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../..//extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../../../snippets/copy-modify-dir/go/main.go
+```go file=../../cookbook/snippets/copy-modify-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../../../snippets/copy-modify-dir/python/main.py
+```python file=../../cookbook/snippets/copy-modify-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../../../snippets/copy-modify-dir/typescript/index.ts
+```typescript file=../../cookbook/snippets/copy-modify-dir/typescript/index.ts
 ```
 
 </TabItem>
 <TabItem value="php" label="PHP">
 
-```php file=../../../snippets/copy-modify-dir/php/src/MyModule.php
+```php file=../../cookbook/snippets/copy-modify-dir/php/src/MyModule.php
 ```
 
 </TabItem>

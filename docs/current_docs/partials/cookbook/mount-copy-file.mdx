@@ -4,24 +4,24 @@ description: "Learn how to mount or copy a local or remote file to a container u
 cookbook_tag: filesystem
 ---
 
-The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../../extending/remote-repositories.mdx). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../..//extending/remote-repositories.mdx). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../../../snippets/mount-file/go/main.go
+```go file=../../cookbook/snippets/mount-file/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../../../snippets/mount-file/python/main.py
+```python file=../../cookbook/snippets/mount-file/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../../../snippets/mount-file/typescript/index.ts
+```typescript file=../../cookbook/snippets/mount-file/typescript/index.ts
 ```
 
 </TabItem>
@@ -36,19 +36,19 @@ Besides helping with the final image size, mounts are more performant and resour
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../../../snippets/copy-file/go/main.go
+```go file=../../cookbook/snippets/copy-file/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../../../snippets/copy-file/python/main.py
+```python file=../../cookbook/snippets/copy-file/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../../../snippets/copy-file/typescript/index.ts
+```typescript file=../../cookbook/snippets/copy-file/typescript/index.ts
 ```
 
 </TabItem>
