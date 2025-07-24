@@ -4,6 +4,9 @@ description: "Learn how to mount or copy a local or remote file to a container u
 cookbook_tag: filesystem
 ---
 
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
 The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../..//extending/remote-repositories.mdx). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
 
 <Tabs groupId="language" queryString="sdk">
