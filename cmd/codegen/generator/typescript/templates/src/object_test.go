@@ -26,6 +26,20 @@ func TestObject(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
+func TestObjectCasingConsistency(t *testing.T) {
+	tmpl := templateHelper(t)
+
+	object := objectInit(t, JSONValueJSON)
+
+	var b bytes.Buffer
+	err := tmpl.ExecuteTemplate(&b, "object", object)
+	require.NoError(t, err)
+
+	want := updateAndGetFixtures(t, "testdata/object_json_test_want.ts", b.String())
+
+	require.Equal(t, want, b.String())
+}
+
 func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	t.Helper()
 	var object introspection.Type
@@ -55,6 +69,57 @@ func objectsInit(t *testing.T, jsonString string) introspection.Schema {
 	generator.SetSchemaParents(&schema)
 	return schema
 }
+
+var JSONValueJSON = `
+{
+  "kind": "OBJECT",
+  "name": "JSONValue",
+  "description": "",
+  "fields": [
+    {
+      "name": "bytes",
+      "description": "",
+      "args": [
+        {
+           "name": "pretty",
+           "description": "",
+           "type": {
+             "kind": "SCALAR",
+             "name": "Boolean",
+             "ofType": null
+           },
+           "defaultValue": null
+        },
+        {
+          "name": "indent",
+          "description": "",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int",
+            "ofType": null
+          },
+          "defaultValue": null
+        }
+      ],
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "JSON",
+          "ofType": null
+        }
+      },
+      "isDeprecated": false,
+      "deprecationReason": null
+    }
+  ],
+  "inputFields": null,
+  "interfaces": [],
+  "enumValues": null,
+  "possibleTypes": null
+}
+`
 
 var containerExecArgsJSON = `
       {
