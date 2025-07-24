@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -239,22 +240,30 @@ func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-func (m *MCP) Schema(ctx context.Context) (*dagql.Server, error) {
+func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 	return m.env.Self().deps.Schema(ctx)
 }
 
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
-	srv, err := m.Schema(ctx)
+	srv, err := m.Server(ctx)
 	if err != nil {
 		return nil, err
 	}
-	allTools := map[string]LLMTool{}
-	if err := m.allTypeTools(srv, allTools); err != nil {
+	schema := srv.Schema()
+	objectMethods := map[string]LLMTool{}
+	if err := m.reachableObjectMethods(srv, objectMethods); err != nil {
 		return nil, err
 	}
+	moduleTools := map[string]LLMTool{}
 	for _, mod := range m.env.Self().installedModules {
+		modTypeName := strcase.ToCamel(mod.Name())
+		modTypeDef := schema.Types[modTypeName]
 		for _, obj := range mod.ObjectDefs {
 			def := obj.AsObject.Value
+			if strcase.ToCamel(def.Name) != modTypeName {
+				// we're only concerned with the entrypoint object
+				continue
+			}
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
 				for _, arg := range def.Constructor.Value.Args {
@@ -268,9 +277,18 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 				// FIXME: better error
 				return nil, fmt.Errorf("module %s constructor has required arguments", mod.Name())
 			}
+			if err := m.typeTools(moduleTools, srv, schema, modTypeDef, def); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return m.Builtins(srv, allTools)
+	builtins, err := m.Builtins(srv, objectMethods)
+	if err != nil {
+		return nil, err
+	}
+	modTools := staticTools(moduleTools)
+	allTools := append(modTools, builtins...)
+	return allTools, nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -307,7 +325,7 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error {
+func (m *MCP) reachableObjectMethods(srv *dagql.Server, allTools map[string]LLMTool) error {
 	schema := srv.Schema()
 	typeNames := m.Types()
 	if m.env.Self().IsPrivileged() {
@@ -318,14 +336,14 @@ func (m *MCP) allTypeTools(srv *dagql.Server, allTools map[string]LLMTool) error
 		if !ok {
 			return fmt.Errorf("type %q not found", typeName)
 		}
-		if err := m.typeTools(allTools, srv, schema, typeDef); err != nil {
+		if err := m.typeTools(allTools, srv, schema, typeDef, nil); err != nil {
 			return fmt.Errorf("load %q tools: %w", typeName, err)
 		}
 	}
 	return nil
 }
 
-func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition) error {
+func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition, autoConstruct *ObjectTypeDef) error {
 	for _, field := range typeDef.Fields {
 		if _, found := m.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
@@ -363,7 +381,8 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			return fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeDef.Name == schema.Query.Name {
+		if typeDef.Name == schema.Query.Name ||
+			(autoConstruct != nil && allTools[toolName].Name == "") {
 			toolName = field.Name
 		} else {
 			toolName = typeDef.Name + "." + field.Name
@@ -375,7 +394,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			Schema:      toolSchema,
 			Strict:      false, // unused
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args)
+				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args, autoConstruct)
 			},
 		}
 	}
@@ -426,6 +445,8 @@ func (m *MCP) call(ctx context.Context,
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
+	// Whether the call should be made against a freshly constructed module
+	autoConstruct *ObjectTypeDef,
 ) (res string, rerr error) {
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
@@ -456,12 +477,11 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			res += fmt.Sprintf("\n\nFailed to capture logs: %v", err)
 		} else if len(logs) > 0 {
-			if len(logs) > llmLastLogs {
-				skipped := len(logs) - llmLastLogs
-				logs = append(
-					[]string{fmt.Sprintf("... skipped %d lines ...", skipped)},
-					logs[skipped:]...,
-				)
+			content := strings.Join(logs, "\n")
+			if len(content) > llmLogsMaxChars {
+				skipped := len(content) - llmLogsMaxChars
+				content = content[:llmLogsMaxChars]
+				content += fmt.Sprintf("[truncated %d characters]", skipped)
 			}
 			if !strings.HasSuffix(res, "\n") {
 				// avoid double trailing linebreak (e.g. pretty JSON)
@@ -469,7 +489,7 @@ func (m *MCP) call(ctx context.Context,
 			}
 			res += fmt.Sprintf("\n<logs>\n%s\n</logs>",
 				// avoid double trailing linebreak
-				strings.TrimSuffix(strings.Join(logs, "\n"), "\n"),
+				strings.TrimSuffix(content, "\n"),
 			)
 		}
 	}()
@@ -484,6 +504,40 @@ func (m *MCP) call(ctx context.Context,
 	var target dagql.AnyObjectResult
 	if m.env.Self().IsPrivileged() && selfType == schema.Query.Name {
 		target = srv.Root()
+	} else if autoConstruct != nil {
+		def := autoConstruct.Constructor
+		consArgs := []dagql.NamedInput{}
+		if def.Valid {
+			for _, arg := range def.Value.Args {
+				if arg.DefaultPath != "" {
+					dir := m.env.Self().Hostfs
+					if path.Clean(arg.DefaultPath) != "/" {
+						if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+							Field: "directory", // TODO: handle files too
+							Args: []dagql.NamedInput{
+								{
+									Name:  "path",
+									Value: dagql.String(arg.DefaultPath),
+								},
+							},
+						}); err != nil {
+							return "", err
+						}
+					}
+					consArgs = append(consArgs, dagql.NamedInput{
+						Name: arg.Name,
+						// NOTE: these are always nullable??? i guess??? cause it has a default/???
+						Value: dagql.Opt(dagql.NewID[*Directory](dir.ID())),
+					})
+				}
+			}
+		}
+		if err := srv.Select(ctx, srv.Root(), &target, dagql.Selector{
+			Field: gqlFieldName(selfType),
+			Args:  consArgs,
+		}); err != nil {
+			return "", err
+		}
 	} else {
 		self, ok := argsMap["self"]
 		if !ok {
@@ -595,28 +649,39 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 	}
 
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		log.Println("!!! UPDATING TO NEW ENVIRONMENT")
-		oldFS := m.env.Self().Hostfs.Self()
-		newFS := newEnv.Self().Hostfs.Self()
-		diffFS, err := newFS.Diff(ctx, oldFS)
+		// Hide this unless it fails, since it's just noise
+		ctx, span := Tracer(ctx).Start(ctx, "examine environment",
+			telemetry.Encapsulated())
+		oldFS := m.env.Self().Hostfs
+		newFS := newEnv.Self().Hostfs
+		var entries []string
+		err := srv.Select(ctx, newFS, &entries, dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "other",
+					Value: dagql.NewID[*Directory](oldFS.ID()),
+				},
+			},
+		}, dagql.Selector{
+			Field: "glob",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "pattern",
+					Value: dagql.NewString("**/*"),
+				},
+			},
+		})
+		defer telemetry.End(span, func() error { return err })
 		if err != nil {
 			return "", fmt.Errorf("failed to diff filesystems: %w", err)
 		}
-		entries, err := diffFS.Entries(ctx, ".")
-		if err != nil {
-			return "", fmt.Errorf("failed to get diff entries: %w", err)
-		}
 		msg := "Environment updated."
-		log.Println("!!! FILES CHANGED IN ENVIRONMENT:", entries)
 		if len(entries) > 0 {
 			msg += "\n\nFiles changed:\n- " + strings.Join(entries, "\n- ")
 		}
 		// Swap out the Env for the updated one
 		m.env = newEnv
-		// FIXME: improve?
-		// FIXME:
-		// FIXME:
-		// FIXME:
 		return msg, nil
 	}
 
@@ -758,9 +823,10 @@ func (m *MCP) toolCallToSelection(
 }
 
 const llmLastLogs = 10
+const llmLogsMaxChars = 30000
 
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
-	srv, err := m.Schema(ctx)
+	srv, err := m.Server(ctx)
 	if err != nil {
 		return fmt.Errorf("load schema: %w", err)
 	}
@@ -857,16 +923,16 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				slog.Warn("failed to unmarshal log attributes", "error", err)
 				continue
 			}
-			var eof bool
+			var skip bool
 			for _, attr := range logAttrs {
-				if attr.Key == telemetry.StdioEOFAttr {
+				if attr.Key == telemetry.StdioEOFAttr || attr.Key == telemetry.LogsVerboseAttr {
 					if attr.Value.GetBoolValue() {
-						eof = true
+						skip = true
 						break
 					}
 				}
 			}
-			if eof {
+			if skip {
 				// don't generate a line for EOF events
 				continue
 			}
@@ -887,7 +953,7 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				}
 				var isNoise bool
 				for _, attr := range spanAttrs {
-					if attr.Key == "dagger.io/llm" || attr.Key == telemetry.LogsVerboseAttr {
+					if attr.Key == "dagger.io/llm" {
 						if attr.Value.GetBoolValue() {
 							isNoise = true
 							break
@@ -1507,19 +1573,23 @@ NOTE: you must select methods before chaining them`,
 	}
 
 	if m.env.Self().staticTools {
-		staticTools := slices.Collect(maps.Values(allMethods))
-		for i := range staticTools {
-			// sanitize tool names; Foo.bar is more intuitive for call_method form
-			staticTools[i].Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).
-				ReplaceAllString(staticTools[i].Name, "_")
-		}
-		sort.Slice(staticTools, func(i, j int) bool {
-			return staticTools[i].Name < staticTools[j].Name
-		})
-		builtins = append(builtins, staticTools...)
+		builtins = append(builtins, staticTools(allMethods)...)
 	}
 
 	return builtins, nil
+}
+
+func staticTools(allMethods map[string]LLMTool) []LLMTool {
+	staticTools := slices.Collect(maps.Values(allMethods))
+	for i := range staticTools {
+		// sanitize tool names; Foo.bar is more intuitive for call_method form
+		staticTools[i].Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).
+			ReplaceAllString(staticTools[i].Name, "_")
+	}
+	sort.Slice(staticTools, func(i, j int) bool {
+		return staticTools[i].Name < staticTools[j].Name
+	})
+	return staticTools
 }
 
 type ChainedCall struct {
