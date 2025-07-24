@@ -539,7 +539,7 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //     Example: foo/bar stays foo/bar but foo becomes **/foo
 //
 //   - If a pattern is negative exclusion (starts with `!`) or targets directory only
-//     (ends with `/`), we treat is as a regular path then readd the exclusion to make
+//     (ends with `/`), we treat is as a regular path then read the exclusion to make
 //     sure the recusive pattern is applied if needed.
 //     Example: !foo becomes foo then **/foo then !**/foo
 func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []string {
@@ -605,7 +605,7 @@ func LoadGitIgnoreInDirectory(ctx context.Context, dir dagql.ObjectResult[*Direc
 		dagql.Selector{
 			Field: "glob",
 			Args: []dagql.NamedInput{
-				{Name: "pattern", Value: dagql.String("**.gitignore")},
+				{Name: "pattern", Value: dagql.String("**/.gitignore")},
 			},
 		},
 	)
