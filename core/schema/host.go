@@ -319,7 +319,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	if dotGitIgnoreParentPath != "" {
-		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, dotGitIgnoreParentPath)
+		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, dotGitIgnoreParentPath, args.Path)
 		if err != nil {
 			return i, fmt.Errorf("failed to load .gitignore patterns: %w", err)
 		}
@@ -372,7 +372,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	return core.MakeDirectoryContentHashed(ctx, bk, dir)
 }
 
-func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string) (patterns []string, rerr error) {
+func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, hostPath string) (patterns []string, rerr error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -385,7 +385,9 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string) (pat
 			Field: "directory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(parentPath)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray("**/.gitignore"))},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](
+					dagql.NewStringArray(getGitIgnoreIncludePaths(parentPath, hostPath)...),
+				)},
 			},
 		},
 	)
