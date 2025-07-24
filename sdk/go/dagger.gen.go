@@ -10451,7 +10451,14 @@ func (v ExistsType) Value() string {
 }
 
 func (v *ExistsType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *ExistsType) UnmarshalJSON(dt []byte) error {
@@ -10460,6 +10467,8 @@ func (v *ExistsType) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	case "DIRECTORY_TYPE":
 		*v = ExistsTypeDirectoryType
 	case "REGULAR_TYPE":
@@ -10467,7 +10476,7 @@ func (v *ExistsType) UnmarshalJSON(dt []byte) error {
 	case "SYMLINK_TYPE":
 		*v = ExistsTypeSymlinkType
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
