@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -73,3 +74,40 @@ var AllVersion = core.AllVersion
 
 type BeforeVersion = core.BeforeVersion
 type AfterVersion = core.AfterVersion
+
+// Return a list of paths to include .gitignore files based on parentPath and hostPath
+//
+// Example:
+//   - parentPath = "/foo/bar"
+//   - hostPath = "/foo/bar/baz"
+//   - .gitignore files will be loaded from the following paths:
+//   - /foo/bar/.gitignore
+//   - /foo/bar/baz/**.gitignore
+//
+// ---
+//   - parentPath = "/"
+//   - hostPath = "/foo/bar"
+//   - .gitignore files will be loaded from the following paths:
+//   - /.gitignore
+//   - /foo/.gitignore
+//   - /foo/bar/**.gitignore
+//
+// We assume the hostPath is always a child of the parentPath.
+func getGitIgnoreIncludePaths(parentPath string, hostPath string) []string {
+	var paths []string
+
+	current := hostPath
+	for {
+		if current == parentPath {
+			break
+		}
+
+		current = filepath.Dir(current)
+		paths = append([]string{filepath.Join(current, ".gitignore")}, paths...)
+	}
+
+	recursivePattern := filepath.Join(hostPath, "**", ".gitignore")
+	paths = append(paths, recursivePattern)
+
+	return paths
+}
