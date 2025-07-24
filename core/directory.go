@@ -563,8 +563,9 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		for _, glob := range globs {
 			rgArgs = append(rgArgs, "--glob="+glob)
 		}
-		for _, path := range paths {
-			rgArgs = append(rgArgs, path)
+		if len(paths) > 0 {
+			rgArgs = append(rgArgs, "--")
+			rgArgs = append(rgArgs, paths...)
 		}
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
