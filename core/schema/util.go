@@ -75,25 +75,21 @@ var AllVersion = core.AllVersion
 type BeforeVersion = core.BeforeVersion
 type AfterVersion = core.AfterVersion
 
-// Return a list of paths to include .gitignore files based on parentPath and hostPath
+// Return a list of paths to include .gitignore files rebased on parentPath from hostPath
 //
 // Example:
+//
 //   - parentPath = "/foo/bar"
 //   - hostPath = "/foo/bar/baz"
-//   - .gitignore files will be loaded from the following paths:
-//   - /foo/bar/.gitignore
-//   - /foo/bar/baz/**.gitignore
+//   - .gitignore files will be loaded from the following paths: [.gitignore, baz/**.gitignore]
 //
 // ---
 //   - parentPath = "/"
 //   - hostPath = "/foo/bar"
-//   - .gitignore files will be loaded from the following paths:
-//   - /.gitignore
-//   - /foo/.gitignore
-//   - /foo/bar/**.gitignore
+//   - .gitignore files will be loaded from the following paths: [.gitignore, foo/.gitignore, foo/bar/**.gitignore]
 //
 // We assume the hostPath is always a child of the parentPath.
-func getGitIgnoreIncludePaths(parentPath string, hostPath string) []string {
+func getGitIgnoreIncludePaths(parentPath string, hostPath string) ([]string, error) {
 	var paths []string
 
 	current := hostPath
@@ -103,11 +99,22 @@ func getGitIgnoreIncludePaths(parentPath string, hostPath string) []string {
 		}
 
 		current = filepath.Dir(current)
-		paths = append([]string{filepath.Join(current, ".gitignore")}, paths...)
+
+		currentRelPathFromCurrent, err := filepath.Rel(parentPath, current)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path from parent: %w", err)
+		}
+
+		paths = append([]string{filepath.Join(currentRelPathFromCurrent, ".gitignore")}, paths...)
 	}
 
-	recursivePattern := filepath.Join(hostPath, "**", ".gitignore")
+	hostRelPathFromParent, err := filepath.Rel(parentPath, hostPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relative path from parent: %w", err)
+	}
+
+	recursivePattern := filepath.Join(hostRelPathFromParent, "**", ".gitignore")
 	paths = append(paths, recursivePattern)
 
-	return paths
+	return paths, nil
 }
