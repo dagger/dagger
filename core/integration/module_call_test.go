@@ -822,7 +822,7 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -891,7 +891,7 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
