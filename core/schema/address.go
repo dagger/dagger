@@ -477,7 +477,30 @@ func (s *addressSchema) secret(
 	}
 	secret := inst.Self().Clone()
 	secret.OriginalAddress = r.Self()
-	return dagql.NewObjectResultForCurrentID(ctx, srv, secret)
+
+	res, err := dagql.NewObjectResultForCurrentID(ctx, srv, secret)
+	if err != nil {
+		return inst, err
+	}
+	if cacheKey != "" {
+		res = res.WithObjectDigest(dagql.HashFrom(cacheKey))
+	}
+
+	// this Secret return has a different ID than the real one created directly by the `secret` call,
+	// so we need to register it in the secret store too
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	secretStore, err := query.Secrets(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get secret store: %w", err)
+	}
+	if err := secretStore.AddSecret(res); err != nil {
+		return inst, fmt.Errorf("failed to add secret: %w", err)
+	}
+
+	return res, nil
 }
 
 func (s *addressSchema) service(

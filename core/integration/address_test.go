@@ -30,7 +30,7 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "env with cacheKey",
-			input:            "env://FOO?cacheKey=bar",
+			input:            "env://FOO?cacheKey=bar1",
 			expectedURI:      "env://FOO",
 			expectedCacheKey: "bar",
 		},
@@ -43,7 +43,7 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "file with cacheKey",
-			input:            "file:///home/user/.ssh/id_rsa?cacheKey=bar",
+			input:            "file:///home/user/.ssh/id_rsa?cacheKey=bar2",
 			expectedURI:      "file:///home/user/.ssh/id_rsa",
 			expectedCacheKey: "bar",
 		},
@@ -56,7 +56,7 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "cmd with cacheKey",
-			input:            "cmd://echo foo?cacheKey=bar",
+			input:            "cmd://echo foo?cacheKey=bar3",
 			expectedURI:      "cmd://echo foo",
 			expectedCacheKey: "bar",
 		},
@@ -69,19 +69,19 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "op with cacheKey",
-			input:            "op://foo?cacheKey=bar",
+			input:            "op://foo?cacheKey=barr4",
 			expectedURI:      "op://foo",
 			expectedCacheKey: "bar",
 		},
 		{
 			name:             "op with cacheKey and other query params",
-			input:            "op://foo?cacheKey=bar&other=param",
+			input:            "op://foo?cacheKey=bar5&other=param",
 			expectedURI:      "op://foo?other=param",
 			expectedCacheKey: "bar",
 		},
 		{
 			name:             "op with cacheKey and other query params different order",
-			input:            "op://foo?other=param&cacheKey=bar",
+			input:            "op://foo?other=param&cacheKey=bar6",
 			expectedURI:      "op://foo?other=param",
 			expectedCacheKey: "bar",
 		},
@@ -94,13 +94,13 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "vault with cacheKey",
-			input:            "vault://foo?cacheKey=bar",
+			input:            "vault://foo?cacheKey=bar7",
 			expectedURI:      "vault://foo",
 			expectedCacheKey: "bar",
 		},
 		{
 			name:             "vault with cacheKey and other query params",
-			input:            "vault://foo?cacheKey=bar&other=param",
+			input:            "vault://foo?cacheKey=bar8&other=param",
 			expectedURI:      "vault://foo?other=param",
 			expectedCacheKey: "bar",
 		},
@@ -113,13 +113,13 @@ func (AddressSuite) TestSecretParse(ctx context.Context, t *testctx.T) {
 		},
 		{
 			name:             "libsecret with cacheKey",
-			input:            "libsecret://foo?cacheKey=bar",
+			input:            "libsecret://foo?cacheKey=bar9",
 			expectedURI:      "libsecret://foo",
 			expectedCacheKey: "bar",
 		},
 		{
 			name:             "libsecret with cacheKey and other query params",
-			input:            "libsecret://foo?cacheKey=bar&other=param",
+			input:            "libsecret://foo?cacheKey=bar10&other=param",
 			expectedURI:      "libsecret://foo?other=param",
 			expectedCacheKey: "bar",
 		},
