@@ -283,7 +283,10 @@ var TypesHiddenFromEnvExtensions = []dagql.Typed{
 	&CurrentModule{},
 	&EnumTypeDef{},
 	&EnumMemberTypeDef{},
-	&Env{},
+	// &Env{},
+	// returning an LLM lets agents go completely off the wall and spawn infinite
+	// sub-agents
+	&LLM{},
 	&Error{},
 	&ErrorValue{},
 	&FieldTypeDef{},
