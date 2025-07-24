@@ -325,12 +325,11 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 		if err != nil {
 			return err
 		}
-		rgArgs := []string{"--json"}
-		rgArgs = append(rgArgs, opts.RipgrepArgs()...)
+		rgArgs := opts.RipgrepArgs()
 		rgArgs = append(rgArgs, filepath.Base(file.File))
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
-		results, err = runRipgrep(ctx, rg)
+		results, err = opts.RunRipgrep(ctx, rg)
 		return err
 	})
 	if err != nil {

@@ -1655,6 +1655,90 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.Contains(t, matches, "subdir/file3.txt:2:World tour.")
 	})
 
+	t.Run("files-only search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "World", dagger.DirectorySearchOpts{
+			FilesOnly: true,
+		})
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			require.Zero(t, lineNumber)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Empty(t, matchedText)
+			matches = append(matches, filePath)
+		}
+
+		// Check that we have all expected matches
+		require.ElementsMatch(t, matches, []string{"file1.txt", "subdir/file3.txt"})
+	})
+
+	t.Run("limiting results", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file3.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file4.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file5.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file6.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file7.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "another", dagger.DirectorySearchOpts{
+			Limit: 3,
+		})
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches
+		// Check that we get exactly 3 matches from the possible files
+		require.Len(t, matches, 3)
+
+		// Define all possible matches since order is not stable
+		possibleMatches := []string{
+			"file2.txt:2:This is another test file.",
+			"file3.txt:2:This is another test file.",
+			"file4.txt:2:This is another test file.",
+			"file5.txt:2:This is another test file.",
+			"file6.txt:2:This is another test file.",
+			"file7.txt:2:This is another test file.",
+		}
+
+		// Verify that all 3 matches are from the possible set and are distinct
+		matchSet := make(map[string]bool)
+		for _, match := range matches {
+			require.Contains(t, possibleMatches, match, "unexpected match: %s", match)
+			require.False(t, matchSet[match], "duplicate match: %s", match)
+			matchSet[match] = true
+		}
+	})
+
 	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

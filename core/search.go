@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -36,7 +37,8 @@ type SearchOpts struct {
 	Multiline  bool `default:"false"`
 	Dotall     bool `default:"false"`
 	IgnoreCase bool `default:"false"`
-	Content    bool `default:"false"`
+	FilesOnly  bool `default:"false"`
+	Limit      *int
 }
 
 func (opts SearchOpts) Args() []dagql.Argument {
@@ -46,7 +48,8 @@ func (opts SearchOpts) Args() []dagql.Argument {
 		dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 		dagql.Arg("dotall").Doc(`Allow the . pattern to match newlines in multiline mode.`),
 		dagql.Arg("ignoreCase").Doc(`Enable case-insensitive matching.`),
-		dagql.Arg("content").Doc("Show matched content, instead of just listing matching files"),
+		dagql.Arg("filesOnly").Doc(`Only return matching files, not lines and content`),
+		dagql.Arg("limit").Doc(`Limit the number of results to return`),
 	}
 }
 
@@ -64,7 +67,13 @@ func (opts SearchOpts) RipgrepArgs() []string {
 	if opts.IgnoreCase {
 		args = append(args, "--ignore-case")
 	}
-	// NOTE: opts.Content is respected externally, since -l overrides --json
+	if opts.FilesOnly {
+		args = append(args, "--files-with-matches")
+	} else {
+		args = append(args, "--json")
+	}
+	// NOTE: opts.Limit is handled while parsing results; there isn't a flag to
+	// limit total results, only to limit results per file
 	args = append(args, opts.Pattern)
 	return args
 }
@@ -103,7 +112,7 @@ type rgContent struct {
 	Bytes []byte `json:"bytes,omitempty"`
 }
 
-func runRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
+func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
@@ -119,7 +128,7 @@ func runRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
 		return nil, err
 	}
 	var errs error
-	results, err := parseRgOutput(ctx, out, stdio.Stdout)
+	results, err := opts.parseRgOutput(ctx, out, stdio.Stdout)
 	if err != nil {
 		// NOTE: probably overkill, but trying to avoid ever seeing a useless error
 		// like "broken pipe" instead of "exit status 128"
@@ -138,9 +147,27 @@ func runRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
 	return results, errs
 }
 
-func parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*SearchResult, error) {
+func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*SearchResult, error) {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
 	results := []*SearchResult{}
+
+	// Only requested files; parse returned paths
+	if opts.FilesOnly {
+		scan := bufio.NewScanner(rgOut)
+		for scan.Scan() {
+			line := scan.Text()
+			if line == "" {
+				continue
+			}
+			results = append(results, &SearchResult{FilePath: line})
+		}
+		if err := scan.Err(); err != nil {
+			return results, err
+		}
+		return results, nil
+	}
+
 	dec := json.NewDecoder(rgOut)
 	for {
 		var match rgJSON
@@ -176,6 +203,9 @@ func parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*Sea
 		fmt.Fprintf(logs, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
 
 		results = append(results, result)
+		if opts.Limit != nil && len(results) >= *opts.Limit {
+			break
+		}
 	}
 	return results, nil
 }

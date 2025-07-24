@@ -470,7 +470,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		matchedText0, err := results[0].MatchedLines(ctx)
 		require.NoError(t, err)
-		require.Equal(t, filePath0, "/test.txt") // May have leading slash
+		require.Equal(t, "test.txt", filePath0)
 		require.Equal(t, 1, lineNumber0)
 		require.Contains(t, matchedText0, "Hello, World!\n")
 
@@ -480,7 +480,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		matchedText1, err := results[1].MatchedLines(ctx)
 		require.NoError(t, err)
-		require.Equal(t, filePath1, "/test.txt") // May have leading slash
+		require.Equal(t, "test.txt", filePath1)
 		require.Equal(t, 3, lineNumber1)
 		require.Contains(t, matchedText1, "World is great.\n")
 
@@ -490,7 +490,7 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		matchedText2, err := results[2].MatchedLines(ctx)
 		require.NoError(t, err)
-		require.Equal(t, filePath2, "/test.txt") // May have leading slash
+		require.Equal(t, "test.txt", filePath2)
 		require.Equal(t, 4, lineNumber2)
 		require.Equal(t, matchedText2, "Goodbye, World!")
 	})
@@ -528,8 +528,8 @@ func main() {
 		}
 
 		// Check for the specific assignments we expect (may have different formatting)
-		require.Contains(t, matches, "/code.go:6:\tname := \"Alice\"\n")
-		require.Contains(t, matches, "/code.go:7:\tage := 30\n")
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n")
+		require.Contains(t, matches, "code.go:7:\tage := 30\n")
 	})
 
 	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
@@ -574,8 +574,8 @@ func another() {
 		}
 
 		// Check for the specific assignments we expect (may have different formatting)
-		require.Contains(t, matches, "/dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
-		require.Contains(t, matches, "/dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "code.go:12:\tname := \"Alice\"\n\tage := 50\n")
 	})
 
 	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
@@ -619,8 +619,8 @@ func another() {
 		}
 
 		// Check for the specific assignments we expect (may have different formatting)
-		require.Contains(t, matches, "/dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
-		require.Contains(t, matches, "/dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "code.go:12:\tname := \"Alice\"\n\tage := 50\n")
 	})
 
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {

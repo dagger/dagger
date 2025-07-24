@@ -546,20 +546,13 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
 
-	const maxResults = 1000
-
 	results := []*SearchResult{}
 	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
 		}
-		rgArgs := []string{
-			"--json",
-			// Avoid logging too many results; we check
-			fmt.Sprintf("--max-count=%d", maxResults+1),
-		}
-		rgArgs = append(rgArgs, opts.RipgrepArgs()...)
+		rgArgs := opts.RipgrepArgs()
 		for _, glob := range globs {
 			rgArgs = append(rgArgs, "--glob="+glob)
 		}
@@ -569,28 +562,11 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		}
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
-		results, err = runRipgrep(ctx, rg)
+		results, err = opts.RunRipgrep(ctx, rg)
 		return err
 	})
 	if err != nil {
 		return nil, err
-	}
-	// If the content is not requested, reduce down to just listing filenames.
-	if !opts.Content {
-		filesOnly := []*SearchResult{}
-		seen := map[string]bool{}
-		for _, result := range results {
-			if !seen[result.FilePath] {
-				filesOnly = append(filesOnly, &SearchResult{
-					FilePath: result.FilePath,
-				})
-				seen[result.FilePath] = true
-			}
-		}
-		results = filesOnly
-	}
-	if len(results) > maxResults {
-		return nil, fmt.Errorf("too many results")
 	}
 	return results, nil
 }
