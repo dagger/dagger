@@ -475,19 +475,25 @@ func (m *MCP) call(ctx context.Context,
 	defer func() {
 		logs, err := m.captureLogs(ctx)
 		if err != nil {
-			res += fmt.Sprintf("\n\nFailed to capture logs: %v", err)
+			if res != "" {
+				res += "\n\n"
+			}
+			res += fmt.Sprintf("WARNING: Failed to capture logs (%v)", err)
 		} else if len(logs) > 0 {
 			content := strings.Join(logs, "\n")
 			if len(content) > llmLogsMaxChars {
 				skipped := len(content) - llmLogsMaxChars
-				content = content[:llmLogsMaxChars]
-				content += fmt.Sprintf("[truncated %d characters]", skipped)
+				content = content[skipped:]
+				content = fmt.Sprintf("[truncated %d characters]\n", skipped) + content
 			}
-			if !strings.HasSuffix(res, "\n") {
-				// avoid double trailing linebreak (e.g. pretty JSON)
+			if res != "" {
+				if !strings.HasSuffix(res, "\n") {
+					// avoid double trailing linebreak (e.g. pretty JSON)
+					res += "\n"
+				}
 				res += "\n"
 			}
-			res += fmt.Sprintf("\n<logs>\n%s\n</logs>",
+			res += fmt.Sprintf("<logs>\n%s\n</logs>",
 				// avoid double trailing linebreak
 				strings.TrimSuffix(content, "\n"),
 			)
@@ -751,6 +757,11 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
 		// Unwrap any Result[T]s
 		val = anyRes.Unwrap()
+	}
+
+	if val == (Void{}) {
+		// TODO: should there be a message here?
+		return "", nil
 	}
 
 	// Handle scalars or arrays of scalars.
