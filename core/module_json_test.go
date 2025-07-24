@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const defaultModuleJson = `{
+const defaultModuleJSON = `{
   "description": "A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.",
   "enums": [],
   "interfaces": [],
@@ -20,7 +20,52 @@ const defaultModuleJson = `{
       "kind": "OBJECT_KIND",
       "optional": false,
       "values": {
-        "Constructor": null,
+        "Constructor": {
+          "Args": [
+            {
+              "DefaultPath": "",
+              "DefaultValue": "\"foo\"",
+              "Description": "",
+              "Ignore": null,
+              "Name": "stringArg",
+              "OriginalName": "stringArg",
+              "SourceMap": {
+                "Column": 34,
+                "Filename": "main.go",
+                "Line": 22,
+                "Module": ""
+              },
+              "TypeDef": {
+                "kind": "STRING_KIND",
+                "optional": false
+              }
+            }
+          ],
+          "Description": "Creates a new MyModule",
+          "Name": "",
+          "OriginalName": "",
+          "ParentOriginalName": "MyModule",
+          "ReturnType": {
+            "kind": "OBJECT_KIND",
+            "optional": false,
+            "values": {
+              "Constructor": null,
+              "Description": "",
+              "Fields": [],
+              "Functions": [],
+              "Name": "MyModule",
+              "OriginalName": "MyModule",
+              "SourceMap": null,
+              "SourceModuleName": ""
+            }
+          },
+          "SourceMap": {
+            "Column": 6,
+            "Filename": "main.go",
+            "Line": 22,
+            "Module": ""
+          }
+        },
         "Description": "",
         "Fields": [],
         "Functions": [
@@ -150,12 +195,45 @@ const defaultModuleJson = `{
   "originalName": ""
 }`
 
-const defaultModuleJsonShort = `{
+const defaultModuleJSONShort = `{
   "description": "A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.",
   "objects": [
     {
       "kind": "OBJECT_KIND",
       "values": {
+		"Constructor": {
+          "Args": [
+            {
+              "DefaultValue": "\"foo\"",
+              "Name": "stringArg",
+              "OriginalName": "stringArg",
+              "SourceMap": {
+                "Column": 34,
+                "Filename": "main.go",
+                "Line": 22
+              },
+              "TypeDef": {
+                "kind": "STRING_KIND"
+              }
+            }
+          ],
+          "Description": "Creates a new MyModule",
+          "Name": "",
+          "OriginalName": "",
+          "ParentOriginalName": "MyModule",
+          "ReturnType": {
+            "kind": "OBJECT_KIND",
+            "values": {
+              "Name": "MyModule",
+              "OriginalName": "MyModule"
+            }
+          },
+          "SourceMap": {
+            "Column": 6,
+            "Filename": "main.go",
+            "Line": 22
+          }
+        },
         "Functions": [
           {
             "Args": [
@@ -269,6 +347,14 @@ func TestModuleJSON_toJson(t *testing.T) {
 			WithArg("pattern", (&TypeDef{}).WithKind(TypeDefKindString), "", JSON("\"foo\""), "", nil, &SourceMap{Filename: "main.go", Line: 30, Column: 81}))
 	require.NoError(t, err)
 
+	td, err = td.WithObjectConstructor(
+		NewFunction("New", // this will be emptied by the WithObjectConstructor call
+			(&TypeDef{}).WithObject("MyModule", "", nil)).
+			WithDescription("Creates a new MyModule").
+			WithSourceMap(&SourceMap{Filename: "main.go", Line: 22, Column: 6}).
+			WithArg("stringArg", (&TypeDef{}).WithKind(TypeDefKindString), "", JSON("\"foo\""), "", nil, &SourceMap{Filename: "main.go", Line: 22, Column: 34}))
+	require.NoError(t, err)
+
 	m, err := (&Module{}).
 		WithDescription("A generated module for MyModule functions\n\nThis module has been generated via dagger init and serves as a reference to\nbasic module structure as you get started with Dagger.\n\nTwo functions have been pre-created. You can modify, delete, or add to them,\nas needed. They demonstrate usage of arguments and return types using simple\necho and grep commands. The functions can be called from the dagger CLI or\nfrom one of the SDKs.\n\nThe first line in this comment block is a short description line and the\nrest is a long description with more detail on the module's purpose or usage,\nif appropriate. All modules should have a short description.").
 		WithObject(t.Context(), td)
@@ -282,11 +368,11 @@ func TestModuleJSON_toJson(t *testing.T) {
 	prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
 	prettyString := string(prettyBytes)
 
-	assert.Equal(t, defaultModuleJson, prettyString)
+	assert.Equal(t, defaultModuleJSON, prettyString)
 }
 
 func TestModuleJSON_loopJson(t *testing.T) {
-	m, err := ModuleFromJSONString(defaultModuleJsonShort)
+	m, err := ModuleFromJSONString(defaultModuleJSONShort)
 	require.NoError(t, err)
 	str, err := m.ToJSONString()
 	require.NoError(t, err)
@@ -296,11 +382,11 @@ func TestModuleJSON_loopJson(t *testing.T) {
 	prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
 	prettyString := string(prettyBytes)
 
-	assert.Equal(t, defaultModuleJson, prettyString)
+	assert.Equal(t, defaultModuleJSON, prettyString)
 }
 
 func TestModuleJSON_fromJson(t *testing.T) {
-	m, err := ModuleFromJSONString(defaultModuleJsonShort)
+	m, err := ModuleFromJSONString(defaultModuleJSONShort)
 	require.NoError(t, err)
 	assert.Equal(t, "", m.NameField)
 	assert.Equal(t, "", m.OriginalName)
