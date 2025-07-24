@@ -124,7 +124,7 @@ html[data-theme="dark"] {
   }
 }
 
-/* Docs Sidebar Styling - Remove all borders */
+/* Docs Sidebar Styling - Remove all borders and extend full height */
 .theme-doc-sidebar-container,
 div[class*="docSidebarContainer"],
 .docs-sidebar,
@@ -133,11 +133,38 @@ aside[class*="docSidebarContainer"] {
   border-right: none !important;
   border-left: none !important;
   box-shadow: none !important;
+  
+  @include desktop {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    position: sticky !important;
+    top: 0 !important;
+  }
+  
+  @include tablet {
+    height: auto !important;
+    min-height: auto !important;
+    position: relative !important;
+  }
 }
 
 .menu {
   border: none !important;
   border-right: none !important;
+  
+  @include desktop {
+    height: 100% !important;
+    overflow-y: auto !important;
+    padding-bottom: 2rem !important;
+    
+    /* Hide scrollbar but keep scroll functionality */
+    scrollbar-width: none !important; /* Firefox */
+    -ms-overflow-style: none !important; /* Internet Explorer 10+ */
+    
+    &::-webkit-scrollbar {
+      display: none !important; /* WebKit browsers (Chrome, Safari, Edge) */
+    }
+  }
 }
 
 /* Ensure no borders on the navigation elements within the docs sidebar */
