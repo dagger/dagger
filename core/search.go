@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -126,7 +127,7 @@ func runRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
 	}
 	if err := rg.Wait(); err != nil {
 		if rg.ProcessState != nil && rg.ProcessState.ExitCode() == 1 {
-			return nil, fmt.Errorf("no matches found")
+			return []*SearchResult{}, nil
 		}
 		if errBuf.Len() > 0 {
 			errs = errors.Join(errs, fmt.Errorf("ripgrep error: %s", errBuf.String()))
@@ -154,13 +155,11 @@ func parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*Sea
 		}
 		data := match.Data
 		if len(match.Data.Path.Bytes) > 0 {
-			slog.Warn("skipping non-utf8 path",
-				"path", base64.StdEncoding.EncodeToString(data.Path.Bytes))
+			slog.Warn("skipping non-utf8 content", "content", base64.StdEncoding.EncodeToString(data.Path.Bytes))
 			continue
 		}
 		if len(data.Lines.Bytes) > 0 {
-			slog.Warn("skipping non-utf8 path",
-				"path", base64.StdEncoding.EncodeToString(data.Lines.Bytes))
+			slog.Warn("skipping non-utf8 path", "content", base64.StdEncoding.EncodeToString(data.Lines.Bytes))
 			continue
 		}
 
