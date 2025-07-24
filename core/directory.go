@@ -38,8 +38,9 @@ type Directory struct {
 	LLB    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
-	Dir      string
-	Platform Platform
+	Dir             string
+	Platform        Platform
+	OriginalAddress *Address
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
