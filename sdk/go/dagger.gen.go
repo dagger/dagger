@@ -253,6 +253,9 @@ type SDKConfigID string
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 type ScalarTypeDefID string
 
+// The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+type SearchResultID string
+
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
 
@@ -427,6 +430,15 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	q := r.query.Select("asModuleSource")
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SearchResult
+func (r *Binding) AsSearchResult() *SearchResult {
+	q := r.query.Select("asSearchResult")
+
+	return &SearchResult{
 		query: q,
 	}
 }
@@ -3011,6 +3023,96 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// DirectorySearchOpts contains options for Directory.Search
+type DirectorySearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	IgnoreCase bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *Directory) Search(ctx context.Context, pattern string, opts ...DirectorySearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `ignoreCase` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IgnoreCase) {
+			q = q.Arg("ignoreCase", opts[i].IgnoreCase)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
@@ -4427,6 +4529,30 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type SearchResult in the environment
+func (r *Env) WithSearchResultInput(name string, value *SearchResult, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSearchResultInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired SearchResult output to be assigned in the environment
+func (r *Env) WithSearchResultOutput(name string, description string) *Env {
+	q := r.query.Select("withSearchResultOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Secret in the environment
 func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
 	assertNotNil("value", value)
@@ -4929,12 +5055,30 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	}
 }
 
+// FileContentsOpts contains options for File.Contents
+type FileContentsOpts struct {
+	// Start reading after this line
+	Offset int
+	// Maximum number of lines to read
+	Limit int
+}
+
 // Retrieves the contents of the file.
-func (r *File) Contents(ctx context.Context) (string, error) {
+func (r *File) Contents(ctx context.Context, opts ...FileContentsOpts) (string, error) {
 	if r.contents != nil {
 		return *r.contents, nil
 	}
 	q := r.query.Select("contents")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `offset` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Offset) {
+			q = q.Arg("offset", opts[i].Offset)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
 
 	var response string
 
@@ -5044,6 +5188,96 @@ func (r *File) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// FileSearchOpts contains options for File.Search
+type FileSearchOpts struct {
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	IgnoreCase bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+
+	Paths []string
+
+	Globs []string
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `ignoreCase` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IgnoreCase) {
+			q = q.Arg("ignoreCase", opts[i].IgnoreCase)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Retrieves the size of the file, in bytes.
@@ -9073,6 +9307,16 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	}
 }
 
+// Load a SearchResult from its ID.
+func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+	q := r.query.Select("loadSearchResultFromID")
+	q = q.Arg("id", id)
+
+	return &SearchResult{
+		query: q,
+	}
+}
+
 // Load a Secret from its ID.
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
@@ -9407,6 +9651,97 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 		return *r.sourceModuleName, nil
 	}
 	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type SearchResult struct {
+	query *querybuilder.Selection
+
+	filePath     *string
+	id           *SearchResultID
+	lineNumber   *int
+	matchedLines *string
+}
+
+func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult {
+	return &SearchResult{
+		query: q,
+	}
+}
+
+func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
+	if r.filePath != nil {
+		return *r.filePath, nil
+	}
+	q := r.query.Select("filePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this SearchResult.
+func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SearchResultID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SearchResult) XXX_GraphQLType() string {
+	return "SearchResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SearchResult) XXX_GraphQLIDType() string {
+	return "SearchResultID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SearchResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SearchResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *SearchResult) LineNumber(ctx context.Context) (int, error) {
+	if r.lineNumber != nil {
+		return *r.lineNumber, nil
+	}
+	q := r.query.Select("lineNumber")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *SearchResult) MatchedLines(ctx context.Context) (string, error) {
+	if r.matchedLines != nil {
+		return *r.matchedLines, nil
+	}
+	q := r.query.Select("matchedLines")
 
 	var response string
 

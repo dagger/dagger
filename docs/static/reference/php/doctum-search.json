@@ -1018,6 +1018,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\SearchResult",
+			"p": "Dagger/SearchResult.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SearchResultId",
+			"p": "Dagger/SearchResultId.html",
+			"d": "<p>The <code>SearchResultID</code> scalar type represents an identifier for an object of type SearchResult.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Secret",
 			"p": "Dagger/Secret.html",
 			"d": "<p>A reference to a secret value, which can be handled more safely than the value itself.</p>",
@@ -1258,6 +1278,12 @@
 			"n": "Dagger\\Binding::asModuleSource",
 			"p": "Dagger/Binding.html#method_asModuleSource",
 			"d": "<p>Retrieve the binding value, as type ModuleSource</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSearchResult",
+			"p": "Dagger/Binding.html#method_asSearchResult",
+			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
 		},
 		{
 			"t": "M",
@@ -1666,6 +1692,12 @@
 			"n": "Dagger\\Client::loadScalarTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadScalarTypeDefFromID",
 			"d": "<p>Load a ScalarTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadSearchResultFromID",
+			"p": "Dagger/Client.html#method_loadSearchResultFromID",
+			"d": "<p>Load a SearchResult from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2437,6 +2469,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::search",
+			"p": "Dagger/Directory.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::sync",
 			"p": "Dagger/Directory.html#method_sync",
 			"d": "<p>Force evaluation in the engine.</p>"
@@ -2881,6 +2919,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withSearchResultInput",
+			"p": "Dagger/Env.html#method_withSearchResultInput",
+			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchResultOutput",
+			"p": "Dagger/Env.html#method_withSearchResultOutput",
+			"d": "<p>Declare a desired SearchResult output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withSecretInput",
 			"p": "Dagger/Env.html#method_withSecretInput",
 			"d": "<p>Create or update a binding of type Secret in the environment</p>"
@@ -3046,6 +3096,12 @@
 			"n": "Dagger\\File::name",
 			"p": "Dagger/File.html#method_name",
 			"d": "<p>Retrieves the name of the file.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::search",
+			"p": "Dagger/File.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
 		},
 		{
 			"t": "M",
@@ -4126,6 +4182,30 @@
 			"n": "Dagger\\ScalarTypeDef::sourceModuleName",
 			"p": "Dagger/ScalarTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::filePath",
+			"p": "Dagger/SearchResult.html#method_filePath",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::id",
+			"p": "Dagger/SearchResult.html#method_id",
+			"d": "<p>A unique identifier for this SearchResult.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::lineNumber",
+			"p": "Dagger/SearchResult.html#method_lineNumber",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::matchedLines",
+			"p": "Dagger/SearchResult.html#method_matchedLines",
+			"d": null
 		},
 		{
 			"t": "M",

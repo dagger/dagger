@@ -29,7 +29,11 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("contents", s.contents).
-			Doc(`Retrieves the contents of the file.`),
+			Doc(`Retrieves the contents of the file.`).
+			Args(
+				dagql.Arg("offset").Doc(`Start reading after this line`),
+				dagql.Arg("limit").Doc(`Maximum number of lines to read`),
+			),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
@@ -48,6 +52,13 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`Name to set file to.`),
 			),
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
+			Doc(
+				// NOTE: sync with Directory.search
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+			).
+			Args((core.SearchOpts{}).Args()...),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -78,8 +89,11 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
-func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	content, err := file.Contents(ctx)
+func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
+	Offset *int
+	Limit  *int
+}) (dagql.String, error) {
+	content, err := file.Contents(ctx, args.Offset, args.Limit)
 	if err != nil {
 		return "", err
 	}
@@ -124,6 +138,10 @@ func (s *fileSchema) withName(ctx context.Context, parent *core.File, args fileW
 type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
+}
+
+func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.SearchOpts)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {
