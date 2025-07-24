@@ -35,7 +35,7 @@ func TestGetGitIgnoreIncludePaths(t *testing.T) {
 			name:       "parent path is / and host path is a children directory",
 			parentPath: "/",
 			hostPath:   "/foo/bar/baz",
-			expected:   []string{".gitignore", "/foo/.gitignore", "/foo/bar/.gitignore", "/foo/bar/baz/**/.gitignore"},
+			expected:   []string{".gitignore", "foo/.gitignore", "foo/bar/.gitignore", "foo/bar/baz/**/.gitignore"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
