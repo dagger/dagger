@@ -272,7 +272,7 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 		}, nil
 	}
 
-	if res.refCount == 0 {
+	if res.refCount == 0 && res.waiters == 0 {
 		// error happened and no refs left, delete it now
 		delete(c.ongoingCalls, key)
 		delete(c.completedCalls, key)
