@@ -169,9 +169,11 @@ func parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*Sea
 			MatchedLines: data.Lines.Text,
 		}
 
-		// NOTE: MatchedText includes trailing linebreaks, so we don't need an
-		// extra one here
-		fmt.Fprintf(logs, "%s:%d:%s", result.FilePath, result.LineNumber, result.MatchedLines)
+		ensureLn := result.MatchedLines
+		if !strings.HasSuffix(ensureLn, "\n") {
+			ensureLn += "\n"
+		}
+		fmt.Fprintf(logs, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
 
 		results = append(results, result)
 	}
