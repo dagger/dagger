@@ -1626,9 +1626,9 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 }
 
 func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
 			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
@@ -1657,6 +1657,8 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("main.go", "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}").
 			WithNewFile("test.go", "package main\n\nfunc TestSomething() {\n\t// test code\n}").
@@ -1687,6 +1689,8 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("dir/code.go", `package main
 
@@ -1727,6 +1731,8 @@ func another() {
 	})
 
 	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("dir/code.go", `package main
 
@@ -1769,6 +1775,8 @@ func another() {
 	})
 
 	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory()
 
 		results, err := dir.Search(ctx, "anything")
@@ -1777,6 +1785,8 @@ func another() {
 	})
 
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("file.txt", "Hello, World!")
 
@@ -1786,6 +1796,8 @@ func another() {
 	})
 
 	t.Run("search in subdirectory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("root.txt", "Root content").
 			WithNewFile("sub/file.txt", "Subdirectory content").
@@ -1810,6 +1822,8 @@ func another() {
 	})
 
 	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("file.txt", "Hello\nhello\nHELLO")
 
@@ -1822,6 +1836,8 @@ func another() {
 	})
 
 	t.Run("multiple matches in one file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("code.go", `package main
 
@@ -1848,6 +1864,8 @@ func main() {
 	})
 
 	t.Run("binary files are skipped", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", "mkdir -p /testdir && echo 'text content' > /testdir/text.txt && dd if=/dev/urandom of=/testdir/binary.bin bs=1024 count=1 && echo 'text content' >> /testdir/binary.bin"}).

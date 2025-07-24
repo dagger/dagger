@@ -452,9 +452,9 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("test.txt", "Hello, World!\nThis is a test file.\nWorld is great.\nGoodbye, World!").
 			File("test.txt")
@@ -496,6 +496,8 @@ func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("code.go", `package main
 
@@ -531,6 +533,8 @@ func main() {
 	})
 
 	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("dir/code.go", `package main
 
@@ -575,6 +579,8 @@ func another() {
 	})
 
 	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		dir := c.Directory().
 			WithNewFile("dir/code.go", `package main
 
@@ -618,6 +624,8 @@ func another() {
 	})
 
 	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("test.txt", "Hello, World!").
 			File("test.txt")
@@ -628,6 +636,8 @@ func another() {
 	})
 
 	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("test.txt", "Hello\nhello\nHELLO\nHeLLo").
 			File("test.txt")
@@ -641,6 +651,8 @@ func another() {
 	})
 
 	t.Run("multiline patterns", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("test.py", `def hello():
     print("Hello")
@@ -690,6 +702,8 @@ def hello_world():
 			}
 		}
 
+		c := connect(ctx, t)
+
 		file := c.Directory().
 			WithNewFile("large.txt", content.String()).
 			File("large.txt")
@@ -711,6 +725,8 @@ def hello_world():
 	})
 
 	t.Run("file from container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		file := c.Container().
 			From(alpineImage).
 			File("/etc/alpine-release")
