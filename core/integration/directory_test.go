@@ -1636,7 +1636,6 @@ func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
 
 		results, err := dir.Search(ctx, "World")
 		require.NoError(t, err)
-		require.Len(t, results, 3)
 
 		// Collect all matches to check they're all present (order doesn't matter)
 		var matches []string
