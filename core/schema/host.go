@@ -150,7 +150,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
-				dagql.Arg("applyGitIgnore").Doc(`If true, gitignore patterns will be applied to the directory.`),
+				dagql.Arg("ignoreVCS").Doc(`Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -244,7 +244,7 @@ type hostDirectoryArgs struct {
 	HostDirCacheConfig
 
 	ContextDirectoryPath string `internal:"true" default:""`
-	ApplyGitIgnore       bool   `default:"false"`
+	IgnoreVCS            bool   `name:"ignoreVCS" default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
@@ -289,18 +289,13 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	excludesPatterns := []string{}
-	if len(args.Exclude) > 0 {
-		excludesPatterns = append(excludesPatterns, args.Exclude...)
-	}
 
-	// If ApplyGitIgnore is set, we load all the .gitgnore patterns inside the context directory
+	// If IgnoreVCS is set, we load all the .gitgnore patterns inside the context directory
 	// (if ContextDirectoryPath is set) or the git repo if .git is found.
 	var dotGitIgnoreParentPath string
-	if args.ApplyGitIgnore {
-		var parentPath string
-
+	if args.IgnoreVCS {
 		if args.ContextDirectoryPath != "" {
-			parentPath = args.ContextDirectoryPath
+			dotGitIgnoreParentPath = args.ContextDirectoryPath
 		} else {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
@@ -318,11 +313,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			}
 
 			if found {
-				parentPath = dotGitPath
+				dotGitIgnoreParentPath = dotGitPath
 			}
 		}
-
-		dotGitIgnoreParentPath = parentPath
 	}
 
 	if dotGitIgnoreParentPath != "" {
@@ -337,6 +330,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 
 		excludesPatterns = append(excludesPatterns, rebasedIgnorePatterns...)
+	}
+
+	// Add the exclude args from directive after the .gitignore so they can
+	// be overridden.
+	if len(args.Exclude) > 0 {
+		excludesPatterns = append(excludesPatterns, args.Exclude...)
 	}
 
 	if len(excludesPatterns) > 0 {
@@ -374,8 +373,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 }
 
 func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string) (patterns []string, rerr error) {
-	fmt.Println("loadDirectoryGitIgnorePatterns", parentPath)
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -388,7 +385,7 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string) (pat
 			Field: "directory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(parentPath)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray("**.gitignore"))},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray("**/.gitignore"))},
 			},
 		},
 	)
@@ -402,14 +399,10 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string) (pat
 		return nil, fmt.Errorf("failed to load .gitignore in context directory %q: %w", parentPath, err)
 	}
 
-	fmt.Println("loadDirectoryGitIgnorePatterns", gitIgnorePatterns)
-
 	return gitIgnorePatterns, nil
 }
 
 func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []string) ([]string, error) {
-	fmt.Println("rebaseGitIgnorePatterns", parentPath, hostPath, patterns)
-
 	relativePathToParent, err := filepath.Rel(parentPath, hostPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relative path from %q: %w", parentPath, err)
@@ -422,6 +415,11 @@ func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []stri
 	// - Patterns that are outside the contextual path are ignored.
 	// - If relativePathToCtx is "." (meaning the contextual path is the same as the mounted path), then all ignore
 	// patterns are applied.
+	//
+	// Example for context dir /foo/bar:
+	//   - !foo/bar/baz -> baz -> !baz
+	//   - foo/bar/baz -> baz -> baz
+	//   - foo/bar/baz/qux -> baz/qux
 	for _, pattern := range patterns {
 		if !strings.HasPrefix(pattern, "**") &&
 			!strings.HasPrefix(pattern, relativePathToParent+"/") &&
@@ -441,8 +439,6 @@ func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []stri
 
 		result = append(result, strings.TrimPrefix(pattern, relativePathToParent+"/"))
 	}
-
-	fmt.Println("rebaseGitIgnorePatterns result", result)
 
 	return result, nil
 }
