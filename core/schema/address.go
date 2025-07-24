@@ -465,6 +465,8 @@ func (s *addressSchema) secret(
 	if err != nil {
 		return inst, err
 	}
+	// FIXME: do we still need to add this result in the secret store,
+	// because it doesn't have the same ID?
 	return inst, nil
 }
 
