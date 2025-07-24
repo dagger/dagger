@@ -640,7 +640,11 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 	// Annotate ctx with the internal flag so we can distinguish self-calls from
 	// user-calls in the UI.
 	ctx = withInternal(ctx)
-	view := View(CurrentID(ctx).View())
+
+	var defaultView View
+	if id := CurrentID(ctx); id != nil {
+		defaultView = View(id.View())
+	}
 
 	var res AnyResult = self
 	for i, sel := range sels {
@@ -651,7 +655,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 			sel.Nth = 0
 		}
 		if sel.View == "" {
-			sel.View = view
+			sel.View = defaultView
 		}
 
 		var err error
