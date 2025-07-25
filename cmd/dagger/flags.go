@@ -335,7 +335,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	}
 
 	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
-		Exclude: modArg.Ignore,
+		Exclude:   modArg.Ignore,
 		IgnoreVCS: true,
 	}).Sync(ctx)
 }
