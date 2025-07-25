@@ -679,12 +679,12 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 		oldFS := m.env.Self().Hostfs
 		newFS := newEnv.Self().Hostfs
 		var entries []string
-		err := srv.Select(ctx, newFS, &entries, dagql.Selector{
+		err := srv.Select(ctx, oldFS, &entries, dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "other",
-					Value: dagql.NewID[*Directory](oldFS.ID()),
+					Value: dagql.NewID[*Directory](newFS.ID()),
 				},
 			},
 		}, dagql.Selector{
