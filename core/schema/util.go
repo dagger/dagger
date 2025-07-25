@@ -92,7 +92,6 @@ type AfterVersion = core.AfterVersion
 //
 // We assume the hostPath is always a child of the parentPath.
 func getGitIgnoreIncludePaths(parentPath string, hostPath string) ([]string, error) {
-
 	hostRelPathFromParent, err := filepath.Rel(parentPath, hostPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relative path from parent: %w", err)
