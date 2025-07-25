@@ -632,7 +632,7 @@ func (h *shellCallHandler) parseArgumentValues(
 
 	// Flag processing can be a source of bugs so it's very useful to be
 	// able to debug this step but excessive on default verbosity.
-	if debug && verbose > 3 && !slices.Equal(args, newArgs) {
+	if debugFlag && verbose > 3 && !slices.Equal(args, newArgs) {
 		dbgArgs := []any{
 			"function", fn.CmdName(),
 			"before", args,

@@ -234,7 +234,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.wd = h.initwd
 
 	// not h.Debug() on purpose because it's only set from within an interpreter run
-	if debug {
+	if debugFlag {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("initial workdir",
 			"context", h.initwd.Context,
@@ -399,7 +399,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	// that should hardly cause memory issues.
 	defer h.state.Prune(ctx)
 
-	if debug {
+	if debugFlag {
 		// requires `--debug -vvvv` and .debug` for full dump
 		defer h.state.debug(ctx, h.Debug())
 	}

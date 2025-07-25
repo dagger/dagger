@@ -327,7 +327,7 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	nkey := h.state.Store(st)
 	w := interp.HandlerCtx(ctx).Stdout
 
-	if debug && h.Debug() {
+	if debugFlag && h.Debug() {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("saving state", spreadDebugArgs(&st, "newKey", nkey)...)
 	}

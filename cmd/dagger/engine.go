@@ -80,7 +80,7 @@ func withEngine(
 
 		defer func() { cleanupTelemetry(rerr) }()
 
-		if debug {
+		if debugFlag {
 			params.LogLevel = slog.LevelDebug
 		}
 
