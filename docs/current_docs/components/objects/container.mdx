@@ -1,54 +1,12 @@
 ---
 title: "Container"
+sidebar_label: "Container"
+description: "Learn about the Container type in Dagger and how to use it for container operations."
 ---
 
+import ContainerType from "@daggerTypes/_container.mdx";
 
-
-
-The `Container` type represents the state of an OCI-compatible container. This `Container` object is not merely a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a Dagger Function's code as if it were just another variable.
-
-## Common operations
-
-| Field | Description |
-|-------|-------------|
-| `from` | Initializes the container from a specified base image |
-| `asService` | Turns the container into a `Service` |
-| `asTarball` | Returns a serialized tarball of the container as a `File` |
-| `export` / `import` | Writes / reads the container as an OCI tarball to / from a file path on the host |
-| `publish` | Publishes the container image to a registry |
-| `stdout` / `stderr` | Returns the output / error stream of the last executed command |
-| `withDirectory` / `withMountedDirectory` | Returns the container plus a directory copied / mounted at the given path |
-| `withEntrypoint` | Returns the container with a custom entrypoint command |
-| `withExec` | Returns the container after executing a command inside it |
-| `withFile` / `withMountedFile` | Returns the container plus a file copied / mounted at the given path |
-| `withMountedCache` | Returns the container plus a cache volume mounted at the given path |
-| `withRegistryAuth` | Returns the container with registry authentication configured |
-| `withWorkdir` | Returns the container configured with a specific working directory |
-| `withServiceBinding` | Returns the container with runtime dependency on another `Service` |
+<ContainerType />
 
 ## Examples
 
-### Publish a container image to a private registry
-
-The following Dagger Function publishes a just-in-time container image to a private registry.
-
-<Tabs groupId="language" queryString="sdk">
-<TabItem value="go" label="Go">
-
-```go file=../../cookbook/snippets/publish-image/go/main.go
-```
-
-</TabItem>
-<TabItem value="python" label="Python">
-
-```python file=../../cookbook/snippets/publish-image/python/main.py
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-```typescript file=../../cookbook/snippets/publish-image/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>

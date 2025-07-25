@@ -52,7 +52,7 @@ module.exports = {
             "components/objects/llm",
             "components/objects/secret",
             "components/objects/service",
-            "components/objects/environment",
+            "components/objects/env",
           ],
         },
       ],

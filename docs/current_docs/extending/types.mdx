@@ -1,8 +1,9 @@
 ---
-slug: /extending/types
+title: "Core Types"
+description: "Learn about the core types in Dagger and how to use them for various operations."
 ---
 
-# Core Types
+import ContainerType from "@daggerTypes/_container.mdx";
 
 In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful core types which serve as both arguments and return values for Dagger Functions.
 
@@ -35,28 +36,7 @@ The following table lists available types and what they represent:
 
 Each type exposes additional fields. Some of these are discussed below.
 
-## Container
-
-The `Container` type represents the state of an OCI-compatible container. This `Container` object is not merely a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a Dagger Function's code as if it were just another variable.
-
-Some of the `Container` type's important fields are:
-
-| Field | Description |
-|-------|-------------|
-| `from` | Initializes the container from a specified base image |
-| `asService` | Turns the container into a `Service` |
-| `asTarball` | Returns a serialized tarball of the container as a `File` |
-| `export` / `import` | Writes / reads the container as an OCI tarball to / from a file path on the host |
-| `publish` | Publishes the container image to a registry |
-| `stdout` / `stderr` | Returns the output / error stream of the last executed command |
-| `withDirectory` / `withMountedDirectory` | Returns the container plus a directory copied / mounted at the given path |
-| `withEntrypoint` | Returns the container with a custom entrypoint command |
-| `withExec` | Returns the container after executing a command inside it |
-| `withFile` / `withMountedFile` | Returns the container plus a file copied / mounted at the given path |
-| `withMountedCache` | Returns the container plus a cache volume mounted at the given path |
-| `withRegistryAuth` | Returns the container with registry authentication configured |
-| `withWorkdir` | Returns the container configured with a specific working directory |
-| `withServiceBinding` | Returns the container with runtime dependency on another `Service` |
+<ContainerType />
 
 ## CurrentModule
 

@@ -88,6 +88,7 @@ const config: Config = {
                   "current_docs/partials/cookbook/filesystem"
                 ),
                 "@partials": path.resolve(__dirname, "current_docs/partials"),
+                "@daggerTypes": path.resolve(__dirname, "current_docs/partials/types"),
                 "@components": path.resolve(__dirname, "src/components"),
               },
             },
