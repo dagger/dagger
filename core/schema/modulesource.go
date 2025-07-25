@@ -1493,19 +1493,13 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return parentSrc.Result, nil
 	}
 
-	// Get the blueprint's symbolic ref without version
-	bpRef := bpSrc.Git.CloneRef
-	if bpSrc.SourceRootSubpath != "" {
-		bpRef += "/" + strings.TrimPrefix(bpSrc.SourceRootSubpath, "/")
-	}
-
 	// Update the blueprint by loading it fresh
 	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
 	err = dag.Select(ctx, dag.Root(), &bpUpdated,
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(bpRef)},
+				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
 			},
 		},
 	)
