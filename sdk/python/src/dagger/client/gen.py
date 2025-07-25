@@ -4198,6 +4198,26 @@ class EnumValueTypeDef(Type):
 
 @typecheck
 class Env(Type):
+    def binding(self, name: str) -> Binding:
+        """retrieve an object binding
+
+        Parameters
+        ----------
+        name:
+            The binding name
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("binding", _args)
+        return Binding(_ctx)
+
+    async def bindings(self) -> list[Binding]:
+        """return all object bindings"""
+        _args: list[Arg] = []
+        _ctx = self._select("bindings", _args)
+        return await _ctx.execute_object_list(Binding)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 
@@ -4249,6 +4269,32 @@ class Env(Type):
         _args: list[Arg] = []
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
+
+    def with_binding(
+        self,
+        name: str,
+        value: str,
+        *,
+        description: str | None = None,
+    ) -> Self:
+        """bind an object to the env
+
+        Parameters
+        ----------
+        name:
+            Binding name
+        value:
+            Object to bind
+        description:
+            Binding description
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withBinding", _args)
+        return Env(_ctx)
 
     def with_cache_volume_input(
         self,
