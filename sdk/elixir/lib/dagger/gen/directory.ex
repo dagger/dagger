@@ -487,6 +487,13 @@ defimpl Jason.Encoder, for: Dagger.Directory do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Directory do
+  def encode(directory, _encoder) do
+    {:ok, id} = Dagger.Directory.id(directory)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Directory do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_directory_from_id(Dagger.Global.dag(), id)}

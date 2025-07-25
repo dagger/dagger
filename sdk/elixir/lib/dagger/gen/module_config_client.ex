@@ -56,6 +56,13 @@ defimpl Jason.Encoder, for: Dagger.ModuleConfigClient do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.ModuleConfigClient do
+  def encode(module_config_client, _encoder) do
+    {:ok, id} = Dagger.ModuleConfigClient.id(module_config_client)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.ModuleConfigClient do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_module_config_client_from_id(Dagger.Global.dag(), id)}
