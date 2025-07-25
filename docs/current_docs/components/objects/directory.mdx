@@ -11,6 +11,7 @@ import ModifyCopiedDirectory from "@cookbookFilesystem/modify-copied-directory.m
 import CopySubsetDirectory from "@cookbookFilesystem/copy-subset-directory.mdx";
 import CopyPredefinedFilters from "@cookbookFilesystem/copy-predefined-filters.mdx";
 import SetModuleDefault from "@cookbookFilesystem/set-module-default.mdx";
+import ExportDirectoryOrFileToHost from "@cookbookFilesystem/export-directory-or-file-to-host.mdx";
 
 <Directory />
 
@@ -538,12 +539,8 @@ public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {
 </Tabs>
 
 Calling the function will show you the directory’s digest and top level entries. The digest is content addressed, so it changes if there are changes in the contents of the directory. Looking at the entries field you may be able to spot an interloper:
-
-
-
+`
 You can open the directory in an interactive terminal to inspect the filesystem:
-
-
 
 You can export the filtered directory to your host and check it with local tools:
 
@@ -554,3 +551,5 @@ You can export the filtered directory to your host and check it with local tools
 <ModifyCopiedDirectory />
 <CopySubsetDirectory />
 <CopyPredefinedFilters />
+<SetModuleDefault />
+<ExportDirectoryOrFileToHost />
