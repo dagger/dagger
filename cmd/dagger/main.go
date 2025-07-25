@@ -68,6 +68,13 @@ var (
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	engineHost               = os.Getenv("DAGGER_ENGINE_HOST")
+	engineImage              = os.Getenv("DAGGER_ENGINE_IMAGE")
+	engineImageCommand       = os.Getenv("DAGGER_ENGINE_IMAGE_COMMAND")
+	engineVersion            = os.Getenv("DAGGER_ENGINE_VERSION")
+	_, gpuSupport            = os.LookupEnv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+	imageLoader              = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE")
+	deprecatedRunnerHost     = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 
 	dotOutputFilePath string
 	dotFocusField     string

@@ -1,0 +1,9 @@
+kind: Deprecated
+body: |
+    docker-image:// and docker-container:// drivers have been renamed to image+docker:// and container+docker:// respectively
+
+    The old values will still be respected.
+time: 2025-07-16T16:25:31.055472401+01:00
+custom:
+    Author: jedevc
+    PR: "10714"
