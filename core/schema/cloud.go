@@ -39,7 +39,7 @@ func (s *cloudSchema) traceURL(ctx context.Context, parent *core.Cloud, args str
 	}
 
 	if m.CloudOrg == "" {
-		return "", errors.New("no cloud organization configured; `dagger cloud login` to configure your Dagger Cloud organization")
+		return "", errors.New("no cloud organization configured; `dagger login` to configure your Dagger Cloud organization")
 	}
 	tid := trace.SpanContextFromContext(ctx).TraceID().String()
 	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", m.CloudOrg, tid), nil
