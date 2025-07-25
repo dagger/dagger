@@ -190,7 +190,11 @@ func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 	if context := d.values.Get("context"); context != "" {
 		args = append(args, "--context="+context)
 	}
-	args = append(args, "buildctl", "dial-stdio")
+	if cmd, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_COMMAND"); ok {
+		args = append(args, "sh", "-c", cmd)
+	} else {
+		args = append(args, "buildctl", "dial-stdio")
+	}
 
 	// using uncancelled context because context remains active for the
 	// duration of the process, after dial has completed
