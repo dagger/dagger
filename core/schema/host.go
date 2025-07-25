@@ -150,7 +150,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
-				dagql.Arg("ignoreVCS").Doc(`Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).`),
+				dagql.Arg("noGitAutoIgnore").Doc(`Don't apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -244,7 +244,7 @@ type hostDirectoryArgs struct {
 	HostDirCacheConfig
 
 	ContextDirectoryPath string `internal:"true" default:""`
-	IgnoreVCS            bool   `name:"ignoreVCS" default:"false"`
+	NoGitAutoIgnore      bool   `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
@@ -290,10 +290,10 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 	excludesPatterns := []string{}
 
-	// If IgnoreVCS is set, we load all the .gitgnore patterns inside the context directory
+	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
 	// (if ContextDirectoryPath is set) or the git repo if .git is found.
 	var dotGitIgnoreParentPath string
-	if args.IgnoreVCS {
+	if !args.NoGitAutoIgnore {
 		if args.ContextDirectoryPath != "" {
 			dotGitIgnoreParentPath = args.ContextDirectoryPath
 		} else {
@@ -393,6 +393,7 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 				{Name: "include", Value: dagql.ArrayInput[dagql.String](
 					dagql.NewStringArray(gitIgnoreIncludePath...),
 				)},
+				{Name: "noGitAutoIgnore", Value: dagql.Boolean(true)},
 			},
 		},
 	)
