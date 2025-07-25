@@ -6354,7 +6354,7 @@ func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *in
 }
 
 var moduleIntrospection = daggerQuery(`
-query { host { directory(path: ".") { asModule {
+query { host { directory(path: ".", noGitAutoIgnore: true) { asModule {
     description
     objects {
         asObject {
