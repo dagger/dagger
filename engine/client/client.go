@@ -77,7 +77,20 @@ type Params struct {
 
 	SecretToken string
 
-	RunnerHost string // host of dagger engine runner serving buildkit apis
+	Host               string
+	Image              string
+	ImageCPUs          string
+	ImageCleanup       *bool
+	ImageCommand       string
+	ImageContainerName string
+	ImageMemory        string
+	ImagePort          int
+	ImageRunner        string
+	ImageVersion       string
+	ImageVolumeName    string
+	ImageGPUSupport    *bool
+
+	CloudEngine bool
 
 	DisableHostRW bool
 
@@ -103,6 +116,219 @@ type Params struct {
 	Stdout io.Writer
 
 	ImageLoaderBackend imageload.Backend
+}
+
+// Load default client parameters from env variables
+func DefaultParams() Params {
+	return Params{
+		Host:               defaultHost(),
+		Image:              defaultImage(),
+		ImageRunner:        defaultImageRunner(),
+		ImageCPUs:          defaultImageCPUs(),
+		ImageMemory:        defaultImageMemory(),
+		ImageContainerName: defaultImageContainerName(),
+		ImageVolumeName:    defaultImageVolumeName(),
+		ImagePort:          defaultImagePort(),
+		ImageGPUSupport:    defaultGPUSupport(),
+		CloudEngine:        defaultCloudEngine(),
+		ImageCleanup:       defaultImageCleanup(),
+	}
+}
+
+func deprecatedRunnerHost() url.URL {
+	runnerHost, err := url.Parse(os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"))
+	if err != nil {
+		return url.URL{}
+	}
+	return *runnerHost
+}
+
+func defaultHost() string {
+	if val, found := os.LookupEnv("DAGGER_HOST"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	switch u.Scheme {
+	case "tcp", "unix", "ssh", "kube-pod", "container":
+		return u.String()
+	case "docker-container", "podman-container":
+		u.Scheme = "container"
+		return u.String()
+	}
+	return ""
+}
+
+func defaultImage() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if strings.HasPrefix(u.Scheme, "image") {
+		u.RawQuery = ""
+		return u.Host + u.RequestURI()
+	}
+	return ""
+}
+
+func defaultCloudEngine() bool {
+	val, found := os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	if !found {
+		return false
+	}
+	cloudEngine, err := strconv.ParseBool(val)
+	if err != nil {
+		return false
+	}
+	return cloudEngine
+}
+
+func defaultGPUSupport() *bool {
+	val, found := os.LookupEnv("DAGGER_GPU_SUPPORT")
+	if !found {
+		return nil
+	}
+	gpuSupport, err := strconv.ParseBool(val)
+	if err != nil {
+		return nil
+	}
+	return &gpuSupport
+}
+
+func defaultImageRunner() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_RUNNER"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if runner, found := strings.CutPrefix(u.Scheme, "image+"); found {
+		return runner
+	}
+	return ""
+}
+
+func defaultImageCPUs() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_CPUS"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if strings.HasPrefix(u.Scheme, "image") {
+		return u.Query().Get("cpus")
+	}
+	return ""
+}
+
+func defaultImageMemory() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_MEMORY"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if strings.HasPrefix(u.Scheme, "image") {
+		return u.Query().Get("memory")
+	}
+	return ""
+}
+
+func defaultImageContainerName() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_CONTAINER_NAME"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if strings.HasPrefix(u.Scheme, "image") {
+		return u.Query().Get("container")
+	}
+	return ""
+}
+
+func defaultImageVolumeName() string {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_VOLUME_NAME"); found {
+		return val
+	}
+	u := deprecatedRunnerHost()
+	if strings.HasPrefix(u.Scheme, "image") {
+		return u.Query().Get("volume")
+	}
+	return ""
+}
+
+func defaultImagePort() int {
+	val, found := os.LookupEnv("DAGGER_IMAGE_PORT")
+	if !found {
+		u := deprecatedRunnerHost()
+		if strings.HasPrefix(u.Scheme, "image") {
+			q := u.Query()
+			if !q.Has("port") {
+				return 0
+			}
+			val = q.Get("port")
+		}
+	}
+	port, err := strconv.Atoi(val)
+	if err != nil {
+		return 0
+	}
+	return port
+}
+
+func defaultImageCleanup() *bool {
+	if val, found := os.LookupEnv("DAGGER_IMAGE_CLEANUP"); found {
+		cleanup, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil
+		}
+		return &cleanup
+	}
+	if val, found := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); found {
+		leave, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil
+		}
+		cleanup := !leave
+		return &cleanup
+	}
+	return nil
+}
+
+// Apply one set of parameters as an override to another.
+func (p Params) Override(override Params) Params {
+	if override.CloudEngine {
+		p.CloudEngine = override.CloudEngine
+	}
+	if override.Host != "" {
+		p.Host = override.Host
+	}
+	if override.Image != "" {
+		p.Image = override.Image
+	}
+	if override.ImageVersion != "" {
+		p.ImageVersion = override.ImageVersion
+	}
+	if override.ImageCommand != "" {
+		p.ImageCommand = override.ImageCommand
+	}
+	if override.ImageRunner != "" {
+		p.ImageRunner = override.ImageRunner
+	}
+	if override.ImageMemory != "" {
+		p.ImageMemory = override.ImageMemory
+	}
+	if override.ImageContainerName != "" {
+		p.ImageContainerName = override.ImageContainerName
+	}
+	if override.ImageVolumeName != "" {
+		p.ImageVolumeName = override.ImageVolumeName
+	}
+	if override.ImagePort != 0 {
+		p.ImagePort = override.ImagePort
+	}
+	if override.ImageCPUs != "" {
+		p.ImageCPUs = override.ImageCPUs
+	}
+	if override.ImageCleanup != nil {
+		p.ImageCleanup = override.ImageCleanup
+	}
+	if override.ImageGPUSupport != nil {
+		p.ImageGPUSupport = override.ImageGPUSupport
+	}
+	return p
 }
 
 type Client struct {
@@ -261,24 +487,130 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	return c, ctx, nil
 }
 
-func (c *Client) startEngine(ctx context.Context) (rerr error) {
-	remote, err := url.Parse(c.RunnerHost)
+func (c *Client) provisionEngineCloud(ctx context.Context) (connector drivers.Connector, rerr error) {
+	cloudDriver, err := drivers.GetDriver(ctx, "dagger-cloud")
 	if err != nil {
-		return fmt.Errorf("parse runner host: %w", err)
+		return nil, err
 	}
-
-	driver, err := drivers.GetDriver(ctx, remote.Scheme)
-	if err != nil {
-		return err
-	}
-
 	var cloudToken string
 	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
 		cloudToken = v
 	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
 		cloudToken = v
 	}
+	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "provisioning engine on Dagger Cloud")
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err = cloudDriver.Provision(provisionCtx, nil, &drivers.DriverOpts{
+		DaggerCloudToken: cloudToken,
+	})
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
+	return connector, err
+}
 
+func (c *Client) provisionEngineRemote(ctx context.Context) (connector drivers.Connector, rerr error) {
+	u, err := url.Parse(c.Params.Host)
+	if err != nil {
+		return nil, err
+	}
+	var remoteDriver drivers.Driver
+	switch u.Scheme {
+	case "tcp", "ssh", "unix", "kube-pod", "container":
+		remoteDriver, err = drivers.GetDriver(ctx, u.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("can't connect to engine at %q: unsupported URI scheme", u.Scheme)
+	}
+	return remoteDriver.Provision(ctx, u, nil)
+}
+
+func (c *Client) imageDriver(ctx context.Context) (drivers.Driver, error) {
+	if runner := c.Params.ImageRunner; runner != "" {
+		return drivers.GetDriver(ctx, "image+"+runner)
+	}
+	driver, err := drivers.GetDriver(ctx, "image")
+	if err != nil {
+		// Send a more user-friendly error message
+		return nil, fmt.Errorf("can't start engine from container image: no known container runtime is available")
+	}
+	return driver, nil
+}
+
+func (c *Client) provisionEngineImage(ctx context.Context) (connector drivers.Connector, rerr error) {
+	imageRepo, imageTag, _ := strings.Cut(c.Image, ":")
+	if imageRepo == "" {
+		imageRepo = engine.EngineImageRepo
+	}
+	if imageTag == "" {
+		if version := c.Params.ImageVersion; version != "" {
+			imageTag = version
+		} else {
+			imageTag = engine.Tag
+		}
+		if imageTag == "" {
+			return nil, fmt.Errorf("can't start engine image %q: tag not specified and couldn't be inferred", imageRepo)
+		}
+		if gpu := c.Params.ImageGPUSupport; gpu != nil && *gpu {
+			imageTag += "-gpu"
+		}
+	}
+	// Generic container imageDriver: supports docker, podman, apple container, containerd etc.
+	imageDriver, err := c.imageDriver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// If there's no image loader configured,
+	// fall back to the same container runtime that will run the engine
+	if c.Params.ImageLoaderBackend == nil {
+		c.Params.ImageLoaderBackend = imageDriver.ImageLoader(ctx)
+	}
+	u, err := url.Parse(fmt.Sprintf("image://%s:%s", imageRepo, imageTag))
+	if err != nil {
+		return nil, err
+	}
+	opts := &drivers.DriverOpts{
+		CPUs: c.Params.ImageCPUs,
+		//ImageCommand:       c.Params.ImageCommand,
+		ContainerName: c.Params.ImageContainerName,
+		Memory:        c.Params.ImageMemory,
+		Port:          c.Params.ImagePort,
+		VolumeName:    c.Params.ImageVolumeName,
+		Cleanup:       true,
+		GPUSupport:    false,
+	}
+	if c.Params.ImageCleanup != nil && !*c.Params.ImageCleanup {
+		opts.Cleanup = false
+	}
+	if gpu := c.Params.ImageGPUSupport; gpu != nil && *gpu {
+		opts.GPUSupport = true
+	}
+	// Actual provisioning (wrapped in telemetry)
+	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("provisioning engine image: %s:%s", imageRepo, imageTag))
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err = imageDriver.Provision(provisionCtx, u, opts)
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
+	return connector, err
+}
+
+// First part of startEngine()
+func (c *Client) provisionEngine(ctx context.Context) (drivers.Connector, error) {
+	// Method 1: Connect to Dagger Cloud aka "PARC"
+	if c.Params.CloudEngine {
+		return c.provisionEngineCloud(ctx)
+	}
+	// Method 2: Connect directly to a remote engine
+	if c.Params.Host != "" {
+		return c.provisionEngineRemote(ctx)
+	}
+	// Method 3: Provision an engine image
+	return c.provisionEngineImage(ctx)
+}
+
+// Start or connect to an engine
+func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
 			c.CloudURLCallback(ctx, url, msg, ok)
@@ -286,27 +618,17 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
 		}
 	}
-
-	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
-	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
-	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		DaggerCloudToken: cloudToken,
-		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-	})
-	provisionCancel()
-	telemetry.End(provisionSpan, func() error { return err })
+	connector, err := c.provisionEngine(ctx)
 	if err != nil {
 		return err
 	}
-
+	c.connector = connector
+	// FIXME: engine-connect
 	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	slog.Debug("connecting", "runner", c.RunnerHost)
-
 	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
-	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
+	bkClient, bkInfo, err := newBuildkitClient(bkCtx, c.connector)
 	telemetry.End(span, func() error { return err })
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
@@ -315,13 +637,11 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.bkVersion = bkInfo.BuildkitVersion.Version
 	c.bkName = bkInfo.BuildkitVersion.Revision
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
 
-	imageBackend := c.ImageLoaderBackend
-	if imageBackend == nil {
-		imageBackend = driver.ImageLoader(ctx)
-	}
-	if imageBackend != nil {
+	// Hook up image loader
+	if imageBackend := c.Params.ImageLoaderBackend; imageBackend != nil {
 		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
 		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
 		if err != nil {
@@ -343,7 +663,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 
 	slog := slog.With("client", c.ID)
 
-	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
+	slog.Debug("subscribing to telemetry", "host", c.Params.Host, "image", c.Params.Image)
 
 	c.telemetry = new(errgroup.Group)
 	httpClient := c.newTelemetryHTTPClient()

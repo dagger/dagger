@@ -33,12 +33,26 @@ type Connector interface {
 
 type DriverOpts struct {
 	DaggerCloudToken string
-	GPUSupport       string
+	// Options specific to the "image driver" (DAGGER_IMAGE)
+	// FIXME: move this to specialized opts. We don't need the abstraction.
+	// Run engine image with custom container name
+	ContainerName string
+	// Run engine image with custom volume name
+	VolumeName string
+	// Force cleanup of old engine containers
+	Cleanup bool
+	// Run engine image with custom port
+	Port int
+	// Run engine image with custom number of CPUs
+	CPUs string
+	// Run engine image with custom memory
+	Memory     string
+	GPUSupport bool
 }
 
+// FIXME: move definition with other env variables
 const (
 	EnvDaggerCloudToken = "DAGGER_CLOUD_TOKEN"
-	EnvGPUSupport       = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 var drivers = map[string][]Driver{}

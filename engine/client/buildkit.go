@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/url"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -21,7 +20,7 @@ const (
 	envDaggerCloudCachetoken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 )
 
-func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
+func newBuildkitClient(ctx context.Context, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	backoffConfig := backoff.DefaultConfig
 	backoffConfig.MaxDelay = 30 * time.Second
 	opts := []bkclient.ClientOpt{
@@ -35,7 +34,8 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 		})),
 	}
 
-	c, err := bkclient.New(ctx, remote.String(), opts...)
+	// We don't need to specify a buildkit address, since we take over the dialer anyway
+	c, err := bkclient.New(ctx, "", opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("buildkit client: %w", err)
 	}
