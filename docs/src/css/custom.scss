@@ -375,7 +375,7 @@ html[data-theme="dark"] {
 
 /* font size adjustments for specific elements */
 h1 {
-  font-size: 1.875rem !important;
+  font-size: 1.7rem !important;
   font-weight: 700;
 }
 
@@ -551,11 +551,10 @@ html[data-theme="dark"] {
   }
 }
 
+// Base flowchart styling shared between modes
 .flowchart {
-  background-color: #fff;
   padding: 1rem;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 1.5rem;
   justify-content: center;
   display: flex;
@@ -564,8 +563,49 @@ html[data-theme="dark"] {
   overflow-x: auto; // Allow horizontal scrolling if needed
   max-width: 100%; // Ensure it doesn't exceed the container width
 }
+
+// Light mode flowchart styling
+html[data-theme="light"] .flowchart {
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+// Dark mode flowchart styling using brand variables
+html[data-theme="dark"] .flowchart {
+  background-color: #{$obsidian-color};
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .flowchart svg {
   width: 100%;
   height: auto;
   max-width: 100%;
+}
+
+// Make tables in articles take up full width
+.markdown table {
+  display: table;
+  width: 100%;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown table thead {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] .markdown table thead {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.markdown table th,
+.markdown table td {
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="dark"] .markdown table th,
+html[data-theme="dark"] .markdown table td {
+  border-color: rgba(255, 255, 255, 0.1);
 }
