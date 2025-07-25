@@ -83,3 +83,7 @@ func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *intros
 	// This is the same as the module generator for TypeScript
 	return g.GenerateModule(ctx, schema, schemaVersion)
 }
+
+func (g *TypeScriptGenerator) GenerateTypeDefs(_ context.Context) (*generator.GeneratedState, error) {
+	return nil, fmt.Errorf("not implemented for %s SDK", generator.SDKLangTypeScript)
+}

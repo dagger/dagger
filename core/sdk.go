@@ -168,6 +168,25 @@ type Runtime interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 	) (dagql.ObjectResult[*Container], error)
+
+	/*
+		HasModuleTypeDefs checks if the module exposes a `moduleTypeDefs` function
+		to be called by `TypeDefs`.
+
+		This doesn't rely on a function exposed by the SDK, but on the list of functions
+		exposed.
+	*/
+	HasModuleTypeDefs() bool
+
+	TypeDefs(
+		context.Context,
+
+		// Current module dependencies.
+		*ModDeps,
+
+		// Current instance of the module source.
+		dagql.ObjectResult[*ModuleSource],
+	) (dagql.ObjectResult[*Module], error)
 }
 
 /*

@@ -54,6 +54,11 @@ var introspectCmd = &cobra.Command{
 	RunE: Introspect,
 }
 
+var typeDefsCmd = &cobra.Command{
+	Use:  "typedefs",
+	RunE: TypeDefsCmd,
+}
+
 func init() {
 	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
@@ -69,6 +74,50 @@ func init() {
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
+
+	typeDefsCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
+	typeDefsCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
+	typeDefsCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
+	typeDefsCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
+	rootCmd.AddCommand(typeDefsCmd)
+}
+
+func TypeDefsCmd(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	ctx = telemetry.InitEmbedded(ctx, nil)
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Generating type definitions for %q\n", modulePath)
+
+	cfg := generator.Config{
+		Lang:      generator.SDKLang(lang),
+		OutputDir: outputDir,
+	}
+
+	if moduleName != "" {
+		cfg.ModuleName = moduleName
+
+		if modulePath == "" {
+			return fmt.Errorf("--module-name requires --module-source-path")
+		}
+		modPath, err := relativeTo(outputDir, modulePath)
+		if err != nil {
+			return err
+		}
+		if part, _, _ := strings.Cut(modPath, string(filepath.Separator)); part == ".." {
+			return fmt.Errorf("module path must be child of output directory")
+		}
+		cfg.ModuleSourcePath = modPath
+		moduleParentPath, err := relativeTo(modulePath, outputDir)
+		if err != nil {
+			return err
+		}
+		cfg.ModuleParentPath = moduleParentPath
+		//} else {
+		//	cfg.ModuleName = filepath.Base(filepath.Clean(cfg.OutputDir))
+		//	cfg.ModuleSourcePath = "."
+	}
+
+	return TypeDefs(ctx, cfg)
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {

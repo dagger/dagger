@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 )
@@ -124,6 +125,23 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedIfaceType) TypeDefObject() (*core.TypeDef, error) {
+	typeDefObject := (&core.TypeDef{}).WithInterface(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+
+	for _, m := range spec.methods {
+		fnTypeDefObj, err := m.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
+		}
+		typeDefObject, err = typeDefObject.WithFunction(fnTypeDefObj.AsObject.Value.Functions[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to add method %s to type def: %w", m.name, err)
+		}
+	}
+
+	return typeDefObject, nil
 }
 
 func (spec *parsedIfaceType) GoType() types.Type {
