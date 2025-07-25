@@ -83,6 +83,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type JSONValue
+     */
+    public function asJSONValue(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSONValue');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type LLM
      */
     public function asLLM(): LLM

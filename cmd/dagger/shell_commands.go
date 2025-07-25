@@ -696,6 +696,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			"file",
 			"git",
 			"host",
+			"json",
 			"env",
 			"http",
 			"set-secret",
