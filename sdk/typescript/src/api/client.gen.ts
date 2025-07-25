@@ -1145,9 +1145,9 @@ export type HostDirectoryOpts = {
   noCache?: boolean
 
   /**
-   * Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).
+   * Don't apply .gitignore filter rules inside the directory
    */
-  ignoreVCS?: boolean
+  noGitAutoIgnore?: boolean
 }
 
 export type HostFileOpts = {
@@ -6508,7 +6508,7 @@ export class Host extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.noCache If true, the directory will always be reloaded from the host.
-   * @param opts.ignoreVCS Respect filter rules from source control ignore files when inside a repo (only .gitignore is supported).
+   * @param opts.noGitAutoIgnore Don't apply .gitignore filter rules inside the directory
    */
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })

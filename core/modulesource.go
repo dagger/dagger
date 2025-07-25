@@ -345,7 +345,6 @@ func (src *ModuleSource) LoadContext(
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
 					{Name: "noCache", Value: dagql.NewBoolean(true)},
 					{Name: "contextDirectoryPath", Value: dagql.String(ctxPath)},
-					{Name: "ignoreVCS", Value: dagql.NewBoolean(true)},
 				},
 			},
 		)
