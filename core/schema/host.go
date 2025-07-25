@@ -244,7 +244,7 @@ type hostDirectoryArgs struct {
 	HostDirCacheConfig
 
 	ContextDirectoryPath string `internal:"true" default:""`
-	IgnoreVCS            bool   `name:"ignoreVCS" default:"true"`
+	IgnoreVCS            bool   `name:"ignoreVCS" default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
