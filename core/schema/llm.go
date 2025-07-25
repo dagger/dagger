@@ -92,8 +92,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
+			Doc("Loop completing tool calls until the LLM ends its turn"),
+		dagql.Func("step", s.step).
 			// Deprecated("use sync").
-			Doc("synchronize LLM state"),
+			Doc("Returns an LLM that will only sync one step instead of looping"),
+		dagql.Func("hasPrompt", s.hasPrompt).
+			// Deprecated("use sync").
+			Doc("Indicates that the LLM can be synced or stepped"),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -194,6 +199,14 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm, llm.Sync(ctx)
+}
+
+func (s *llmSchema) step(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.Step(), nil
+}
+
+func (s *llmSchema) hasPrompt(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
+	return llm.HasPrompt(), nil
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {

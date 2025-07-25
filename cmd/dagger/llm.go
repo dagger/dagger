@@ -133,6 +133,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 	s.updateLLMAndAgentVar(ctx, s.llm.WithPrompt(input))
 
+	// s.llm.Env().Hostfs()
 	prompted, err := s.llm.Sync(ctx)
 	if err != nil {
 		return s, err

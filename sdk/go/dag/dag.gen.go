@@ -66,6 +66,11 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
+func CurrentEnv() *dagger.Env {
+	client := initClient()
+	return client.CurrentEnv()
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.

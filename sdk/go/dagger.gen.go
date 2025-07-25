@@ -398,15 +398,6 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	}
 }
 
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -2606,6 +2597,14 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+func (r *CurrentModule) Meta() *Module {
+	q := r.query.Select("meta")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -4115,6 +4114,14 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
+func (r *Env) Hostfs() *Directory {
+	q := r.query.Select("hostfs")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -4433,24 +4440,22 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
+// Return a new environment with a new host filesystem
+func (r *Env) WithHostfs(hostfs *Directory) *Env {
+	assertNotNil("hostfs", hostfs)
+	q := r.query.Select("withHostfs")
+	q = q.Arg("hostfs", hostfs)
 
 	return &Env{
 		query: q,
 	}
 }
 
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// load a module and expose its functions to the model
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -4642,6 +4647,15 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Return a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
 
 	return &Env{
 		query: q,
@@ -5310,6 +5324,43 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 func (r *File) WithName(name string) *File {
 	q := r.query.Select("withName")
 	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
+}
+
+// FileWithReplacedOpts contains options for File.WithReplaced
+type FileWithReplacedOpts struct {
+	// Replace all occurrences of the pattern.
+	All bool
+	// Replace the first match after the specified line.
+	FirstAfter int
+}
+
+// Retrieves the file with content replaced with the given text.
+//
+// If 'all' is true, all occurrences of the pattern will be replaced.
+//
+// If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+//
+// If neither are specified, and there are multiple matches for the pattern, this will error.
+//
+// If there are no matches for the pattern, this will error.
+func (r *File) WithReplaced(search string, replacement string, opts ...FileWithReplacedOpts) *File {
+	q := r.query.Select("withReplaced")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+		// `firstAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FirstAfter) {
+			q = q.Arg("firstAfter", opts[i].FirstAfter)
+		}
+	}
+	q = q.Arg("search", search)
+	q = q.Arg("replacement", replacement)
 
 	return &File{
 		query: q,
@@ -6757,6 +6808,7 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
@@ -6807,6 +6859,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates that the LLM can be synced or stepped
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -6885,7 +6950,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Loop completing tool calls until the LLM ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -6918,6 +6983,15 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns an LLM that will only sync one step instead of looping
+func (r *LLM) Step() *LLM {
+	q := r.query.Select("step")
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // synchronize LLM state
@@ -6953,6 +7027,28 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return a new LLM with the specified tool disabled
+func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("fieldName", fieldName)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Provide the calling object as an input to the LLM environment
+func (r *LLM) WithCaller(name string, description string) *LLM {
+	q := r.query.Select("withCaller")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // allow the LLM to interact with an environment via MCP
@@ -8611,6 +8707,14 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -8698,6 +8802,8 @@ type EnvOpts struct {
 	Privileged bool
 	// Allow new outputs to be declared and saved in the environment
 	Writable bool
+	// Instead of a dynamic method set, provide all methods of all inputs as static tools
+	Static bool
 }
 
 // Initialize a new environment
@@ -8713,6 +8819,10 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 		// `writable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Writable) {
 			q = q.Arg("writable", opts[i].Writable)
+		}
+		// `static` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Static) {
+			q = q.Arg("static", opts[i].Static)
 		}
 	}
 

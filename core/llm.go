@@ -72,8 +72,9 @@ type LLM struct {
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
-	once *sync.Once
-	err  error
+	syncOneStep bool
+	once        *sync.Once
+	err         error
 
 	// History of messages
 	messages []*ModelMessage
@@ -695,6 +696,13 @@ func (err *ModelFinishedError) Error() string {
 	return fmt.Sprintf("model finished: %s", err.Reason)
 }
 
+// Send configures the LLM to only evaluate one step when syncing.
+func (llm *LLM) Step() *LLM {
+	llm = llm.Clone()
+	llm.syncOneStep = true
+	return llm
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -936,8 +944,16 @@ func (llm *LLM) loop(ctx context.Context) error {
 			// we returned; exit the loop, since some models just keep going
 			break
 		}
+		if llm.syncOneStep {
+			// we're configured to only do one step; return early
+			return nil
+		}
 	}
 	return nil
+}
+
+func (llm *LLM) HasPrompt() bool {
+	return len(llm.messages) > 0 && llm.messages[len(llm.messages)-1].Role == "user"
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
