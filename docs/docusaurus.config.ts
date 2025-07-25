@@ -58,10 +58,12 @@ const config: Config = {
           sidebarCollapsible: false,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
           remarkPlugins: [
-            [remarkCodeImport, { 
-              allowImportingFromOutside: true,
-              rootDir: path.resolve(__dirname, 'current_docs')
-            }],
+            [
+              remarkCodeImport,
+              {
+                allowImportingFromOutside: true,
+              },
+            ],
             [remarkTemplate, { version: daggerVersion }],
           ],
         },
@@ -81,16 +83,12 @@ const config: Config = {
           return {
             resolve: {
               alias: {
-                '@cookbookPartials': path.resolve(__dirname, 'current_docs/partials/cookbook'),
-                '@cookbookSnippets': path.resolve(__dirname, 'current_docs/cookbook/snippets'),
-                '@partials': path.resolve(__dirname, 'current_docs/partials'),
-                '@snippets': path.resolve(__dirname, 'current_docs/snippets'),
-                '@components': path.resolve(__dirname, 'current_docs/components'),
-                '@examples': path.resolve(__dirname, 'current_docs/examples'),
-                '@features': path.resolve(__dirname, 'current_docs/features'),
-                '@reference': path.resolve(__dirname, 'current_docs/reference'),
-                '@extending': path.resolve(__dirname, 'current_docs/extending'),
-                '@cookbook': path.resolve(__dirname, 'current_docs/cookbook'),
+                "@cookbookFilesystem": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/filesystem"
+                ),
+                "@partials": path.resolve(__dirname, "current_docs/partials"),
+                "@components": path.resolve(__dirname, "src/components"),
               },
             },
           };
