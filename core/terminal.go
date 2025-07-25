@@ -179,15 +179,21 @@ func (dir *Directory) Terminal(
 	svcID *call.ID,
 	ctr *Container,
 	args *TerminalArgs,
+	parent dagql.ObjectResult[*Directory], // TODO: cleanup
 ) error {
 	var err error
 
 	if ctr == nil {
-		ctr, err = NewContainer(dir.Platform)
+		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create terminal container: %w", err)
+			return fmt.Errorf("failed to get current dagql server: %w", err)
 		}
-		ctr, err = ctr.FromRefString(ctx, defaultTerminalImage)
+		var ctrInst dagql.ObjectResult[*Container]
+		err = srv.Select(ctx, srv.Root(), &ctrInst, dagql.Selector{Field: "container"})
+		if err != nil {
+			return fmt.Errorf("failed to select terminal container: %w", err)
+		}
+		ctr, err = ctrInst.Self().FromRefString(ctx, defaultTerminalImage, ctrInst)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
@@ -195,7 +201,7 @@ func (dir *Directory) Terminal(
 
 	ctr = ctr.Clone()
 	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
+	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}

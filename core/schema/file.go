@@ -67,6 +67,13 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
+		dagql.NodeFunc("chown", DagOpFileWrapper(srv, s.chown, WithPathFn(keepParentFile[fileChownArgs]))).
+			Doc(`Change the owner of the file recursively.`).
+			Args(
+				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
+					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+			),
 	}.Install(srv)
 }
 
@@ -175,4 +182,27 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 
 func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
 	return val.File, nil
+}
+
+type fileChownArgs struct {
+	Owner string
+
+	FSDagOpInternalArgs
+}
+
+func (s *fileSchema) chown(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.File],
+	args fileChownArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	f, err := parent.Self().Chown(ctx, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }
