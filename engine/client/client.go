@@ -261,24 +261,112 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	return c, ctx, nil
 }
 
-func (c *Client) startEngine(ctx context.Context) (rerr error) {
-	remote, err := url.Parse(c.RunnerHost)
-	if err != nil {
-		return fmt.Errorf("parse runner host: %w", err)
+func (c *Client) provisionEngineCloud(ctx context.Context) (connector drivers.Connector, available bool, rerr error) {
+	if _, ok := os.LookupEnv("DAGGER_CLOUD_ENGINE"); ok {
+		return nil, false, nil
 	}
-
-	driver, err := drivers.GetDriver(ctx, remote.Scheme)
+	cloud, err := drivers.GetDriver(ctx, "dagger-cloud")
 	if err != nil {
-		return err
+		return nil, false, err
 	}
-
 	var cloudToken string
 	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
 		cloudToken = v
 	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
 		cloudToken = v
 	}
+	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "provisioning engine on Dagger Cloud")
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err = cloud.Provision(ctx, nil, &drivers.DriverOpts{
+		DaggerCloudToken: cloudToken,
+		GPUSupport:       os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"),
+	})
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
+	return connector, true, err
+}
 
+func (c *Client) provisionEngineRemote(ctx context.Context) (connector drivers.Connector, available bool, rerr error) {
+	host, ok := os.LookupEnv("DAGGER_ENGINE_HOST")
+	if !ok {
+		return nil, false, nil
+	}
+	u, err := url.Parse(host)
+	if err != nil {
+		return nil, false, err
+	}
+	var remote drivers.Driver
+	switch u.Scheme {
+	case "tcp", "ssh", "unix", "kube-pod":
+		remote, err = drivers.GetDriver(ctx, u.Scheme)
+		if err != nil {
+			return nil, false, err
+		}
+	default:
+		return nil, false, fmt.Errorf("unsupported URI scheme for DAGGER_ENGINE_HOST: %q", u.Scheme)
+	}
+	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "provisioning engine on Dagger Cloud")
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err = remote.Provision(ctx, u, nil)
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
+	return connector, true, err
+}
+
+func (c *Client) provisionEngineImage(ctx context.Context) (connector drivers.Connector, available bool, rerr error) {
+	imageRepo, imageTag, _ := strings.Cut(os.Getenv("DAGGER_ENGINE_IMAGE"), ":")
+	if imageRepo == "" {
+		imageRepo = engine.EngineImageRepo
+	}
+	if imageTag == "" {
+		if version, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_VERSION"); ok {
+			imageTag = version
+		} else {
+			imageTag = engine.Tag
+		}
+	}
+	if imageTag == "" {
+		return nil, false, fmt.Errorf("can't start engine image %q: tag not specified and couldn't be inferred", imageRepo)
+	}
+	image := fmt.Sprintf("%s:%s", imageRepo, imageTag)
+	// Generic container driver: supports docker, podman, apple container, containerd etc.
+	driver, err := drivers.GetDriver(ctx, "image")
+	if err != nil {
+		return nil, false, err
+	}
+	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "provisioning engine image: "+image)
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err = driver.Provision(ctx, u, nil)
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
+	return connector, true, err
+}
+
+// First part of startEngine()
+func (c *Client) provisionEngine(ctx context.Context) (drivers.Connector, error) {
+	// Method 1: Connect to Dagger Cloud aka "PARC"
+	if connector, available, err := c.provisionEngineCloud(ctx); err != nil {
+		return nil, err
+	} else if available {
+		return connector, nil
+	}
+	// Method 2: Connect directly to a remote engine
+	if connector, available, err := c.provisionEngineRemote(ctx); err != nil {
+		return nil, err
+	} else if available {
+		return connector, nil
+	}
+	// Method 3: Provision an engine image
+	if connector, available, err := c.provisionEngineImage(ctx); err != nil {
+		return nil, err
+	} else if available {
+		return connector, nil
+	}
+	return nil, fmt.Errorf("Can't provision engine: no valid configuration")
+}
+
+// Start or connect to an engine
+func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
 			c.CloudURLCallback(ctx, url, msg, ok)
@@ -286,19 +374,13 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
 		}
 	}
-
-	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
-	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
-	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		DaggerCloudToken: cloudToken,
-		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-	})
-	provisionCancel()
-	telemetry.End(provisionSpan, func() error { return err })
+	connector, err := c.provisionEngine(ctx)
 	if err != nil {
 		return err
 	}
-
+	c.connector = connector
+	// FIXME: hooks (engine-connect, engine-provision)
+	// FIXME: DAGGER_ENGINE_IMAGE_COMMAND
 	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
