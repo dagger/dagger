@@ -314,7 +314,7 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
+		domain = network.ModuleDomain(mod.Self().ResultID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with

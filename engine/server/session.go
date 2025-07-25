@@ -137,7 +137,7 @@ type daggerClient struct {
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
-	mod *core.Module
+	mod dagql.ObjectResult[*core.Module]
 
 	// the DAG of modules being served to this client
 	deps *core.ModDeps
@@ -598,11 +598,11 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
-		client.mod = modInst.Self()
+		client.mod = modInst
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self().EngineVersion
+		engineVersion := client.mod.Self().Source.Self().EngineVersion
 		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can
@@ -614,10 +614,10 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
+		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Self().Deps.Mods)
 		// if the module has any of it's own objects defined, serve its schema to itself too
-		if len(client.mod.ObjectDefs) > 0 {
-			client.deps = client.deps.Append(client.mod)
+		if len(client.mod.Self().ObjectDefs) > 0 {
+			client.deps = client.deps.Append(client.mod.Self())
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
@@ -1300,19 +1300,19 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 }
 
 // If the current client is coming from a function, return the module that function is from
-func (srv *Server) CurrentModule(ctx context.Context) (*core.Module, error) {
+func (srv *Server) CurrentModule(ctx context.Context) (res dagql.ObjectResult[*core.Module], _ error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	if client.clientID == client.daggerSession.mainClientCallerID {
-		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
+		return res, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
-	if client.mod != nil {
+	if client.mod.Self() != nil {
 		return client.mod, nil
 	}
 
-	return nil, core.ErrNoCurrentModule
+	return res, core.ErrNoCurrentModule
 }
 
 // If the current client is coming from a function, return the function call metadata
@@ -1359,13 +1359,13 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 		return nil, err
 	}
 
-	if client.mod == nil {
+	if client.mod.Self() == nil {
 		// not a module client, return the metadata
 		return client.clientMetadata, nil
 	}
 	for i := len(client.parents) - 1; i >= 0; i-- {
 		parent := client.parents[i]
-		if parent.mod == nil {
+		if parent.mod.Self() == nil {
 			// not a module client, return the metadata
 			return parent.clientMetadata, nil
 		}

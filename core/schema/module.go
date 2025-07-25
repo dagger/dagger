@@ -687,7 +687,7 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Meta.NameField, nil
+	return curMod.Meta.Self().NameField, nil
 }
 
 func (s *moduleSchema) currentModuleSource(
@@ -700,7 +700,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	curSrc := curMod.Self().Meta.Source
+	curSrc := curMod.Self().Meta.Self().Source
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}

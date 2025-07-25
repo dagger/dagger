@@ -37,7 +37,7 @@ type Server interface {
 	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
 
 	// If the current client is coming from a function, return the module that function is from
-	CurrentModule(context.Context) (*Module, error)
+	CurrentModule(context.Context) (dagql.ObjectResult[*Module], error)
 
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)

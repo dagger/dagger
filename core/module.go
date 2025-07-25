@@ -860,7 +860,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 }
 
 type CurrentModule struct {
-	Meta *Module `field:"true"`
+	Meta dagql.ObjectResult[*Module] `field:"true"`
 }
 
 func (*CurrentModule) Type() *ast.Type {
@@ -876,6 +876,5 @@ func (*CurrentModule) TypeDescription() string {
 
 func (mod CurrentModule) Clone() *CurrentModule {
 	cp := mod
-	cp.Meta = mod.Meta.Clone()
 	return &cp
 }
