@@ -459,7 +459,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
-		// load this module source's context directory, sdk and deps in parallel
+		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
@@ -492,6 +492,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				return nil
 			})
 		}
+
 		if err := eg.Wait(); err != nil {
 			return inst, err
 		}
@@ -946,17 +947,33 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
 	}
 
-	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
+		// Load .gitignore patterns before loading the module so they can be used in the `Include` argument
+		// instead of Exclude so we get the right behaviour.
+		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath)
+		if err != nil {
+			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
+		}
+
+		for _, pattern := range ignorePatterns {
+			if strings.HasPrefix(pattern, "!") {
+				fullIncludePaths = append(fullIncludePaths, strings.TrimPrefix(pattern, "!"))
+			} else {
+				fullIncludePaths = append(fullIncludePaths, "!"+pattern)
+			}
+		}
+
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
+		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
+					{Name: "noGitAutoIgnore", Value: dagql.NewBoolean(true)}, // Disable .gitignore applying since it's done above.
 				},
 			},
 		)
@@ -965,6 +982,8 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
 		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
