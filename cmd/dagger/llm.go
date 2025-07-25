@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"maps"
 	"os"
 
@@ -294,7 +295,8 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			return s.assignShellString(ctx, name, str)
+			s.assignShellString(ctx, name, str)
+			return nil
 		default:
 			var objID string
 			if err :=
@@ -345,18 +347,24 @@ func (s *LLMSession) assignShell(ctx context.Context, name string, idable dagqlO
 	if err != nil {
 		return err
 	}
-	return s.assignShellString(ctx, name, val)
+	s.assignShellString(ctx, name, val)
+	return nil
 }
 
-func (s *LLMSession) assignShellString(ctx context.Context, name string, val string) error {
+func (s *LLMSession) assignShellString(ctx context.Context, name string, val string) {
+	if len(val) > 100 {
+		slog.Debug("value is too long", "name", name, "value", val)
+		return
+	}
 	quot, err := syntax.Quote(val, syntax.LangBash)
 	if err != nil {
-		return err
+		slog.Error("failed to quote value", "name", name, "value", val, "error", err.Error())
+		return
 	}
 	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
-		return err
+		slog.Error("failed to assign value", "name", name, "quoted", quot, "error", err.Error())
 	}
-	return nil
+	return
 }
 
 func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, error) {

@@ -29,6 +29,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -394,7 +395,11 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			Schema:      toolSchema,
 			Strict:      false, // unused
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, args, autoConstruct)
+				argsMap, ok := args.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("invalid arguments type: %T", args)
+				}
+				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, argsMap, autoConstruct)
 			},
 		}
 	}
@@ -444,16 +449,30 @@ func (m *MCP) call(ctx context.Context,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
-	args any,
+	args map[string]any,
 	// Whether the call should be made against a freshly constructed module
 	autoConstruct *ObjectTypeDef,
 ) (res string, rerr error) {
 	var validated bool
+	var toolArgNames []string
+	var toolArgValues []string
+	for _, arg := range fieldDef.Arguments {
+		val, ok := args[arg.Name].(string)
+		if !ok {
+			continue
+		}
+		toolArgNames = append(toolArgNames, arg.Name)
+		toolArgValues = append(toolArgValues, val)
+	}
+
 	ctx, span := Tracer(ctx).Start(ctx,
 		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
-		trace.WithAttributes(attribute.Bool("dagger.io/llm", true)),
+		trace.WithAttributes(
+			attribute.String(telemetry.LLMToolAttr, fieldDef.Name),
+			attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+			attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
+		),
 		telemetry.ActorEmoji("🤖"),
-		telemetry.Passthrough(),
 		telemetry.Reveal())
 
 	defer telemetry.End(span, func() error {
@@ -465,7 +484,8 @@ func (m *MCP) call(ctx context.Context,
 		return rerr
 	})
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.Bool(telemetry.LogsVerboseAttr, true))
 	defer func() {
 		fmt.Fprintln(stdio.Stdout, res)
 		stdio.Close()
@@ -502,10 +522,6 @@ func (m *MCP) call(ctx context.Context,
 
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
-	argsMap, ok := args.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
-	}
 	toolProps := toolSchema["properties"].(map[string]any)
 	var target dagql.AnyObjectResult
 	if m.env.Self().IsPrivileged() && selfType == schema.Query.Name {
@@ -547,7 +563,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", err
 		}
 	} else {
-		self, ok := argsMap["self"]
+		self, ok := args["self"]
 		if !ok {
 			// default to the newest object of this type
 			self = fmt.Sprintf("%s#%d", selfType, m.typeCounts[selfType])
@@ -557,7 +573,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", fmt.Errorf("expected 'self' to be a string - got %#v", self)
 		}
 		// don't pass 'self' along to future arg validation
-		delete(argsMap, "self")
+		delete(args, "self")
 		var err error
 		target, err = m.GetObject(recv, selfType)
 		if err != nil {
@@ -567,7 +583,7 @@ func (m *MCP) call(ctx context.Context,
 			return "", fmt.Errorf("expected %q to be a %q - got %q", recv, selfType, target.ObjectType().TypeName())
 		}
 	}
-	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, argsMap, toolProps)
+	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, args, toolProps)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -970,11 +986,9 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 				}
 				var isNoise bool
 				for _, attr := range spanAttrs {
-					if attr.Key == "dagger.io/llm" {
-						if attr.Value.GetBoolValue() {
-							isNoise = true
-							break
-						}
+					if attr.Key == telemetry.LLMRoleAttr || attr.Key == telemetry.LLMToolAttr {
+						isNoise = true
+						break
 					}
 				}
 				if isNoise {
@@ -1545,8 +1559,29 @@ NOTE: you must select methods before chaining them`,
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
+			argsMap, ok := args.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid arguments type")
+			}
+			var toolArgNames []string
+			var toolArgValues []string
+			if requiredArgs, ok := builtin.Schema["required"].([]string); ok {
+				for _, arg := range requiredArgs {
+					val, ok := argsMap[arg]
+					if !ok {
+						continue
+					}
+					if str, ok := val.(string); ok {
+						toolArgNames = append(toolArgNames, arg)
+						toolArgValues = append(toolArgValues, str)
+					}
+				}
+			}
 			attrs := []attribute.KeyValue{
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.LLMToolAttr, builtin.Name),
+				attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+				attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 			}
 			if builtin.Name == "call_method" || builtin.Name == "chain_methods" {
 				attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
@@ -1565,7 +1600,6 @@ NOTE: you must select methods before chaining them`,
 				attrs = append(attrs,
 					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 					attribute.String(telemetry.DagCallAttr, callAttr),
-					attribute.Bool("dagger.io/llm", true),
 				)
 				return nil
 			}()
@@ -1578,7 +1612,8 @@ NOTE: you must select methods before chaining them`,
 			if setupErr != nil {
 				return nil, setupErr
 			}
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+				log.Bool(telemetry.LogsVerboseAttr, true))
 			defer stdio.Close()
 			res, err := builtin.Call(ctx, args)
 			if err != nil {

@@ -44,6 +44,9 @@ var ErrInterrupted = errors.New("interrupted")
 type frontendPretty struct {
 	dagui.FrontendOpts
 
+	// used for animations
+	now time.Time
+
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
 
@@ -123,7 +126,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	view := new(strings.Builder)
 	return &frontendPretty{
 		db:        db,
-		logs:      newPrettyLogs(profile),
+		logs:      newPrettyLogs(profile, db),
 		autoFocus: true,
 
 		// set empty initial row state to avoid nil checks
@@ -1158,6 +1161,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case frameMsg:
+		fe.now = time.Time(msg)
 		fe.renderLocked()
 		fe, flushCmd := fe.flushScrollback()
 		// NB: take care not to forward Frame downstream, since that will result
@@ -1737,7 +1741,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	span := row.Span
 	fe.renderStep(out, r, row, prefix)
 	if span.Message == "" && // messages are displayed in renderStep
-		row.Expanded {
+		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix)
 	}
 	fe.renderStepError(out, r, row, prefix)
@@ -1779,7 +1783,7 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		return fe.renderLogs(out, r, row, logs, fe.window.Height/3, prefix)
+		return fe.renderLogs(out, r, row, logs, 8, prefix)
 	}
 	return false
 }
@@ -1871,18 +1875,16 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	} else {
 		toggler = out.String(DotFilled)
 	}
-	if span.ActorEmoji != "" && span.Message != "" {
-		toggler = out.String(span.ActorEmoji)
-	}
 	toggler = toggler.Foreground(statusColor(span))
-	if isFocused {
-		// TODO: light/dark
-		toggler = toggler.Foreground(termenv.ANSIWhite).Reverse()
+	if span.Message != "" {
+		if span.LLMRole == telemetry.LLMRoleUser {
+			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
+		} else if span.LLMRole == telemetry.LLMRoleAssistant {
+			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
+		}
 	}
-
-	if span.ActorEmoji != "" && span.Message != "" {
-		// make room for the emoji, since they're 2 cells wide
-		fmt.Fprint(out, "\b")
+	if isFocused {
+		toggler = toggler.Reverse()
 	}
 
 	fmt.Fprint(out, toggler.String()+" ")
@@ -1950,24 +1952,36 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string) bool {
 	span := row.Span
 	depth := row.Depth
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+
+	Pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	Dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+
 	if depth == -1 {
 		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
 	} else {
-		buf := new(strings.Builder)
-		fmt.Fprint(buf, prefix)
-		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
+		pipeBuf := new(strings.Builder)
+		fmt.Fprint(pipeBuf, prefix)
+		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
-		fmt.Fprint(indentOut, pipe)
+		fmt.Fprint(indentOut, Pipe)
 		fmt.Fprint(indentOut, out.String(" "))
-		logs.SetPrefix(buf.String())
+		logs.SetPrefix(pipeBuf.String())
 	}
 	if height <= 0 {
-		logs.SetHeight(logs.UsedHeight())
-	} else {
-		logs.SetHeight(height)
+		height = 1
 	}
+	trimmed := logs.UsedHeight() - height
+	if trimmed > 0 {
+		fmt.Fprint(out, prefix)
+		r.fancyIndent(out, row, false, false)
+		fmt.Fprint(out, Dashed)
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
+		fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)
+		fmt.Fprintln(out, out.String(" lines hidden...").Foreground(termenv.ANSIBrightBlack))
+	}
+	logs.SetHeight(height)
 	view := logs.View()
 	if view == "" {
 		return false
@@ -1989,14 +2003,16 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 }
 
 type prettyLogs struct {
+	DB       *dagui.DB
 	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
 	SawEOF   map[dagui.SpanID]bool
 	Profile  termenv.Profile
 }
 
-func newPrettyLogs(profile termenv.Profile) *prettyLogs {
+func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
+		DB:       db,
 		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
 		Profile:  profile,
@@ -2009,6 +2025,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// Check for Markdown content type
 		contentType := ""
 		eof := false
+		// verbose := false
 		for attr := range log.WalkAttributes {
 			if attr.Key == telemetry.ContentTypeAttr {
 				contentType = attr.Value.AsString()
@@ -2016,6 +2033,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if attr.Key == telemetry.StdioEOFAttr {
 				eof = attr.Value.AsBool()
 			}
+			// if attr.Key == telemetry.LogsVerboseAttr {
+			// 	verbose = attr.Value.AsBool()
+			// }
 		}
 
 		if eof && log.SpanID().IsValid() {
@@ -2023,12 +2043,45 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			continue
 		}
 
-		vterm := l.spanLogs(log.SpanID())
+		targetID := log.SpanID()
+		// toolSpan := l.findLLMToolSpan(targetID)
+		// if toolSpan != nil {
+		// 	if toolSpan.ID.SpanID == targetID {
+		// 		// don't show the LLM tool call's direct logs;
+		// 		// those are for debugging purposes only
+		// 		continue
+		// 	} else if verbose {
+		// 		// Don't route verbose logs to an LLM tool output
+		// 		continue
+		// 	} else {
+		// 		targetID = toolSpan.ID.SpanID
+		// 	}
+		// }
+
+		vterm := l.spanLogs(targetID)
 
 		if contentType == "text/markdown" {
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
 		} else {
 			_, _ = fmt.Fprint(vterm, log.Body().AsString())
+		}
+	}
+	return nil
+}
+func (l *prettyLogs) findLLMToolSpan(id trace.SpanID) *dagui.Span {
+	spanID := dagui.SpanID{SpanID: id}
+	current := l.DB.Spans.Map[spanID]
+	if current == nil {
+		return nil
+	}
+	if current.LLMTool != "" {
+		// don't show the LLM tool call's direct logs;
+		// those are for debugging purposes only
+		return current
+	}
+	for parent := range current.Parents {
+		if parent.LLMTool != "" {
+			return parent
 		}
 	}
 	return nil

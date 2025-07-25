@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
+	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/log"
@@ -202,18 +203,16 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var prefix string
-		if i == 0 && selfHoriz {
+		if i == 0 && selfHoriz && !row.Span.Reveal && len(row.Span.RevealedSpans.Order) == 0 {
 			if row.Next != nil {
 				prefix = VertRightBar + HorizBar
 			} else {
 				prefix = CornerBottomLeft + HorizBar
 			}
+		} else if nextChild.Next != nil && !row.Span.Reveal && len(row.Span.RevealedSpans.Order) == 0 {
+			prefix = VertBar + " "
 		} else {
-			if nextChild.Next != nil {
-				prefix = VertBar + " "
-			} else {
-				prefix = "  "
-			}
+			prefix = "  "
 		}
 
 		fmt.Fprint(out, out.String(prefix).
@@ -226,7 +225,7 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var symbol string
-		if row.ShowingChildren {
+		if row.ShowingChildren && !row.Span.Reveal {
 			symbol = VertBar
 		} else {
 			symbol = " "
@@ -373,9 +372,21 @@ func (r *renderer) renderSpan(
 	span *dagui.Span,
 	name string,
 ) error {
+	if name == "" {
+		return nil
+	}
+
 	var contentType string
 	if span != nil {
 		contentType = span.ContentType
+		if span.LLMTool != "" {
+			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			if len(span.LLMToolArgValues) > 0 {
+				// for now, only print the first arg, the rest are likely to be noisy.
+				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+			}
+			return nil
+		}
 	}
 
 	switch contentType {
@@ -475,7 +486,9 @@ func restrainedStatusColor(span *dagui.Span) termenv.Color {
 }
 
 func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
-	fmt.Fprint(out, out.String(" "))
+	if span.Name != "" {
+		fmt.Fprint(out, out.String(" "))
+	}
 	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
 	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
@@ -547,7 +560,7 @@ func (r renderer) renderMetric(
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
 		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		displayMetric = displayMetric.Foreground(termenv.ANSIBrightBlack)
 		fmt.Fprint(out, displayMetric)
 	}
 }

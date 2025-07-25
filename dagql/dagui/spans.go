@@ -150,6 +150,11 @@ type SpanSnapshot struct {
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
 
+	LLMRole          string   `json:",omitempty"`
+	LLMTool          string   `json:",omitempty"`
+	LLMToolArgNames  []string `json:",omitempty"`
+	LLMToolArgValues []string `json:",omitempty"`
+
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
 
@@ -218,6 +223,18 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
+
+	case telemetry.LLMRoleAttr:
+		snapshot.LLMRole = val.(string)
+
+	case telemetry.LLMToolAttr:
+		snapshot.LLMTool = val.(string)
+
+	case telemetry.LLMToolArgNamesAttr:
+		snapshot.LLMToolArgNames = val.([]string)
+
+	case telemetry.LLMToolArgValuesAttr:
+		snapshot.LLMToolArgValues = val.([]string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)

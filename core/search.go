@@ -152,7 +152,9 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*Search
 	return results, errs
 }
 
-func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.Reader, logs io.Writer) ([]*SearchResult, error) {
+func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser, logs io.Writer) ([]*SearchResult, error) {
+	defer rgOut.Close()
+
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	results := []*SearchResult{}
