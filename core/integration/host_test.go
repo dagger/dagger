@@ -326,8 +326,8 @@ func (HostSuite) TestDirectoryIgnoreVCS(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	t.Run("disable ignore VCS", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{IgnoreVCS: false}).Entries(ctx)
+	t.Run("no ignore by default", func(ctx context.Context, t *testctx.T) {
+		entries, err := c.Host().Directory(dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "b.md", "c.txt.rar", "subdir/", "subdir2/"}, entries)
 
@@ -340,8 +340,10 @@ func (HostSuite) TestDirectoryIgnoreVCS(ctx context.Context, t *testctx.T) {
 		require.Equal(t, []string{".gitignore", "bar.txt", "baz.md", "bool.yaml", "foo.go"}, subDir2Entries)
 	})
 
-	t.Run("apply git ignore by default", func(ctx context.Context, t *testctx.T) {
-		hostDir := c.Host().Directory(dir)
+	t.Run("apply git ignore", func(ctx context.Context, t *testctx.T) {
+		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+			IgnoreVCS: true,
+		})
 
 		rootHostDir, err := hostDir.Entries(ctx)
 		require.NoError(t, err)
@@ -357,7 +359,9 @@ func (HostSuite) TestDirectoryIgnoreVCS(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("correctly apply parent .gitignore when children path is given", func(ctx context.Context, t *testctx.T) {
-		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
+		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"), dagger.HostDirectoryOpts{
+			IgnoreVCS: true,
+		}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"b.md", "e.txt", "h.yaml"}, subDirEntries)
 	})
