@@ -4,6 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
+import path from "path";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
@@ -54,9 +55,15 @@ const config: Config = {
           path: "./current_docs",
           routeBasePath: "/",
           sidebarPath: "./sidebars.ts",
+          sidebarCollapsible: false,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
           remarkPlugins: [
-            [remarkCodeImport, { allowImportingFromOutside: true }],
+            [
+              remarkCodeImport,
+              {
+                allowImportingFromOutside: true,
+              },
+            ],
             [remarkTemplate, { version: daggerVersion }],
           ],
         },
@@ -68,6 +75,39 @@ const config: Config = {
     ],
   ],
   plugins: [
+    // Custom webpack configuration for path aliases
+    function (context, options) {
+      return {
+        name: "custom-webpack-config",
+        configureWebpack(config, isServer, utils) {
+          return {
+            resolve: {
+              alias: {
+                "@cookbookFilesystem": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/filesystem"
+                ),
+                "@cookbookContainer": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/container"
+                ),
+                "@cookbookSecret": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/secret"
+                ),
+                "@cookbookService": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/service"
+                ),
+                "@partials": path.resolve(__dirname, "current_docs/partials"),
+                "@daggerTypes": path.resolve(__dirname, "current_docs/partials/types"),
+                "@components": path.resolve(__dirname, "src/components"),
+              },
+            },
+          };
+        },
+      };
+    },
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
@@ -112,7 +152,24 @@ const config: Config = {
   ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
-    sidebarCollapsed: false,
+    announcementBar: {
+      id: "agentic-ci-banner",
+      content:
+        'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
+      backgroundColor: "#131126",
+      textColor: "#ffffff",
+      isCloseable: true,
+    },
+    sidebar: {
+      autoCollapseCategories: false,
+      hideable: false,
+    },
+    docs: {
+      sidebar: {
+        autoCollapseCategories: false,
+        hideable: false,
+      },
+    },
     metadata: [
       {
         name: "description",
@@ -143,28 +200,60 @@ const config: Config = {
         "powershell",
         "java",
       ],
-      theme: prismThemes.dracula,
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.oneDark,
     },
     navbar: {
       logo: {
         alt: "Dagger Logo",
-        src: "img/dagger-logo-white.svg",
-        height: "50px",
+        src: "img/dagger-logo-black.png",
+        height: "40px",
         href: "https://dagger.io/",
+        srcDark: "img/dagger-logo-white.png",
       },
       items: [
-        {
-          position: "left",
-          to: "https://daggerverse.dev/",
-          label: "Daggerverse",
-          className: "navbar-blog-link",
-          target: "_self",
-        },
         {
           position: "left",
           to: "/",
           label: "Docs",
           className: "navbar-blog-link",
+          activeBaseRegex: "^/$|^/(?!examples|extending|reference|cookbook).*",
+        },
+        {
+          position: "left",
+          to: "/examples",
+          label: "Examples",
+          className: "navbar-blog-link",
+          activeBaseRegex: "^/examples/?.*",
+        },
+        {
+          position: "left",
+          to: "/extending",
+          label: "Extending Dagger",
+          className: "navbar-blog-link",
+          activeBaseRegex: "^/extending/?.*",
+        },
+        {
+          position: "left",
+          to: "/reference",
+          label: "Reference",
+          className: "navbar-blog-link",
+          activeBaseRegex: "^/reference/?.*",
+        },
+        {
+          position: "left",
+          to: "/cookbook",
+          label: "Cookbook",
+          className: "navbar-blog-link",
+          activeBaseRegex: "^/cookbook/?.*",
+        },
+        {
+          position: "right",
+          label: "Try Dagger Cloud",
+          to: "https://dagger.io/cloud",
+          target: "_blank",
+          className: "navbar-blog-link dagger-cloud-button",
+          id: "dagger-cloud-link",
         },
         {
           type: "search",
@@ -309,7 +398,7 @@ const config: Config = {
       copyright: `
         <hr />
         <div class="flex justify-between">
-          <small>© Dagger 2022-2024</small>
+          <small>© Dagger 2022-2025</small>
           <div class="flex gap-8">
               <a target="_blank" class="footer-discord-link" href="https://discord.gg/dagger-io">
               </a>
