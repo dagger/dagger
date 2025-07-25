@@ -476,25 +476,29 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				),
 			),
 
-		dagql.Func("stdout", s.stdout).
+		dagql.NodeFunc("stdout", DagOpWrapper(srv, s.stdout)).
 			View(AllVersion).
 			Doc(`The buffered standard output stream of the last executed command`,
 				`Returns an error if no command was executed`),
-		dagql.NodeFunc("stdout", s.stdoutLegacy).
+		dagql.NodeFunc("stdout", DagOpWrapper(srv, s.stdoutLegacy)).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.Func("stderr", s.stderr).
+		dagql.NodeFunc("stderr", DagOpWrapper(srv, s.stderr)).
 			View(AllVersion).
 			Doc(`The buffered standard error stream of the last executed command`,
 				`Returns an error if no command was executed`),
-		dagql.NodeFunc("stderr", s.stderrLegacy).
+		dagql.NodeFunc("stderr", DagOpWrapper(srv, s.stderrLegacy)).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.Func("exitCode", s.exitCode).
+		dagql.NodeFunc("exitCode", DagOpWrapper(srv, s.exitCode)).
 			Doc(`The exit code of the last executed command`,
 				`Returns an error if no command was executed`),
+
+		dagql.NodeFunc("__usedClientID", DagOpWrapper(srv, s.usedClientID)).
+			View(AllVersion).
+			Doc(`The client ID actually used during the function call (which can be different if its cached)`),
 
 		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(srv, s.withSymlink)).
 			Doc(`Return a snapshot with a symlink`).
@@ -1013,12 +1017,16 @@ func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Obj
 	return &cacheCfg, nil
 }
 
-func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.Stdout(ctx)
+func (s *containerSchema) stdout(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.String, error) {
+	stdoutStr, err := parent.Self().Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(stdoutStr), nil
 }
 
 //nolint:dupl
-func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (string, error) {
+func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.String, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
@@ -1042,17 +1050,28 @@ func (s *containerSchema) stdoutLegacy(ctx context.Context, parent dagql.ObjectR
 		}); err != nil {
 			return "", err
 		}
-		return ctr.Self().Stdout(ctx)
+		out, err = ctr.Self().Stdout(ctx)
+		if err != nil {
+			return "", err
+		}
+		return dagql.NewString(out), nil
 	}
-	return out, err
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(out), nil
 }
 
-func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.Stderr(ctx)
+func (s *containerSchema) stderr(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.String, error) {
+	stderrStr, err := parent.Self().Stderr(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(stderrStr), nil
 }
 
 //nolint:dupl
-func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (string, error) {
+func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.String, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server: %w", err)
@@ -1076,13 +1095,32 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 		}); err != nil {
 			return "", err
 		}
-		return ctr.Self().Stderr(ctx)
+		out, err = ctr.Self().Stderr(ctx)
+		if err != nil {
+			return "", err
+		}
+		return dagql.NewString(out), nil
 	}
-	return out, err
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(out), nil
 }
 
-func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
-	return parent.ExitCode(ctx)
+func (s *containerSchema) exitCode(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.Int, error) {
+	exitCode, err := parent.Self().ExitCode(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return dagql.NewInt(exitCode), nil
+}
+
+func (s *containerSchema) usedClientID(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ noArgs) (dagql.String, error) {
+	clientID, err := parent.Self().UsedClientID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(clientID), nil
 }
 
 type containerWithSymlinkArgs struct {

@@ -355,6 +355,17 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	worker := opt.Worker.(*buildkit.Worker)
 	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
 	exec := worker.Executor()
+
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, container.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
 	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
 		Meta:  meta,
 		Stdin: io.NopCloser(strings.NewReader(opts.Stdin)),
@@ -432,7 +443,7 @@ func (container *Container) ExitCode(ctx context.Context) (int, error) {
 	return int(code), nil
 }
 
-func (container *Container) usedClientID(ctx context.Context) (string, error) {
+func (container *Container) UsedClientID(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountClientIDPath)
 }
 
@@ -446,7 +457,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		container.Platform,
 		container.Services,
 	)
-	content, err := file.Contents(ctx)
+	content, err := file.ContentsDagOp(ctx)
 	if err != nil {
 		return "", err
 	}
