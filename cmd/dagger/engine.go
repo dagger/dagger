@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/imageload"
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"go.opentelemetry.io/otel"
@@ -19,45 +16,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-const (
-	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
-	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
-)
-
 var (
-	// RunnerHost holds the host to connect to.
-	//
-	// Note: this is filled at link-time.
-	RunnerHost string
-
 	// RunnerImageLoader holds the image store for the client.
 	RunnerImageLoader string
 )
-
-func init() {
-	if v, ok := os.LookupEnv(RunnerHostEnv); ok {
-		RunnerHost = v
-	}
-	if RunnerHost == "" {
-		RunnerHost = defaultRunnerHost()
-	}
-
-	RunnerImageLoader = os.Getenv(RunnerImageLoaderEnv)
-}
-
-func defaultRunnerHost() string {
-	tag := engine.Tag
-	if tag == "" {
-		// can happen during naive dev builds (so just fallback to something
-		// semi-reasonable)
-		return "container://" + distconsts.EngineContainerName
-	}
-	if os.Getenv(GPUSupportEnv) != "" {
-		tag += "-gpu"
-	}
-	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
-}
 
 type runClientCallback func(context.Context, *client.Client) error
 
@@ -85,13 +47,25 @@ func withEngine(
 		}
 
 		if useCloudEngine {
-			params.RunnerHost = "dagger-cloud://default-engine-config.dagger.cloud"
-		} else if params.RunnerHost == "" {
-			params.RunnerHost = RunnerHost
+			params.CloudEngine = true
 		}
-
-		if RunnerImageLoader != "" {
-			backend, err := imageload.GetBackend(RunnerImageLoader)
+		if engineHost != "" {
+			params.EngineHost = engineHost
+		}
+		if engineImage != "" {
+			params.EngineImage = engineImage
+		}
+		if engineVersion != "" {
+			params.EngineVersion = engineVersion
+		}
+		if engineImageCommand != "" {
+			params.EngineImageCommand = engineImageCommand
+		}
+		if engineImageProvider != "" {
+			params.EngineImageProvider = engineImageProvider
+		}
+		if imageLoader != "" {
+			backend, err := imageload.GetBackend(imageLoader)
 			if err != nil {
 				return err
 			}
