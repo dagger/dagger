@@ -22,7 +22,7 @@ defmodule Dagger.Host do
           {:exclude, [String.t()]},
           {:include, [String.t()]},
           {:no_cache, boolean() | nil},
-          {:ignore_vcs, boolean() | nil}
+          {:no_git_auto_ignore, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = host, path, optional_args \\ []) do
     query_builder =
@@ -32,7 +32,7 @@ defmodule Dagger.Host do
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
-      |> QB.maybe_put_arg("ignoreVCS", optional_args[:ignore_vcs])
+      |> QB.maybe_put_arg("noGitAutoIgnore", optional_args[:no_git_auto_ignore])
 
     %Dagger.Directory{
       query_builder: query_builder,
