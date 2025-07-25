@@ -7,6 +7,7 @@ description: "Install Dagger and set up your environment"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import PartialInstallCli from '@partials/_install-cli.mdx';
+import { daggerVersion } from '@partials/version';
 
 To use Dagger, you must have a container runtime installed and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
 
@@ -76,6 +77,6 @@ The paths listed above are defaults and may require adjustment for your specific
 The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it. Dagger SDKs automatically provision a Dagger Engine at a compatible version.
 
 The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the {daggerVersion} release has a corresponding image at <code>
-{`registry.dagger.io/engine:v${daggerVersion}`}</code>.
+registry.dagger.io/engine:v{daggerVersion}</code>.
 
 Each release notes the compatible Dagger Engine version in its release notes.
