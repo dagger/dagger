@@ -92,6 +92,12 @@ type AfterVersion = core.AfterVersion
 //
 // We assume the hostPath is always a child of the parentPath.
 func getGitIgnoreIncludePaths(parentPath string, hostPath string) ([]string, error) {
+	// Special case when `host.Directory` is called from dagger query, the `hostPath` is 
+	// relative to the current directory so we simply make it absolute from the parentPath.
+	if !filepath.IsAbs(hostPath) {
+		hostPath = filepath.Join(parentPath, hostPath)
+	}
+
 	hostRelPathFromParent, err := filepath.Rel(parentPath, hostPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relative path from parent: %w", err)
