@@ -46,6 +46,7 @@ const (
 	ModuleSource  string = "ModuleSource"
 	Module        string = "Module"
 	Platform      string = "Platform"
+	BuildArg      string = "BuildArg"
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
