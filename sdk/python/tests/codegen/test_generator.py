@@ -1,5 +1,6 @@
 from textwrap import dedent
 
+import graphql
 import pytest
 from graphql import GraphQLArgument as Argument
 from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
@@ -107,23 +108,38 @@ def test_format_output_type(graphql, expected):
     assert format_output_type(graphql) == expected
 
 
+def _(type_: graphql.GraphQLInputType, default_value: str):
+    """Read default value from JSON result the same way that graphql library does."""
+    return type_, graphql.value_from_ast(graphql.parse_value(default_value), type_)
+
+
 @pytest.mark.parametrize(
     ("name", "args", "expected"),
     [
         ("args", (NonNull(List(String)),), "args: list[str | None]"),
         ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
         ("secret", (Scalar("SecretID"),), "secret: Secret | None = None"),
-        ("from", (String, None), "from_: str | None = None"),
-        ("lines", (Int, 1), "lines: int | None = 1"),
+        ("from", _(String, "null"), "from_: str | None = None"),
+        ("lines", _(Int, "1"), "lines: int | None = 1"),
         (
             "configPath",
-            (NonNull(String), "/dagger.json"),
-            'config_path: str = "/dagger.json"',
+            _(NonNull(String), '"/dagger.json"'),
+            "config_path: str = '/dagger.json'",
         ),
+        # Go example: // +default="foo bar" -> "defaultValue": "\"foo bar\""
+        ("space", _(String, '"foo bar"'), "space: str | None = 'foo bar'"),
+        # Go example: // +default='foo bar' -> "defaultValue": "\"'foo bar'\""
+        (
+            "singleQuotes",
+            _(String, "\"'foo bar'\""),
+            "single_quotes: str | None = \"'foo bar'\"",
+        ),
+        # Go example: // +default=`foo bar` -> "defaultValue": "\"`foo bar`\""
+        ("backticks", _(String, '"`foo bar`"'), "backticks: str | None = '`foo bar`'"),
     ],
 )
 @pytest.mark.parametrize("cls", [Argument, Input])
-def test_input_field_param(cls, name, args, expected, ctx: Context):
+def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_param() == expected
 
 
@@ -153,7 +169,7 @@ def test_input_field_param(cls, name, args, expected, ctx: Context):
         (
             "configPath",
             (NonNull(String), "/dagger.json"),
-            'Arg("configPath", config_path, "/dagger.json"),',
+            "Arg(\"configPath\", config_path, '/dagger.json'),",
         ),
     ],
 )
@@ -278,13 +294,13 @@ def test_scalar_render(type_, expected, ctx: Context):
                 class Enumeration(Enum):
                     """Example of an enumeration."""
 
-                    ONE = "ONE"
+                    ONE = 'ONE'
                     """First value."""
 
-                    THREE = "THREE"
+                    THREE = 'THREE'
                     """Third value."""
 
-                    TWO = "TWO"
+                    TWO = 'TWO'
                     """Second value."""
                 ''',
             ),
@@ -303,11 +319,11 @@ def test_scalar_render(type_, expected, ctx: Context):
                 """
                 class Enumeration(Enum):
 
-                    ONE = "ONE"
+                    ONE = 'ONE'
 
-                    THREE = "THREE"
+                    THREE = 'THREE'
 
-                    TWO = "TWO"
+                    TWO = 'TWO'
                 """,
             ),
         ),

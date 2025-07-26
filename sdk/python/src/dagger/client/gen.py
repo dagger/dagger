@@ -809,7 +809,7 @@ class Container(Type):
             result in unexpected behavior.
         """
         _args = [
-            Arg("args", () if args is None else args, ()),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -853,8 +853,8 @@ class Container(Type):
         _args = [
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -904,8 +904,8 @@ class Container(Type):
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("build", _args)
@@ -1164,8 +1164,8 @@ class Container(Type):
             Arg("path", path),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1222,8 +1222,8 @@ class Container(Type):
             Arg("name", name),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1484,8 +1484,8 @@ class Container(Type):
             Arg("address", address),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1592,7 +1592,7 @@ class Container(Type):
             absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -1665,8 +1665,8 @@ class Container(Type):
         """
         _args = [
             Arg("random", random, False),
-            Arg("ports", () if ports is None else ports, ()),
-            Arg("args", () if args is None else args, ()),
+            Arg("ports", [] if ports is None else ports, []),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -1802,8 +1802,8 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
         ]
@@ -2863,8 +2863,8 @@ class CurrentModule(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -3030,9 +3030,9 @@ class Directory(Type):
         _args = [
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("platform", platform, None),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
             Arg("target", target, ""),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("dockerBuild", _args)
@@ -3179,8 +3179,8 @@ class Directory(Type):
             in the new snapshot. Example: (e.g., ["app/", "package.*"]).
         """
         _args = [
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
@@ -3303,7 +3303,7 @@ class Directory(Type):
         """
         _args = [
             Arg("container", container, None),
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3338,8 +3338,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -5581,7 +5581,7 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
-            Arg("ignore", () if ignore is None else ignore, ()),
+            Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -6436,8 +6436,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("directory", _args)
@@ -6575,7 +6575,7 @@ class Host(Type):
         _args = [
             Arg("service", service),
             Arg("native", native, False),
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
         ]
         _ctx = self._select("tunnel", _args)
         return Service(_ctx)
@@ -9694,7 +9694,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
