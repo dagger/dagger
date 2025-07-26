@@ -32,9 +32,8 @@ func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	err = dag.Select(ctx, sdk.mod.sdk, &res, dagql.Selector{
 		Field: "requiredClientGenerationFiles",
 	})
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to get required client generation files: %w", err)
+		return nil, err
 	}
 
 	return res, nil
