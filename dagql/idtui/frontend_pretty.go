@@ -90,15 +90,21 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	fps         float64 // frames per second
-	profile     termenv.Profile
-	window      tea.WindowSizeMsg // set by BubbleTea
-	view        *strings.Builder  // rendered async
-	viewOut     *termenv.Output
-	browserBuf  *strings.Builder // logs if browser fails
-	finalRender bool             // whether we're doing the final render
-	stdin       io.Reader        // used by backgroundMsg for running terminal
-	writer      io.Writer
+	fps          float64 // frames per second
+	profile      termenv.Profile
+	window       tea.WindowSizeMsg // set by BubbleTea
+	contentWidth int
+	sidebarWidth int
+	view         *strings.Builder // rendered async
+	viewOut      *termenv.Output
+	browserBuf   *strings.Builder // logs if browser fails
+	finalRender  bool             // whether we're doing the final render
+	stdin        io.Reader        // used by backgroundMsg for running terminal
+	writer       io.Writer
+
+	// content to show in the sidebar
+	sidebar    []SidebarSection
+	sidebarBuf *strings.Builder // logs if sidebar fails
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -144,8 +150,63 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		view:       view,
 		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
 		browserBuf: new(strings.Builder),
+		sidebarBuf: new(strings.Builder),
 		writer:     w,
 	}
+}
+
+func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
+	var updated bool
+	for i, cur := range fe.sidebar {
+		if cur.Title == section.Title {
+			fe.sidebar[i] = section
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		if section.Title == "" {
+			fe.sidebar = append([]SidebarSection{section}, fe.sidebar...)
+		} else {
+			fe.sidebar = append(fe.sidebar, section)
+		}
+	}
+	fe.renderSidebar()
+}
+
+func (fe *frontendPretty) renderSidebar() {
+	fe.setWindowSizeLocked(fe.window)
+	if fe.sidebarWidth == 0 {
+		// sidebar not displayed; don't bother
+		return
+	}
+	fe.sidebarBuf.Reset()
+	for i, section := range fe.sidebar {
+		if i > 0 {
+			fe.sidebarBuf.WriteString("\n")
+			fe.sidebarBuf.WriteString("\n")
+		}
+		if section.Title != "" {
+			fe.sidebarBuf.WriteString(fe.viewOut.String(section.Title).
+				Foreground(termenv.ANSIBrightBlack).String())
+			filler := fe.sidebarWidth - len(section.Title) - 4
+			if filler > 0 {
+				horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
+				fe.sidebarBuf.WriteString(
+					lipgloss.NewStyle().
+						Foreground(ANSIBrightBlack).
+						Background(ANSIBlack).
+						Render(" " + horizBar + " "),
+				)
+			}
+			fe.sidebarBuf.WriteString("\n")
+			fe.sidebarBuf.WriteString("\n")
+		}
+
+		content := strings.TrimRight(section.Content, "\n")
+		fe.sidebarBuf.WriteString(content)
+	}
+	fe.program.Send(fe.window)
 }
 
 type startShellMsg struct {
@@ -387,7 +448,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -637,7 +698,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		progHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -748,7 +809,7 @@ func (fe *frontendPretty) viewKeymap() string {
 	fmt.Fprint(out, KeymapStyle.Render(" "))
 	fe.renderKeymap(out, KeymapStyle)
 	fmt.Fprint(out, KeymapStyle.Render(" "))
-	if rest := fe.window.Width - lipgloss.Width(outBuf.String()); rest > 0 {
+	if rest := fe.contentWidth - lipgloss.Width(outBuf.String()); rest > 0 {
 		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 	return outBuf.String()
@@ -949,6 +1010,13 @@ func (fe *frontendPretty) View() string {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
+
+	// Get sidebar content
+	sidebarContent := ""
+	if fe.sidebarBuf != nil && fe.sidebarBuf.Len() > 0 {
+		sidebarContent = fe.sidebarBuf.String()
+	}
+
 	if fe.editline != nil {
 		prog := ""
 		if fe.scrollback.Len() > 0 {
@@ -967,9 +1035,73 @@ func (fe *frontendPretty) View() string {
 				prog += "\n"
 			}
 		}
-		return prog + fe.editlineView()
+		mainContent := prog + fe.editlineView()
+
+		// If we have sidebar content, create a two-pane layout
+		if sidebarContent != "" {
+			return fe.renderWithSidebar(mainContent, sidebarContent)
+		}
+		return mainContent
 	}
-	return fe.view.String()
+
+	mainContent := fe.view.String()
+
+	// If we have sidebar content, create a two-pane layout
+	if sidebarContent != "" {
+		return fe.renderWithSidebar(mainContent, sidebarContent)
+	}
+	return mainContent
+}
+
+func haircut(s string, maxHeight int) (string, int) {
+	s = strings.TrimRight(s, "\n")
+	lines := strings.Split(s, "\n")
+	height := len(lines) + 1
+	if height <= maxHeight {
+		return s, height - 1
+	}
+	remove := height - maxHeight - 1
+	return strings.Join(lines[remove:], "\n"), maxHeight
+}
+
+// renderWithSidebar creates a two-pane layout with main content on the left and sidebar on the right
+func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) string {
+	if fe.sidebarWidth == 0 {
+		// If window is too narrow for sidebar, just show main content
+		return mainContent
+	}
+
+	contentView, contentHeight := haircut(mainContent, fe.window.Height)
+
+	// Style the sidebar with a left border
+	sidebarStyle := lipgloss.NewStyle().
+		Width(fe.sidebarWidth).
+		MaxHeight(fe.window.Height-1).
+		Height(contentHeight-1).
+		Background(ANSIBlack).
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(ANSIBrightBlack).
+		Padding(1, 1)
+
+	styledSidebar := lipgloss.JoinVertical(lipgloss.Left,
+		sidebarStyle.Render(sidebarContent),
+		lipgloss.JoinHorizontal(
+			lipgloss.Bottom,
+			lipgloss.NewStyle().
+				Foreground(ANSIBrightBlack).
+				Render("┤"),
+			lipgloss.NewStyle().
+				Background(ANSIBlack).
+				Render(strings.Repeat(" ", fe.sidebarWidth))))
+
+	styledContent := lipgloss.NewStyle().
+		MaxWidth(fe.contentWidth).
+		MaxHeight(fe.window.Height).
+		MaxHeight(fe.window.Height).
+		Render(contentView)
+
+	// Join horizontally
+	return lipgloss.JoinHorizontal(lipgloss.Bottom, styledContent, styledSidebar)
 }
 
 func (fe *frontendPretty) editlineView() string {
@@ -1385,8 +1517,10 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 
 func (fe *frontendPretty) initEditline() {
 	// create the editline
-	fe.editline = editline.New(fe.window.Width, fe.window.Height)
+	fe.editline = editline.New(fe.contentWidth, fe.window.Height)
 	fe.editline.HideKeyMap = true
+	// 255 in light mode seems worse than just using Black consistently
+	fe.editline.FocusedStyle.Editor.CursorLine = lipgloss.NewStyle().Background(ANSIBlack)
 	fe.editlineFocused = true
 	// HACK: for some reason editline's first paint is broken (only shows
 	// first 2 chars of prompt, doesn't show cursor). Sending it a message
@@ -1424,7 +1558,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 
 	// Create buffer for flushing
 	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
@@ -1664,17 +1798,31 @@ func (fe *frontendPretty) goErrorOrigin() {
 	fe.recalculateViewLocked()
 }
 
+const sidebarMinWidth = 30
+const sidebarMaxWidth = 50
+
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
-	fe.logs.SetWidth(msg.Width)
+	if len(fe.sidebar) > 0 {
+		fe.sidebarWidth = max(sidebarMinWidth, min(sidebarMaxWidth, fe.window.Width/3))
+	} else {
+		fe.sidebarWidth = 0
+	}
+	fe.contentWidth = msg.Width - fe.sidebarWidth
+	if fe.contentWidth < 0 {
+		fe.contentWidth = msg.Width
+		fe.sidebarWidth = 0
+	}
+	fe.logs.SetWidth(fe.contentWidth)
 	if fe.editline != nil {
-		fe.editline.SetSize(msg.Width, msg.Height)
+		fe.editline.SetSize(fe.contentWidth, msg.Height)
+		fe.editline.Update(nil) // bleh
 	}
 	if fe.activeBoolPrompt != nil {
-		fe.activeBoolPrompt.message.Width = msg.Width
+		fe.activeBoolPrompt.message.Width = fe.contentWidth
 	}
 	if fe.activeStringPrompt != nil {
-		fe.activeStringPrompt.message.Width = msg.Width
+		fe.activeStringPrompt.message.Width = fe.contentWidth
 	}
 }
 
@@ -1819,7 +1967,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		prefixWidth := lipgloss.Width(prefix)
 		indentWidth := row.Depth * 2 // Assuming indent is 2 spaces per depth level
 		markerWidth := 2             // "! " prefix
-		availableWidth := fe.window.Width - prefixWidth - indentWidth - markerWidth
+		availableWidth := fe.contentWidth - prefixWidth - indentWidth - markerWidth
 		if availableWidth > 0 {
 			errText = cellbuf.Wrap(errText, availableWidth, "")
 		}
@@ -1893,6 +2041,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		fmt.Fprintf(out, out.String("%s ").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
 	}
 
+	var empty bool
 	if span.Message != "" {
 		// when a span represents a message, we don't need to print its name
 		//
@@ -1903,14 +2052,16 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 			r.fancyIndent(out, row, false, false)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
 		} else {
-			// no logs were printed, so snug the duration up against the emoji
-			fmt.Fprint(out, "\b")
+			empty = true
 		}
 	} else if call := span.Call(); call != nil {
 		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row); err != nil {
 			return err
 		}
 	} else if span != nil {
+		if span.Name == "" {
+			empty = true
+		}
 		if err := r.renderSpan(out, span, span.Name); err != nil {
 			return err
 		}
@@ -1919,7 +2070,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span)
+		r.renderDuration(out, span, !empty)
 		r.renderMetrics(out, span)
 		fe.renderStatus(out, span)
 	}
@@ -2163,7 +2314,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 	fe.program.Send(tea.Msg(promptBool{
 		message: &Markdown{
 			Content: message,
-			Width:   min(max(fe.window.Width/2, 50), 80),
+			Width:   min(max(fe.contentWidth/2, 50), 80),
 		},
 		result:  result,
 		yessing: *dest,
@@ -2184,7 +2335,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, message string
 	fe.program.Send(tea.Msg(promptString{
 		message: &Markdown{
 			Content: message,
-			Width:   fe.window.Width,
+			Width:   fe.contentWidth,
 		},
 		result: result,
 	}))

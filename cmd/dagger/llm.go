@@ -9,10 +9,15 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -53,10 +58,12 @@ type LLMSession struct {
 	// undo       *LLMSession
 	dag        *dagger.Client
 	llm        *dagger.LLM
+	models     openrouter.Models
 	model      string
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
+	initialFS  *dagger.Directory
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
@@ -77,20 +84,19 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		shell: shellHandler,
 	}
 
+	// TODO: cache this
+	models, err := openrouter.FetchModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.models = models
+
 	// don't sync the initial env vars
 	for k := range shellHandler.runner.Env.Each {
 		s.skipEnv[k] = true
 	}
 
 	s.reset(ctx)
-
-	// figure out what the model resolved to
-	model, err := s.llm.Model(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	s.model = model
 
 	return s, nil
 }
@@ -131,17 +137,48 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 	s.model = resolvedModel
 
-	s.updateLLMAndAgentVar(ctx, s.llm.WithPrompt(input))
+	prompted := s.llm.WithPrompt(input)
 
-	// s.llm.Env().Hostfs()
-	prompted, err := s.llm.Sync(ctx)
-	if err != nil {
-		return s, err
+	for {
+		prompted = prompted.Step()
+		s.updateLLMAndAgentVar(ctx, prompted)
+
+		prompted, err := s.llm.Sync(ctx)
+		if err != nil {
+			return s, err
+		}
+		// NB: this is currently redundant since Sync updates LLM state in-place, but
+		// safest option is to respect the return value anyway in case it changes
+		s.updateLLMAndAgentVar(ctx, prompted)
+
+		after := prompted.Env().Hostfs()
+		changed, err := s.initialFS.Diff(after).Glob(ctx, "**/*")
+		if err != nil {
+			return s, err
+		}
+
+		if len(changed) > 0 {
+			diff := ""
+			for _, fp := range changed {
+				if strings.HasSuffix(fp, "/") {
+					continue
+				}
+				diff += fmt.Sprintf("- %s\n", termenv.String(fp).Bold())
+			}
+			Frontend.SetSidebarContent(idtui.SidebarSection{
+				Title:   "Changes",
+				Content: diff,
+			})
+		}
+
+		hasMore, err := prompted.HasPrompt(ctx)
+		if err != nil {
+			return s, err
+		}
+		if !hasMore {
+			break
+		}
 	}
-
-	// NB: this is currently redundant since Sync updates LLM state in-place, but
-	// safest option is to respect the return value anyway in case it changes
-	s.updateLLMAndAgentVar(ctx, prompted)
 
 	if err := s.syncVarsFromLLM(ctx); err != nil {
 		return s, err
@@ -168,6 +205,92 @@ const (
 
 func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) error {
 	s.llm = llm
+
+	// figure out what the model resolved to
+	model, err := s.llm.Model(ctx)
+	if err != nil {
+		return err
+	}
+	s.model = model
+
+	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
+	if err != nil {
+		return err
+	}
+	outputTokens, err := llm.TokenUsage().OutputTokens(ctx)
+	if err != nil {
+		return err
+	}
+	cacheReads, err := llm.TokenUsage().CachedTokenReads(ctx)
+	if err != nil {
+		return err
+	}
+	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(ctx)
+	if err != nil {
+		return err
+	}
+	lines := []string{
+		idtui.DotFilled + " " + termenv.String(s.model).Bold().String(),
+	}
+
+	if opts.Verbosity > dagui.ShowInternalVerbosity {
+		if inputTokens > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Tokens In: ",
+					inputTokens))
+		}
+		if outputTokens > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Tokens Out:",
+					outputTokens))
+		}
+		if cacheReads > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Cache Reads: ",
+					cacheReads))
+		}
+		if cacheWrites > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Cache Writes:",
+					cacheWrites))
+		}
+	}
+
+	if m := s.models.Lookup(s.model); m != nil {
+		inputCost := m.Pricing.Prompt.Cost(inputTokens)
+		outputCost := m.Pricing.Completion.Cost(outputTokens)
+		cacheReadCost := m.Pricing.InputCacheRead.Cost(cacheReads)
+		cacheWriteCost := m.Pricing.InputCacheWrite.Cost(cacheWrites)
+		totalCost := inputCost + outputCost + cacheReadCost + cacheWriteCost
+		if totalCost > 0 {
+			contextUsage := int(float64(inputTokens) / float64(m.ContextLength) * 100)
+			contextStyle := termenv.String("%d%%").Bold()
+			if contextUsage > 80 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIYellow)
+			}
+			if contextUsage > 90 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIRed)
+			}
+			if contextUsage > 100 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
+			}
+			lines = append(lines,
+				fmt.Sprintf("  Cost: "+termenv.String("$%0.2f").Bold().String(),
+					totalCost),
+				fmt.Sprintf("  Context: "+contextStyle.String(),
+					contextUsage),
+			)
+		}
+	}
+
+	Frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "LLM",
+		Content: strings.Join(lines, "\n"),
+	})
 	if err := s.assignShell(ctx, agentVar, s.llm); err != nil {
 		return err
 	}
@@ -189,6 +312,12 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
 			// from the agent var
 			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
+
+			// sync the initial FS from the agent
+			s.initialFS, err = s.llm.Env().Hostfs().Sync(ctx)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

@@ -90,7 +90,18 @@ type Frontend interface {
 	// Shell is called when the CLI enters interactive mode.
 	Shell(ctx context.Context, handler ShellHandler)
 
+	// Populate the sidebar with content.
+	SetSidebarContent(SidebarSection)
+
 	prompt.PromptHandler
+}
+
+type SidebarSection struct {
+	// A heading to show for the content, if any. If empty, the content will be
+	// placed in the topmost portion of the sidebar.
+	Title string
+	// The content to display.
+	Content string
 }
 
 // ShellHandler defines the interface for handling shell interactions
@@ -203,13 +214,13 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var prefix string
-		if i == 0 && selfHoriz && !row.Span.Reveal && len(row.Span.RevealedSpans.Order) == 0 {
+		if i == 0 && selfHoriz && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
 			if row.Next != nil {
 				prefix = VertRightBar + HorizBar
 			} else {
 				prefix = CornerBottomLeft + HorizBar
 			}
-		} else if nextChild.Next != nil && !row.Span.Reveal && len(row.Span.RevealedSpans.Order) == 0 {
+		} else if nextChild.Next != nil && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
 			prefix = VertBar + " "
 		} else {
 			prefix = "  "
@@ -485,8 +496,8 @@ func restrainedStatusColor(span *dagui.Span) termenv.Color {
 	}
 }
 
-func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
-	if span.Name != "" {
+func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) {
+	if space {
 		fmt.Fprint(out, out.String(" "))
 	}
 	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
