@@ -94,7 +94,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("loop", s.loop).
 			Doc("Loop completing tool calls until the LLM ends its turn"),
 		dagql.Func("step", s.step).
-			// Deprecated("use sync").
 			Doc("Returns an LLM that will only sync one step instead of looping"),
 		dagql.Func("hasPrompt", s.hasPrompt).
 			// Deprecated("use sync").
