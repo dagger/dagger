@@ -35,6 +35,7 @@ public class TelemetryInitializer {
                 .setResource(resource)
                 .addSpanProcessor(
                         BatchSpanProcessor.builder(OtlpHttpSpanExporter.builder()
+                                .setEndpoint(System.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
                                 .setTimeout(2, TimeUnit.SECONDS)
                                 .build())
                                 .setScheduleDelay(100, TimeUnit.MILLISECONDS)
@@ -47,6 +48,7 @@ public class TelemetryInitializer {
                 .build();
 
         Runtime.getRuntime().addShutdownHook(new Thread(sdkTracerProvider::close));
+
 
         INSTANCE = sdk;
 
