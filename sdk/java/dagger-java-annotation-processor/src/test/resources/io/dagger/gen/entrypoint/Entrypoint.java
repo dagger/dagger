@@ -17,8 +17,12 @@ package io.dagger.gen.entrypoint;
     import io.dagger.client.TypeDefKind;
     import io.dagger.client.exception.DaggerExecException;
     import io.dagger.client.exception.DaggerQueryException;
-    import io.dagger.java.module.DaggerJava;
-    import java.lang.Class;
+import io.dagger.client.telemetry.Telemetry;
+import io.dagger.java.module.DaggerJava;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
+import java.lang.Class;
     import java.lang.Error;
     import java.lang.Exception;
     import java.lang.Integer;
@@ -56,13 +60,15 @@ public class Entrypoint {
         inputArgs.put(fnArg.name(), fnArg.value());
       }
 
-      JSON result;
-      if (parentName.isEmpty()) {
-        ModuleID modID = register();
-        result = JsonConverter.toJSON(modID);
-      } else {
-        result = invoke(parentJson, parentName, fnName, inputArgs);
-      }
+      Telemetry telemetry = new Telemetry();
+      JSON result = telemetry.trace(fnName, null, () -> {
+        if (parentName.isEmpty()) {
+          ModuleID modID = register();
+          return JsonConverter.toJSON(modID);
+        }
+
+        return invoke(parentJson, parentName, fnName, inputArgs);
+      });
       fnCall.returnValue(result);
     } catch (InvocationTargetException e) {
       fnCall.returnError(dag().error(e.getTargetException().getMessage()));

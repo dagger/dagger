@@ -23,7 +23,7 @@ public class TelemetryTracer {
     public <T> T startActiveSpan(String name, Attributes attributes, Supplier<T> function) {
         Span span = tracer.spanBuilder(name).setAllAttributes(attributes).startSpan();
 
-        try {
+        try (var scope = span.makeCurrent()) {
             return function.get();
         } catch (Exception e) {
             span.recordException(e);
@@ -32,21 +32,5 @@ public class TelemetryTracer {
         } finally {
             span.end();
         }
-    }
-
-    public <T> Supplier<T> asyncStartActiveSpan(String name, Attributes attributes, Supplier<T> function) {
-        return () -> {
-            Span span = tracer.spanBuilder(name).setAllAttributes(attributes).startSpan();
-
-            try {
-                return function.get();
-            } catch (Exception e) {
-                span.recordException(e);
-                span.setStatus(StatusCode.ERROR, e.getMessage());
-                throw e;
-            } finally {
-                span.end();
-            }
-        };
     }
 }
