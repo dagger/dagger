@@ -28,6 +28,9 @@ type Config struct {
 
 	// ClientConfig is the specific config to generate standalone client.
 	ClientConfig *ClientGeneratorConfig
+
+	// TypeDefConfig is the specific config to generate type definitions.
+	TypeDefGeneratorConfig *TypeDefGeneratorConfig
 }
 
 // Close existing dagger client if it exists.
@@ -77,4 +80,15 @@ type ClientGeneratorConfig struct {
 
 	// The directory where the client will be generated.
 	ClientDir string
+}
+
+type TypeDefGeneratorConfig struct {
+	// Name of the module to generate code for.
+	ModuleName string
+
+	// ModuleSourcePath is the subpath in OutputDir where the module source subpath is located.
+	ModuleSourcePath string
+
+	// ModuleParentPath is the path from the module source subpath to the context directory
+	ModuleParentPath string
 }

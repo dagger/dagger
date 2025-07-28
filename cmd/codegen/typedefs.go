@@ -4,22 +4,22 @@ import (
 	"context"
 	"fmt"
 	"github.com/dagger/dagger/cmd/codegen/generator"
-	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
-	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
 	"os"
 )
 
-func TypeDefs(ctx context.Context, cfg generator.Config) error {
+type TypeDefFunc func(ctx context.Context) (*generator.GeneratedState, error)
+
+func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc) error {
 	logsW := os.Stdout
 
 	_, _ = fmt.Fprintf(logsW, "generating %s typedefs\n", cfg.Lang)
 
-	generated, err := typeDefs(ctx, cfg)
+	generated, err := typedefFunc(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err = generator.Overlay(ctx, logsW, generated.Overlay, cfg.OutputDir); err != nil {
+	if err = generator.Overlay(ctx, generated.Overlay, cfg.OutputDir); err != nil {
 		return fmt.Errorf("failed to overlay generated code: %w", err)
 	}
 
@@ -32,25 +32,4 @@ func TypeDefs(ctx context.Context, cfg generator.Config) error {
 	}
 
 	return ctx.Err()
-}
-
-func typeDefs(ctx context.Context, cfg generator.Config) (*generator.GeneratedState, error) {
-	var gen generator.Generator
-	switch cfg.Lang {
-	case generator.SDKLangGo:
-		gen = &gogenerator.GoGenerator{
-			Config: cfg,
-		}
-	case generator.SDKLangTypeScript:
-		gen = &typescriptgenerator.TypeScriptGenerator{
-			Config: cfg,
-		}
-	default:
-		sdks := []string{
-			string(generator.SDKLangGo),
-		}
-		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
-	}
-
-	return gen.GenerateTypeDefs(ctx)
 }
