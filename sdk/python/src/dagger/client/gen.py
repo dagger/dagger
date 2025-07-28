@@ -1876,6 +1876,7 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
+        redirect_stdin: str | None = "",
     ) -> Self:
         """Execute a command in the container, and return a new snapshot of the
         container state after execution.
@@ -1919,6 +1920,7 @@ class Container(Type):
             Only use this if you specifically need the command to be pid 1 in
             the container. Otherwise it may result in unexpected behavior. If
             you're not sure, you don't need this.
+        redirect_stdin:
         """
         _args = [
             Arg("args", args),
@@ -1933,6 +1935,7 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
+            Arg("redirectStdin", redirect_stdin, ""),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)

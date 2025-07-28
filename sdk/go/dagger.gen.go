@@ -1735,6 +1735,8 @@ type ContainerWithExecOpts struct {
 	//
 	// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
 	NoInit bool
+
+	RedirectStdin string
 }
 
 // Execute a command in the container, and return a new snapshot of the container state after execution.
@@ -1776,6 +1778,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
+		}
+		// `redirectStdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdin) {
+			q = q.Arg("redirectStdin", opts[i].RedirectStdin)
 		}
 	}
 	q = q.Arg("args", args)

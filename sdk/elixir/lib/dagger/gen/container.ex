@@ -755,7 +755,8 @@ defmodule Dagger.Container do
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:redirect_stdin, String.t() | nil}
         ]) :: Dagger.Container.t()
   def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
     query_builder =
@@ -774,6 +775,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
 
     %Dagger.Container{
       query_builder: query_builder,
