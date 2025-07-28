@@ -9,6 +9,7 @@ import typing
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
+import anyio
 import cattrs
 import cattrs.gen
 from cattrs.preconf import is_primitive_enum
@@ -54,7 +55,7 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
-
+TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
 
 T = TypeVar("T", bound=type)
 
@@ -63,6 +64,9 @@ class Module:
     """Builder for a :py:class:`dagger.Module`."""
 
     def __init__(self, main_name: str = MAIN_OBJECT):
+        if not main_name:
+            msg = "Main object name can't be empty"
+            raise ValueError(msg)
         self._main_name = main_name
         self._converter: JsonConverter = make_converter()
         self._objects: dict[str, ObjectType] = {}
@@ -82,35 +86,15 @@ class Module:
         """Check if the given object is the main object of the module."""
         return self.main_cls is other.cls
 
-    async def serve(self):
-        if parent_name := await dag.current_function_call().parent_name():
-            result = await self._invoke(parent_name)
-        else:
-            try:
-                result = await self._register()
-            except TypeError as e:
-                raise RegistrationError(str(e)) from e
-
-        try:
-            output = json.dumps(result)
-        except (TypeError, ValueError) as e:
-            # Not expected to happen because unstructuring should reduce
-            # Python complex types to primitive values that are easily
-            # serialized to JSON. If not, it's something that should be caught
-            # earlier.
-            msg = f"Failed to serialize final result as JSON: {e}"
-            raise InvalidResultError(msg) from e
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "output => %s",
-                textwrap.shorten(repr(output), 144),
-            )
-
-        await dag.current_function_call().return_value(dagger.JSON(output))
-
-    async def _register(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+    async def register(self):
         """Register the module and its types with the Dagger API."""
+        try:
+            result = await self._typedefs()
+        except TypeError as e:
+            raise RegistrationError(str(e), e) from e
+        await anyio.Path(TYPE_DEF_FILE).write_text(result)
+
+    async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
         try:
             self.get_object(self._main_name)
         except ObjectNotFoundError as e:
@@ -225,12 +209,21 @@ class Module:
 
         return await mod.id()
 
-    async def _invoke(self, parent_name: str) -> Any:
+    async def invoke(self):
         """Invoke a function and return its result.
 
         This includes getting the call context from the API and deserializing data.
         """
         fn_call = dag.current_function_call()
+        parent_name = await fn_call.parent_name()
+
+        if not parent_name:
+            msg = (
+                "Seems like the SDK module isn't registering the types correctly. "
+                "This is a bug."
+            )
+            raise RegistrationError(msg)
+
         name = await fn_call.name()
         parent_json = await fn_call.parent()
         input_args = await fn_call.input_args()
@@ -289,7 +282,23 @@ class Module:
                 textwrap.shorten(repr(result), 144),
             )
 
-        return result
+        try:
+            output = json.dumps(result)
+        except (TypeError, ValueError) as e:
+            # Not expected to happen because unstructuring should reduce
+            # Python complex types to primitive values that are easily
+            # serialized to JSON. If not, it's something that should be caught
+            # earlier.
+            msg = f"Failed to serialize final result as JSON: {e}"
+            raise InvalidResultError(msg) from e
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "output => %s",
+                textwrap.shorten(repr(output), 144),
+            )
+
+        await dag.current_function_call().return_value(dagger.JSON(output))
 
     async def get_result(
         self,
