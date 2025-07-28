@@ -173,20 +173,10 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
@@ -211,14 +201,8 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 	return digest.String(), nil
 }
 
-func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start bindings: %w", err)
-	}
-	defer detach()
 
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: dir.LLB,
@@ -546,10 +530,6 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -559,7 +539,7 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, svcs, ".")
+	info, err := dir.Stat(ctx, bk, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -576,10 +556,6 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -592,7 +568,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := dir.Stat(ctx, bk, svcs, file)
+	info, err := dir.Stat(ctx, bk, file)
 	if err != nil {
 		return nil, err
 	}
@@ -1113,20 +1089,6 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 }
 
 func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
 	return mountLLB(ctx, dir.LLB, func(root string) error {
 		src, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
