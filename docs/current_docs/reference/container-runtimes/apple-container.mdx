@@ -1,6 +1,8 @@
 ---
-title: "Apple's Container Project"
-description: "Learn how to use Dagger with Apple's Container Project."
+title: "Apple's Container"
+sidebar_label: "Apple's Container"
+slug: /reference/container-runtimes/apple-container
+description: "Learn how to use Dagger with Apple's Container."
 ---
 
 Dagger can be used with any OCI-compatible container runtime, including [`container` from Apple](https://github.com/apple/container).
@@ -21,26 +23,29 @@ By default, Dagger tries to invoke the `docker` executable at some points during
 
 To use `container` with Dagger:
 
-- create a symbolic link in a superior `PATH` position as below:
+Create a symbolic link in a superior `PATH` position as below:
 
-    ```shell
-    sudo ln -s $(which container) /usr/local/bin/docker
-    ```
-- start the Dagger Engine using appropriate values for memory and cpus:
-    ```shell
-    container run --rm -d \
-      --memory 16G \
-      --cpus 4 \
-      --name dagger-engine-custom \
-      registry.dagger.io/engine:v0.18.12
-    ```
-- set this env var wherever you want to reach your Dagger Engine:
-    ```shell
-    export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine-custom
-    ```
+```shell
+sudo ln -s $(which container) /usr/local/bin/docker
+```
+
+Start the Dagger Engine using appropriate values for memory and cpus:
+
+```shell
+container run --rm -d \
+    --memory 16G \
+    --cpus 4 \
+    --name dagger-engine-custom \
+    registry.dagger.io/engine:v0.18.12
+```
+
+Set this env var wherever you want to reach your Dagger Engine:
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine-custom
+```
 
 :::info
-there is no `container ps`, so use `container ls`
+There is no `container ps`, so use `container ls` to check if the Dagger Engine is running.
 :::
 
 ## Resources
