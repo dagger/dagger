@@ -609,3 +609,62 @@ html[data-theme="dark"] .markdown table th,
 html[data-theme="dark"] .markdown table td {
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+// Table of Contents styling to match sidebar
+.table-of-contents {
+  font-size: 0.8125rem; // 13px like sidebar
+  
+  // Links in TOC
+  .table-of-contents__link {
+    display: block;
+    padding: 0.2rem 0.2rem 0.2rem 0.5rem;
+    margin: 0.1rem 0;
+    border-radius: 4px;
+    color: var(--ifm-menu-color);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    text-decoration: none;
+    border-left: 3px solid transparent;
+    
+    &:hover {
+      text-decoration: none;
+    }
+  }
+}
+
+// Light mode TOC styling
+html[data-theme="light"] {
+  .table-of-contents__link {
+    &:hover {
+      background-color: rgba(26, 24, 51, 0.05) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid rgba(33, 121, 141, 0.5); // Light version of --ifm-menu-color-active
+      padding-left: 0.5rem;
+    }
+    
+    &.table-of-contents__link--active {
+      background-color: rgba(26, 24, 51, 0.1) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid var(--ifm-menu-color-active);
+      padding-left: 0.5rem;
+    }
+  }
+}
+
+// Dark mode TOC styling
+html[data-theme="dark"] {
+  .table-of-contents__link {
+    &:hover {
+      background-color: rgba(208, 224, 249, 0.1) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid rgba(87, 199, 227, 0.5); // Light version of --ifm-menu-color-active
+      padding-left: 0.5rem;
+    }
+    
+    &.table-of-contents__link--active {
+      background-color: rgba(208, 224, 249, 0.15) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid var(--ifm-menu-color-active);
+      padding-left: 0.5rem;
+    }
+  }
+}
