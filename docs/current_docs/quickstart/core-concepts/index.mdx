@@ -137,7 +137,7 @@ func (m *Basics) Publish(ctx context.Context) (string, error) {
 }
 ```
 
-To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/main.go` file to include the function code above:
+To use this function, initialize a new Dagger Module using the command below, and then update the auto-generated `.dagger/main.go` file to include the function code above:
 
 ```shell
 dagger init --sdk=go --name=basics
@@ -156,7 +156,7 @@ async def publish(self) -> str:
     )
 ```
 
-To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/basics/main.py` file to include the function code above:
+To use this function, initialize a new Dagger Module using the command below, and then update the auto-generated `.dagger/src/basics/main.py` file to include the function code above:
 
 ```shell
 dagger init --sdk=python --name=basics
@@ -174,7 +174,7 @@ async publish(): Promise<string> {
     .publish("ttl.sh/hello")
 }
 ```
-To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/index.ts` file to include the function code above:
+To use this function, initialize a new Dagger Module using the command below, and then update the auto-generated `.dagger/src/index.ts` file to include the function code above:
 
 ```shell
 dagger init --sdk=typescript --name=basics
@@ -194,7 +194,7 @@ public function publish(): string
 }
 ```
 
-To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/Basics.php` file to include the function code above:
+To use this function, initialize a new Dagger Module using the command below, and then update the auto-generated `.dagger/src/Basics.php` file to include the function code above:
 
 ```shell
 dagger init --sdk=php --name=basics
@@ -213,7 +213,7 @@ public String publish()
       .publish("ttl.sh/hello");
 }
 ```
-To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/main/java/io/dagger/modules/basics/Basics.java` file to include the function code above:
+To use this function, initialize a new Dagger Module using the command below, and then update the auto-generated `.dagger/src/main/java/io/dagger/modules/basics/Basics.java` file to include the function code above:
 
 ```shell
 dagger init --sdk=java --name=basics
@@ -509,7 +509,7 @@ Dagger Functions are fully "sandboxed" and do not have direct access to the host
 
 ## Install other modules
 
-You can group Dagger Functions into [modules](../../features/reusability.mdx) and share them with others - your team, your company, or the broader Dagger community. And just as others can use your modules, you too can use modules created and shared by others, to speed up your development and take advantage of best practices. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.
+You can group Dagger Functions into [modules](../../features/reusability.mdx) and share them with others - your team, your company, or the broader Dagger community. And just as others can use your modules, you too can use modules created and shared by others, to speed up your development and take advantage of best practices. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger Modules, and lets you easily search and consume them.
 
 ![Daggerverse](/img/current_docs/quickstart/basics/daggerverse.jpg)
 

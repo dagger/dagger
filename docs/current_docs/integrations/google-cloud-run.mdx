@@ -10,18 +10,18 @@ Dagger can be used to deploy any containerized application to Google Cloud Run. 
 
 ## How it works
 
-The integration depends on the [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52), which provides various Dagger Functions to create or update a Google Cloud Run service using a container image. These Dagger Functions make it easy to extend existing CI pipelines with additional deployment support.
+The integration depends on the [`google-cloud-run` Dagger Module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52), which provides various Dagger Functions to create or update a Google Cloud Run service using a container image. These Dagger Functions make it easy to extend existing CI pipelines with additional deployment support.
 
-To use this integration, you can call the Dagger module with the Dagger CLI directly, or you can create your own Dagger Function that uses it. In the latter case, you must:
+To use this integration, you can call the Dagger Module with the Dagger CLI directly, or you can create your own Dagger Function that uses it. In the latter case, you must:
 
-- Create a new Dagger module in your project
-- Install the `google-cloud-run` Dagger module as a dependency
+- Create a new Dagger Module in your project
+- Install the `google-cloud-run` Dagger Module as a dependency
 - Implement your CI/CD pipeline as one or more Dagger Function(s)
 - Test your Dagger Function(s) locally and then transfer them to your CI/CD environment
 
 ## Prerequisites
 
-- The [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52)
+- The [`google-cloud-run` Dagger Module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52)
 - An active Google Cloud project with the Google Cloud APIs and the Google Cloud Run Admin API enabled
 - An active Google Cloud service account for the target project with Editor, Service Account Token Creator, and Cloud Run Admin roles
 - A JSON keyfile with credentials for the target service account
@@ -46,7 +46,7 @@ If your requirements are more complex - for example, if you already have one or 
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
-Create a new Dagger module:
+Create a new Dagger Module:
 
 ```shell
 dagger init --name=my-module --sdk=go --source=./dagger
@@ -64,7 +64,7 @@ Update the generated `dagger/main.go` file with the following code:
 ```
 </TabItem>
 <TabItem value="python" label="Python">
-Create a new Dagger module:
+Create a new Dagger Module:
 
 ```shell
 dagger init --name=my-module --sdk=python --source=./dagger
@@ -82,7 +82,7 @@ Update the generated `dagger/src/my_module/main.py` file with the following code
 ```
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
-Create a new Dagger module:
+Create a new Dagger Module:
 
 ```shell
 dagger init --name=my-module --sdk=typescript --source=./dagger
@@ -117,7 +117,7 @@ dagger call deploy \
 ```
 
 :::tip
-The `google-cloud-run` Dagger module can also modify an existing service by deploying a new container image to the service URL.
+The `google-cloud-run` Dagger Module can also modify an existing service by deploying a new container image to the service URL.
 :::
 
 ## Resources

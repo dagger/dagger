@@ -72,9 +72,9 @@ Once you confirm your authentication code, your Dagger CLI will be authenticated
 
 After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
 
-## Initialize a Dagger module
+## Initialize a Dagger Module
 
-Bootstrap a new Dagger module in Go, Python, TypeScript, PHP, or Java by running `dagger init` in the application's root directory.
+Bootstrap a new Dagger Module in Go, Python, TypeScript, PHP, or Java by running `dagger init` in the application's root directory.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -127,12 +127,12 @@ You should see information about two auto-generated Dagger Functions: `container
 
 ## Construct a workflow
 
-Replace the generated Dagger module files as described below.
+Replace the generated Dagger Module files as described below.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `.dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger Module:
 
 ```go Go file=./snippets/go/main.go
 ```
@@ -140,7 +140,7 @@ Replace the generated `.dagger/main.go` file with the following code, which adds
 </TabItem>
 <TabItem value="python" label="Python">
 
-Replace the generated `.dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `.dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger Module:
 
 ```python file=./snippets/python/__init__.py
 ```
@@ -148,7 +148,7 @@ Replace the generated `.dagger/src/hello_dagger/main.py` file with the following
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-Replace the generated `.dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `.dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger Module:
 
 ```typescript file=./snippets/typescript/index.ts
 ```
@@ -156,7 +156,7 @@ Replace the generated `.dagger/src/index.ts` file with the following code, which
 </TabItem>
 <TabItem value="php" label="PHP">
 
-Replace the generated `.dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `.dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger Module:
 
 ```php file=./snippets/php/src/HelloDagger.php
 ```
@@ -164,7 +164,7 @@ Replace the generated `.dagger/src/HelloDagger.php` file with the following code
 </TabItem>
 <TabItem value="java" label="Java">
 
-Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger Module:
 
 ```java file=./snippets/java/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java
 ```
@@ -172,7 +172,7 @@ Replace the generated `.dagger/src/main/java/io/dagger/modules/hellodagger/Hello
 </TabItem>
 </Tabs>
 
-In this Dagger module, each Dagger Function performs a different operation:
+In this Dagger Module, each Dagger Function performs a different operation:
 
 - The `publish` Dagger Function tests, builds and publishes a container image of the application to a registry.
 - The `test` Dagger Function runs the application's unit tests and returns the results.

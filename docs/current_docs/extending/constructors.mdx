@@ -1,6 +1,6 @@
 ---
 title: Constructors
-description: Learn how to create and use constructors in Dagger modules, including simple and complex constructors, default values, and asynchronous usage.
+description: Learn how to create and use constructors in Dagger Modules, including simple and complex constructors, default values, and asynchronous usage.
 ---
 
 
@@ -8,14 +8,14 @@ import PartialComplexConstructorOutput from '../partials/_complex_constructor_ou
 
 # Constructors
 
-Every Dagger module has a constructor. The default one is generated automatically and has no arguments.
+Every Dagger Module has a constructor. The default one is generated automatically and has no arguments.
 
 It's possible to write a custom constructor. The mechanism to do this is SDK-specific.
 
 This is a simple way to accept module-wide configuration, or just to set a few attributes without having to create setter functions for them.
 
 :::important
-Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that chains them.
+Dagger Modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that chains them.
 :::
 
 ## Simple constructor
@@ -106,7 +106,7 @@ Constructors can be passed both simple and complex types (such as `Container`, `
 Explicitly declare the type even when it can be inferred, so that the Dagger SDK can extend the GraphQL schema correctly.
 :::
 
-Here is an example of a Dagger module with a default constructor argument of type `Container`:
+Here is an example of a Dagger Module with a default constructor argument of type `Container`:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">

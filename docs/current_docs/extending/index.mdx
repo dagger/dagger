@@ -6,11 +6,11 @@ description: "In addition to providing a set of core functions and types, the Da
 import { daggerVersion } from '../partials/version';
 import DaggerModuleInit from '@partials/_dagger_module_init.mdx';
 
-Custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger modules.
+Custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger Modules.
 
-When a Dagger module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
+When a Dagger Module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger Module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
-## Initialize a Dagger module
+## Initialize a Dagger Module
 
 <DaggerModuleInit />
 
@@ -122,7 +122,7 @@ Dagger Functions execute within containers spawned by the Dagger Engine. This "s
 1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 :::
 
-When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
+When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger Module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger Modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
 
 The process your code executes in will currently be with the `root` user, but without a full set of Linux capabilities and other standard container sandboxing provided by `runc`.
 
