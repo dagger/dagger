@@ -66,48 +66,6 @@ func (funcs goTemplateFuncs) moduleRelPath(path string) string {
 	)
 }
 
-/*
-moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
-
-The overall idea is that users just need to create a struct with the same name as their Module and then
-add methods to that struct to implement their Module. Methods on that struct become Functions.
-
-They are also free to return custom objects from Functions, which themselves may have methods that become
-Functions too. However, only the "top-level" Module struct's Functions will be directly invocable.
-
-This is essentially just the GraphQL execution model.
-
-The implementation works by parsing the user's code and generating a main func that reads function call inputs
-from the Engine, calls the relevant function and returns the result. The generated code is mostly a giant switch/case
-on the object+function name, with each case doing json deserialization of the input arguments and calling the actual
-Go function.
-*/
-func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
-	// HACK: the code in this func can be pretty flaky and tricky to debug -
-	// it's much easier to debug when we actually have stack traces, so we grab
-	// those on a panic
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "internal error during module code generation: %v\n", r)
-			debug.PrintStack()
-			panic(r)
-		}
-	}()
-
-	if funcs.modulePkg == nil {
-		// during bootstrapping, we might not have code yet, since it takes
-		// multiple passes.
-		return `func main() { panic("no code yet") }`, nil
-	}
-
-	ps := &parseState{
-		pkg:        funcs.modulePkg,
-		fset:       funcs.moduleFset,
-		schema:     funcs.schema,
-		moduleName: funcs.cfg.ModuleConfig.ModuleName,
-
-		methods: make(map[string][]method),
-	}
 func (funcs goTemplateFuncs) getTypes(ps *parseState, strict bool) ([]types.Type, error) {
 	ps.objs = []types.Object{}
 

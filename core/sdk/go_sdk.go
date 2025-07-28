@@ -316,7 +316,7 @@ func (sdk *goSDK) TypeDefs(
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
 						"codegen",
-						"typedefs",
+						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 					},
