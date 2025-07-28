@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -21,10 +22,14 @@ type Git struct {
 	Valid bool
 }
 
+const upstreamGit = "https://github.com/dagger/dagger.git"
+
 func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*Git, error) {
-	ctr := dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithWorkdir("/src")
+	// HACK: use alpine/git for now, since creating wolfi images is relatively
+	// *slow* - this function is in the hot-path, so avoid it for now.
+	// ctr := dag.Wolfi().Container(dagger.WolfiContainerOpts{Packages: []string{"git"}})
+	ctr := dag.Container().From("alpine/git")
+	ctr = ctr.WithWorkdir("/src")
 
 	if dir != nil {
 		ctr = ctr.WithDirectory(".", dir)
@@ -47,14 +52,19 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 		// enter detached head state, then we can rewrite all our refs however we like later
 		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
 
-		// manually add a remote (since .git/config was removed earlier)
-		ctr = ctr.WithExec([]string{"git", "remote", "add", "origin", "https://github.com/dagger/dagger.git"})
-
 		// do various unshallowing operations (only the bare minimum is
 		// provided by the core git functions which are used by our remote git
 		// module sources)
-		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
+		maxDepth := 2147483647 // see https://git-scm.com/docs/shallow
+
+		// fetch using a dagger git remote, which has superior caching over
+		// just directly fetching
+		remote := dag.Git(upstreamGit).Branch("main")
 		ctr = ctr.
+			WithExec([]string{"git", "remote", "add", "origin", "file:///mnt/remote"}).
+			WithMountedDirectory("/mnt/remote", remote.Tree(dagger.GitRefTreeOpts{
+				Depth: maxDepth,
+			})).
 			WithExec([]string{
 				"git", "fetch",
 				// force so that local tags get overridden if they were wrong
@@ -63,13 +73,14 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 				"--tags",
 				// we need the unshallowed history of our branches, so we
 				// can determine which tags are in it later
-				"--depth=" + maxDepth,
+				"--depth=" + strconv.Itoa(maxDepth),
 				"origin",
 				// update HEAD
 				"HEAD",
 				// update main
 				"refs/heads/main:refs/heads/main",
-			})
+			}).
+			WithExec([]string{"git", "remote", "set-url", "origin", upstreamGit})
 	}
 
 	return &Git{
