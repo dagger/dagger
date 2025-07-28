@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -33,14 +32,18 @@ func (s *cloudSchema) cloud(ctx context.Context, parent *core.Query, args struct
 }
 
 func (s *cloudSchema) traceURL(ctx context.Context, parent *core.Cloud, args struct{}) (string, error) {
-	m, err := engine.ClientMetadataFromContext(ctx)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	md, err := query.MainClientCallerMetadata(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	if m.CloudOrg == "" {
+	if md.CloudOrg == "" {
 		return "", errors.New("no cloud organization configured; `dagger login` to configure your Dagger Cloud organization")
 	}
 	tid := trace.SpanContextFromContext(ctx).TraceID().String()
-	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", m.CloudOrg, tid), nil
+	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", md.CloudOrg, tid), nil
 }

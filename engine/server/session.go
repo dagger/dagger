@@ -895,18 +895,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		allowedLLMModules = md.AllowedLLMModules
 	}
 
-	// Inherit CloudOrg from the main client caller
-	var cloudOrg string
-	srv.daggerSessionsMu.RLock()
-	if sess, ok := srv.daggerSessions[execMD.SessionID]; ok {
-		if mainClient, err := srv.clientFromIDs(execMD.SessionID, sess.mainClientCallerID); err == nil {
-			if mainClient.clientMetadata != nil {
-				cloudOrg = mainClient.clientMetadata.CloudOrg
-			}
-		}
-	}
-	srv.daggerSessionsMu.RUnlock()
-
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:          execMD.ClientID,
@@ -916,7 +904,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientHostname:    execMD.Hostname,
 			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
-			CloudOrg:          cloudOrg,
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
 		},
