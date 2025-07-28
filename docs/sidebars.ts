@@ -11,10 +11,12 @@ module.exports = {
           label: "Features",
           items: [
             "features/programmability",
+            "features/portability",
             "features/reusability",
-            "features/performance",
+            "features/caching",
             "features/observability",
             "features/security",
+            "features/secrets",
             "features/llm",
             "features/shell",
           ],
