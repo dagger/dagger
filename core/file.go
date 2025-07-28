@@ -168,49 +168,59 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		return nil, nil
 	}
 
-	r, err := file.Open(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
 	var buf bytes.Buffer
 	w := &limitedWriter{
 		Limit:  buildkit.MaxFileContentsSize,
 		Writer: &buf,
 	}
 
-	if offset != nil || limit != nil {
-		br := bufio.NewReader(r)
-		lineNum := 1
-		readLines := 0
-		for {
-			line, err := br.ReadBytes('\n')
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
+	_, err := execInMount(ctx, file, func(root string) error {
+		fullPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
 
-			if offset == nil || lineNum > *offset {
-				w.Write(line)
-				readLines++
-				if limit != nil && readLines == *limit {
+		r, err := os.Open(fullPath)
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+
+		if offset != nil || limit != nil {
+			br := bufio.NewReader(r)
+			lineNum := 1
+			readLines := 0
+			for {
+				line, err := br.ReadBytes('\n')
+				if err != nil && err != io.EOF {
+					return err
+				}
+
+				if offset == nil || lineNum > *offset {
+					w.Write(line)
+					readLines++
+					if limit != nil && readLines == *limit {
+						break
+					}
+				}
+
+				if err == io.EOF {
 					break
 				}
-			}
 
-			if err == io.EOF {
-				break
+				lineNum++
 			}
-
-			lineNum++
+		} else {
+			_, err := io.Copy(w, r)
+			if err != nil {
+				return err
+			}
 		}
-	} else {
-		_, err := io.Copy(w, r)
-		if err != nil {
-			return nil, err
-		}
+		return err
+	}, allowNilBuildkitSession)
+	if err != nil {
+		return nil, err
 	}
-
 	return buf.Bytes(), nil
 }
 
