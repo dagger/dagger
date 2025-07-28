@@ -144,10 +144,20 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
@@ -161,10 +171,20 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
 	ref, err := bkRef(ctx, bk, file.LLB)
 	if err != nil {
@@ -209,6 +229,31 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 	return contents, nil
 }
 
+// ContentsDagOp handles file content retrieval (via a dagop rather than buildkit)
+func (file *File) ContentsDagOp(ctx context.Context) ([]byte, error) {
+	var contents []byte
+	_, err := execInMount(ctx, file, func(root string) error {
+		fullPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return err
+		}
+		fileSize := info.Size()
+		if fileSize > buildkit.MaxFileContentsSize {
+			// TODO: move to proper error structure
+			return fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+		}
+
+		contents, err = os.ReadFile(fullPath)
+		return err
+	}, allowNilBuildkitSession)
+	return contents, err
+}
+
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
 	// If metadata are included, directly compute the digest of the file
 	if !excludeMetadata {
@@ -246,10 +291,20 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 	if err != nil {
 		return nil, err
 	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
 	ref, err := bkRef(ctx, bk, file.LLB)
 	if err != nil {
@@ -309,6 +364,16 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
 	fs, err := reffs.OpenDef(ctx, bk, file.LLB)
 	if err != nil {
@@ -322,6 +387,10 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
@@ -340,10 +409,30 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
 	defer telemetry.End(vtx, func() error { return rerr })
 
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
 	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
 	return mountLLB(ctx, file.LLB, func(root string) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {

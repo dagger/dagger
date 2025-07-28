@@ -136,6 +136,10 @@ func CurrentBuildkitSessionGroup(ctx context.Context) (bksession.Group, bool) {
 	return g, ok
 }
 
+func CtxWithNilBkSessionGroup(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bkSessionGroupContextKey{}, nil)
+}
+
 func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result) (outputs []solver.Result, err error) {
 	ctx = ctxWithBkSessionGroup(ctx, g)
 
