@@ -3,9 +3,7 @@ title: "Modern CI"
 description: "Build a modern CI workflow with Dagger that's portable, composable, and runs anywhere"
 ---
 
-
-
-import VideoPlayer from '../../src/components/VideoPlayer';
+import VideoPlayer from '@components/VideoPlayer';
 
 This guide will show you how to build a modern CI workflow for an application using Dagger. Workflows often start simple, but eventually transform into a labyrinth of artisanal shell scripts and/or unmanageable YAML code. Dagger lets you replace those artisanal scripts and YAML with a modern API and cross-language scripting engine.
 
@@ -14,8 +12,8 @@ This guide will show you how to build a modern CI workflow for an application us
 This guide will take you approximately 10 minutes to complete. You should be familiar with programming in Go, Python,  TypeScript, PHP, or Java.
 
 Before beginning, ensure that:
-- you have [installed the Dagger CLI](../installation.mdx).
-- you know [the basics of Dagger](../quickstart/core-concepts/index.mdx).
+- you have [installed the Dagger CLI](../getting-started/installation.mdx).
+- you know [the basics of Dagger](../getting-started/core-concepts.mdx).
 - you have [Git](https://git-scm.com/downloads) and a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
 - you have a GitHub account (optional, only if configuring Dagger Cloud)
 

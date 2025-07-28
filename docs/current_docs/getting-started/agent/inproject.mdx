@@ -1,10 +1,11 @@
 ---
-slug: /quickstart/agent-in-project
+title: "Add an AI agent to an Existing Project"
+slug: /getting-started/agent-in-project
+description: "Learn how to build an AI agent that can interact with an existing Daggerized project to add features and automate tasks."
 ---
 
-
-import PartialIde from '../../partials/_ide.mdx';
-import VideoPlayer from '../../../src/components/VideoPlayer';
+import PartialIde from '@partials/_ide.mdx';
+import VideoPlayer from '@components/VideoPlayer';
 
 # Add an AI agent to an Existing Project
 
@@ -18,16 +19,16 @@ This quickstart will take you approximately 10 minutes to complete. You should i
 
 Before beginning, ensure that:
 
-- you have [installed the Dagger CLI](../../installation.mdx).
+- you have [installed the Dagger CLI](../installation.mdx).
 - you have a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
 - you have configured an LLM provider to use with Dagger.
 - you have a GitHub account
 - you have completed the [AI agent quickstart](./index.mdx) to learn the basics of LLMs in Dagger.
-- you have completed the [CI quickstart](../index.mdx) to a Daggerize a project.
+- you have completed the [CI quickstart](../quickstart.mdx) to a Daggerize a project.
 
 ## Inspect the example application
 
-This quickstart uses the [Daggerized project from the CI quickstart](../index.mdx). To verify that your project is in the correct state, change to the project's working directory and list the available Dagger Functions:
+This quickstart uses the [Daggerized project from the CI quickstart](../quickstart.mdx). To verify that your project is in the correct state, change to the project's working directory and list the available Dagger Functions:
 
 ```shell
 cd hello-dagger

@@ -16,13 +16,23 @@ module.exports = {
         "features/shell",
       ],
     },
+  ],
+  examples: [
+    {
+      type: "category",
+      label: "Examples",
+      items: ["examples/index", "examples/demos", "examples/livestreams"],
+    },
+  ],
+  gettingStarted: [
     {
       type: "category",
       label: "Getting Started",
       items: [
-        "installation",
-        "quickstart/core-concepts/index",
-        "quickstart/index",
+        "getting-started/index",
+        "getting-started/installation",
+        "getting-started/core-concepts",
+        "getting-started/quickstart",
       ],
     },
     {
@@ -41,10 +51,9 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Components",
+      label: "Types",
       items: [
         "components/index",
-        "components/objects/create-your-own",
         {
           type: "category",
           label: "Objects",
@@ -59,13 +68,6 @@ module.exports = {
           ],
         },
       ],
-    },
-  ],
-  examples: [
-    {
-      type: "category",
-      label: "Examples",
-      items: ["examples/index", "examples/demos", "examples/livestreams"],
     },
   ],
   extending: [
