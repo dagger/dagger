@@ -731,7 +731,7 @@ func NewCoreDirStatFS(dir *Directory, bk *buildkit.Client) *CoreDirStatFS {
 }
 
 func (fs CoreDirStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
+	stat, err := fs.dir.Stat(ctx, fs.bk, path)
 	if err != nil {
 		return nil, err
 	}

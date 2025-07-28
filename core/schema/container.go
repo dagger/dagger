@@ -2124,10 +2124,6 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get services: %w", err)
-	}
 	engineHostPlatform := query.Platform()
 
 	if args.MediaTypes == "" {
@@ -2195,12 +2191,6 @@ func (s *containerSchema) asTarball(
 	if !ok {
 		return inst, fmt.Errorf("no buildkit session group found")
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return inst, err
-	}
-	defer detach()
 
 	filePath := args.DagOpPath
 
