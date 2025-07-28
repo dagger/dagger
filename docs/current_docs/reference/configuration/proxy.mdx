@@ -22,8 +22,7 @@ Configuring Dagger with these settings currently requires [provisioning a custom
 To be applied, one or more of the environment variables listed above just need
 to be set on the custom Dagger container.
 
-## Configuration applied to user containers
-
+:::warning Applies to all containers
 As mentioned above, these proxy environment variables set on Dagger will also
 be automatically set on all containers created by userspace Dagger Functions
 (i.e. containers created via a `withExec` API call).
@@ -40,3 +39,4 @@ settings won't invalidate the cache of the container's execution.
 Additionally, if the `withEnvVariable` API is used to explicitly set any of
 those proxy environment variable values, those will override any settings
 inherited from Dagger's proxy configuration.
+:::

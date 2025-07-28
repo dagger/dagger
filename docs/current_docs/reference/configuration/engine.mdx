@@ -77,9 +77,8 @@ mounted to `/etc/dagger/engine.toml`. For example:
 </TabItem>
 </Tabs>
 
-## Options
 
-### Logging
+## Logging
 
 Dagger supports various log verbosity levels. The default level is to enable `debug`.
 
@@ -131,7 +130,7 @@ trace = false
 </TabItem>
 </Tabs>
 
-### Security
+## Security
 
 By default, Dagger has an open security policy. This policy allows exec
 operations to access the `insecureRootCapabilities` options, which effectively
@@ -182,7 +181,7 @@ insecure-entitlements = []
 "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the `root` user of the system. Currently, the Dagger Engine cannot be run as a rootless container; [network and filesystem constraints related to rootless usage](../../faq.mdx#why-does-the-dagger-engine-need-to-run-in-a-privileged-container) would currently significantly limit its capabilities and performance.
 :::
 
-### Garbage collection
+## Garbage collection
 
 The Dagger Engine [caches various operations](./cache.mdx) to improve speed on
 subsequent runs of the same workflow.
@@ -337,7 +336,7 @@ To adjust the garbage collector's fine-grained policies:
 </TabItem>
 </Tabs>
 
-### Custom registries
+## Custom registries
 
 Dagger can be configured to use container registry mirrors for any registry
 URL. This allows container images that refer to one registry to instead be
@@ -381,12 +380,12 @@ instead of from Docker Hub.
 </TabItem>
 </Tabs>
 
-### Custom proxy
+## Custom proxy
 
 Currently, custom proxies cannot be configured through `engine.json` or
 `engine.toml`, and must be configured [separately](./proxy.mdx).
 
-### Custom certificate authorities
+## Custom certificate authorities
 
 Currently, custom certificate authorities cannot be configured through
 `engine.json` or `engine.toml`, and must be configured [separately](./custom-ca.mdx).
