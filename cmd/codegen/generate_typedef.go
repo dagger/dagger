@@ -25,10 +25,10 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 		OutputDir: outputDir,
 	}
 
-	typeDefConfig := &generator.TypeDefGeneratorConfig{}
+	moduleConfig := &generator.ModuleGeneratorConfig{}
 
 	if moduleName != "" {
-		typeDefConfig.ModuleName = moduleName
+		moduleConfig.ModuleName = moduleName
 
 		if modulePath == "" {
 			return fmt.Errorf("--module-name requires --module-source-path")
@@ -40,25 +40,25 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 		if part, _, _ := strings.Cut(modPath, string(filepath.Separator)); part == ".." {
 			return fmt.Errorf("module path must be child of output directory")
 		}
-		typeDefConfig.ModuleSourcePath = modPath
+		moduleConfig.ModuleSourcePath = modPath
 		moduleParentPath, err := relativeTo(modulePath, outputDir)
 		if err != nil {
 			return err
 		}
-		typeDefConfig.ModuleParentPath = moduleParentPath
+		moduleConfig.ModuleParentPath = moduleParentPath
 		//} else {
-		//	typeDefConfig.ModuleName = filepath.Base(filepath.Clean(typeDefConfig.OutputDir))
-		//	typeDefConfig.ModuleSourcePath = "."
+		//	moduleConfig.ModuleName = filepath.Base(filepath.Clean(moduleConfig.OutputDir))
+		//	moduleConfig.ModuleSourcePath = "."
 	}
 
-	cfg.TypeDefGeneratorConfig = typeDefConfig
+	cfg.ModuleConfig = moduleConfig
 
 	generator, err := getGenerator(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to get generator: %w", err)
 	}
 
-	slog.Info("generate type definition", "language", cfg.Lang, "module-name", cfg.TypeDefGeneratorConfig.ModuleName)
+	slog.Info("generate type definition", "language", cfg.Lang, "module-name", cfg.ModuleConfig.ModuleName)
 
 	return TypeDefs(ctx, cfg, generator.GenerateTypeDefs)
 }
