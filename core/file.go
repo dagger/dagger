@@ -157,56 +157,27 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context) ([]byte, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	ref, err := bkRef(ctx, bk, file.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	// Stat the file and preallocate file contents buffer:
-	st, err := file.Stat(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Error on files that exceed MaxFileContentsSize:
-	fileSize := int(st.GetSize_())
-	if fileSize > buildkit.MaxFileContentsSize {
-		// TODO: move to proper error structure
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
-	}
-
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
-
-	// Use a chunked reader to overcome issues when
-	// the input file exceeds MaxFileContentsChunkSize:
-	var offset int
-	for offset < fileSize {
-		chunk, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: file.File,
-			Range: &bkgw.FileRange{
-				Offset: offset,
-				Length: buildkit.MaxFileContentsChunkSize,
-			},
-		})
+	var contents []byte
+	_, err := execInMount(ctx, file, func(root string) error {
+		fullPath, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		// Copy the chunk and increment offset for subsequent reads:
-		copy(contents[offset:], chunk)
-		offset += len(chunk)
-	}
-	return contents, nil
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return err
+		}
+		fileSize := info.Size()
+		if fileSize > buildkit.MaxFileContentsSize {
+			// TODO: move to proper error structure
+			return fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+		}
+
+		contents, err = os.ReadFile(fullPath)
+		return err
+	}, allowNilBuildkitSession)
+	return contents, err
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
