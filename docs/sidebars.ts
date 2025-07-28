@@ -32,6 +32,15 @@ module.exports = {
     },
     {
       type: "category",
+      label: "Integrations",
+      items: [
+        "integrations/index",
+        "integrations/ci",
+        "integrations/container-runtimes",
+      ],
+    },
+    {
+      type: "category",
       label: "Components",
       items: [
         "components/index",
@@ -49,15 +58,6 @@ module.exports = {
             "components/objects/env",
           ],
         },
-      ],
-    },
-    {
-      type: "category",
-      label: "Integrations",
-      items: [
-        "integrations/index",
-        "integrations/ci",
-        "integrations/container-runtimes",
       ],
     },
   ],
