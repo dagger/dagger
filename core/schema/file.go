@@ -79,7 +79,7 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	content, err := file.ContentsDagOp(ctx)
+	content, err := file.Contents(ctx)
 	if err != nil {
 		return "", err
 	}
