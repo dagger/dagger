@@ -77,7 +77,7 @@ func (funcs goTemplateFuncs) visitTypes(
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
 		schema:     funcs.schema,
-		moduleName: funcs.cfg.ModuleName,
+		moduleName: funcs.cfg.TypeDefGeneratorConfig.ModuleName,
 
 		methods: make(map[string][]method),
 	}
