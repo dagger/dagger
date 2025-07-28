@@ -744,13 +744,9 @@ class Enum(Handler[GraphQLEnumType]):
             yield ""
 
             valrepr = repr(val)
-            yield f"{names[0]} = {valrepr}"
-            if desc := t.values[names[0]].description:
-                yield doc(desc)
-
-            for i, name in enumerate(names[1:]):
-                yield f"{name} = {names[0]}"
-                if desc := t.values[names[1 + i]].description:
+            for name in names:
+                yield f"{name} = {valrepr}"
+                if desc := t.values[name].description:
                     yield doc(desc)
 
     def _get_value(self, value) -> str:
