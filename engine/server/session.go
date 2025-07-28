@@ -694,6 +694,12 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 }
 
 func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error) {
+	if sessID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
@@ -856,28 +862,6 @@ func (srv *Server) getOrInitClient(
 	}, nil
 }
 
-func (srv *Server) getClient(sessionID, clientID string) (*daggerClient, error) {
-	if sessionID == "" {
-		return nil, fmt.Errorf("missing session ID")
-	}
-	if clientID == "" {
-		return nil, fmt.Errorf("missing client ID")
-	}
-	srv.daggerSessionsMu.RLock()
-	sess, ok := srv.daggerSessions[sessionID]
-	srv.daggerSessionsMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("session %q not found", sessionID)
-	}
-	sess.clientMu.RLock()
-	client, ok := sess.clients[clientID]
-	sess.clientMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientID)
-	}
-	return client, nil
-}
-
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientMetadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
@@ -977,7 +961,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
 		// Just get the client if it exists, don't init it.
-		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
+		client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
 			return fmt.Errorf("get client: %w", err)
 		}
