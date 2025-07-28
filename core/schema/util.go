@@ -112,7 +112,7 @@ func getGitIgnoreIncludePaths(parentPath string, hostPath string) ([]string, err
 	var paths []string
 	for i := range pathParts {
 		relativePath := filepath.Join(pathParts[:i]...)
-		paths = append([]string{filepath.Join(relativePath, ".gitignore")}, paths...)
+		paths = append(paths, filepath.Join(relativePath, ".gitignore"))
 	}
 
 	recursivePattern := filepath.Join(hostRelPathFromParent, "**", ".gitignore")
