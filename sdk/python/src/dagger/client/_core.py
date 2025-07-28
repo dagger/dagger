@@ -97,7 +97,7 @@ class Context:
         args: typing.Sequence[Arg],
     ) -> "Context":
         args_ = self.converter.unstructure(
-            {arg.name: arg.value for arg in args if arg.value is not arg.default}
+            {arg.name: arg.value for arg in args if arg.value != arg.default}
         )
         field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
