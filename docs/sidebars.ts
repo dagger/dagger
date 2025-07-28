@@ -5,23 +5,16 @@ module.exports = {
       label: "What is Dagger?",
       items: [
         "index",
-        "components",
-        {
-          type: "category",
-          label: "Features",
-          items: [
-            "features/programmability",
-            "features/portability",
-            "features/reusability",
-            "features/caching",
-            "features/observability",
-            "features/security",
-            "features/secrets",
-            "features/llm",
-            "features/shell",
-          ],
-        }
-        ],
+        "features/programmability",
+        "features/portability",
+        "features/reusability",
+        "features/caching",
+        "features/observability",
+        "features/security",
+        "features/secrets",
+        "features/llm",
+        "features/shell",
+      ],
     },
     {
       type: "category",
@@ -30,7 +23,6 @@ module.exports = {
         "installation",
         "quickstart/core-concepts/index",
         "quickstart/index",
-        "ide-setup",
       ],
     },
     {
@@ -113,17 +105,19 @@ module.exports = {
     {
       type: "category",
       label: "Clients",
-      items: [
-        "extending/clients-cli",
-        "extending/clients-http",
-      ],
+      items: ["extending/clients-cli", "extending/clients-http"],
     },
   ],
   reference: [
     {
       type: "category",
       label: "Reference",
-      items: ["reference/index", "reference/glossary", "reference/cli/index"],
+      items: [
+        "reference/index",
+        "reference/glossary",
+        "reference/cli/index",
+        "reference/ide-setup",
+      ],
     },
     {
       type: "category",
