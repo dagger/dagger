@@ -38,7 +38,7 @@ type Docs struct {
 
 const (
 	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
+	generatedCliZenPath           = "docs/current_docs/reference/cli/index.mdx"
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
@@ -52,12 +52,10 @@ const (
 )
 
 const cliZenFrontmatter = `---
-slug: /reference/cli/
-pagination_next: null
-pagination_prev: null
+title: "CLI Reference"
+description: "Learn how to use the Dagger CLI to run composable workflows in containers."
 ---
 
-# CLI Reference
 `
 
 // Build the docs website
@@ -98,6 +96,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			From("tmknom/markdownlint:"+markdownlintVersion).
 			WithMountedDirectory("/src", d.Source).
 			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
+			WithMountedFile("/src/.markdownlintignore", d.Source.File("docs/.markdownlintignore")).
 			WithWorkdir("/src").
 			WithExec([]string{
 				"markdownlint",

@@ -1,0 +1,47 @@
+
+### Copy a file to the Dagger module runtime container for custom processing
+
+The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/copy-file-runtime/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/copy-file-runtime/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/copy-file-runtime/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Copy the `data.json` host file to the runtime container and process it:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file ../data.json'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file ../data.json
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-file --source=../data.json
+    ```
+    </TabItem>
+    </Tabs>

@@ -1,9 +1,10 @@
 ---
 slug: /quickstart/agent
 ---
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-import PartialIde from '../../partials/_ide.mdx';
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import PartialIde from '@partials/_ide.mdx';
 
 # Build an AI Agent
 
@@ -18,8 +19,8 @@ The agent will use an LLM of your choosing to solve a programming assignment. Th
 This quickstart will take you approximately 10 minutes to complete. You should be familiar with programming in Go, Python,  TypeScript, PHP, or Java.
 
 Before beginning, ensure that:
-- you have [installed the Dagger CLI](../../install.mdx).
-- you know [the basics of Dagger](../basics/index.mdx).
+- you have [installed the Dagger CLI](../../installation.mdx).
+- you know [the basics of Dagger](../core-concepts/index.mdx).
 - you have a container runtime installed and running. This can be [Docker](https://docs.docker.com/engine/install/), [Podman](https://podman.io/docs/installation), [nerdctl](https://github.com/containerd/nerdctl), or other Docker-like systems.
 - you have a GitHub account (optional, only if configuring Dagger Cloud)
 
@@ -29,7 +30,7 @@ Before beginning, ensure that:
 
 ## Configure the LLM endpoint
 
-Follow the [LLM endpoint configuration instructions](../../configuration/llm.mdx) to configure an LLM for use with Dagger.
+Follow the LLM endpoint configuration instructions to configure an LLM for use with Dagger.
 
 :::info
 Use environment variables or a `.env` file.
@@ -96,7 +97,7 @@ dagger init --sdk=java --name=coding-agent
 </TabItem>
 </Tabs>
 
-This will generate [various files that make up the Dagger module](../../api/module-structure.mdx), including some boilerplate Dagger Functions as examples.
+This will generate [various files that make up the Dagger module](../../extending/module-structure.mdx), including some boilerplate Dagger Functions as examples.
 
 To see the generated Dagger Functions, run:
 
@@ -105,7 +106,6 @@ dagger functions
 ```
 
 You should see information about two auto-generated Dagger Functions: `container-echo` and `grep-dir`.
-
 
 ## Create the agent
 
@@ -163,7 +163,7 @@ This code creates a Dagger Function called `go-program` that takes an assignment
 - When the LLM decides it is finished, the `completed` container is selected from the `Env` outputs and returned.
 
 :::tip
-Learn more about [agent environments](/api/llm#environments).
+Learn more about [agent environments](../../extending/llm#environments).
 :::
 
 ## Run the agent
@@ -219,6 +219,6 @@ If the program does not look or function as you expect, try adjusting the prompt
 
 Congratulations! You've created your first AI coding agent. You can now use this agent to solve coding prompts using an LLM.
 
-Now that you've grasped the basics of building an agent, look at our [agentic workflow examples](../../examples.mdx) for more examples and ideas for your next agent.
+Now that you've grasped the basics of building an agent, look at our [agentic workflow examples](../../examples/index.mdx) for more examples and ideas for your next agent.
 
 In the meantime, we encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!

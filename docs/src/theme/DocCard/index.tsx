@@ -1,37 +1,37 @@
-import React, {type ReactNode} from 'react';
-import clsx from 'clsx';
-import Link from '@docusaurus/Link';
+import React, { type ReactNode } from "react";
+import clsx from "clsx";
+import Link from "@docusaurus/Link";
 import {
   useDocById,
   findFirstSidebarItemLink,
-} from '@docusaurus/plugin-content-docs/client';
-import {usePluralForm} from '@docusaurus/theme-common';
-import isInternalUrl from '@docusaurus/isInternalUrl';
-import {translate} from '@docusaurus/Translate';
+} from "@docusaurus/plugin-content-docs/client";
+import { usePluralForm } from "@docusaurus/theme-common";
+import isInternalUrl from "@docusaurus/isInternalUrl";
+import { translate } from "@docusaurus/Translate";
 
-import type {Props} from '@theme/DocCard';
-import Heading from '@theme/Heading';
+import type { Props } from "@theme/DocCard";
+import Heading from "@theme/Heading";
 import type {
   PropSidebarItemCategory,
   PropSidebarItemLink,
-} from '@docusaurus/plugin-content-docs';
+} from "@docusaurus/plugin-content-docs";
 
-import styles from './styles.module.css';
+import styles from "./styles.module.css";
 
 function useCategoryItemsPlural() {
-  const {selectMessage} = usePluralForm();
+  const { selectMessage } = usePluralForm();
   return (count: number) =>
     selectMessage(
       count,
       translate(
         {
-          message: '1 item|{count} items',
-          id: 'theme.docs.DocCard.categoryDescription.plurals',
+          message: "1 item|{count} items",
+          id: "theme.docs.DocCard.categoryDescription.plurals",
           description:
-            'The default description for a category card in the generated index about how many items this category includes',
+            "The default description for a category card in the generated index about how many items this category includes",
         },
-        {count},
-      ),
+        { count }
+      )
     );
 }
 
@@ -45,7 +45,8 @@ function CardContainer({
   return (
     <Link
       href={href}
-      className={clsx('card padding--lg', styles.cardContainer)}>
+      className={clsx("card padding--lg", styles.cardContainer)}
+    >
       {children}
     </Link>
   );
@@ -65,15 +66,17 @@ function CardLayout({
   return (
     <CardContainer href={href}>
       <Heading
-        as="h2"
-        className={clsx('text--truncate', styles.cardTitle)}
-        title={title}>
+        as="h3"
+        className={clsx("text--truncate", styles.cardTitle)}
+        title={title}
+      >
         {title}
       </Heading>
       {description && (
         <p
-          className={clsx('text--truncate', styles.cardDescription)}
-          title={description}>
+          className={clsx("text--truncate", styles.cardDescription)}
+          title={description}
+        >
           {description}
         </p>
       )}
@@ -104,8 +107,8 @@ function CardCategory({
   );
 }
 
-function CardLink({item}: {item: PropSidebarItemLink}): JSX.Element {
-  const icon = isInternalUrl(item.href) ? '📄️' : '🔗';
+function CardLink({ item }: { item: PropSidebarItemLink }): JSX.Element {
+  const icon = isInternalUrl(item.href) ? "📄️" : "🔗";
   const doc = useDocById(item.docId ?? undefined);
   return (
     <CardLayout
@@ -117,11 +120,11 @@ function CardLink({item}: {item: PropSidebarItemLink}): JSX.Element {
   );
 }
 
-export default function DocCard({item}: Props): JSX.Element {
+export default function DocCard({ item }: Props): JSX.Element {
   switch (item.type) {
-    case 'link':
+    case "link":
       return <CardLink item={item} />;
-    case 'category':
+    case "category":
       return <CardCategory item={item} />;
     default:
       throw new Error(`unknown item type ${JSON.stringify(item)}`);
