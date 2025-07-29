@@ -677,10 +677,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, err
 	}
 
-	ctr, err := core.NewContainer(platform)
-	if err != nil {
-		return nil, err
-	}
+	ctr := core.NewContainer(platform)
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {

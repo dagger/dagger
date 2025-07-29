@@ -6523,6 +6523,20 @@ class GitRepository(Type):
 class Host(Type):
     """Information about the host environment."""
 
+    def container_image(self, name: str) -> Container:
+        """Accesses a container image on the host.
+
+        Parameters
+        ----------
+        name:
+            Name of the image to access.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("containerImage", _args)
+        return Container(_ctx)
+
     def directory(
         self,
         path: str,

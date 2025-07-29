@@ -3423,6 +3423,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Host::containerImage",
+			"p": "Dagger/Host.html#method_containerImage",
+			"d": "<p>Accesses a container image on the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Host::directory",
 			"p": "Dagger/Host.html#method_directory",
 			"d": "<p>Accesses a directory on the host.</p>"

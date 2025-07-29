@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -150,10 +151,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 	return defs, nil
 }
 
-func NewContainer(platform Platform) (*Container, error) {
-	return &Container{
-		Platform: platform,
-	}, nil
+func NewContainer(platform Platform) *Container {
+	return &Container{Platform: platform}
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -1570,8 +1569,54 @@ func (container *Container) Export(
 
 func (container *Container) Import(
 	ctx context.Context,
-	source *File,
+	tarball io.Reader,
 	tag string,
+) (*Container, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	store := query.OCIStore()
+	lm := query.LeaseManager()
+
+	container = container.Clone()
+
+	var release func(context.Context) error
+	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
+		// override outer ctx with release ctx and set release
+		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+
+		stream := archive.NewImageImportStream(tarball, "")
+
+		desc, err := stream.Import(ctx, store)
+		if err != nil {
+			return nil, fmt.Errorf("image archive import: %w", err)
+		}
+
+		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
+	}
+	defer func() {
+		if release != nil {
+			release(ctx)
+		}
+	}()
+
+	manifestDesc, err := loadManifest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("recover: %w", err)
+	}
+
+	return container.FromInternal(ctx, *manifestDesc)
+}
+
+// FromInternal creates a Container from an OCI image descriptor, loading the
+// image directly from the main worker OCI store.
+func (container *Container) FromInternal(
+	ctx context.Context,
+	desc specs.Descriptor,
 ) (*Container, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1581,47 +1626,13 @@ func (container *Container) Import(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	store := query.OCIStore()
-	lm := query.LeaseManager()
-
-	container = container.Clone()
-
-	var release func(context.Context) error
-	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
-		src, err := source.Open(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		defer src.Close()
-
-		// override outer ctx with release ctx and set release
-		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-
-		stream := archive.NewImageImportStream(src, "")
-
-		desc, err := stream.Import(ctx, store)
-		if err != nil {
-			return nil, fmt.Errorf("image archive import: %w", err)
-		}
-
-		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
-	}
-
-	manifestDesc, err := loadManifest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("recover: %w", err)
-	}
 
 	// NB: the repository portion of this ref doesn't actually matter, but it's
 	// pleasant to see something recognizable.
 	dummyRepo := "dagger/import"
 
 	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		fmt.Sprintf("%s@%s", dummyRepo, desc.Digest),
 		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform.Spec()),
 		buildkit.WithTracePropagation(ctx),
@@ -1632,45 +1643,36 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
+	container = container.Clone()
 	container.FS = execDef.ToPB()
 
-	if release != nil {
-		// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
-		_, err = bk.Solve(ctx, bkgw.SolveRequest{
-			Definition: container.FS,
-			Evaluate:   true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("solve: %w", err)
-		}
-
-		if err := release(ctx); err != nil {
-			return nil, fmt.Errorf("release: %w", err)
-		}
+	// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
+	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: container.FS,
+		Evaluate:   true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("solve: %w", err)
 	}
 
-	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
+	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
 	if err != nil {
 		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
 	}
-
 	var man specs.Manifest
 	err = json.Unmarshal(manifestBlob, &man)
 	if err != nil {
 		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
 	}
-
-	configBlob, err := content.ReadBlob(ctx, store, man.Config)
+	configBlob, err := content.ReadBlob(ctx, query.OCIStore(), man.Config)
 	if err != nil {
 		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
 	}
-
 	var imgSpec specs.Image
 	err = json.Unmarshal(configBlob, &imgSpec)
 	if err != nil {
 		return nil, fmt.Errorf("load image config: %w", err)
 	}
-
 	container.Config = imgSpec.Config
 
 	return container, nil
@@ -1877,6 +1879,10 @@ func (BuildArg) TypeDescription() string {
 
 // OCI manifest annotation that specifies an image's tag
 const ociTagAnnotation = "org.opencontainers.image.ref.name"
+
+func ResolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
+	return resolveIndex(ctx, store, desc, platform, tag)
+}
 
 func resolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
 	if desc.MediaType != specs.MediaTypeImageIndex {

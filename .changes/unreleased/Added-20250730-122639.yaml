@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    New `host.containerImage` API to load images from the host container image store
+time: 2025-07-30T12:26:39.556065075+01:00
+custom:
+    Author: jedevc
+    PR: "10810"

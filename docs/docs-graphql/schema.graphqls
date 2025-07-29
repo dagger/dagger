@@ -2689,6 +2689,12 @@ scalar GitRepositoryID
 
 """Information about the host environment."""
 type Host {
+  """Accesses a container image on the host."""
+  containerImage(
+    """Name of the image to access."""
+    name: String!
+  ): Container!
+
   """Accesses a directory on the host."""
   directory(
     """Location of the directory to access (e.g., ".")."""
