@@ -592,8 +592,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
-	dir.Services.Merge(src.Services)
-
 	return dir, nil
 }
 

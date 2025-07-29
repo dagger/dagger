@@ -472,9 +472,6 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
-	container.Services.Merge(dockerfileDir.Services)
-	container.Services.Merge(contextDir.Services)
-
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
 		secretName, ok := secretStore.GetSecretName(secret.ID().Digest())
@@ -657,8 +654,6 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 		container.FS = def.ToPB()
 	}
 
-	container.Services.Merge(dir.Services)
-
 	// set image ref to empty string
 	container.ImageRef = ""
 
@@ -745,13 +740,13 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -1069,7 +1064,6 @@ func (container *Container) withMounted(
 	srcDef *pb.Definition,
 	result bkcache.ImmutableRef,
 	srcPath string,
-	svcs ServiceBindings,
 	owner string,
 	readonly bool,
 ) (*Container, error) {
@@ -1091,8 +1085,6 @@ func (container *Container) withMounted(
 		Result:     result,
 	})
 
-	container.Services.Merge(svcs)
-
 	// set image ref to empty string
 	container.ImageRef = ""
 
@@ -1105,7 +1097,6 @@ func (container *Container) replaceMount(
 	srcDef *pb.Definition,
 	result bkcache.ImmutableRef,
 	srcPath string,
-	svcs ServiceBindings,
 	owner string,
 	readonly bool,
 ) (*Container, error) {
@@ -1129,8 +1120,6 @@ func (container *Container) replaceMount(
 	if err != nil {
 		return nil, err
 	}
-
-	container.Services.Merge(svcs)
 
 	// set image ref to empty string
 	container.ImageRef = ""
@@ -1251,7 +1240,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
+	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, "", false)
 }
 
 func (container *Container) runUnderPath(subdir string, fn func(dir *Directory) error) error {
