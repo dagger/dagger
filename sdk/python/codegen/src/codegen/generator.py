@@ -5,7 +5,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -733,19 +733,16 @@ class Enum(Handler[GraphQLEnumType]):
         if body := super().render_body(t):
             yield body
 
-        by_value = OrderedDict()
-        for name, value in sorted(t.values.items()):
-            val = self._get_value(value)
-            if val not in by_value:
-                by_value[val] = []
-            by_value[val].append(name)
+        by_value = defaultdict(list)
+        for name, value in t.values.items():
+            by_value[self._get_value(value)].append(name)
 
-        for val, names in by_value.items():
+        for val, names in sorted(by_value.items()):
             yield ""
 
-            valrepr = repr(val)
             for name in names:
-                yield f"{name} = {valrepr}"
+                yield f"{name} = {val!r}"
+
                 if desc := t.values[name].description:
                     yield doc(desc)
 
