@@ -668,3 +668,22 @@ html[data-theme="dark"] {
     }
   }
 }
+
+// GitHub Stars Button Styling
+.navbar-github-stars {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+  
+  .github-stars {
+    display: flex;
+    align-items: center;
+    height: 20px;
+    overflow: hidden;
+  }
+  
+  iframe {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+}

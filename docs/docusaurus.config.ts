@@ -256,6 +256,12 @@ const config: Config = {
         },
         {
           position: "right",
+          href: "https://github.com/dagger/dagger",
+          html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
+          className: "navbar-github-stars",
+        },
+        {
+          position: "right",
           label: "Try Dagger Cloud",
           to: "https://dagger.io/cloud",
           target: "_blank",
