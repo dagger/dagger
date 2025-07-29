@@ -6508,6 +6508,15 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Accesses a container on the host.
+   * @param name Name of the image to access.
+   */
+  container = (name: string): Container => {
+    const ctx = this._ctx.select("container", { name })
+    return new Container(ctx)
+  }
+
+  /**
    * Accesses a directory on the host.
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
