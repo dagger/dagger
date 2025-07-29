@@ -2452,6 +2452,7 @@ export class Container extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @deprecated Use `Directory.build` instead
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })

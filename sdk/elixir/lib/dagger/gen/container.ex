@@ -76,6 +76,9 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use `Directory.build` instead
+  """
   @doc """
   Initializes this container from a Dockerfile build.
   """
