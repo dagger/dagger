@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.18.14",
+  "engineVersion": "v0.18.15-010101000000-dev-fcd795103674",
   "sdk": {
     "source": "go"
   },
@@ -32,6 +32,10 @@
     {
       "name": "dotnet-sdk-dev",
       "source": "sdk/dotnet/dev"
+    },
+    {
+      "name": "doug",
+      "source": "modules/doug"
     },
     {
       "name": "elixir-sdk-dev",
