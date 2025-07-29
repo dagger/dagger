@@ -1,8 +1,8 @@
 @use "sass:meta";
 $mobile-width: 480px;
-$tablet-width: 1133px;
-$desktop-width: 997px;
-$desktop-xl-width: 1160px;
+$tablet-width: 1180px;
+$desktop-width: 1200px;
+$desktop-xl-width: 1400px;
 
 // branding colors
 $oat-color: rgb(248, 244, 239);
@@ -133,14 +133,14 @@ aside[class*="docSidebarContainer"] {
   border-right: none !important;
   border-left: none !important;
   box-shadow: none !important;
-  
+
   @include desktop {
     height: 100vh !important;
     min-height: 100vh !important;
     position: sticky !important;
     top: 0 !important;
   }
-  
+
   @include tablet {
     height: auto !important;
     min-height: auto !important;
@@ -151,16 +151,16 @@ aside[class*="docSidebarContainer"] {
 .menu {
   border: none !important;
   border-right: none !important;
-  
+
   @include desktop {
     height: 100% !important;
     overflow-y: auto !important;
     padding-bottom: 2rem !important;
-    
+
     /* Hide scrollbar but keep scroll functionality */
     scrollbar-width: none !important; /* Firefox */
     -ms-overflow-style: none !important; /* Internet Explorer 10+ */
-    
+
     &::-webkit-scrollbar {
       display: none !important; /* WebKit browsers (Chrome, Safari, Edge) */
     }
@@ -186,8 +186,9 @@ div[class*="docSidebarMenu"],
 .navbar__items .navbar-blog-link {
   color: var(--ifm-navbar-link-color) !important;
   font-size: 00.8175rem;
-
-  // on tablet, make the left and right padding smaller
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+  // make sure the ipad width of 1180 has the same padding as mobile
   @include tablet {
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
@@ -266,7 +267,7 @@ html[data-theme="dark"] {
   background-color: var(--ifm-navbar-background-color) !important;
   box-shadow: none !important;
   border-bottom: none !important;
-  
+
   @include desktop {
     margin-bottom: 1.1rem;
   }
@@ -456,6 +457,11 @@ h4 {
     overflow: hidden;
   }
 
+  // hide on tablet and tablet large
+  @include tablet  {
+    display: none;
+  }
+
   @include mobile {
     margin: auto;
     html[data-theme="light"] {
@@ -495,7 +501,7 @@ html[data-theme="light"] .DocSearch.DocSearch-Button {
   border: none !important;
   box-shadow: none !important;
   border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  
+
   &:hover {
     background-color: darken(#fff, 3%) !important;
   }
@@ -505,9 +511,13 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   background-color: #{$obsidian-color} !important;
   border: none !important;
   border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  
+
   &:hover {
     background-color: lighten($inkberry-color, 5%) !important;
+  }
+  
+  @include mobile {
+    background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
   }
 }
 
@@ -621,7 +631,7 @@ html[data-theme="dark"] .markdown table td {
 // Table of Contents styling to match sidebar
 .table-of-contents {
   font-size: 0.8125rem; // 13px like sidebar
-  
+
   // Links in TOC
   .table-of-contents__link {
     display: block;
@@ -632,7 +642,7 @@ html[data-theme="dark"] .markdown table td {
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     text-decoration: none;
     border-left: 3px solid transparent;
-    
+
     &:hover {
       text-decoration: none;
     }
@@ -648,7 +658,7 @@ html[data-theme="light"] {
       border-left: 3px solid rgba(33, 121, 141, 0.5); // Light version of --ifm-menu-color-active
       padding-left: 0.5rem;
     }
-    
+
     &.table-of-contents__link--active {
       background-color: rgba(26, 24, 51, 0.1) !important;
       color: var(--ifm-menu-color-active);
@@ -667,7 +677,7 @@ html[data-theme="dark"] {
       border-left: 3px solid rgba(87, 199, 227, 0.5); // Light version of --ifm-menu-color-active
       padding-left: 0.5rem;
     }
-    
+
     &.table-of-contents__link--active {
       background-color: rgba(208, 224, 249, 0.15) !important;
       color: var(--ifm-menu-color-active);
@@ -682,24 +692,24 @@ html[data-theme="dark"] {
   display: flex;
   align-items: center;
   margin-right: 0.5rem;
-  
+
   .github-stars {
     display: flex;
     align-items: center;
     height: 20px;
     overflow: hidden;
   }
-  
+
   iframe {
     margin-top: 0 !important;
     margin-bottom: 0 !important;
   }
-  
+
   // Add responsive margins for mobile displays
   @include mobile {
     margin-right: 1rem !important;
   }
-  
+
   // Hide on tablet resolutions
   @include tablet {
     display: none !important;
