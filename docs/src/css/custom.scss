@@ -541,15 +541,31 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
 }
 
 // Style tabs to match sidebar hover effects
+// Add consistent bottom border to tab container
+ul.tabs {
+  border-bottom: 1px solid rgb(218, 221, 225) !important;
+  display: flex !important;
+  width: 100% !important;
+}
+
+// Make tab items 2px smaller than body font size with padding half of base font size (top and bottom only)
+.tabs__item {
+  font-size: calc(var(--ifm-font-size-base) - 2px) !important;
+  padding-top: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
+  padding-bottom: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
+}
+
 html[data-theme="light"] {
   .tabs__item:hover {
     background-color: rgba(26, 24, 51, 0.1) !important;
     color: var(--ifm-menu-color-active);
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
     background-color: rgba(26, 24, 51, 0.1) !important;
-    border-bottom-color: var(--ifm-menu-color-active);
+    border-bottom: 1px solid #{$plum-color} !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
@@ -559,11 +575,13 @@ html[data-theme="dark"] {
   .tabs__item:hover {
     background-color: rgba(208, 224, 249, 0.15) !important;
     color: var(--ifm-menu-color-active);
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
     background-color: rgba(208, 224, 249, 0.15) !important;
-    border-bottom-color: var(--ifm-menu-color-active);
+    border-bottom: 1px solid #{$aqua-color} !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
