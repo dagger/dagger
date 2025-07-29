@@ -83,6 +83,10 @@ const config: Config = {
           return {
             resolve: {
               alias: {
+                "@cookbookBuild": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/build"
+                ),
                 "@cookbookFilesystem": path.resolve(
                   __dirname,
                   "current_docs/partials/cookbook/filesystem"
@@ -218,10 +222,10 @@ const config: Config = {
         {
           position: "left",
           to: "/",
-          label: "Overview",
+          label: "Introduction",
           className: "navbar-blog-link",
           activeBaseRegex:
-            "^/$|^/(?!getting-started|extending|reference|cookbook|ci|types|integrations|use-cases).*",
+            "^/$|^/(?!getting-started|extending|reference|cookbook|ci|types|integrations).*",
         },
         {
           position: "left",
@@ -229,7 +233,7 @@ const config: Config = {
           label: "Getting Started",
           className: "navbar-blog-link",
           activeBaseRegex:
-            "^/getting-started/?.*|^/use-cases/?.*|^/integrations/?.*|^/types/?.*",
+            "^/getting-started/?.*|^/integrations/?.*|^/types/?.*",
         },
         {
           position: "left",

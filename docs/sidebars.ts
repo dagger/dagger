@@ -18,6 +18,11 @@ module.exports = {
     },
     {
       type: "category",
+      label: "Use Cases",
+      items: ["use-cases/agentic-ci", "use-cases/monorepos"],
+    },
+    {
+      type: "category",
       label: "Examples",
       items: ["examples/index", "examples/demos", "examples/livestreams"],
     },
@@ -32,11 +37,6 @@ module.exports = {
         "getting-started/core-concepts",
         "getting-started/quickstart",
       ],
-    },
-    {
-      type: "category",
-      label: "Use Cases",
-      items: ["use-cases/agentic-ci", "use-cases/monorepos"],
     },
     {
       type: "category",

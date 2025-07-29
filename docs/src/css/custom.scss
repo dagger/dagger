@@ -93,8 +93,8 @@ html[data-theme="dark"] {
 
 /* General announcement bar styling */
 .theme-announcement-bar {
-  padding-top: 10px !important;
-  padding-bottom: 10px !important;
+  padding-top: 1.75rem !important;
+  padding-bottom: 1.75rem !important;
   font-weight: 500 !important;
 
   /* Button styling for announcement bar */
@@ -103,6 +103,7 @@ html[data-theme="dark"] {
     font-size: 0.875rem !important; /* 14px relative */
     background-color: transparent !important;
     transition: all 0.2s ease-in-out !important;
+    margin-right: 1rem !important; /* Add margin to the right */
   }
 }
 
