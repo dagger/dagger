@@ -100,7 +100,10 @@ const config: Config = {
                   "current_docs/partials/cookbook/service"
                 ),
                 "@partials": path.resolve(__dirname, "current_docs/partials"),
-                "@daggerTypes": path.resolve(__dirname, "current_docs/partials/types"),
+                "@daggerTypes": path.resolve(
+                  __dirname,
+                  "current_docs/partials/types"
+                ),
                 "@components": path.resolve(__dirname, "src/components"),
               },
             },
@@ -217,14 +220,16 @@ const config: Config = {
           to: "/",
           label: "Overview",
           className: "navbar-blog-link",
-          activeBaseRegex: "^/$|^/(?!getting-started|examples|extending|reference|cookbook|ci|types|integrations|use-cases).*",
+          activeBaseRegex:
+            "^/$|^/(?!getting-started|extending|reference|cookbook|ci|types|integrations|use-cases).*",
         },
         {
           position: "left",
           to: "/getting-started",
           label: "Getting Started",
           className: "navbar-blog-link",
-          activeBaseRegex: "^/getting-started/?.*|^/use-cases/?.*|^/integrations/?.*|^/types/?.*",
+          activeBaseRegex:
+            "^/getting-started/?.*|^/use-cases/?.*|^/integrations/?.*|^/types/?.*",
         },
         {
           position: "left",
@@ -232,13 +237,6 @@ const config: Config = {
           label: "Extending Dagger",
           className: "navbar-blog-link",
           activeBaseRegex: "^/extending/?.*",
-        },
-         {
-          position: "left",
-          to: "/examples",
-          label: "Examples",
-          className: "navbar-blog-link",
-          activeBaseRegex: "^/examples/?.*",
         },
         {
           position: "left",

@@ -16,8 +16,6 @@ module.exports = {
         "features/shell",
       ],
     },
-  ],
-  examples: [
     {
       type: "category",
       label: "Examples",

@@ -1,6 +1,6 @@
 @use "sass:meta";
 $mobile-width: 480px;
-$tablet-width: 996px;
+$tablet-width: 1133px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
 
@@ -177,6 +177,8 @@ div[class*="docSidebarMenu"],
   box-shadow: none !important;
 }
 
+/* Menu links styling handled globally */
+
 /* Sidebar link styles will be applied in theme-specific sections */
 
 /* Navbar Item Colors */
@@ -184,6 +186,12 @@ div[class*="docSidebarMenu"],
 .navbar__items .navbar-blog-link {
   color: var(--ifm-navbar-link-color) !important;
   font-size: 00.8175rem;
+
+  // on tablet, make the left and right padding smaller
+  @include tablet {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
 }
 
 nav .sidebar {
@@ -685,5 +693,15 @@ html[data-theme="dark"] {
   iframe {
     margin-top: 0 !important;
     margin-bottom: 0 !important;
+  }
+  
+  // Add responsive margins for mobile displays
+  @include mobile {
+    margin-right: 1rem !important;
+  }
+  
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
   }
 }
