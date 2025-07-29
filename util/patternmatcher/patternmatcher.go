@@ -1,3 +1,4 @@
+// package patternmatcher is used for implementing globbing, and is forked from github.com/moby/patternmatcher/
 package patternmatcher
 
 import (
@@ -44,33 +45,17 @@ func New(patterns []string) (*PatternMatcher, error) {
 		patterns: make([]*Pattern, 0, len(patterns)),
 	}
 	for _, p := range patterns {
-		// Eliminate leading and trailing whitespace.
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		p = filepath.Clean(p)
-		newp := &Pattern{}
-		if p[0] == '!' {
-			if len(p) == 1 {
-				return nil, errors.New("illegal exclusion pattern: \"!\"")
+		newp, err := NewPattern(p)
+		if err != nil {
+			if err == ErrEmptyPattern {
+				continue
 			}
-			newp.exclusion = true
-			p = p[1:]
-			pm.exclusions = true
-		}
-		// Do some syntax checking on the pattern.
-		// filepath's Match() has some really weird rules that are inconsistent
-		// so instead of trying to dup their logic, just call Match() for its
-		// error state and if there is an error in the pattern return it.
-		// If this becomes an issue we can remove this since its really only
-		// needed in the error (syntax) case - which isn't really critical.
-		if _, err := filepath.Match(p, "."); err != nil {
 			return nil, err
 		}
-		newp.cleanedPattern = p
-		newp.dirs = strings.Split(p, string(os.PathSeparator))
 		pm.patterns = append(pm.patterns, newp)
+		if newp.exclusion {
+			pm.exclusions = true
+		}
 	}
 	return pm, nil
 }
@@ -290,6 +275,38 @@ type Pattern struct {
 	exclusion      bool
 }
 
+var ErrEmptyPattern = errors.New("empty pattern")
+
+func NewPattern(p string) (*Pattern, error) {
+	// Eliminate leading and trailing whitespace.
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return nil, ErrEmptyPattern
+	}
+	p = filepath.Clean(p)
+	newp := &Pattern{}
+	if p[0] == '!' {
+		if len(p) == 1 {
+			return nil, errors.New("illegal exclusion pattern: \"!\"")
+		}
+		newp.exclusion = true
+		p = p[1:]
+	}
+	// Do some syntax checking on the pattern.
+	// filepath's Match() has some really weird rules that are inconsistent
+	// so instead of trying to dup their logic, just call Match() for its
+	// error state and if there is an error in the pattern return it.
+	// If this becomes an issue we can remove this since its really only
+	// needed in the error (syntax) case - which isn't really critical.
+	if _, err := filepath.Match(p, "."); err != nil {
+		return nil, err
+	}
+	newp.cleanedPattern = p
+	newp.dirs = strings.Split(p, string(os.PathSeparator))
+
+	return newp, nil
+}
+
 type matchType int
 
 const (
@@ -307,6 +324,17 @@ func (p *Pattern) String() string {
 // Exclusion returns true if this pattern defines exclusion
 func (p *Pattern) Exclusion() bool {
 	return p.exclusion
+}
+
+func (p *Pattern) Match(path string) (bool, error) {
+	match, err := p.match(path)
+	if err != nil {
+		return false, err
+	}
+	if match {
+		return !p.exclusion, nil
+	}
+	return match, nil
 }
 
 func (p *Pattern) match(path string) (bool, error) {
