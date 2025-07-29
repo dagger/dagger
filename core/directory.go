@@ -16,15 +16,14 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -305,18 +304,10 @@ func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
 	paths := []string{}
 
-	oldPaths := []string{}
-
-	// TODO create a single patternmatcher.Pattern instance instead (not trivial since patternmatcher.New doesnt modularize this functionality)
-	pm, err := patternmatcher.New([]string{pattern})
+	pat, err := patternmatcher.NewPattern(pattern)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create glob pattern matcher: %w", err)
 	}
-	pats := pm.Patterns()
-	if len(pats) != 1 {
-		panic(fmt.Sprintf("above patternmatcher was only defined with a single pattern, but Patterns() returned %d", len(pats)))
-	}
-	pat := pats[0]
 
 	// from fsutils
 	patternChars := "*[]?^"
@@ -335,37 +326,11 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			return err
 		}
 
-		fsutil.Walk(ctx, resolvedDir, &fsutil.FilterOpt{
-			IncludePatterns: []string{pattern},
-		}, func(path string, info fs.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			// HACK: ideally, we'd have something like MatchesExact, which
-			// would skip the parent behavior that we don't really want here -
-			// oh well, let's just fake it with false
-			//nolint:staticcheck
-			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
-			if err != nil {
-				return err
-			}
-
-			if useSlash && info.Mode().IsDir() {
-				path += "/"
-			}
-			if match {
-				oldPaths = append(oldPaths, path)
-			}
-
-			return nil
-		})
-
 		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
 			if prevErr != nil {
 				return prevErr
 			}
 
-			origpath := path
 			path, err := filepath.Rel(resolvedDir, path)
 			if err != nil {
 				return err
@@ -374,7 +339,6 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			if path == "." {
 				return nil
 			}
-			fmt.Printf("ACB origpath: %s; relpath: %s\n", origpath, path)
 
 			select {
 			case <-ctx.Done():
@@ -383,7 +347,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 				break
 			}
 
-			match, err := pm.MatchesUsingParentResult(path, false)
+			match, err := pat.Match(path)
 			if err != nil {
 				return err
 			}
@@ -393,17 +357,14 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 					path += "/"
 				}
 				paths = append(paths, path)
-			} else {
-				// optimization from fsutils
-				if d.IsDir() && onlyPrefixIncludes {
-					// Optimization: we can skip walking this dir if no include
-					// patterns could match anything inside it.
-					dirSlash := path + string(filepath.Separator)
-					if !pat.Exclusion() {
-						patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
-						if !strings.HasPrefix(patStr, dirSlash) {
-							return filepath.SkipDir
-						}
+			} else if d.IsDir() && onlyPrefixIncludes {
+				// fsutils Optimization: we can skip walking this dir if no include
+				// patterns could match anything inside it.
+				dirSlash := path + string(filepath.Separator)
+				if !pat.Exclusion() {
+					patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
+					if !strings.HasPrefix(patStr, dirSlash) {
+						return filepath.SkipDir
 					}
 				}
 			}
@@ -417,13 +378,6 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			return []string{}, nil
 		}
 		return nil, err
-	}
-
-	ps := fmt.Sprintf("%v", paths)
-	ops := fmt.Sprintf("%v", oldPaths)
-
-	if ps != ops {
-		panic(fmt.Sprintf("pattern: %s; got %s; expected %s", pattern, ps, ops))
 	}
 
 	return paths, nil
