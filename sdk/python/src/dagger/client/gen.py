@@ -280,40 +280,40 @@ class ExistsType(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
+    EStarGZ = "EStarGZ"
     ESTARGZ = "EStarGZ"
-    EStarGZ = ESTARGZ
 
+    Gzip = "Gzip"
     GZIP = "Gzip"
-    Gzip = GZIP
 
+    Uncompressed = "Uncompressed"
     UNCOMPRESSED = "Uncompressed"
-    Uncompressed = UNCOMPRESSED
 
+    Zstd = "Zstd"
     ZSTD = "Zstd"
-    Zstd = ZSTD
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
+    DockerMediaTypes = "DockerMediaTypes"
     DOCKER = "DockerMediaTypes"
-    DockerMediaTypes = DOCKER
 
+    OCIMediaTypes = "OCIMediaTypes"
     OCI = "OCIMediaTypes"
-    OCIMediaTypes = OCI
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
+    DIR_SOURCE = "DIR_SOURCE"
     DIR = "DIR_SOURCE"
-    DIR_SOURCE = DIR
 
+    GIT_SOURCE = "GIT_SOURCE"
     GIT = "GIT_SOURCE"
-    GIT_SOURCE = GIT
 
+    LOCAL_SOURCE = "LOCAL_SOURCE"
     LOCAL = "LOCAL_SOURCE"
-    LOCAL_SOURCE = LOCAL
 
 
 class NetworkProtocol(Enum):
@@ -340,86 +340,86 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
+    BOOLEAN_KIND = "BOOLEAN_KIND"
+    """A boolean value."""
     BOOLEAN = "BOOLEAN_KIND"
     """A boolean value."""
-    BOOLEAN_KIND = BOOLEAN
-    """A boolean value."""
 
+    ENUM_KIND = "ENUM_KIND"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
     ENUM = "ENUM_KIND"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
     """
-    ENUM_KIND = ENUM
-    """A GraphQL enum type and its values
 
-    Always paired with an EnumTypeDef.
-    """
-
+    FLOAT_KIND = "FLOAT_KIND"
+    """A float value."""
     FLOAT = "FLOAT_KIND"
     """A float value."""
-    FLOAT_KIND = FLOAT
-    """A float value."""
 
+    INPUT_KIND = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
     INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
-    INPUT_KIND = INPUT
-    """A graphql input type, used only when representing the core API via TypeDefs."""
 
+    INTEGER_KIND = "INTEGER_KIND"
+    """An integer value."""
     INTEGER = "INTEGER_KIND"
     """An integer value."""
-    INTEGER_KIND = INTEGER
-    """An integer value."""
 
+    INTERFACE_KIND = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
+
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
     INTERFACE = "INTERFACE_KIND"
     """Always paired with an InterfaceTypeDef.
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
     """
-    INTERFACE_KIND = INTERFACE
-    """Always paired with an InterfaceTypeDef.
 
-    A named type of functions that can be matched+implemented by other objects+interfaces.
+    LIST_KIND = "LIST_KIND"
+    """Always paired with a ListTypeDef.
+
+    A list of values all having the same type.
     """
-
     LIST = "LIST_KIND"
     """Always paired with a ListTypeDef.
 
     A list of values all having the same type.
     """
-    LIST_KIND = LIST
-    """Always paired with a ListTypeDef.
 
-    A list of values all having the same type.
+    OBJECT_KIND = "OBJECT_KIND"
+    """Always paired with an ObjectTypeDef.
+
+    A named type defined in the GraphQL schema, with fields and functions.
     """
-
     OBJECT = "OBJECT_KIND"
     """Always paired with an ObjectTypeDef.
 
     A named type defined in the GraphQL schema, with fields and functions.
     """
-    OBJECT_KIND = OBJECT
-    """Always paired with an ObjectTypeDef.
 
-    A named type defined in the GraphQL schema, with fields and functions.
-    """
-
+    SCALAR_KIND = "SCALAR_KIND"
+    """A scalar value of any basic kind."""
     SCALAR = "SCALAR_KIND"
     """A scalar value of any basic kind."""
-    SCALAR_KIND = SCALAR
-    """A scalar value of any basic kind."""
 
+    STRING_KIND = "STRING_KIND"
+    """A string value."""
     STRING = "STRING_KIND"
     """A string value."""
-    STRING_KIND = STRING
-    """A string value."""
 
-    VOID = "VOID_KIND"
+    VOID_KIND = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
-    VOID_KIND = VOID
+    VOID = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
