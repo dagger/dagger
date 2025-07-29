@@ -264,6 +264,23 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
+	{
+		Name:        "defaultPath",
+		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "path",
+				Type: String(""),
+			},
+			InputSpec{
+				Name: "ignore",
+				Type: ArrayInput[String](nil),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
