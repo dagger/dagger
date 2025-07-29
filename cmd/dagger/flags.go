@@ -760,15 +760,15 @@ func (v *buildArgValue) Set(s string) error {
 		return fmt.Errorf("%s must be formatted as name=value", s)
 	}
 	pair := strings.Trim(s, `"`)
-	kv := strings.SplitN(pair, "=", 2)
-	if len(kv) != 2 {
+	name, value, found := strings.Cut(pair, "=")
+	if !found {
 		return fmt.Errorf("%s must be formatted as name=value", pair)
 	}
-	if kv[0] == "" {
+	if name == "" {
 		return fmt.Errorf("%s cannot have an empty name", pair)
 	}
-	v.name = kv[0]
-	v.value = kv[1]
+	v.name = name
+	v.value = value
 	return nil
 }
 
