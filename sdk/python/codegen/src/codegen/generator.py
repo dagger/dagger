@@ -5,7 +5,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
