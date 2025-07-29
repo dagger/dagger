@@ -35,99 +35,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Hide functions from the largest and most commonly used core types, to prevent
-// tool bloat
-var defaultBlockedMethods = map[string][]string{
-	"Query": {
-		"currentFunctionCall",
-		"currentModule",
-		"currentTypeDefs",
-		"defaultPlatform",
-		"engine",
-		"env",
-		"error",
-		"function",
-		"generatedCode",
-		"llm",
-		"loadSecretFromName",
-		"module",
-		"moduleSource",
-		"secret",
-		"setSecret",
-		"sourceMap",
-		"typeDef",
-		"version",
-	},
-	"Container": {
-		"build",
-		"defaultArgs",
-		"entrypoint",
-		"envVariable",
-		"envVariables",
-		"experimentalWithAllGPUs",
-		"experimentalWithGPU",
-		"export",
-		"exportImage",
-		"exposedPorts",
-		"imageRef",
-		"import",
-		"label",
-		"labels",
-		"mounts",
-		"pipeline",
-		"platform",
-		"rootfs",
-		"terminal",
-		"up",
-		"user",
-		"withAnnotation",
-		"withDefaultTerminalCmd",
-		"withFiles",
-		"withFocus",
-		"withMountedCache",
-		"withMountedDirectory",
-		"withMountedFile",
-		"withMountedSecret",
-		"withMountedTemp",
-		"withRootfs",
-		"withoutAnnotation",
-		"withoutDefaultArgs",
-		"withoutEnvVariable",
-		"withoutExposedPort",
-		"withoutFile",
-		"withoutFocus",
-		"withoutMount",
-		"withoutRegistryAuth",
-		"withoutSecretVariable",
-		"withoutUnixSocket",
-		"withoutUser",
-		"withoutWorkdir",
-		"workdir",
-	},
-	"Directory": {
-		// Nice to have, confusing
-		"asModule",
-		"asModuleSource",
-		// Side effect
-		"export",
-		// Nice to have
-		"name",
-		// Side effect
-		"terminal",
-		// Nice to have, confusing
-		"withFiles",
-		"withTimestamps",
-		"withoutDirectory",
-		"withoutFile",
-		"withoutFiles",
-	},
-	"File": {
-		"export",
-		"withName",
-		"withTimestamps",
-	},
-}
-
 // A frontend for LLM tool calling
 type LLMTool struct {
 	// Tool name
@@ -2105,4 +2012,97 @@ func toolStructuredResponse(val any) (string, error) {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
 	return str.String(), nil
+}
+
+// Hide functions from the largest and most commonly used core types, to prevent
+// tool bloat
+var defaultBlockedMethods = map[string][]string{
+	"Query": {
+		"currentFunctionCall",
+		"currentModule",
+		"currentTypeDefs",
+		"defaultPlatform",
+		"engine",
+		"env",
+		"error",
+		"function",
+		"generatedCode",
+		"llm",
+		"loadSecretFromName",
+		"module",
+		"moduleSource",
+		"secret",
+		"setSecret",
+		"sourceMap",
+		"typeDef",
+		"version",
+	},
+	"Container": {
+		"build",
+		"defaultArgs",
+		"entrypoint",
+		"envVariable",
+		"envVariables",
+		"experimentalWithAllGPUs",
+		"experimentalWithGPU",
+		"export",
+		"exportImage",
+		"exposedPorts",
+		"imageRef",
+		"import",
+		"label",
+		"labels",
+		"mounts",
+		"pipeline",
+		"platform",
+		"rootfs",
+		"terminal",
+		"up",
+		"user",
+		"withAnnotation",
+		"withDefaultTerminalCmd",
+		"withFiles",
+		"withFocus",
+		"withMountedCache",
+		"withMountedDirectory",
+		"withMountedFile",
+		"withMountedSecret",
+		"withMountedTemp",
+		"withRootfs",
+		"withoutAnnotation",
+		"withoutDefaultArgs",
+		"withoutEnvVariable",
+		"withoutExposedPort",
+		"withoutFile",
+		"withoutFocus",
+		"withoutMount",
+		"withoutRegistryAuth",
+		"withoutSecretVariable",
+		"withoutUnixSocket",
+		"withoutUser",
+		"withoutWorkdir",
+		"workdir",
+	},
+	"Directory": {
+		// Nice to have, confusing
+		"asModule",
+		"asModuleSource",
+		// Side effect
+		"export",
+		// Nice to have
+		"name",
+		// Side effect
+		"terminal",
+		// Nice to have, confusing
+		"withFiles",
+		"withTimestamps",
+		"withoutDirectory",
+		"withoutFile",
+		"withoutFiles",
+	},
+	"File": {
+		"export",
+		"withName",
+		"withTimestamps",
+	},
 }
