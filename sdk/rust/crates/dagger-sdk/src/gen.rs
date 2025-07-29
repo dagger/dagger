@@ -7287,6 +7287,20 @@ pub struct HostTunnelOpts {
     pub ports: Option<Vec<PortForward>>,
 }
 impl Host {
+    /// Accesses a container on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the container to access.
+    pub fn container(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("container");
+        query = query.arg("name", name.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Accesses a directory on the host.
     ///
     /// # Arguments
