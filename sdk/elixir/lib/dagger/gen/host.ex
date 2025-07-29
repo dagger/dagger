@@ -16,6 +16,20 @@ defmodule Dagger.Host do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Accesses a container image on the host.
+  """
+  @spec container_image(t(), String.t()) :: Dagger.Container.t()
+  def container_image(%__MODULE__{} = host, name) do
+    query_builder =
+      host.query_builder |> QB.select("containerImage") |> QB.put_arg("name", name)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: host.client
+    }
+  end
+
+  @doc """
   Accesses a directory on the host.
   """
   @spec directory(t(), String.t(), [
