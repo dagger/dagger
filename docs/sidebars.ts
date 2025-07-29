@@ -91,6 +91,11 @@ module.exports = {
         "extending/custom-types",
         "extending/constructors",
         "extending/interfaces",
+        {
+          type: "link",
+          label: "Dagger JSON Schema",
+          href: "https://docs.dagger.io/reference/dagger.schema.json",
+        },
       ],
     },
     {
@@ -150,8 +155,31 @@ module.exports = {
       type: "category",
       label: "API Documentation",
       items: [
-        "reference/api/index",
-        "reference/api/graphql",
+        {
+          type: "link",
+          label: "GraphQL API Reference",
+          href: "https://docs.dagger.io/api/reference",
+        },
+        {
+          type: "link",
+          label: "Go SDK Reference",
+          href: "https://pkg.go.dev/dagger.io/dagger",
+        },
+        {
+          type: "link",
+          label: "PHP SDK Reference",
+          href: "https://docs.dagger.io/reference/php",
+        },
+        {
+          type: "link",
+          label: "Python SDK Reference",
+          href: "https://dagger-io.readthedocs.org/",
+        },
+        {
+          type: "doc",
+          label: "TypeScript SDK Reference",
+          id: "reference/typescript/modules",
+        },
         "reference/api/module-registry",
       ],
     },
@@ -162,6 +190,11 @@ module.exports = {
         "reference/engine-runtime/index",
         "reference/engine-runtime/performance-caching",
         "reference/engine-runtime/troubleshooting",
+        {
+          type: "link",
+          label: "Engine Configuration File Reference",
+          href: "https://docs.dagger.io/reference/engine.schema.json",
+        },
       ],
     },
   ],
