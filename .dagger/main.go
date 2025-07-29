@@ -89,15 +89,6 @@ func New(
 	return dev, nil
 }
 
-func (dev *DaggerDev) Agent() *dagger.LLM {
-	return dag.Doug().Agent(
-		dag.Env(dagger.EnvOpts{Writable: true}).
-			WithContainerInput("sandbox", dag.Go(dev.Source).Env(), "Your development environment").
-			WithModule(dag.CurrentModule().Meta()).
-			WithHostfs(dev.Source),
-	)
-}
-
 func (dev *DaggerDev) SourceDeveloped(targets ...string) *dagger.Directory {
 	if targets == nil {
 		targets = dev.ModCodegenTargets
