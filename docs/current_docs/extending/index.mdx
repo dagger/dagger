@@ -10,37 +10,6 @@ Custom Dagger Functions are just regular code, written in your usual language us
 
 When a Dagger Module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger Module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
-The following diagram illustrates how the Dagger CLI, SDK, Modules, and the Dagger API interact:
-
-```mermaid
-flowchart TD
-    User[User] -->|Invokes| CLI[Dagger CLI]
-    CLI -->|Sends commands to| Engine[Dagger Engine]
-    Engine -->|Executes| CoreAPI[Core API]
-    Engine -->|Loads| Modules[Dagger Modules]
-    Modules -->|Extend| CoreAPI
-    
-    subgraph "Development"
-        Dev[Developer] -->|Creates with| SDK[Dagger SDKs]
-        SDK -->|Builds| Modules
-    end
-    
-    subgraph "Runtime"
-        CLI -->|Calls functions in| Modules
-        Modules -->|Make calls to| CoreAPI
-        CoreAPI -->|Processes| Engine
-        Engine -->|Returns results to| CLI
-        CLI -->|Shows output to| User
-    end
-    
-    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px;
-    classDef dev fill:#e1f5fe,stroke:#333,stroke-width:1px;
-    classDef runtime fill:#e8f5e9,stroke:#333,stroke-width:1px;
-    
-    class Dev,SDK dev;
-    class CLI,Engine,CoreAPI,Modules runtime;
-```
-
 ## Initialize a Dagger Module
 
 <DaggerModuleInit />
