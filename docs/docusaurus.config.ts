@@ -217,14 +217,14 @@ const config: Config = {
           to: "/",
           label: "Overview",
           className: "navbar-blog-link",
-          activeBaseRegex: "^/$|^/(?!getting-started|examples|extending|reference|cookbook).*",
+          activeBaseRegex: "^/$|^/(?!getting-started|examples|extending|reference|cookbook|ci|types|integrations|use-cases).*",
         },
         {
           position: "left",
           to: "/getting-started",
           label: "Getting Started",
           className: "navbar-blog-link",
-          activeBaseRegex: "^/getting-started/?.*",
+          activeBaseRegex: "^/getting-started/?.*|^/use-cases/?.*|^/integrations/?.*|^/types/?.*",
         },
         {
           position: "left",
