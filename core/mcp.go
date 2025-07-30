@@ -463,8 +463,8 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			return "", err
 		}
-	} else if selfType == srv.Root().ObjectType().TypeName() {
-		// no self provided
+	} else if selfType == srv.Root().ObjectType().TypeName() || autoConstruct != nil {
+		// no self provided; either targeting Query, or auto-constructing from it
 		target = srv.Root()
 	} else if latest := m.typeCounts[selfType]; latest > 0 {
 		// default to the newest object of this type
@@ -472,9 +472,6 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			return "", err
 		}
-	} else if autoConstruct != nil {
-		// auto-constructing
-		target = srv.Root()
 	} else {
 		return "", fmt.Errorf("no object of type %s found", selfType)
 	}
