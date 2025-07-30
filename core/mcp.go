@@ -442,8 +442,6 @@ func (m *MCP) call(ctx context.Context,
 		if !ok {
 			return "", fmt.Errorf("expected 'self' to be a string - got %#v", self)
 		}
-		// don't pass 'self' along to future arg validation
-		delete(args, "self")
 		target, err = m.GetObject(ctx, recv, selfType)
 		if err != nil {
 			return "", err
@@ -691,6 +689,7 @@ func (m *MCP) toolCallToSelections(
 	}
 	remainingArgs := make(map[string]any)
 	maps.Copy(remainingArgs, argsMap)
+	delete(remainingArgs, "self") // ignore the meta 'self' arg
 	for _, arg := range field.Args.Inputs(srv.View) {
 		if arg.Internal {
 			continue // skip internal args
