@@ -2086,6 +2086,13 @@ func (m *MCP) displayLit(lit call.Literal) string {
 }
 
 func (m *MCP) Types() []string {
+	// Make sure we count env inputs
+	for _, input := range m.env.Self().Inputs() {
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
+			m.Ingest(obj, input.Description)
+		}
+	}
+
 	types := make([]string, 0, len(m.typeCounts))
 	for typ := range m.typeCounts {
 		types = append(types, typ)
