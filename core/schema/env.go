@@ -23,7 +23,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
-				dagql.Arg("static").Doc("Instead of a dynamic method set, provide all methods of all inputs as static tools"),
 			),
 		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient),
 	}.Install(srv)
@@ -83,7 +82,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 type environmentArgs struct {
 	Privileged bool `default:"false"`
 	Writable   bool `default:"false"`
-	Static     bool `default:"false"`
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
@@ -108,9 +106,6 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	}
 	if args.Writable {
 		env = env.Writable()
-	}
-	if args.Static {
-		env = env.Static()
 	}
 	return env, nil
 }

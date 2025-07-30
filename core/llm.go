@@ -465,6 +465,12 @@ func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (
 	}, nil
 }
 
+func (llm *LLM) WithStaticTools() *LLM {
+	llm = llm.Clone()
+	llm.mcp.staticTools = true
+	return llm
+}
+
 // Add the calling object as an input binding to the environment
 func (llm *LLM) WithCaller(ctx context.Context, name, description string) (*LLM, error) {
 	query, err := CurrentQuery(ctx)

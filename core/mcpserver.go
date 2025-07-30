@@ -229,7 +229,7 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 
 	s := mcpServer{
 		mcpserver.NewMCPServer("Dagger", "0.0.1",
-			mcpserver.WithInstructions(defaultSystemPrompt)),
+			mcpserver.WithInstructions(llm.mcp.DefaultSystemPrompt())),
 		dag,
 		llm.mcp,
 		rwc,

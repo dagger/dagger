@@ -42,6 +42,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("allow the LLM to interact with an environment via MCP"),
 		dagql.Func("env", s.env).
 			Doc("return the LLM's current environment"),
+		dagql.Func("withStaticTools", s.withStaticTools).
+			Doc("Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
 			Args(
@@ -109,6 +111,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 }
+
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	Env core.EnvID
 }) (*core.LLM, error) {
@@ -117,6 +120,10 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 		return nil, err
 	}
 	return llm.WithEnv(env), nil
+}
+
+func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.WithStaticTools(), nil
 }
 
 func (s *llmSchema) withCaller(ctx context.Context, llm *core.LLM, args struct {
