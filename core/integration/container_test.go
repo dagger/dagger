@@ -3719,7 +3719,7 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 	// testing it can startup, create containers and bind mount from its filesystem to
 	// them.
 	randID := identity.NewID()
-	dockerc := dockerSetup(ctx, t, t.Name(), c, "23.0.1", middleware)
+	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: "provisioner", version: "23.0.1", middleware: middleware})
 	out, err := dockerc.
 		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
 			fmt.Sprintf("echo %s-from-outside > /tmp/from-outside", randID),
@@ -4295,8 +4295,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
-		dockerc := dockerSetup(ctx, t, t.Name(), c, dockerVersion, nil)
-
+		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
 		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
@@ -5217,7 +5216,7 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: "provisioner"})
 	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 
@@ -5277,17 +5276,14 @@ func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestLoadContainerd(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	nerdctl := nerdctlSetup(ctx, t, "provisioner", c, "v2.1.2")
+	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{name: "provisioner", version: "v2.1.2"})
 	nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 
 	nerdctl = nerdctl.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-		// NOTE: piggy-back on the docker provisioning until we get a proper containerd driver
-		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
-		WithoutFile("/usr/local/bin/docker")
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "image+nerdctl://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true})
 
 	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
 		alt := nerdctl.
@@ -5313,7 +5309,7 @@ func (ContainerSuite) TestLoadContainerd(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestLoadNone(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: "provisioner"})
 	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 
@@ -5342,7 +5338,7 @@ func (ContainerSuite) TestLoadNone(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestLoadInNested(ctx context.Context, t *testctx.T) {
 	// this shouldn't be possible! we shouldn't allow access to the external client.
 	c := connect(ctx, t)
-	dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+	dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: "provisioner"})
 	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 
