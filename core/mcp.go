@@ -1853,7 +1853,7 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeDef *ast.Definition,
 	}
 	if typeDef.Name != schema.Query.Name && autoConstruct == nil {
 		properties["self"] = map[string]any{
-			"type":        "string",
+			"type":        []string{"string", "null"},
 			"description": "The ID of the object to call this method on",
 		}
 		required = append(required, "self")
