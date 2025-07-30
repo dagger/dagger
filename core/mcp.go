@@ -67,12 +67,14 @@ type MCP struct {
 	// The last log ID that we've seen
 	lastLogID int64
 	// Saved objects by ID (Foo#123)
-	objsByID map[string]*Binding
+	objsByID map[string]contextualBinding
 	// Auto incrementing number per-type
 	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
 }
+
+type contextualBinding func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error)
 
 func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	blocked := maps.Clone(defaultBlockedMethods)
@@ -83,7 +85,7 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		env:             env,
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
-		objsByID:        map[string]*Binding{},
+		objsByID:        map[string]contextualBinding{},
 		typeCounts:      map[string]int{},
 		idByHash:        map[digest.Digest]string{},
 	}
@@ -111,12 +113,17 @@ func (m *MCP) Clone() *MCP {
 }
 
 // Lookup an input binding
-func (m *MCP) Input(key string) (*Binding, bool) {
+func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	// next check for values by ID
 	if val, exists := m.objsByID[key]; exists {
-		return val, true
+		bnd, err := val(ctx, m.env)
+		if err != nil {
+			return nil, false, err
+		}
+		return bnd, true, nil
 	}
-	return m.env.Self().Input(key)
+	bnd, found := m.env.Self().Input(key)
+	return bnd, found, nil
 }
 
 func (m *MCP) Returned() bool {
@@ -124,24 +131,28 @@ func (m *MCP) Returned() bool {
 }
 
 // Get an object saved at a given key
-func (m *MCP) GetObject(key, expectedType string) (dagql.AnyObjectResult, error) {
+func (m *MCP) GetObject(ctx context.Context, key, expectedType string) (dagql.AnyObjectResult, error) {
 	if expectedType != "" {
 		// for maximal LLM compatibility, assume type for numeric ID args
 		if onlyNum, err := strconv.Atoi(key); err == nil {
 			key = fmt.Sprintf("%s#%d", expectedType, onlyNum)
 		}
 	}
-	if b, exists := m.Input(key); exists {
-		if obj, ok := b.AsObject(); ok {
-			objType := obj.Type().Name()
-			if expectedType != "" && objType != expectedType {
-				return nil, fmt.Errorf("type error: expected %q, got %q", expectedType, objType)
-			}
-			return obj, nil
-		}
-		return nil, fmt.Errorf("type error: %q exists but is not an object", key)
+	b, exists, err := m.Input(ctx, key)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("unknown object %q", key)
+	if !exists {
+		return nil, fmt.Errorf("unknown object %q", key)
+	}
+	if obj, ok := b.AsObject(); ok {
+		objType := obj.Type().Name()
+		if expectedType != "" && objType != expectedType {
+			return nil, fmt.Errorf("type error for %q: expected %q, got %q", key, expectedType, objType)
+		}
+		return obj, nil
+	}
+	return nil, fmt.Errorf("type error: %q exists but is not an object", key)
 }
 
 func (m *MCP) LastResult() dagql.Typed {
@@ -284,13 +295,13 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			// references a banned type
 			continue
 		}
-		toolSchema, err := m.fieldArgsToJSONSchema(schema, field)
+		toolSchema, err := m.fieldArgsToJSONSchema(schema, typeDef, field, autoConstruct)
 		if err != nil {
 			return fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeDef.Name == schema.Query.Name ||
-			(autoConstruct != nil && allTools[toolName].Name == "") {
+		if typeDef.Name == schema.Query.Name { //||
+			// (autoConstruct != nil && allTools[toolName].Name == "") {
 			toolName = field.Name
 		} else {
 			toolName = typeDef.Name + "." + field.Name
@@ -306,7 +317,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 				if !ok {
 					return nil, fmt.Errorf("invalid arguments type: %T", args)
 				}
-				return m.call(ctx, srv, toolSchema, schema, typeDef.Name, field, argsMap, autoConstruct)
+				return m.call(ctx, srv, schema, typeDef.Name, field, argsMap, autoConstruct)
 			},
 		}
 	}
@@ -350,7 +361,6 @@ func displayArgs(args any) string {
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
-	toolSchema map[string]any,
 	schema *ast.Schema,
 	selfType string,
 	// The definition of the dagql field to call. Example: Container.withExec
@@ -429,156 +439,62 @@ func (m *MCP) call(ctx context.Context,
 
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
-	toolProps := toolSchema["properties"].(map[string]any)
 	var target dagql.AnyObjectResult
-	if m.env.Self().IsPrivileged() && selfType == schema.Query.Name {
-		target = srv.Root()
-	} else if autoConstruct != nil {
-		def := autoConstruct.Constructor
-		consArgs := []dagql.NamedInput{}
-		if def.Valid {
-			for _, arg := range def.Value.Args {
-				if arg.DefaultPath != "" {
-					dir := m.env.Self().Hostfs
-					switch path.Clean(arg.DefaultPath) {
-					case ".", "/":
-					default:
-						if err := srv.Select(ctx, dir, &dir, dagql.Selector{
-							Field: "directory", // TODO: handle files too
-							Args: []dagql.NamedInput{
-								{
-									Name:  "path",
-									Value: dagql.String(arg.DefaultPath),
-								},
-							},
-						}); err != nil {
-							return "", err
-						}
-					}
-					consArgs = append(consArgs, dagql.NamedInput{
-						Name: arg.Name,
-						// NOTE: these are always nullable??? i guess??? cause it has a default/???
-						Value: dagql.Opt(dagql.NewID[*Directory](dir.ID())),
-					})
-				}
-			}
-		}
-		if err := srv.Select(ctx, srv.Root(), &target, dagql.Selector{
-			Field: gqlFieldName(selfType),
-			Args:  consArgs,
-		}); err != nil {
-			return "", err
-		}
-	} else {
-		self, ok := args["self"]
-		if !ok {
-			// default to the newest object of this type
-			self = fmt.Sprintf("%s#%d", selfType, m.typeCounts[selfType])
-		}
+	var err error
+	if self, ok := args["self"]; ok {
 		recv, ok := self.(string)
 		if !ok {
 			return "", fmt.Errorf("expected 'self' to be a string - got %#v", self)
 		}
 		// don't pass 'self' along to future arg validation
 		delete(args, "self")
-		var err error
-		target, err = m.GetObject(recv, selfType)
+		target, err = m.GetObject(ctx, recv, selfType)
 		if err != nil {
 			return "", err
 		}
-		if target.ObjectType().TypeName() != selfType {
-			return "", fmt.Errorf("expected %q to be a %q - got %q", recv, selfType, target.ObjectType().TypeName())
+	} else if selfType == srv.Root().ObjectType().TypeName() {
+		// no self provided
+		target = srv.Root()
+	} else if latest := m.typeCounts[selfType]; latest > 0 {
+		// default to the newest object of this type
+		target, err = m.GetObject(ctx, fmt.Sprintf("%s#%d", selfType, latest), selfType)
+		if err != nil {
+			return "", err
 		}
+	} else if autoConstruct != nil {
+		// auto-constructing
+		target = srv.Root()
+	} else {
+		return "", fmt.Errorf("no object of type %s found", selfType)
 	}
-	fieldSel, err := m.toolCallToSelection(srv, target, fieldDef, args, toolProps)
-	if err != nil {
-		return "", fmt.Errorf("failed to convert call inputs: %w", err)
-	}
-	validated = true
 
-	// 2. MAKE THE CALL
-	//
-	return m.selectionToToolResult(ctx, srv, target, fieldDef, fieldSel)
-}
-
-func (m *MCP) selectionToToolResult(
-	ctx context.Context,
-	srv *dagql.Server,
-	target dagql.AnyObjectResult,
-	fieldDef *ast.FieldDefinition,
-	fieldSel dagql.Selector,
-) (string, error) {
-	sels := []dagql.Selector{fieldSel}
-
-	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
-		if sync, ok := retObjType.FieldSpec("sync", srv.View); ok {
-			// If the Object supports "sync", auto-select it.
-			//
-			syncSel := dagql.Selector{
-				Field: sync.Name,
-			}
-			sels = append(sels, syncSel)
+	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, bool, error) {
+		sels, usedContext, err := m.toolCallToSelections(ctx, env, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert call inputs: %w (%+v)", err, autoConstruct)
 		}
-	} else if fieldDef.Type.Elem != nil {
-		if _, isObj := srv.ObjectType(fieldDef.Type.Elem.NamedType); isObj {
-			// Handle arrays of objects by ingesting each object ID.
-			//
-			var objs []dagql.AnyResult
-			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
-				return "", err
-			}
-			var res []any
-			var displays []string
-			for _, obj := range objs {
-				res = append(res, m.Ingest(obj, ""))
-				if displayer, ok := dagql.UnwrapAs[LLMDisplayer](obj); ok {
-					displays = append(displays, displayer.LLMDisplay())
-				}
-			}
-			if len(displays) > 0 {
-				return toolStructuredResponse(map[string]any{
-					"objects":   res,
-					"summaries": displays,
-				})
-			}
-			return toolStructuredResponse(map[string]any{
-				"objects": res,
-			})
+		validated = true
+		var val dagql.AnyResult
+		if err := srv.Select(
+			// reveal cache hits, even if we've already seen them within the session
+			dagql.WithRepeatedTelemetry(ctx),
+			target,
+			&val,
+			sels...,
+		); err != nil {
+			return nil, false, err
 		}
+		return val, usedContext, nil
 	}
 
-	// Make the DagQL call.
-	var val dagql.AnyResult
-	if err := srv.Select(
-		// reveal cache hits, even if we've already seen them within the session
-		dagql.WithRepeatedTelemetry(ctx),
-		target,
-		&val,
-		sels...,
-	); err != nil {
-		return "", fmt.Errorf("failed to sync: %w", err)
-	}
-
-	m.lastResult = val
-
-	res, err := m.outputToLLM(ctx, srv, val)
+	val, usedContext, err := doSelect(ctx, m.env)
 	if err != nil {
 		return "", err
 	}
-	return res, nil
-}
 
-func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
-	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
-		// Handle ID results by turning them back into Objects, since these are
-		// typically implementation details hinting to SDKs to unlazy the call.
-		syncedObj, err := srv.Load(ctx, id.ID())
-		if err != nil {
-			return "", fmt.Errorf("failed to load synced object: %w", err)
-		}
-		val = syncedObj
-	}
-
+	// NOTE: returning an Env takes special meaning, at a higher precedence than
+	// everything else; no object is actually returned, instead it directly
+	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
 		// Hide this unless it fails, since it's just noise
 		ctx, span := Tracer(ctx).Start(ctx, "examine environment",
@@ -620,9 +536,48 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 		return msg, nil
 	}
 
+	if usedContext {
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
+			argsPayload, err := json.Marshal(args)
+			if err != nil {
+				return "", err
+			}
+
+			hash := dagql.HashFrom(
+				target.ObjectType().TypeName(),
+				fieldDef.Name,
+				string(argsPayload),
+			)
+
+			return m.toolObjectResponse(ctx, srv, obj, m.IngestContextual(
+				hash,
+				fmt.Sprintf("%s.%s %s", target.ObjectType().TypeName(), fieldDef.Name, string(argsPayload)),
+				obj.ObjectType().TypeName(),
+				func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error) {
+					val, _, err := doSelect(ctx, env)
+					return val, err
+				},
+			))
+		}
+	}
+
+	return m.outputToLLM(ctx, srv, val)
+}
+
+func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
+	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
+		// Handle ID results by turning them back into Objects, since these are
+		// typically implementation details hinting to SDKs to unlazy the call.
+		syncedObj, err := srv.Load(ctx, id.ID())
+		if err != nil {
+			return "", fmt.Errorf("failed to load synced object: %w", err)
+		}
+		val = syncedObj
+	}
+
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
-		return m.newState(ctx, srv, obj)
+		return m.toolObjectResponse(ctx, srv, obj, m.Ingest(obj, ""))
 	}
 
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
@@ -695,21 +650,46 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 	})
 }
 
-func (m *MCP) toolCallToSelection(
+func (m *MCP) toolCallToSelections(
+	ctx context.Context,
+	env dagql.ObjectResult[*Env],
 	srv *dagql.Server,
-	target dagql.AnyObjectResult,
+	schema *ast.Schema,
+	targetObjType dagql.ObjectType,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
-	propsSchema map[string]any,
-) (dagql.Selector, error) {
+	autoConstruct *ObjectTypeDef,
+) ([]dagql.Selector, bool, error) {
+	var sels []dagql.Selector
+	var usedContext bool
+
+	if autoConstruct != nil {
+		consFieldDef := schema.Query.Fields.ForName(gqlFieldName(autoConstruct.Name))
+		consSels, consUsedContext, err := m.toolCallToSelections(ctx, env, srv, schema, srv.Root().ObjectType(), consFieldDef, nil, nil)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert constructor call inputs: %w", err)
+		}
+		if consUsedContext {
+			usedContext = true
+		}
+		// prepend constructor to the selection
+		sels = append(sels, consSels...)
+
+		// target the auto-constructed type for the field selection
+		t, ok := srv.ObjectType(autoConstruct.Name)
+		if !ok {
+			return nil, false, fmt.Errorf("object type %q not found", autoConstruct.Name)
+		}
+		targetObjType = t
+	}
+
 	sel := dagql.Selector{
 		Field: fieldDef.Name,
 	}
-	targetObjType := target.ObjectType()
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, dagql.View(engine.Version))
 	if !ok {
-		return sel, fmt.Errorf("field %q not found in object type %q",
+		return nil, false, fmt.Errorf("field %q not found in object type %q",
 			fieldDef.Name,
 			targetObjType.TypeName())
 	}
@@ -721,35 +701,80 @@ func (m *MCP) toolCallToSelection(
 		}
 		val, ok := argsMap[arg.Name]
 		if !ok {
+			var defaultPath string
+			var defaultIgnore []string
+			for _, d := range arg.Directives {
+				if d.Name == "defaultPath" {
+					d.Definition = schema.Directives[d.Name]
+					if d.Definition == nil {
+						return nil, false, fmt.Errorf("directive %q not found", d.Name)
+					}
+					args := d.ArgumentMap(nil)
+					defaultPath, _ = args["path"].(string)
+					defaultIgnore, _ = args["ignore"].([]string)
+				}
+			}
+			if defaultPath != "" {
+				dir := env.Self().Hostfs
+				switch path.Clean(defaultPath) {
+				case ".", "/":
+				default:
+					dagqlIgnores := make([]dagql.String, len(defaultIgnore))
+					for i, ignore := range defaultIgnore {
+						dagqlIgnores[i] = dagql.String(ignore)
+					}
+					if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+						Field: "directory", // TODO: handle files too
+						Args: []dagql.NamedInput{
+							{
+								Name:  "path",
+								Value: dagql.String(defaultPath),
+							},
+							{
+								Name:  "ignore",
+								Value: dagql.ArrayInput[dagql.String](dagqlIgnores),
+							},
+						},
+					}); err != nil {
+						return nil, false, fmt.Errorf("select subdir for default path for %s: %w", fieldDef.Name, err)
+					}
+				}
+				sel.Args = append(sel.Args, dagql.NamedInput{
+					Name:  arg.Name,
+					Value: dagql.Opt(dagql.NewID[*Directory](dir.ID())),
+				})
+				usedContext = true
+			}
 			continue
 		}
 		delete(remainingArgs, arg.Name)
-		argSchema, ok := propsSchema[arg.Name].(map[string]any)
+		argDef := fieldDef.Arguments.ForName(arg.Name)
+		scalar, ok := srv.ScalarType(argDef.Type.Name())
 		if !ok {
-			return sel, fmt.Errorf("arg %q: missing from schema", arg.Name)
+			return nil, false, fmt.Errorf("arg %q: unknown scalar type %q", arg.Name, argDef.Type.Name())
 		}
-		if idType, ok := argSchema[jsonSchemaIDAttr].(string); ok {
+		if idType, ok := dagql.UnwrapAs[dagql.IDType](scalar); ok {
 			idStr, ok := val.(string)
 			if !ok {
-				return sel, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
+				return nil, false, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
 			}
-			envVal, err := m.GetObject(idStr, idType)
+			envVal, err := m.GetObject(ctx, idStr, idType.TypeName())
 			if err != nil {
-				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
+				return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
 			obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](envVal)
 			if !ok {
-				return sel, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
+				return nil, false, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 			}
 			enc, err := obj.ID().Encode()
 			if err != nil {
-				return sel, err
+				return nil, false, err
 			}
 			val = enc
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			return nil, false, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
@@ -757,9 +782,23 @@ func (m *MCP) toolCallToSelection(
 		})
 	}
 	if len(remainingArgs) > 0 {
-		return sel, fmt.Errorf("unknown args: %v", remainingArgs)
+		return nil, false, fmt.Errorf("unknown args: %v", remainingArgs)
 	}
-	return sel, nil
+
+	sels = append(sels, sel)
+
+	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
+		if sync, ok := retObjType.FieldSpec("sync", srv.View); ok {
+			// If the Object supports "sync", auto-select it.
+			//
+			syncSel := dagql.Selector{
+				Field: sync.Name,
+			}
+			sels = append(sels, syncSel)
+		}
+	}
+
+	return sels, usedContext, nil
 }
 
 const llmLastLogs = 10
@@ -1059,7 +1098,10 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 				if output.ExpectedType == "String" {
 					output.Value = dagql.String(argStr)
 				} else {
-					bnd, ok := m.objsByID[argStr]
+					bnd, ok, err := m.Input(ctx, argStr)
+					if err != nil {
+						return nil, err
+					}
 					if !ok {
 						return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
 					}
@@ -1177,7 +1219,14 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			for _, typeName := range slices.Sorted(maps.Keys(m.typeCounts)) {
 				count := m.typeCounts[typeName]
 				for i := 1; i <= count; i++ {
-					bnd := m.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+					bnd, found, err := m.Input(ctx, fmt.Sprintf("%s#%d", typeName, i))
+					if err != nil {
+						continue
+					}
+					if !found {
+						// impossible?
+						continue
+					}
 					objects = append(objects, objDesc{
 						ID:          bnd.ID(),
 						Description: bnd.Description,
@@ -1423,7 +1472,7 @@ NOTE: you must select methods before chaining them`,
 					if err := json.Unmarshal(pl, &toolArgs); err != nil {
 						return nil, err
 					}
-					if err := m.validateAndNormalizeChain(toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
+					if err := m.validateAndNormalizeChain(ctx, toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
 						return nil, err
 					}
 					var res any
@@ -1496,7 +1545,7 @@ NOTE: you must select methods before chaining them`,
 			// do an awkward dance to make sure we still show a span even if we fail
 			// to construct parts of it (e.g. due to invalid input)
 			setupErr := func() error {
-				id, err := m.toolToID(builtin, args)
+				id, err := m.toolToID(ctx, builtin, args)
 				if err != nil {
 					return err
 				}
@@ -1556,13 +1605,13 @@ type ChainedCall struct {
 	Args   map[string]any `json:"args"`
 }
 
-func (m *MCP) validateAndNormalizeChain(self string, calls []ChainedCall, allMethods map[string]LLMTool, schema *ast.Schema) error {
+func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls []ChainedCall, allMethods map[string]LLMTool, schema *ast.Schema) error {
 	if len(calls) == 0 {
 		return errors.New("no methods called")
 	}
 	var currentType *ast.Type
 	if self != "" {
-		obj, err := m.GetObject(self, "")
+		obj, err := m.GetObject(ctx, self, "")
 		if err != nil {
 			return err
 		}
@@ -1662,7 +1711,7 @@ func (m *MCP) IsDone() bool {
 	return len(m.env.Self().outputsByName) == 0 || m.returned
 }
 
-func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
+func (m *MCP) toolToID(ctx context.Context, tool LLMTool, args any) (*call.ID, error) {
 	name := tool.Name
 	props, ok := tool.Schema["properties"].(map[string]any)
 	if !ok {
@@ -1694,7 +1743,7 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 			if !ok {
 				return nil, fmt.Errorf("expected string value, got %T", v)
 			}
-			obj, err := m.GetObject(str, idType)
+			obj, err := m.GetObject(ctx, str, idType)
 			if err != nil {
 				// drop it, maybe it's an invalid value
 			} else {
@@ -1751,12 +1800,8 @@ func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
 
 var idRegex = regexp.MustCompile(`^(?P<type>[A-Z]\w*)#(?P<nth>\d+)$`)
 
-func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
-	jsonSchema := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
-	properties := jsonSchema["properties"].(map[string]any)
+func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeDef *ast.Definition, field *ast.FieldDefinition, autoConstruct *ObjectTypeDef) (map[string]any, error) {
+	properties := map[string]any{}
 	required := []string{}
 	for _, arg := range field.Arguments {
 		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
@@ -1792,6 +1837,17 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefiniti
 		if arg.Type.NonNull && arg.DefaultValue == nil {
 			required = append(required, arg.Name)
 		}
+	}
+	if typeDef.Name != schema.Query.Name && autoConstruct == nil {
+		properties["self"] = map[string]any{
+			"type":        "string",
+			"description": "The ID of the object to call this method on",
+		}
+		required = append(required, "self")
+	}
+	jsonSchema := map[string]any{
+		"type":       "object",
+		"properties": properties,
 	}
 	if len(required) > 0 {
 		jsonSchema["required"] = required
@@ -1866,12 +1922,12 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 
 const jsonSchemaIDAttr = "x-id-type"
 
-func (m *MCP) newState(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult) (string, error) {
+func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult, objID string) (string, error) {
 	schema := srv.Schema()
 	typeName := target.Type().Name()
 	_, known := m.typeCounts[typeName]
 	res := map[string]any{
-		"result": m.Ingest(target, ""),
+		"result": objID,
 	}
 	if displayer, ok := dagql.UnwrapAs[LLMDisplayer](target); ok {
 		res["display"] = displayer.LLMDisplay()
@@ -1906,26 +1962,63 @@ func (m *MCP) newState(ctx context.Context, srv *dagql.Server, target dagql.AnyO
 	return toolStructuredResponse(res)
 }
 
-func (m *MCP) Ingest(obj dagql.AnyResult, desc string) string {
+func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
 	}
 	hash := id.Digest()
+	return m.IngestBy(obj, desc, hash)
+}
+
+func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
+	id := obj.ID()
+	if id == nil {
+		return ""
+	}
 	typeName := id.Type().NamedType()
 	llmID, ok := m.idByHash[hash]
 	if !ok {
 		m.typeCounts[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
 		if desc == "" {
-			desc = m.describe(obj.ID())
+			desc = m.describe(id)
 		}
 		m.idByHash[hash] = llmID
-		m.objsByID[llmID] = &Binding{
-			Key:          llmID,
-			Value:        obj,
-			Description:  desc,
-			ExpectedType: obj.Type().Name(),
+		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
+			return &Binding{
+				Key:          llmID,
+				Value:        obj,
+				Description:  desc,
+				ExpectedType: obj.ObjectType().TypeName(),
+			}, nil
+		}
+	}
+	return llmID
+}
+
+func (m *MCP) IngestContextual(
+	hash digest.Digest,
+	desc string,
+	typeName string,
+	create func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error),
+) string {
+	llmID, ok := m.idByHash[hash]
+	if !ok {
+		m.typeCounts[typeName]++
+		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
+		m.idByHash[hash] = llmID
+		m.objsByID[llmID] = func(ctx context.Context, env dagql.ObjectResult[*Env]) (*Binding, error) {
+			obj, err := create(ctx, env)
+			if err != nil {
+				return nil, err
+			}
+			return &Binding{
+				Key:          llmID,
+				Value:        obj,
+				Description:  desc,
+				ExpectedType: typeName,
+			}, nil
 		}
 	}
 	return llmID

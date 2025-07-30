@@ -605,7 +605,7 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 ) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.Input(key); found {
+		if binding, found := llm.mcp.env.Self().Input(key); found {
 			return binding.String()
 		}
 		// leave unexpanded, perhaps it refers to an object var
