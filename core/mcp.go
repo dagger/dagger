@@ -754,7 +754,8 @@ func (m *MCP) toolCallToSelections(
 			if !ok {
 				return nil, false, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
 			}
-			envVal, err := m.GetObject(ctx, idStr, idType.TypeName())
+			expectedType := strings.TrimSuffix(idType.TypeName(), "ID")
+			envVal, err := m.GetObject(ctx, idStr, expectedType)
 			if err != nil {
 				return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
