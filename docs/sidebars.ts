@@ -6,7 +6,6 @@ module.exports = {
       items: [
         "index",
         "features/programmability",
-        "features/portability",
         "features/reusability",
         "features/caching",
         "features/observability",
@@ -19,7 +18,7 @@ module.exports = {
     {
       type: "category",
       label: "Use Cases",
-      items: ["use-cases/agentic-ci", "use-cases/monorepos"],
+      items: ["use-cases/portable-ci", "use-cases/agentic-ci", "use-cases/monorepos"],
     },
     {
       type: "category",
