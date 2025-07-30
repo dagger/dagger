@@ -18,6 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -924,8 +925,8 @@ func (llm *LLM) loop(ctx context.Context) error {
 			ToolCalls:  res.ToolCalls,
 			TokenUsage: res.TokenUsage,
 		})
+
 		// Handle tool calls
-		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
 			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
 				// interjecting failed or was interrupted
@@ -937,15 +938,22 @@ func (llm *LLM) loop(ctx context.Context) error {
 			// no interjection and none needed - we're just done
 			break
 		}
+
+		// Run tool calls in parallel
+		toolCalls := pool.NewWithResults[*ModelMessage]()
 		for _, toolCall := range res.ToolCalls {
-			content, isError := llm.mcp.Call(ctx, tools, toolCall)
-			llm.messages = append(llm.messages, &ModelMessage{
-				Role:        "user", // Anthropic only allows tool call results in user messages
-				Content:     content,
-				ToolCallID:  toolCall.ID,
-				ToolErrored: isError,
+			toolCalls.Go(func() *ModelMessage {
+				content, isError := llm.mcp.Call(ctx, tools, toolCall)
+				return &ModelMessage{
+					Role:        "user", // Anthropic only allows tool call results in user messages
+					Content:     content,
+					ToolCallID:  toolCall.ID,
+					ToolErrored: isError,
+				}
 			})
 		}
+		llm.messages = append(llm.messages, toolCalls.Wait()...)
+
 		if llm.mcp.Returned() {
 			// we returned; exit the loop, since some models just keep going
 			break
