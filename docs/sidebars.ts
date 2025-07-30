@@ -33,8 +33,17 @@ module.exports = {
       items: [
         "getting-started/index",
         "getting-started/installation",
-        "getting-started/core-concepts",
-        "getting-started/quickstart",
+        {
+          type: "category",
+          label: "Quickstarts",
+          items: [
+            "getting-started/core-concepts",
+            "getting-started/ci",
+            "getting-started/agent/index",
+            "getting-started/agent/inproject",
+          ]
+        }
+
       ],
     },
     {
