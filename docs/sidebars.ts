@@ -87,7 +87,7 @@ module.exports = {
         "extending/state",
         {
           type: "link",
-          label: "Dagger JSON Schema",
+          label: "Module Configuration File Reference",
           href: "https://docs.dagger.io/reference/dagger.schema.json",
         },
       ],
@@ -147,7 +147,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "API Documentation",
+      label: "API and SDKs",
       items: [
         {
           type: "link",
@@ -179,7 +179,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Engine & Runtime",
+      label: "Engine and Runtime",
       items: [
         "reference/engine-runtime/index",
         "reference/engine-runtime/performance-caching",
