@@ -264,10 +264,6 @@ func (m *MCP) reachableObjectMethods(srv *dagql.Server, allTools map[string]LLMT
 
 func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition, autoConstruct *ObjectTypeDef) error {
 	for _, field := range typeDef.Fields {
-		if _, found := m.Input(field.Name); found {
-			// If field conflicts with user input, user input wins
-			continue
-		}
 		if strings.HasPrefix(field.Name, "_") {
 			continue
 		}
