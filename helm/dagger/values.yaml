@@ -181,6 +181,15 @@ engine:
   #   persistentVolumeClaim:
   #     claimName: my-pvc
 
+  # Additional sidecars to run alongside the Dagger Engine
+  # sidecars:
+  #   - name: my-sidecar
+  #     image: busybox
+  #     args: ["sleep", "3600"]
+  #     volumeMounts:
+  #       - name: data
+  #         mountPath: /data
+
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
