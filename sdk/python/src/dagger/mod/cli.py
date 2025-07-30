@@ -12,15 +12,13 @@ import anyio
 import dagger
 from dagger import telemetry
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
-from dagger.mod._module import Module
+from dagger.mod._module import MAIN_OBJECT, Module
 
 logger = logging.getLogger(__package__)
 
 ENTRY_POINT_NAME: typing.Final[str] = "main_object"
 ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
-
-IMPORT_PKG = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
-MAIN_OBJECT = os.getenv("DAGGER_MAIN_OBJECT", "Main")
+IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 
 def app(mod: Module | None = None) -> int | None:

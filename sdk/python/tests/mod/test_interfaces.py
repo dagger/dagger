@@ -18,7 +18,7 @@ pytestmark = [
 
 @pytest.fixture
 def mod() -> Module:
-    m = Module()
+    m = Module("Pond")
 
     @m.interface
     class Goose(typing.Protocol):
@@ -41,8 +41,6 @@ def mod() -> Module:
     @m.object_type
     class Pond:
         duck: Duck = dagger.field()
-
-    m.set_module_name("pond")
 
     return m
 

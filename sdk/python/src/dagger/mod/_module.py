@@ -45,7 +45,6 @@ from dagger.mod._utils import (
     get_doc,
     get_parent_module_doc,
     is_annotated,
-    to_pascal_case,
 )
 
 logger = logging.getLogger(__package__)
@@ -53,6 +52,9 @@ logger = logging.getLogger(__package__)
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
 FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
+MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
+MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
+
 
 T = TypeVar("T", bound=type)
 
@@ -60,8 +62,8 @@ T = TypeVar("T", bound=type)
 class Module:
     """Builder for a :py:class:`dagger.Module`."""
 
-    def __init__(self, name: str = os.getenv("DAGGER_MODULE_NAME", "")):
-        self.name: str = name
+    def __init__(self, main_name: str = MAIN_OBJECT):
+        self._main_name = main_name
         self._converter: JsonConverter = make_converter()
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
@@ -72,7 +74,7 @@ class Module:
         self.log_exceptions = True
 
     @property
-    def main_cls(self) -> type:
+    def main_cls(self) -> type[ObjectType]:
         assert self._main is not None
         return self._main.cls
 
@@ -80,25 +82,7 @@ class Module:
         """Check if the given object is the main object of the module."""
         return self.main_cls is other.cls
 
-    def set_module_name(self, name: str):
-        self.name = name
-        main_name = to_pascal_case(name)
-        try:
-            self._main = self.get_object(main_name)
-        except ObjectNotFoundError as e:
-            # TODO: have the engine provide the main object's name, rather
-            # than the SDK having to convert it.
-            msg = (
-                f"Main object with name '{main_name}' not found or class not "
-                "decorated with '@dagger.object_type'\n"
-                "If you believe the name in dagger.json is incorrectly "
-                "being converted into PascalCase, please file a bug report."
-            )
-            raise ObjectNotFoundError(msg, extra=e.extra) from None
-
     async def serve(self):
-        self.set_module_name(await dag.current_module().name())
-
         if parent_name := await dag.current_function_call().parent_name():
             result = await self._invoke(parent_name)
         else:
@@ -127,6 +111,17 @@ class Module:
 
     async def _register(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
         """Register the module and its types with the Dagger API."""
+        try:
+            self.get_object(self._main_name)
+        except ObjectNotFoundError as e:
+            msg = (
+                f"Main object with name '{self._main_name}' not found or class not "
+                "decorated with '@dagger.object_type'\n"
+                f"If you believe the module name '{MODULE_NAME}' is incorrectly "
+                "being converted into PascalCase, please file a bug report."
+            )
+            raise ObjectNotFoundError(msg, extra=e.extra) from None
+
         mod = dag.module()
 
         # Object types
@@ -682,6 +677,8 @@ class Module:
         cls.__dagger_module__ = self
         cls.__dagger_object_type__ = obj_def
         self._objects[cls.__name__] = obj_def
+        if cls.__name__ == self._main_name:
+            self._main = obj_def
 
         # Find all constructors from other objects, decorated with `@mod.function`
         def _is_constructor(fn) -> typing.TypeGuard[Constructor]:
