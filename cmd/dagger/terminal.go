@@ -18,9 +18,6 @@ func withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) erro
 	if silent || !(progress == "auto" && hasTTY || progress == "tty") {
 		return fmt.Errorf("running shell without the TUI is not supported")
 	}
-	if outputPath != "" {
-		return fmt.Errorf("running shell with --output is not supported")
-	}
 
 	return Frontend.Background(&terminalSession{
 		fn: fn,
