@@ -1,10 +1,11 @@
 {
   "name": "git-dep",
-  "sdk": "../extended",
-  "exclude": [
-    ".venv",
-    "sdk"
-  ],
-  "source": ".",
-  "engineVersion": "v0.13.6"
+  "engineVersion": "v0.18.14",
+  "sdk": {
+    "source": "../extended"
+  },
+  "include": [
+    "!.venv",
+    "!sdk"
+  ]
 }
