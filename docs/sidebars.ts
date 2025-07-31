@@ -87,7 +87,7 @@ module.exports = {
         "extending/state",
         {
           type: "link",
-          label: "Module Configuration File Reference",
+          label: "Module Configuration Schema",
           href: "https://docs.dagger.io/reference/dagger.schema.json",
         },
       ],
@@ -186,7 +186,7 @@ module.exports = {
         "reference/engine-runtime/troubleshooting",
         {
           type: "link",
-          label: "Engine Configuration File Reference",
+          label: "Engine Configuration Schema",
           href: "https://docs.dagger.io/reference/engine.schema.json",
         },
       ],
