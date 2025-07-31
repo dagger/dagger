@@ -229,6 +229,31 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 	return contents, nil
 }
 
+// ContentsDagOp handles file content retrieval (via a dagop rather than buildkit)
+func (file *File) ContentsDagOp(ctx context.Context) ([]byte, error) {
+	var contents []byte
+	_, err := execInMount(ctx, file, func(root string) error {
+		fullPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return err
+		}
+		fileSize := info.Size()
+		if fileSize > buildkit.MaxFileContentsSize {
+			// TODO: move to proper error structure
+			return fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+		}
+
+		contents, err = os.ReadFile(fullPath)
+		return err
+	})
+	return contents, err
+}
+
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
 	// If metadata are included, directly compute the digest of the file
 	if !excludeMetadata {
