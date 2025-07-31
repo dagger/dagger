@@ -155,6 +155,11 @@ class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
 
+class JSONValueID(Scalar):
+    """The `JSONValueID` scalar type represents an identifier for an
+    object of type JSONValue."""
+
+
 class LLMID(Scalar):
     """The `LLMID` scalar type represents an identifier for an object of
     type LLM."""
@@ -514,6 +519,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asGitRepository", _args)
         return GitRepository(_ctx)
+
+    def as_json_value(self) -> "JSONValue":
+        """Retrieve the binding value, as type JSONValue"""
+        _args: list[Arg] = []
+        _ctx = self._select("asJSONValue", _args)
+        return JSONValue(_ctx)
 
     def as_llm(self) -> "LLM":
         """Retrieve the binding value, as type LLM"""
@@ -4595,6 +4606,48 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_json_value_input(
+        self,
+        name: str,
+        value: "JSONValue",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type JSONValue in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The JSONValue value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withJSONValueInput", _args)
+        return Env(_ctx)
+
+    def with_json_value_output(self, name: str, description: str) -> Self:
+        """Declare a desired JSONValue output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withJSONValueOutput", _args)
+        return Env(_ctx)
+
     def with_llm_input(
         self,
         name: str,
@@ -6769,6 +6822,211 @@ class InterfaceTypeDef(Type):
 
 
 @typecheck
+class JSONValue(Type):
+    async def as_array(self) -> list["JSONValue"]:
+        """Decode an array from json"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArray", _args)
+        return await _ctx.execute_object_list(JSONValue)
+
+    async def as_boolean(self) -> bool:
+        """Decode a boolean from json
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asBoolean", _args)
+        return await _ctx.execute(bool)
+
+    async def as_integer(self) -> int:
+        """Decode an integer from json
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asInteger", _args)
+        return await _ctx.execute(int)
+
+    async def as_string(self) -> str:
+        """Decode a string from json
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asString", _args)
+        return await _ctx.execute(str)
+
+    async def bytes(
+        self,
+        *,
+        pretty: bool | None = None,
+        indent: int | None = 1,
+    ) -> JSON:
+        """Return the value encoded as json
+
+        Parameters
+        ----------
+        pretty:
+            Pretty-print
+        indent:
+            Indent each line by the given number of whitespaces
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("pretty", pretty, None),
+            Arg("indent", indent, 1),
+        ]
+        _ctx = self._select("bytes", _args)
+        return await _ctx.execute(JSON)
+
+    def field(self, path: list[str]) -> Self:
+        """Lookup the field at the given path, and return its value."""
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("field", _args)
+        return JSONValue(_ctx)
+
+    async def fields(self) -> list[str]:
+        """List fields of the encoded object
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> JSONValueID:
+        """A unique identifier for this JSONValue.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        JSONValueID
+            The `JSONValueID` scalar type represents an identifier for an
+            object of type JSONValue.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(JSONValueID)
+
+    def new_boolean(self, value: bool) -> Self:
+        """Encode a boolean to json"""
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newBoolean", _args)
+        return JSONValue(_ctx)
+
+    def new_integer(self, value: int) -> Self:
+        """Encode an integer to json"""
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newInteger", _args)
+        return JSONValue(_ctx)
+
+    def new_string(self, value: str) -> Self:
+        """Encode a string to json"""
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newString", _args)
+        return JSONValue(_ctx)
+
+    def with_bytes(self, bytes: JSON) -> Self:
+        """Return a new json value, decoded from the given bytes"""
+        _args = [
+            Arg("bytes", bytes),
+        ]
+        _ctx = self._select("withBytes", _args)
+        return JSONValue(_ctx)
+
+    def with_field(self, path: list[str], value: Self) -> Self:
+        """Set a new field at the given path"""
+        _args = [
+            Arg("path", path),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withField", _args)
+        return JSONValue(_ctx)
+
+    def with_(self, cb: Callable[["JSONValue"], "JSONValue"]) -> "JSONValue":
+        """Call the provided callable with current JSONValue.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class LLM(Type):
     def attempt(self, number: int) -> Self:
         """create a branch in the LLM's history"""
@@ -8756,6 +9014,12 @@ class Client(Root):
         _ctx = self._select("http", _args)
         return File(_ctx)
 
+    def json(self) -> JSONValue:
+        """Initialize a mutable JSON value"""
+        _args: list[Arg] = []
+        _ctx = self._select("json", _args)
+        return JSONValue(_ctx)
+
     def llm(
         self,
         *,
@@ -9014,6 +9278,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadInterfaceTypeDefFromID", _args)
         return InterfaceTypeDef(_ctx)
+
+    def load_json_value_from_id(self, id: JSONValueID) -> JSONValue:
+        """Load a JSONValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadJSONValueFromID", _args)
+        return JSONValue(_ctx)
 
     def load_llm_from_id(self, id: LLMID) -> LLM:
         """Load a LLM from its ID."""
@@ -10335,6 +10607,8 @@ __all__ = [
     "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
+    "JSONValue",
+    "JSONValueID",
     "LLMTokenUsage",
     "LLMTokenUsageID",
     "Label",
