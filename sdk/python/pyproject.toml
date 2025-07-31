@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling==1.27.0", "hatch-vcs==0.5.0"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 
 [project]
 name = "dagger-io"
-dynamic = ["version"]
+version = "0.0.0"
 description = "A client package for running Dagger pipelines in Python."
 readme = "README.md"
 authors = [{ name = "Dagger", email = "hello@dagger.io" }]
@@ -69,15 +69,9 @@ codegen = { workspace = true }
 [tool.uv.workspace]
 members = ["codegen"]
 
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-
-[tool.hatch.build.targets.sdist]
-only-include = ["src", "tests", "docs", "CHANGELOG.md", "README.md"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/dagger"]
+[tool.uv.build-backend]
+module-name = "dagger"
+source-include = ["tests/**", "docs/**", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
