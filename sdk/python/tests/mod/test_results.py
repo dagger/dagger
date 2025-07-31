@@ -411,7 +411,7 @@ async def test_enum_conversion():
         THREE = "3"
         FOUR = "4"
 
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(DeprecationWarning, match="enum.Enum"):
 
         @mod.enum_type
         class Compat(dagger.Enum):
