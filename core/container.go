@@ -495,20 +495,10 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	platform := container.Platform
 
@@ -987,10 +977,6 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -998,7 +984,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, svcs, ".")
+	info, err := dir.Stat(ctx, bk, ".")
 	if err != nil {
 		return nil, err
 	}
