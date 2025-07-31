@@ -1,0 +1,26 @@
+{{- if .Values.engine.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dagger.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.engine.service.type }}
+  selector:
+    app: {{ include "dagger.fullname" . }}-engine
+  ports:
+    - protocol: TCP
+      port: {{ .Values.engine.port }}
+      targetPort: {{ .Values.engine.port }}
+      {{- if and (eq .Values.engine.service.type "NodePort") .Values.engine.service.nodePort }}
+      nodePort: {{ .Values.engine.service.nodePort }}
+      {{- end }}
+  {{- if .Values.engine.service.sessionAffinity.enabled }}
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.engine.service.sessionAffinity.sessionAffinitytimeoutSeconds }}
+  {{- end }}
+{{- end }}

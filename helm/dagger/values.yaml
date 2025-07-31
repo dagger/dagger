@@ -190,6 +190,36 @@ engine:
   #       - name: data
   #         mountPath: /data
 
+  service:
+    enabled: true
+
+    # Kubernetes service type: ClusterIP, NodePort, LoadBalancer, or ExternalName.
+    # Default is ClusterIP, which exposes the service internally within the cluster.
+    type: ClusterIP
+
+    # nodePort is only used when type is set to NodePort.
+    nodePort: null
+
+    # Session affinity ensures that client requests are consistently routed to the same pod.
+    # This is **critical** when Dagger is accessed via a Kubernetes Service,
+    # especially in CI/CD pipelines.
+    #
+    # Dagger does not share execution context across multiple pods.
+    # If requests from the same pipeline are routed to different pods,
+    # it can break the execution flow, as each pod will have an isolated context.
+    #
+    # Therefore, all requests for a given pipeline must be routed to the **same pod**
+    # to maintain context and ensure correct execution of Dagger commands.
+    sessionAffinity:
+      enabled: true
+
+      # sessionAffinitytimeoutSeconds defines how long (in seconds) the client IP
+      # will be consistently routed to the same pod.
+      #
+      # The default maximum allowed value is **10800 seconds** (3 hours),
+      # which is typically sufficient to run a full pipeline.
+      sessionAffinitytimeoutSeconds: 10800
+
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
