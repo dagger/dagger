@@ -295,7 +295,7 @@
         <assertj-core.version>3.27.3</assertj-core.version>
         <auto-service.version>1.1.1</auto-service.version>
         <commons-compress.version>1.27.1</commons-compress.version>
-        <commons-lang.version>3.17.0</commons-lang.version>
+        <commons-lang.version>3.18.0</commons-lang.version>
         <exec-maven-plugin.version>3.5.1</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
         <fmt-maven-plugin.version>2.27</fmt-maven-plugin.version>
@@ -305,7 +305,7 @@
         <javapoet.version>0.7.0</javapoet.version>
         <javaparser.version>3.27.0</javaparser.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.13.1</junit.version>
+        <junit.version>5.13.4</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
@@ -321,8 +321,8 @@
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.14.0</smallrye-graphql.version>
-        <netty-common.version>4.2.2.Final</netty-common.version>
-        <netty-handler.version>4.2.2.Final</netty-handler.version>
+        <netty-common.version>4.2.3.Final</netty-common.version>
+        <netty-handler.version>4.2.3.Final</netty-handler.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
