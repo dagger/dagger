@@ -3361,6 +3361,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Host::container",
+			"p": "Dagger/Host.html#method_container",
+			"d": "<p>Accesses a container on the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Host::directory",
 			"p": "Dagger/Host.html#method_directory",
 			"d": "<p>Accesses a directory on the host.</p>"

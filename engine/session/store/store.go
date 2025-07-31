@@ -41,9 +41,10 @@ func NewImageLoaderAttachable(loader *imageload.Loader) (session.Attachable, err
 			cleanup: loader.Close,
 		}
 		return &a, nil
-	case loader.TarballLoader != nil:
+	case loader.TarballWriter != nil || loader.TarballReader != nil:
 		return basicStoreAttachable{
-			load: loader.TarballLoader,
+			write: loader.TarballWriter,
+			read:  loader.TarballReader,
 		}, nil
 	default:
 		return nil, errors.New("invalid loader")
