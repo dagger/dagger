@@ -1383,6 +1383,41 @@ impl ScalarTypeDefId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct SearchResultId(pub String);
+impl From<&str> for SearchResultId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for SearchResultId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<SearchResultId> for SearchResult {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SearchResultId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SearchResultId> for SearchResultId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SearchResultId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<SearchResultId, DaggerError>(self) })
+    }
+}
+impl SearchResultId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
 impl From<&str> for SecretId {
     fn from(value: &str) -> Self {
@@ -1725,6 +1760,15 @@ impl Binding {
     pub fn as_module_source(&self) -> ModuleSource {
         let query = self.selection.select("asModuleSource");
         ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type SearchResult
+    pub fn as_search_result(&self) -> SearchResult {
+        let query = self.selection.select("asSearchResult");
+        SearchResult {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4543,6 +4587,33 @@ pub struct DirectoryFilterOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectorySearchOpts<'a> {
+    /// Allow the . pattern to match newlines in multiline mode.
+    #[builder(setter(into, strip_option), default)]
+    pub dotall: Option<bool>,
+    /// Only return matching files, not lines and content
+    #[builder(setter(into, strip_option), default)]
+    pub files_only: Option<bool>,
+    /// Glob patterns to match (e.g., "*.md")
+    #[builder(setter(into, strip_option), default)]
+    pub globs: Option<Vec<&'a str>>,
+    /// Enable case-insensitive matching.
+    #[builder(setter(into, strip_option), default)]
+    pub ignore_case: Option<bool>,
+    /// Limit the number of results to return
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[builder(setter(into, strip_option), default)]
+    pub literal: Option<bool>,
+    /// Enable searching across multiple lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
+    /// Directory or file paths to search
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
@@ -4891,6 +4962,66 @@ impl Directory {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn search(&self, pattern: impl Into<String>) -> Vec<SearchResult> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        vec![SearchResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn search_opts<'a>(
+        &self,
+        pattern: impl Into<String>,
+        opts: DirectorySearchOpts<'a>,
+    ) -> Vec<SearchResult> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(globs) = opts.globs {
+            query = query.arg("globs", globs);
+        }
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        if let Some(dotall) = opts.dotall {
+            query = query.arg("dotall", dotall);
+        }
+        if let Some(ignore_case) = opts.ignore_case {
+            query = query.arg("ignoreCase", ignore_case);
+        }
+        if let Some(files_only) = opts.files_only {
+            query = query.arg("filesOnly", files_only);
+        }
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
+        vec![SearchResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
@@ -6178,6 +6309,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type SearchResult in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The SearchResult value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_search_result_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<SearchResultId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withSearchResultInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired SearchResult output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_search_result_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withSearchResultOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Secret in the environment
     ///
     /// # Arguments
@@ -6506,6 +6686,15 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileContentsOpts {
+    /// Maximum number of lines to read
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Start reading after this line
+    #[builder(setter(into, strip_option), default)]
+    pub offset: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileDigestOpts {
     /// If true, exclude metadata from the digest.
     #[builder(setter(into, strip_option), default)]
@@ -6517,10 +6706,54 @@ pub struct FileExportOpts {
     #[builder(setter(into, strip_option), default)]
     pub allow_parent_dir_path: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FileSearchOpts<'a> {
+    /// Allow the . pattern to match newlines in multiline mode.
+    #[builder(setter(into, strip_option), default)]
+    pub dotall: Option<bool>,
+    /// Only return matching files, not lines and content
+    #[builder(setter(into, strip_option), default)]
+    pub files_only: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub globs: Option<Vec<&'a str>>,
+    /// Enable case-insensitive matching.
+    #[builder(setter(into, strip_option), default)]
+    pub ignore_case: Option<bool>,
+    /// Limit the number of results to return
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[builder(setter(into, strip_option), default)]
+    pub literal: Option<bool>,
+    /// Enable searching across multiple lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
 impl File {
     /// Retrieves the contents of the file.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn contents(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("contents");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Retrieves the contents of the file.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn contents_opts(&self, opts: FileContentsOpts) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("contents");
+        if let Some(offset) = opts.offset {
+            query = query.arg("offset", offset);
+        }
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
@@ -6582,6 +6815,66 @@ impl File {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn search(&self, pattern: impl Into<String>) -> Vec<SearchResult> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        vec![SearchResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn search_opts<'a>(
+        &self,
+        pattern: impl Into<String>,
+        opts: FileSearchOpts<'a>,
+    ) -> Vec<SearchResult> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        if let Some(dotall) = opts.dotall {
+            query = query.arg("dotall", dotall);
+        }
+        if let Some(ignore_case) = opts.ignore_case {
+            query = query.arg("ignoreCase", ignore_case);
+        }
+        if let Some(files_only) = opts.files_only {
+            query = query.arg("filesOnly", files_only);
+        }
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(globs) = opts.globs {
+            query = query.arg("globs", globs);
+        }
+        vec![SearchResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
     }
     /// Retrieves the size of the file, in bytes.
     pub async fn size(&self) -> Result<isize, DaggerError> {
@@ -9638,6 +9931,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a SearchResult from its ID.
+    pub fn load_search_result_from_id(&self, id: impl IntoID<SearchResultId>) -> SearchResult {
+        let mut query = self.selection.select("loadSearchResultFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        SearchResult {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Secret from its ID.
     pub fn load_secret_from_id(&self, id: impl IntoID<SecretId>) -> Secret {
         let mut query = self.selection.select("loadSecretFromID");
@@ -9915,6 +10224,31 @@ impl ScalarTypeDef {
     /// If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct SearchResult {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl SearchResult {
+    pub async fn file_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("filePath");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this SearchResult.
+    pub async fn id(&self) -> Result<SearchResultId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn line_number(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("lineNumber");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn matched_lines(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("matchedLines");
         query.execute(self.graphql_client.clone()).await
     }
 }

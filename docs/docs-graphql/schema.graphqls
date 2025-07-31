@@ -49,6 +49,9 @@ type Binding {
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
 
+  """Retrieve the binding value, as type SearchResult"""
+  asSearchResult: SearchResult!
+
   """Retrieve the binding value, as type Secret"""
   asSecret: Secret!
 
@@ -1505,6 +1508,42 @@ type Directory {
   """Returns the name of the directory."""
   name: String!
 
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
+
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    ignoreCase: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
+
   """Force evaluation in the engine."""
   sync: DirectoryID!
 
@@ -2096,6 +2135,29 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type SearchResult in the environment"""
+  withSearchResultInput(
+    """The name of the binding"""
+    name: String!
+
+    """The SearchResult value to assign to the binding"""
+    value: SearchResultID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired SearchResult output to be assigned in the environment
+  """
+  withSearchResultOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Secret in the environment"""
   withSecretInput(
     """The name of the binding"""
@@ -2287,7 +2349,13 @@ scalar FieldTypeDefID
 """A file."""
 type File {
   """Retrieves the contents of the file."""
-  contents: String!
+  contents(
+    """Start reading after this line"""
+    offset: Int
+
+    """Maximum number of lines to read"""
+    limit: Int
+  ): String!
 
   """
   Return the file's digest. The format of the digest is not guaranteed to be
@@ -2316,6 +2384,40 @@ type File {
 
   """Retrieves the name of the file."""
   name: String!
+
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    ignoreCase: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+
+    paths: [String!] = []
+
+    globs: [String!] = []
+  ): [SearchResult!]!
 
   """Retrieves the size of the file, in bytes."""
   size: Int!
@@ -3631,6 +3733,9 @@ type Query {
   """Load a ScalarTypeDef from its ID."""
   loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
+  """Load a SearchResult from its ID."""
+  loadSearchResultFromID(id: SearchResultID!): SearchResult!
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
@@ -3781,6 +3886,22 @@ type ScalarTypeDef {
 The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 """
 scalar ScalarTypeDefID
+
+type SearchResult {
+  filePath: String!
+
+  """A unique identifier for this SearchResult."""
+  id: SearchResultID!
+
+  lineNumber: Int!
+
+  matchedLines: String!
+}
+
+"""
+The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+"""
+scalar SearchResultID
 
 """
 A reference to a secret value, which can be handled more safely than the value itself.
