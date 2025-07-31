@@ -1,13 +1,11 @@
 ---
-title: Function Registry
+title: Daggerverse
 description: Learn how to use the Daggerverse to find, share, and publish Dagger Functions and modules, including best practices for module ranking and examples.
 ---
 
-
-
 # The Daggerverse
 
-Dagger Functions are packaged and shared using Dagger [modules].
+Dagger Functions are packaged and shared using Dagger [modules](../features/reusability.mdx).
 
 ## Ranking
 
@@ -15,18 +13,14 @@ The Daggerverse is a free service run by Dagger, which indexes all publicly avai
 
 To make sure your module gets the best possible rank, consider the following for your module:
 
-1. A module should have a [description]
-
-1. Module functions should have [descriptions]
-
-1. Modules versions should be tagged with [semver]
-
-1. Modules should have hand-crafted [examples]
+1. A module should have a [description](https://docs.dagger.io/reference/dagger.schema.json).
+1. Module functions should have [descriptions](./documentation.mdx).
+1. Modules versions should be tagged with [semver](#semantic-versioning).
+1. Modules should have hand-crafted [examples](#examples).
 
 ## Examples
 
 Daggerverse will automatically show basic examples for each function in a module. If you would like to provide hand-crafted examples, the following section will describe how to set these up.
-
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
