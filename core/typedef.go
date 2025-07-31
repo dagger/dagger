@@ -516,6 +516,11 @@ func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
 	typeDef = typeDef.Clone()
 	fn = fn.Clone()
 	fn.ParentOriginalName = typeDef.AsObject.Value.OriginalName
+	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
+	// FunctionName to "", so ignore the name of the function.
+	// This is to be aligned with moduleSchema.typeDefWithObjectConstructor
+	fn.Name = ""
+	fn.OriginalName = ""
 	typeDef.AsObject.Value.Constructor = dagql.NonNull(fn)
 	return typeDef, nil
 }
