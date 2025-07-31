@@ -17,7 +17,7 @@ type PackageInfo struct {
 	PackageImport string // import path of package in which this file appears
 }
 
-func loadPackage(ctx context.Context, dir string) (_ *packages.Package, _ *token.FileSet, rerr error) {
+func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.Package, _ *token.FileSet, rerr error) {
 	ctx, span := trace.Tracer().Start(ctx, "loadPackage")
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -56,7 +56,7 @@ func loadPackage(ctx context.Context, dir string) (_ *packages.Package, _ *token
 	case 0:
 		return nil, nil, fmt.Errorf("no packages found in %s", dir)
 	case 1:
-		if pkgs[0].Name == "" {
+		if pkgs[0].Name == "" && !allowEmpty {
 			// this can happen when:
 			// - loading an empty dir within an existing Go module
 			// - loading a dir that is not included in a parent go.work
