@@ -166,8 +166,8 @@ dagger-io = { path = "sdk", editable = true }
 main_object = "hello_world.main:HelloWorld"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/hello_world/__init__.py", "# No main object import").
@@ -223,8 +223,8 @@ dependencies = ["dagger-io"]
 dagger-io = { path = "sdk", editable = true }
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/hello_world/__init__.py", "from .main import Test as Test").
@@ -267,13 +267,12 @@ dependencies = ["dagger-io"]
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
 
-# See https://hatch.pypa.io/latest/config/build/#packages
-[tool.hatch.build.targets.wheel]
-packages = ["src/main"]
+[tool.uv.build-backend]
+module-name = "main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/main/__init__.py", `import dagger
@@ -304,6 +303,43 @@ func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 		path string
 		conf string
 	}{
+		{
+			name: "uv",
+			path: "src/test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+`,
+		},
+		{
+			name: "uv",
+			path: "test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+`,
+		},
 		{
 			name: "setuptools",
 			path: "src/test/__init__.py",
@@ -628,14 +664,14 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(fileContents(".python-version", "3.12.1")).
+			With(fileContents(".python-version", "3.13.1")).
 			With(source).
 			With(daggerInitPython()).
 			With(daggerCall("pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12.1", out)
+		require.Equal(t, "3.13.1", out)
 	})
 
 	t.Run(".python-version takes precedence", func(ctx context.Context, t *testctx.T) {
@@ -685,7 +721,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.13", out)
 	})
 }
 
@@ -745,7 +781,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.13", out)
 	})
 }
 
@@ -825,7 +861,7 @@ class Test:
 			// newer feature.
 			With(pyprojectExtra(nil, `
                 [tool.dagger]
-                uv-version = "0.5.20"
+                uv-version = "0.7.13"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -833,7 +869,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "0.5.20", out)
+		require.Equal(t, "0.7.13", out)
 	})
 
 	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
@@ -903,9 +939,7 @@ class Test:
 				With(daggerInitPython()).
 				Sync(ctx)
 
-			// hatchling is a build requirement so it will fail to build if the index
-			// is unreachable
-			requireErrOut(t, err, "hatchling")
+			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
 		})
 	})
 }
@@ -1780,8 +1814,8 @@ func pyprojectExtra(dependencies []string, contents string) dagger.WithContainer
 	depLine := `dependencies = ["` + strings.Join(dependencies, `", "`) + `"]`
 	base := `
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }

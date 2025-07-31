@@ -1,0 +1,6 @@
+kind: Changed
+body: Default Python version in Dagger modules changed to 3.13 and build backend to uv_build
+time: 2025-07-31T17:52:18.815647Z
+custom:
+    Author: helderco
+    PR: "10825"

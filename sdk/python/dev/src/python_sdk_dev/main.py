@@ -9,7 +9,7 @@ from .test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
 UV_VERSION: Final[str] = os.getenv("DAGGER_UV_VERSION", os.getenv("UV_VERSION", ""))
-SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10", "3.13"]
+SUPPORTED_VERSIONS: Final = Literal["3.13", "3.12", "3.11", "3.10"]
 
 
 @object_type
@@ -232,8 +232,8 @@ class PythonSdkDev:
     ) -> dagger.Container:
         """Build the Python SDK client library package for distribution."""
         return (
-            self.container.with_env_variable("SETUPTOOLS_SCM_PRETEND_VERSION", version)
-            .without_directory("dist")
+            self.container.without_directory("dist")
+            .with_exec(["uv", "version", version])
             .with_exec(["uv", "build"])
         )
 
