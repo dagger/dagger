@@ -940,6 +940,13 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
+export type EnvWithBindingOpts = {
+  /**
+   * Binding description
+   */
+  description?: string
+}
+
 /**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
  */
@@ -4718,6 +4725,30 @@ export class Env extends BaseClient {
   }
 
   /**
+   * retrieve an object binding
+   * @param name The binding name
+   */
+  binding = (name: string): Binding => {
+    const ctx = this._ctx.select("binding", { name })
+    return new Binding(ctx)
+  }
+
+  /**
+   * return all object bindings
+   */
+  bindings = async (): Promise<Binding[]> => {
+    type bindings = {
+      id: BindingID
+    }
+
+    const ctx = this._ctx.select("bindings").select("id")
+
+    const response: Awaited<bindings[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
    * retrieve an input value by name
    */
   input = (name: string): Binding => {
@@ -4761,6 +4792,21 @@ export class Env extends BaseClient {
     const response: Awaited<outputs[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * bind an object to the env
+   * @param name Binding name
+   * @param value Object to bind
+   * @param opts.description Binding description
+   */
+  withBinding = (
+    name: string,
+    value: string,
+    opts?: EnvWithBindingOpts,
+  ): Env => {
+    const ctx = this._ctx.select("withBinding", { name, value, ...opts })
+    return new Env(ctx)
   }
 
   /**
