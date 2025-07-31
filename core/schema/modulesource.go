@@ -2227,10 +2227,11 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
-	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
+	mod.Runtime = dagql.NonNull(runtime)
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
@@ -2263,7 +2264,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			ctx,
 			mod,
 			nil,
-			mod.Runtime,
+			mod.Runtime.Value,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2368,8 +2369,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        src,
-		ContextSource: originalSrc,
+		Source:        dagql.NonNull(src),
+		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,

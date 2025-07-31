@@ -2975,7 +2975,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container!
+  runtime: Container
 
   """The SDK config used by this module."""
   sdk: SDKConfig
@@ -2992,7 +2992,7 @@ type Module {
   ): Void
 
   """The source for the module."""
-  source: ModuleSource!
+  source: ModuleSource
 
   """
   Forces evaluation of the module, including any loading into the engine and associated validation.

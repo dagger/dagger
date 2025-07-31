@@ -603,7 +603,7 @@ func (s *moduleSchema) moduleGeneratedContextDirectory(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	err = dag.Select(ctx, mod.Self().Source, &inst,
+	err = dag.Select(ctx, mod.Self().Source.Value, &inst,
 		dagql.Selector{
 			Field: "generatedContextDirectory",
 		},
@@ -700,7 +700,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	curSrc := curMod.Self().Module.Source
+	curSrc := curMod.Self().Module.Source.Value
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}

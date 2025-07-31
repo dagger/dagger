@@ -153,7 +153,7 @@ defmodule Dagger.Module do
   @doc """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  @spec runtime(t()) :: Dagger.Container.t()
+  @spec runtime(t()) :: Dagger.Container.t() | nil
   def runtime(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("runtime")
@@ -199,7 +199,7 @@ defmodule Dagger.Module do
   @doc """
   The source for the module.
   """
-  @spec source(t()) :: Dagger.ModuleSource.t()
+  @spec source(t()) :: Dagger.ModuleSource.t() | nil
   def source(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("source")
