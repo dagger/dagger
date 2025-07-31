@@ -957,6 +957,10 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	ctr := parent.Self().Clone()
 
+	if args.Stdin != "" && args.RedirectStdin != "" {
+		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)

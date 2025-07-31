@@ -235,66 +235,88 @@ func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
 	require.Equal(t, res.Container.From.WithExec.Stdout, "hello")
 }
 
-func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testctx.T) {
+func (ContainerSuite) TestExecRedirectStdin(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	res, err := testutil.QueryWithClient[struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					Out struct {
-						Contents string
-					}
-					Err struct {
-						Contents string
-					}
-				}
-			}
-		}
-	}](c, t,
-		`{
-			container {
-				from(address: "`+alpineImage+`") {
-					withExec(
-						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						redirectStdout: "out",
-						redirectStderr: "err"
-					) {
-						out: file(path: "out") {
-							contents
-						}
 
-						err: file(path: "err") {
-							contents
-						}
-					}
-				}
-			}
-		}`, nil)
-	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithExec.Out.Contents, "hello\n")
-	require.Equal(t, res.Container.From.WithExec.Err.Contents, "goodbye\n")
-
+	dir := c.Directory().WithNewFile("input.txt", "redirected stdin")
 	execWithMount := c.Container().From(alpineImage).
-		WithMountedDirectory("/mnt", c.Directory()).
-		WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+		WithMountedDirectory("/mnt", dir).
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+			RedirectStdin:  "/mnt/input.txt",
 			RedirectStdout: "/mnt/out",
-			RedirectStderr: "/mnt/err",
 		})
 
 	stdout, err := execWithMount.File("/mnt/out").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "hello\n", stdout)
-	stderr, err := execWithMount.File("/mnt/err").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "goodbye\n", stderr)
+	require.Equal(t, "redirected stdin", stdout)
+}
 
-	_, err = execWithMount.Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello\n", stdout)
+func (ContainerSuite) TestExecRedirectStdinSecret(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	_, err = execWithMount.Stderr(ctx)
+	secret := c.SetSecret("my-secret", "secret stdin")
+	execWithSecret := c.Container().From(alpineImage).
+		WithMountedSecret("/mnt/secret", secret).
+		WithExec([]string{"sh", "-c", "cat | tr '[a-z]' '[A-Z]'"}, dagger.ContainerWithExecOpts{
+			RedirectStdin:  "/mnt/secret",
+			RedirectStdout: "/mnt/out",
+		})
+
+	stdout, err := execWithSecret.File("/mnt/out").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "goodbye\n", stderr)
+	require.Equal(t, "SECRET STDIN", stdout)
+}
+
+func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("exec", func(ctx context.Context, t *testctx.T) {
+		exec := c.Container().From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+				RedirectStdout: "out",
+				RedirectStderr: "err",
+			})
+
+		stdout, err := exec.File("out").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+		stderr, err := exec.File("err").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", stderr)
+
+		_, err = exec.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+
+		_, err = exec.Stderr(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", stderr)
+	})
+
+	t.Run("exec with mount", func(ctx context.Context, t *testctx.T) {
+		// same as above, but with a mounted directory instead
+		exec := c.Container().From(alpineImage).
+			WithMountedDirectory("/mnt", c.Directory()).
+			WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+				RedirectStdout: "/mnt/out",
+				RedirectStderr: "/mnt/err",
+			})
+
+		stdout, err := exec.File("/mnt/out").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+		stderr, err := exec.File("/mnt/err").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", stderr)
+
+		_, err = exec.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+
+		_, err = exec.Stderr(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", stderr)
+	})
 }
 
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {

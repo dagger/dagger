@@ -2061,6 +2061,8 @@ pub struct ContainerWithExecOpts<'a> {
     /// Like redirectStdout, but for standard error
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stdin: Option<&'a str>,
     /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
@@ -3232,6 +3234,9 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(redirect_stdin) = opts.redirect_stdin {
+            query = query.arg("redirectStdin", redirect_stdin);
         }
         Container {
             proc: self.proc.clone(),

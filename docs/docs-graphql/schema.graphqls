@@ -774,6 +774,8 @@ type Container {
     sure, you don't need this.
     """
     noInit: Boolean = false
+
+    redirectStdin: String = ""
   ): Container!
 
   """
