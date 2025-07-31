@@ -73,8 +73,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
 			),
-		// FIXME: deprecate
 		dagql.Func("build", s.build).
+			Deprecated("Use `Directory.build` instead").
 			Doc(`Initializes this container from a Dockerfile build.`).
 			Args(
 				dagql.Arg("context").Doc("Directory context used by the Dockerfile."),

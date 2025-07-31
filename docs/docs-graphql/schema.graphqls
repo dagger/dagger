@@ -242,7 +242,7 @@ type Container {
     behavior.
     """
     noInit: Boolean = false
-  ): Container!
+  ): Container! @deprecated(reason: "Use `Directory.build` instead")
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
