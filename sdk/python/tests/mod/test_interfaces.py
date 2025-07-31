@@ -65,8 +65,8 @@ def test_registered_functions(mod: Module):
 async def test_generated_implementation(duck):
     r, t = duck
 
-    assert t.__name__ == "Duck"
-    assert is_dagger_interface_type(t)
+    assert t.return_type.__name__ == "Duck"
+    assert is_dagger_interface_type(t.return_type)
 
     assert type(r).__name__ == "PondDuck"
     assert is_dagger_object_type(type(r))
