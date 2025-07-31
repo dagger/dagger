@@ -64,7 +64,7 @@ engine:
 
   ### Configure the port settings for the Dagger Engine
   #
-  # port: 1234 # The container port that the Dagger Engine will listen on.
+  port: 1234 # The container port that the Dagger Engine will listen on.
   # hostPort: 1234    # Optional: Expose the engine port directly on the host node
 
   ### Customize Dagger Engine start args
@@ -198,7 +198,7 @@ engine:
     type: ClusterIP
 
     # nodePort is only used when type is set to NodePort.
-    nodePort: null
+    nodePort: 1234
 
     # Session affinity ensures that client requests are consistently routed to the same pod.
     # This is **critical** when Dagger is accessed via a Kubernetes Service,
