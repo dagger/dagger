@@ -22,7 +22,7 @@ Before beginning, ensure that:
 
 ## Create containers
 
-Dagger works by expressing workflows as combinations of functions from the [Dagger API](../extending/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from the shell ([Dagger Shell](../features/shell.mdx)) or from code ([custom Dagger Functions](../extending/custom-functions.mdx) written in a programming language).
+Dagger works by expressing workflows as combinations of functions from the [Dagger API](../extending/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from the shell ([Dagger Shell](../features/shell.mdx)) or from code ([custom Dagger Functions](../extending/functions.mdx) written in a programming language).
 
 [Dagger Shell](../features/shell.mdx) is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules.
 
@@ -115,7 +115,7 @@ container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
 
 ## Write custom functions
 
-As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../extending/custom-functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../features/reusability.mdx).
+As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into [custom Dagger Functions](../extending/functions.mdx). These are just regular code consisting of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together. They are written in a programming language using a type-safe Dagger SDK and packaged into [modules](../features/reusability.mdx).
 
 :::tip IDE INTEGRATION
 <PartialIde />
@@ -682,6 +682,6 @@ Now that you know the basics of Dagger, continue your journey with the resources
 - [Build an AI Agent](./agent/index.mdx)
 - [Learn about the Dagger API](../extending/index.mdx)
 - [Learn about Dagger Shell](../features/shell.mdx)
-- [Learn about Dagger Functions](../extending/custom-functions.mdx)
+- [Learn about Dagger Functions](../extending/functions.mdx)
 - [Visit the Daggerverse](https://daggerverse.dev/)
 - [See more examples in the Cookbook](../cookbook/index.mdx)
