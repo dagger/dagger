@@ -1473,7 +1473,7 @@ func main() {
 
 	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
 	if err != nil {
-    panic(err)
+		panic(err)
 	}
 
 	fmt.Println("result:", res)
@@ -1514,7 +1514,7 @@ func main() {
 
 	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
 	if err != nil {
-    panic(err)
+		panic(err)
 	}
 
 	fmt.Println("result:", res)
@@ -1550,7 +1550,7 @@ func main() {
 
 	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
 	if err != nil {
-    panic(err)
+		panic(err)
 	}
 
 	fmt.Println("result:", res)

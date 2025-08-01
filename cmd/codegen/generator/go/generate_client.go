@@ -18,8 +18,6 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-const defaultGoModClientLib string = "dagger/client"
-
 func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
@@ -43,7 +41,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 			return nil, fmt.Errorf("failed to format go.mod: %w", err)
 		}
 
-		if err := mfs.WriteFile("go.mod", []byte(modBody), 0600); err != nil {
+		if err := mfs.WriteFile("go.mod", modBody, 0600); err != nil {
 			return nil, fmt.Errorf("failed to write go.mod: %w", err)
 		}
 
