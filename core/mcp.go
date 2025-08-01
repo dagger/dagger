@@ -1914,7 +1914,9 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeDef *ast.Definition,
 				desc = fmt.Sprintf("(%s ID) %s", idType, desc)
 			}
 		}
-		argSchema["description"] = desc
+		if desc != "" {
+			argSchema["description"] = desc
+		}
 
 		// Add default value if present
 		if arg.DefaultValue != nil {
