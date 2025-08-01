@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httputil"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -22,7 +24,10 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
+	opts := []option.RequestOption{
+		option.WithAPIKey(endpoint.Key),
+		withAnthropicDebug(),
+	}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
 	}
@@ -290,4 +295,35 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
 	}, nil
+}
+
+func withAnthropicDebug() option.RequestOption {
+	return option.WithMiddleware(func(req *http.Request, nxt option.MiddlewareNext) (_ *http.Response, rerr error) {
+		ctx := req.Context()
+
+		ctx, span := Tracer(ctx).Start(ctx, "llm.client.anthropic")
+		defer telemetry.End(span, func() error { return rerr })
+
+		// Create span logger for structured logging
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+
+		fmt.Fprintln(stdio.Stdout, "<<<<<<<<<<<<<<<<<<< REQUEST")
+		if reqBytes, err := httputil.DumpRequest(req, true); err == nil {
+			stdio.Stdout.Write(reqBytes)
+		}
+
+		fmt.Fprintln(stdio.Stdout, "")
+		fmt.Fprintln(stdio.Stdout, ">>>>>>>>>>>>>>>>>>> RESPONSE")
+
+		resp, err := nxt(req)
+		if err != nil {
+			return resp, err
+		}
+
+		if respBytes, err := httputil.DumpResponse(resp, true); err == nil {
+			stdio.Stdout.Write(respBytes)
+		}
+
+		return resp, err
+	})
 }
