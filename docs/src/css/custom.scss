@@ -187,8 +187,10 @@ div[class*="docSidebarMenu"],
 .navbar__items .navbar-blog-link {
   color: var(--ifm-navbar-link-color) !important;
   font-size: 00.8175rem;
+  font-weight: normal !important; /* Normal weight for inactive items */
   padding-left: 0.5rem !important;
   padding-right: 0.5rem !important;
+  border-bottom: 3px solid transparent !important; /* Add transparent border to prevent layout shift */
   // make sure the ipad width of 1180 has the same padding as mobile
   @include tablet {
     padding-left: 0.5rem !important;
@@ -207,7 +209,7 @@ html[data-theme="light"] {
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: rgb(23, 23, 24) !important;
-    font-weight: 600 !important;
+    font-weight: 600 !important; /* Bold weight for active items */
     border-bottom: 3px solid #{$tangerine-color} !important;
   }
 
@@ -237,7 +239,7 @@ html[data-theme="dark"] {
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: white !important;
-    font-weight: 600 !important;
+    font-weight: 600 !important; /* Bold weight for active items */
     border-bottom: 3px solid #{$crimson-color} !important;
   }
 
@@ -674,14 +676,14 @@ html[data-theme="light"] {
     &:hover {
       background-color: rgba(26, 24, 51, 0.05) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(33, 121, 141, 0.5); // Light version of --ifm-menu-color-active
+      border-left: 3px solid rgba(239, 123, 26, 0.5); // Light version of tangerine color
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
       background-color: rgba(26, 24, 51, 0.1) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid var(--ifm-menu-color-active);
+      border-left: 3px solid #{$tangerine-color} !important; // Matching navbar border color
       padding-left: 0.5rem;
     }
   }
@@ -693,14 +695,14 @@ html[data-theme="dark"] {
     &:hover {
       background-color: rgba(208, 224, 249, 0.1) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(87, 199, 227, 0.5); // Light version of --ifm-menu-color-active
+      border-left: 3px solid rgba(190, 29, 67, 0.5); // Light version of crimson color
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
       background-color: rgba(208, 224, 249, 0.15) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid var(--ifm-menu-color-active);
+      border-left: 3px solid #{$crimson-color} !important; // Matching navbar border color
       padding-left: 0.5rem;
     }
   }
