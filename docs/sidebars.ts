@@ -18,7 +18,11 @@ module.exports = {
     {
       type: "category",
       label: "Use Cases",
-      items: ["use-cases/portable-ci", "use-cases/agentic-ci", "use-cases/monorepos"],
+      items: [
+        "use-cases/portable-ci",
+        "use-cases/agentic-ci",
+        "use-cases/monorepos",
+      ],
     },
     {
       type: "category",
@@ -41,9 +45,8 @@ module.exports = {
             "getting-started/ci",
             "getting-started/agent/index",
             "getting-started/agent/inproject",
-          ]
-        }
-
+          ],
+        },
       ],
     },
     {
@@ -117,7 +120,11 @@ module.exports = {
     {
       type: "category",
       label: "Clients",
-      items: ["extending/clients-cli", "extending/clients-http"],
+      items: [
+        "extending/clients-sdk",
+        "extending/clients-cli",
+        "extending/clients-http",
+      ],
     },
   ],
   reference: [
