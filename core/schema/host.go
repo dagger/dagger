@@ -373,6 +373,23 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	if !filepath.IsAbs(hostPath) {
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		hostPath, err = bk.AbsPath(ctx, hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path from host path %s: %w", hostPath, err)
+		}
+	}
+
 	gitIgnoreIncludePath, err := getGitIgnoreIncludePaths(parentPath, hostPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
