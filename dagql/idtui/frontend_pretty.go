@@ -1929,9 +1929,17 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
+// sync this with core.llmLogsLastLines to ensure user and LLM sees the same
+// thing
+const llmLogsLastLines = 8
+
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+	limit := fe.window.Height / 3
+	if row.Span.LLMTool != "" {
+		limit = llmLogsLastLines
+	}
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		return fe.renderLogs(out, r, row, logs, 8, prefix)
+		return fe.renderLogs(out, r, row, logs, limit, prefix)
 	}
 	return false
 }

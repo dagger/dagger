@@ -68,8 +68,8 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
-	// The last log ID that we've seen
-	lastLogID int64
+	// History of spans that have logs that we can read
+	loggedSpans []trace.SpanID
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]contextualBinding
 	// Auto incrementing number per-type
@@ -423,19 +423,21 @@ func (m *MCP) call(ctx context.Context,
 
 	// Capture logs produced by the tool call and append them to the result
 	defer func() {
-		logs, err := m.captureLogs(ctx)
+		spanID := trace.SpanContextFromContext(ctx).SpanID()
+		logs, err := m.captureLogs(ctx, spanID)
 		if err != nil {
 			if res != "" {
 				res += "\n\n"
 			}
 			res += fmt.Sprintf("WARNING: Failed to capture logs (%v)", err)
 		} else if len(logs) > 0 {
+			// Keep track of this span's logs so we can read more of it later
+			m.loggedSpans = append(m.loggedSpans, spanID)
+
+			// Show only the last 10 lines by default
+			logs = limitLines(logs, llmLogsLastLines, llmLogsMaxLineLen)
 			content := strings.Join(logs, "\n")
-			if len(content) > llmLogsMaxChars {
-				skipped := len(content) - llmLogsMaxChars
-				content = content[skipped:]
-				content = fmt.Sprintf("[truncated %d characters]\n", skipped) + content
-			}
+
 			if res != "" {
 				if !strings.HasSuffix(res, "\n") {
 					// avoid double trailing linebreak (e.g. pretty JSON)
@@ -811,9 +813,6 @@ func (m *MCP) toolCallToSelections(
 	return sels, usedContext, nil
 }
 
-const llmLastLogs = 10
-const llmLogsMaxChars = 30000
-
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
 	srv, err := m.Server(ctx)
 	if err != nil {
@@ -867,11 +866,15 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 	}
 }
 
-const logsBatchSize = 1000
+// sync this with idtui.llmLogsLastLines to ensure user and LLM sees the same
+// thing
+const llmLogsLastLines = 8
+const llmLogsMaxLineLen = 2000
+const llmLogsBatchSize = 1000
 
 // captureLogs returns nicely Heroku-formatted lines of all logs seen since the
 // last capture.
-func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
+func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -886,16 +889,16 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 	}
 	defer close()
 
-	spanCtx := trace.SpanContextFromContext(ctx)
-
 	formattedLines := new(strings.Builder)
 	mpw := multiprefixw.New(formattedLines)
 
+	var lastLogID int64
+
 	for {
 		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
-			ID:     m.lastLogID,
-			SpanID: sql.NullString{Valid: true, String: spanCtx.SpanID().String()},
-			Limit:  logsBatchSize,
+			ID:     lastLogID,
+			SpanID: sql.NullString{Valid: true, String: spanID.String()},
+			Limit:  llmLogsBatchSize,
 		})
 		if err != nil {
 			return nil, err
@@ -905,7 +908,7 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 		}
 
 		for _, log := range logs {
-			m.lastLogID = log.ID
+			lastLogID = log.ID
 
 			var logAttrs []*otlpcommonv1.KeyValue
 			if err := clientdb.UnmarshalProtoJSONs(log.Attributes, &otlpcommonv1.KeyValue{}, &logAttrs); err != nil {
@@ -1000,7 +1003,11 @@ func (m *MCP) captureLogs(ctx context.Context) ([]string, error) {
 	if formattedLines.Len() == 0 {
 		return nil, nil
 	}
-	return strings.Split(formattedLines.String(), "\n"), nil
+	return strings.Split(
+		// ensure trailing linebreaks don't contribute to line limits
+		strings.TrimRight(formattedLines.String(), "\n"),
+		"\n",
+	), nil
 }
 
 func toolErrorMessage(err error) string {
@@ -1252,6 +1259,77 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	} else {
 		builtins = append(builtins, directlyExposeTools(allMethods)...)
 	}
+
+	builtins = append(builtins, LLMTool{
+		Name:        "ReadLogs",
+		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines to read from the end.",
+					"minimum":     1,
+					"default":     100,
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines to skip from the end. If not specified, starts from the end.",
+					"minimum":     0,
+				},
+				"grep": map[string]any{
+					"type":        "string",
+					"description": "Grep pattern to filter logs. If specified, only lines matching this pattern will be returned.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		Strict: true,
+		Call: ToolFunc(srv, func(ctx context.Context, args struct {
+			Offset int    `default:"0"`
+			Limit  int    `default:"100"`
+			Grep   string `default:""`
+		}) (any, error) {
+			if len(m.loggedSpans) == 0 {
+				return nil, fmt.Errorf("no logs captured")
+			}
+
+			logs, err := m.captureLogs(ctx, m.loggedSpans[len(m.loggedSpans)-1])
+			if err != nil {
+				return nil, fmt.Errorf("failed to capture logs: %w", err)
+			}
+
+			// Trim the last Offset lines
+			if args.Offset >= len(logs) {
+				return nil, fmt.Errorf("offset %d is beyond log length %d", args.Offset, len(logs))
+			}
+			logs = logs[:len(logs)-args.Offset]
+
+			// Apply grep filter if specified
+			if args.Grep != "" {
+				re, err := regexp.Compile(args.Grep)
+				if err != nil {
+					return nil, fmt.Errorf("invalid grep pattern %q: %w", args.Grep, err)
+				}
+				var filteredLogs []string
+				for i, line := range logs {
+					if re.MatchString(line) {
+						filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
+					}
+				}
+				logs = filteredLogs
+			} else {
+				for i, line := range logs {
+					logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+				}
+			}
+
+			// Apply line limit if specified
+			logs = limitLines(logs, args.Limit, llmLogsMaxLineLen)
+
+			return strings.Join(logs, "\n"), nil
+		}),
+	})
 
 	if returnTool, ok := m.returnBuiltin(); ok {
 		builtins = append(builtins, returnTool)
@@ -2125,6 +2203,19 @@ func toolStructuredResponse(val any) (string, error) {
 		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
 	return str.String(), nil
+}
+
+func limitLines(logs []string, limit, maxLineLen int) []string {
+	if limit > 0 && len(logs) > limit {
+		snipped := fmt.Sprintf("... %d lines omitted ...", len(logs)-limit)
+		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
+	}
+	for i, line := range logs {
+		if len(line) > maxLineLen {
+			logs[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
+		}
+	}
+	return logs
 }
 
 // Hide functions from the largest and most commonly used core types, to prevent
