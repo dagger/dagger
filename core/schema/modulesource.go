@@ -962,7 +962,12 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
 		}
 
-		for _, pattern := range ignorePatterns {
+		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath, ignorePatterns)
+		if err != nil {
+			return fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
+		}
+
+		for _, pattern := range rebasedIgnorePatterns {
 			if strings.HasPrefix(pattern, "!") {
 				fullIncludePaths = append(fullIncludePaths, strings.TrimPrefix(pattern, "!"))
 			} else {
