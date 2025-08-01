@@ -207,8 +207,8 @@ html[data-theme="light"] {
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: rgb(23, 23, 24) !important;
-    font-weight: bold !important;
-    border-bottom: 2px solid var(--ifm-menu-color) !important;
+    font-weight: 600 !important;
+    border-bottom: 3px solid #{$tangerine-color} !important;
   }
 
   // Make announcement bar use inkberry color in light mode
@@ -237,8 +237,8 @@ html[data-theme="dark"] {
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
     color: white !important;
-    font-weight: bold !important;
-    border-bottom: 2px solid white !important;
+    font-weight: 600 !important;
+    border-bottom: 3px solid #{$crimson-color} !important;
   }
 
   /* Style for active links in the sidebar - dark mode only */
