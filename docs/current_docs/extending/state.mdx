@@ -2,18 +2,16 @@
 slug: /extending/state
 ---
 
-
-
-
-
-
 # State and Getters
 
 Object state can be exposed as a Dagger Function, without having to create a getter function explicitly. Depending on the language used, this state is exposed using struct fields (Go), object attributes (Python) or object properties (TypeScript).
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
+
+:::warning
 Dagger only exposes a struct's public fields; private fields will not be exposed.
+:::
 
 Here's an example where one struct field is exposed as a Dagger Function, while the other is not:
 
