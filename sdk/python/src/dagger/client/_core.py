@@ -148,7 +148,17 @@ class Context:
         root = functools.reduce(_collapse, reversed(self.selections))
 
         # `to_dsl` will cascade to all children, until the end.
-        return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        try:
+            return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        except (graphql.GraphQLError, AttributeError, TypeError) as e:
+            logger.exception("GraphQL query builder failed to build query")
+            msg = (
+                "Failed to build GraphQL query, probably due to a schema validation "
+                "issue. Please file a bug report because anything that could "
+                "fail to validate at this point should really happen sooner. "
+                "See Python logs for more details."
+            )
+            raise InvalidQueryError(msg) from e
 
     async def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(await self.build()))
