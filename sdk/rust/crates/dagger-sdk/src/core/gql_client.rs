@@ -16,9 +16,22 @@ pub struct GraphQLError {
 #[allow(dead_code)]
 pub struct GraphQLErrorMessage {
     pub message: String,
-    locations: Option<Vec<GraphQLErrorLocation>>,
-    extensions: Option<HashMap<String, String>>,
-    path: Option<Vec<GraphQLErrorPathParam>>,
+    pub locations: Option<Vec<GraphQLErrorLocation>>,
+    pub extensions: Option<GraphQLExtensions>,
+    pub path: Option<Vec<GraphQLErrorPathParam>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "_type")]
+pub enum GraphQLExtensions {
+    #[serde(rename = "EXEC_ERROR")]
+    ExecError {
+        cmd: Vec<String>,
+        #[serde(rename = "exitCode")]
+        exit_code: Option<i16>,
+        stderr: Option<String>,
+        stdout: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -51,7 +64,7 @@ impl GraphQLError {
     }
 
     pub fn with_json(json: Vec<GraphQLErrorMessage>) -> Self {
-        Self::with_message_and_json("Look at json field for more details", json)
+        Self::with_message_and_json("request to dagger failed", json)
     }
 
     pub fn message(&self) -> &str {
@@ -76,6 +89,29 @@ fn format(err: &GraphQLError, f: &mut Formatter<'_>) -> fmt::Result {
 
     for err in errors.unwrap() {
         writeln!(f, "Message: {}", err.message)?;
+        if let Some(extensions) = &err.extensions {
+            match extensions {
+                GraphQLExtensions::ExecError {
+                    cmd,
+                    exit_code,
+                    stderr,
+                    stdout,
+                } => {
+                    writeln!(
+                        f,
+                        "Cmd: {} - exits: {}",
+                        cmd.join(" "),
+                        exit_code.unwrap_or_default()
+                    )?;
+                    if let Some(stdout) = stdout {
+                        writeln!(f, "Stdout: {stdout}")?;
+                    }
+                    if let Some(stderr) = stderr {
+                        writeln!(f, "Stderr: {stderr}")?;
+                    }
+                }
+            }
+        }
     }
 
     Ok(())

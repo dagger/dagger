@@ -100,3 +100,96 @@ async fn test_container() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_error_handling() {
+    let res = connect(|client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_exec(vec!["some", "bogus", "command"])
+            .sync()
+            .await?;
+
+        Ok(())
+    })
+    .await;
+
+    let expected = r#"
+Err(DaggerContext(failed to query dagger engine: domain error:
+    request to dagger failed
+    process "some bogus command" did not complete successfully: exit code: 1, stdout: '', stderr: 'exec: "some": executable file not found in $PATH', cmd: 'some bogus command', exit_code: '1'
+
+
+Caused by:
+    domain error:
+        request to dagger failed
+        process "some bogus command" did not complete successfully: exit code: 1, stdout: '', stderr: 'exec: "some": executable file not found in $PATH', cmd: 'some bogus command', exit_code: '1'
+
+
+Location:
+    crates/dagger-sdk/tests/mod.rs:109:9))
+    "#
+    .trim();
+
+    let actual = format!("{res:?}");
+
+    assert_eq!(expected, actual)
+}
+
+#[tokio::test]
+async fn test_error_handling_short() {
+    let res = connect(|client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_exec(vec!["some", "bogus", "command"])
+            .sync()
+            .await?;
+
+        Ok(())
+    })
+    .await;
+
+    let expected = r#"an error occurred from the dagger context call: failed to query dagger engine: domain error:
+    request to dagger failed
+    process "some bogus command" did not complete successfully: exit code: 1, stdout: '', stderr: 'exec: "some": executable file not found in $PATH', cmd: 'some bogus command', exit_code: '1'
+"#;
+
+    let actual = format!("{}", res.unwrap_err());
+
+    assert_eq!(expected, actual)
+}
+
+#[tokio::test]
+async fn test_error_stdout_stderr() {
+    let res = connect(|client| async move {
+        let alpine = client.container().from("alpine:3.16.2");
+
+        alpine
+            .with_exec(vec!["sh", "-c", "(echo 'This message goes to stdout' && (echo 'This message goes to stderr' >&2) && exit 1)"])
+            .sync()
+            .await?;
+
+        Ok(())
+    })
+    .await;
+
+    let expected = r#"DaggerContext(failed to query dagger engine: domain error:
+    request to dagger failed
+    process "sh -c (echo 'This message goes to stdout' && (echo 'This message goes to stderr' >&2) && exit 1)" did not complete successfully: exit code: 1, stdout: 'This message goes to stdout', stderr: 'This message goes to stderr', cmd: 'sh -c (echo 'This message goes to stdout' && (echo 'This message goes to stderr' >&2) && exit 1)', exit_code: '1'
+
+
+Caused by:
+    domain error:
+        request to dagger failed
+        process "sh -c (echo 'This message goes to stdout' && (echo 'This message goes to stderr' >&2) && exit 1)" did not complete successfully: exit code: 1, stdout: 'This message goes to stdout', stderr: 'This message goes to stderr', cmd: 'sh -c (echo 'This message goes to stdout' && (echo 'This message goes to stderr' >&2) && exit 1)', exit_code: '1'
+
+
+Location:
+    crates/dagger-sdk/tests/mod.rs:169:9)"#;
+
+    let actual = format!("{:?}", res.unwrap_err());
+
+    assert_eq!(expected, actual)
+}
