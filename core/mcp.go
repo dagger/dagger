@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/multiprefixw"
 	"github.com/dagger/dagger/core/prompts"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -889,8 +886,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 	}
 	defer close()
 
-	formattedLines := new(strings.Builder)
-	mpw := multiprefixw.New(formattedLines)
+	buf := new(strings.Builder)
 
 	var lastLogID int64
 
@@ -929,7 +925,6 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 				continue
 			}
 
-			var prefix string
 			if log.SpanID.Valid {
 				span, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
 					TraceID: log.TraceID.String,
@@ -954,35 +949,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 					// don't show logs from the LLM spans themselves
 					continue
 				}
-				prefix = span.Name
-				spanBytes, err := hex.DecodeString(span.SpanID)
-				if err != nil {
-					slog.Warn("failed to decode hex span ID", "error", err)
-					continue
-				}
-				base64Span := base64.StdEncoding.EncodeToString(spanBytes)
-				base64Links, err := q.SelectLinkedSpans(ctx, base64Span)
-				if err != nil {
-					return nil, err
-				}
-				var linkSuffix string
-				// linked spans get added to the name (Container.withExec => exec foo bar)
-				for _, link := range base64Links {
-					linkedSpan, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
-						TraceID: link.TraceID,
-						SpanID:  link.SourceSpanID,
-					})
-					if err != nil {
-						slog.Warn("failed to query linked span", "error", err)
-						continue
-					}
-					linkSuffix = "(" + linkedSpan.Name + ")"
-				}
-				prefix += linkSuffix
-				prefix += ":\n"
 			}
-
-			mpw.SetPrefix(prefix)
 
 			var bodyPb otlpcommonv1.AnyValue
 			if err := proto.Unmarshal(log.Body, &bodyPb); err != nil {
@@ -991,21 +958,21 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 			}
 			switch x := bodyPb.GetValue().(type) {
 			case *otlpcommonv1.AnyValue_StringValue:
-				fmt.Fprint(mpw, x.StringValue)
+				fmt.Fprint(buf, x.StringValue)
 			case *otlpcommonv1.AnyValue_BytesValue:
-				mpw.Write(x.BytesValue)
+				buf.Write(x.BytesValue)
 			default:
 				// default to something troubleshootable
-				fmt.Fprintf(mpw, "UNHANDLED: %+v", x)
+				fmt.Fprintf(buf, "UNHANDLED: %+v", x)
 			}
 		}
 	}
-	if formattedLines.Len() == 0 {
+	if buf.Len() == 0 {
 		return nil, nil
 	}
 	return strings.Split(
 		// ensure trailing linebreaks don't contribute to line limits
-		strings.TrimRight(formattedLines.String(), "\n"),
+		strings.TrimRight(buf.String(), "\n"),
 		"\n",
 	), nil
 }
