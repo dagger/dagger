@@ -2,6 +2,7 @@ package gogenerator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -20,12 +21,37 @@ import (
 func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
-	outDir := "."
 	mfs := memfs.New()
 
 	layers := []fs.FS{mfs}
 
-	replacedPath, replaced, err := g.daggerPackageReplacement()
+	goModFile, exist, err := g.readGoMod()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read go.mod: %w", err)
+	}
+
+	if !exist {
+		// If no go.mod is found, we will generate a go.mod
+		goMod := new(modfile.File)
+		goMod.AddModuleStmt(strings.ToLower(g.Config.ClientConfig.ModuleName))
+		goMod.AddGoStmt(goVersion)
+
+		modBody, err := goMod.Format()
+		if err != nil {
+			return nil, fmt.Errorf("failed to format go.mod: %w", err)
+		}
+
+		if err := mfs.WriteFile("go.mod", modBody, 0600); err != nil {
+			return nil, fmt.Errorf("failed to write go.mod: %w", err)
+		}
+
+		return &generator.GeneratedState{
+			Overlay:        layerfs.New(mfs),
+			NeedRegenerate: true,
+		}, nil
+	}
+
+	replacedPath, replaced, err := g.daggerPackageReplacement(goModFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if dagger.io/dagger package is replaced: %w", err)
 	}
@@ -40,13 +66,21 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	// Get the go package from the module
 	// We assume that we'll be located at the root source directory
-	pkg, _, err := loadPackage(ctx, ".")
+	// If no main package is found, we will generat the client as a sub module library.
+	pkg, _, err := loadPackage(ctx, g.Config.OutputDir, true)
 	if err != nil {
-		return nil, fmt.Errorf("load package %q: %w", outDir, err)
+		return nil, fmt.Errorf("load package %q: %w", g.Config.OutputDir, err)
 	}
 
-	// respect existing package import path
-	packageImport := filepath.Join(pkg.Module.Path, g.Config.OutputDir)
+	packageImport := filepath.Join(
+		strings.ToLower(g.Config.ClientConfig.ModuleName),
+		g.Config.ClientConfig.ClientDir,
+	)
+
+	// respect existing package import path if a package is set
+	if goModFile.Module != nil {
+		packageImport = filepath.Join(goModFile.Module.Mod.Path, g.Config.ClientConfig.ClientDir)
+	}
 
 	genSt := &generator.GeneratedState{
 		Overlay: layerfs.New(layers...),
@@ -56,7 +90,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	}
 
 	packageName := "dagger"
-	if g.Config.OutputDir == "." {
+	if pkg.Module != nil && pkg.Module.Main && g.Config.ClientConfig.ClientDir == "." {
 		packageName = "main"
 	}
 
@@ -71,17 +105,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
-func (g *GoGenerator) daggerPackageReplacement() (string, bool, error) {
-	goModFile, err := os.ReadFile("go.mod")
-	if err != nil {
-		return "", false, fmt.Errorf("failed to read go.mod: %w", err)
-	}
-
-	goMod, err := modfile.Parse("go.mod", goModFile, nil)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to parse go.mod: %w", err)
-	}
-
+func (g *GoGenerator) daggerPackageReplacement(goMod *modfile.File) (string, bool, error) {
 	for _, replace := range goMod.Replace {
 		if replace.Old.Path == "dagger.io/dagger" {
 			// We need to exclude the first parent directory of the replaced path since it's the
@@ -111,4 +135,22 @@ func (g *GoGenerator) daggerPackageReplacement() (string, bool, error) {
 	}
 
 	return "", false, nil
+}
+
+func (g *GoGenerator) readGoMod() (*modfile.File, bool, error) {
+	goModFile, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod"))
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to read go.mod: %w", err)
+	}
+
+	goMod, err := modfile.Parse("go.mod", goModFile, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to parse go.mod: %w", err)
+	}
+
+	return goMod, true, nil
 }

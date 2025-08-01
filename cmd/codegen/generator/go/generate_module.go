@@ -97,7 +97,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return genSt, nil
 	}
 
-	pkg, fset, err := loadPackage(ctx, filepath.Join(g.Config.OutputDir, outDir))
+	pkg, fset, err := loadPackage(ctx, filepath.Join(g.Config.OutputDir, outDir), false)
 	if err != nil {
 		return nil, fmt.Errorf("load package %q: %w", outDir, err)
 	}

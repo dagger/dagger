@@ -58,6 +58,19 @@ func generateCode(
 			// no contents, skip
 			continue
 		}
+
+		// Special case for client generation, we want to write the file in the specified client directory.
+		if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
+			if err := mfs.MkdirAll(filepath.Join(cfg.ClientConfig.ClientDir, filepath.Dir(k)), 0o755); err != nil {
+				return err
+			}
+			if err := mfs.WriteFile(filepath.Join(cfg.ClientConfig.ClientDir, k), dt, 0600); err != nil {
+				return err
+			}
+
+			continue
+		}
+
 		if err := mfs.MkdirAll(filepath.Dir(k), 0o755); err != nil {
 			return err
 		}

@@ -15,6 +15,7 @@ var (
 	//go:embed modsourcedeps.graphql
 	loadModuleSourceDepsQuery string
 	moduleSourceID            string
+	clientDir                 string
 )
 
 var generateClientCmd = &cobra.Command{
@@ -38,11 +39,19 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	}
 	defer cfg.Close()
 
-	clientConfig := &generator.ClientGeneratorConfig{}
+	clientConfig := &generator.ClientGeneratorConfig{
+		ClientDir: outputDir,
+	}
+
+	// If a client dir is provided, we use it.
+	if clientDir != "" {
+		clientConfig.ClientDir = clientDir
+	}
 
 	if moduleSourceID != "" {
 		var res struct {
 			Source struct {
+				Name         string `json:"moduleOriginalName"`
 				Dependencies []generator.ModuleSourceDependency
 			}
 		}
@@ -62,6 +71,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to load module source dependencies: %w", err)
 		}
 
+		clientConfig.ModuleName = res.Source.Name
 		clientConfig.ModuleDependencies = res.Source.Dependencies
 	}
 
@@ -80,4 +90,5 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 func init() {
 	// Specific client generation flags
 	generateClientCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module to generate code for")
+	generateClientCmd.Flags().StringVar(&clientDir, "client-dir", "", "directory where the client will be generated (output by default)")
 }
