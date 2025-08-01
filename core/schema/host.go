@@ -324,7 +324,12 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			return i, fmt.Errorf("failed to load .gitignore patterns: %w", err)
 		}
 
-		excludesPatterns = append(excludesPatterns, ignorePatterns...)
+		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(dotGitIgnoreParentPath, args.Path, ignorePatterns)
+		if err != nil {
+			return i, fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
+		}
+
+		excludesPatterns = append(excludesPatterns, rebasedIgnorePatterns...)
 	}
 
 	// Add the exclude args from directive after the .gitignore so they can
@@ -419,12 +424,7 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 		return nil, fmt.Errorf("failed to load .gitignore in context directory %q: %w", parentPath, err)
 	}
 
-	rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(parentPath, hostPath, gitIgnorePatterns)
-	if err != nil {
-		return nil, fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
-	}
-
-	return rebasedIgnorePatterns, nil
+	return gitIgnorePatterns, nil
 }
 
 func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []string) ([]string, error) {
