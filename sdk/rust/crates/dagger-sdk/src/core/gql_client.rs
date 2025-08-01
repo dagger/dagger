@@ -152,7 +152,7 @@ impl TryFrom<GQLProxy> for reqwest::Proxy {
             ProxyType::Https => reqwest::Proxy::https(gql_proxy.schema),
             ProxyType::All => reqwest::Proxy::all(gql_proxy.schema),
         }
-        .map_err(|e| Self::Error::with_text(format!("{:?}", e)))?;
+        .map_err(|e| Self::Error::with_text(format!("{e:?}")))?;
         Ok(proxy)
     }
 }
@@ -185,7 +185,7 @@ impl GQLClient {
 
         builder
             .build()
-            .map_err(|e| GraphQLError::with_text(format!("Can not create client: {:?}", e)))
+            .map_err(|e| GraphQLError::with_text(format!("Can not create client: {e:?}")))
     }
 }
 
@@ -279,13 +279,12 @@ impl GQLClient {
     {
         let mut times = 1;
         let mut endpoint = endpoint.as_ref().to_string();
-        let endpoint_url = Url::from_str(&endpoint).map_err(|e| {
-            GraphQLError::with_text(format!("Wrong endpoint: {}. {:?}", endpoint, e))
-        })?;
+        let endpoint_url = Url::from_str(&endpoint)
+            .map_err(|e| GraphQLError::with_text(format!("Wrong endpoint: {endpoint}. {e:?}")))?;
         let schema = endpoint_url.scheme();
         let host = endpoint_url
             .host()
-            .ok_or_else(|| GraphQLError::with_text(format!("Wrong endpoint: {}", endpoint)))?;
+            .ok_or_else(|| GraphQLError::with_text(format!("Wrong endpoint: {endpoint}")))?;
 
         let client: Client = self.client()?;
         let body = RequestBody {
@@ -296,8 +295,7 @@ impl GQLClient {
         loop {
             if times > 10 {
                 return Err(GraphQLError::with_text(format!(
-                    "Many redirect location: {}",
-                    endpoint
+                    "Many redirect location: {endpoint}",
                 )));
             }
 
@@ -314,8 +312,7 @@ impl GQLClient {
             if let Some(location) = raw_response.headers().get(reqwest::header::LOCATION) {
                 let redirect_url = location.to_str().map_err(|e| {
                     GraphQLError::with_text(format!(
-                        "Failed to parse response header: Location. {:?}",
-                        e
+                        "Failed to parse response header: Location. {e:?}",
                     ))
                 })?;
 
@@ -328,9 +325,9 @@ impl GQLClient {
 
                 // without schema
                 endpoint = if redirect_url.starts_with('/') {
-                    format!("{}://{}{}", schema, host, redirect_url)
+                    format!("{schema}://{host}{redirect_url}")
                 } else {
-                    format!("{}://{}/{}", schema, host, redirect_url)
+                    format!("{schema}://{host}/{redirect_url}")
                 };
                 times += 1;
                 continue;
@@ -340,13 +337,12 @@ impl GQLClient {
             let response_body_text = raw_response
                 .text()
                 .await
-                .map_err(|e| GraphQLError::with_text(format!("Can not get response: {:?}", e)))?;
+                .map_err(|e| GraphQLError::with_text(format!("Can not get response: {e:?}")))?;
 
             let json: GraphQLResponse<K> =
                 serde_json::from_str(&response_body_text).map_err(|e| {
                     GraphQLError::with_text(format!(
-                        "Failed to parse response: {:?}. The response body is: {}",
-                        e, response_body_text
+                        "Failed to parse response: {e:?}. The response body is: {response_body_text}",
                     ))
                 })?;
 
