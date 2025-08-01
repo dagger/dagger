@@ -1155,6 +1155,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"Boolean": dagql.Boolean(false),
 		}
 		for name := range schema.Types {
+			if strings.HasPrefix(name, "_") {
+				continue
+			}
 			objectType, ok := srv.ObjectType(name)
 			if !ok {
 				continue
