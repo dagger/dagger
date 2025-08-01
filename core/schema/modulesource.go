@@ -949,9 +949,15 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
+		moduleSourcePath := src.SourceSubpath
+		if moduleSourcePath == "" {
+			moduleSourcePath = src.SourceRootSubpath
+		}
+
 		// Load .gitignore patterns before loading the module so they can be used in the `Include` argument
 		// instead of Exclude so we get the right behaviour.
-		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath)
+		// We only include the .gitignore from the module source path and above up to the context directory.
+		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, filepath.Join(src.Local.ContextDirectoryPath, moduleSourcePath))
 		if err != nil {
 			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
 		}
