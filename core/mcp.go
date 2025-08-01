@@ -411,42 +411,27 @@ func (m *MCP) call(ctx context.Context,
 		return rerr
 	})
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.Bool(telemetry.LogsVerboseAttr, true))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer func() {
-		fmt.Fprintln(stdio.Stdout, res)
-		stdio.Close()
-	}()
-
-	// Capture logs produced by the tool call and append them to the result
-	defer func() {
+		// Capture logs produced by the tool call and prepend them to the response
 		spanID := trace.SpanContextFromContext(ctx).SpanID()
 		logs, err := m.captureLogs(ctx, spanID)
 		if err != nil {
-			if res != "" {
-				res += "\n\n"
-			}
-			res += fmt.Sprintf("WARNING: Failed to capture logs (%v)", err)
-		} else if len(logs) > 0 {
+			slog.Error("failed to capture logs", "error", err)
+		} else if len(logs) >= 0 {
 			// Keep track of this span's logs so we can read more of it later
 			m.loggedSpans = append(m.loggedSpans, spanID)
 
 			// Show only the last 10 lines by default
 			logs = limitLines(logs, llmLogsLastLines, llmLogsMaxLineLen)
-			content := strings.Join(logs, "\n")
 
-			if res != "" {
-				if !strings.HasSuffix(res, "\n") {
-					// avoid double trailing linebreak (e.g. pretty JSON)
-					res += "\n"
-				}
-				res += "\n"
-			}
-			res += fmt.Sprintf("<logs>\n%s\n</logs>",
-				// avoid double trailing linebreak
-				strings.TrimSuffix(content, "\n"),
-			)
+			// Avoid any extra surrounding whitespace (i.e. blank logs somehow)
+			res = strings.Trim(strings.Join(logs, "\n")+"\n\n"+res, "\n")
 		}
+
+		// Show raw response on telemetry for troubleshooting
+		fmt.Fprintln(stdio.Stdout, res)
+		stdio.Close()
 	}()
 
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
@@ -503,44 +488,13 @@ func (m *MCP) call(ctx context.Context,
 	// everything else; no object is actually returned, instead it directly
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		// Hide this unless it fails, since it's just noise
-		ctx, span := Tracer(ctx).Start(ctx, "examine environment",
-			telemetry.Encapsulated())
-		oldFS := m.env.Self().Hostfs
-		newFS := newEnv.Self().Hostfs
-		var entries []string
-		err := srv.Select(ctx, oldFS, &entries, dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "other",
-					Value: dagql.NewID[*Directory](newFS.ID()),
-				},
-			},
-		}, dagql.Selector{
-			Field: "glob",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "pattern",
-					Value: dagql.NewString("**/*"),
-				},
-			},
-		})
-		defer telemetry.End(span, func() error { return err })
-		if err != nil {
-			return "", fmt.Errorf("failed to diff filesystems: %w", err)
-		}
-		msg := "Environment updated."
-		// remove directories
-		entries = slices.DeleteFunc(entries, func(s string) bool {
-			return strings.HasSuffix(s, "/")
-		})
-		if len(entries) > 0 {
-			msg += "\n\nFiles changed:\n- " + strings.Join(entries, "\n- ")
-		}
 		// Swap out the Env for the updated one
 		m.env = newEnv
-		return msg, nil
+		// No particular message needed here. At one point we diffed the Env.hostfs
+		// and printed which files were modified, but it's not really necessary to
+		// show things like that unilaterally vs. just allowing each Env-returning
+		// tool to control the messaging.
+		return "", nil
 	}
 
 	if usedContext {
