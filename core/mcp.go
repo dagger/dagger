@@ -1211,7 +1211,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			},
 			"additionalProperties": false,
 		},
-		Strict: true,
+		Strict: false,
 		Call: ToolFunc(srv, func(ctx context.Context, args struct {
 			Offset int    `default:"0"`
 			Limit  int    `default:"100"`
