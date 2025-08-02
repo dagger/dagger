@@ -20,8 +20,6 @@ var (
 )
 
 func init() {
-	clientInstallCmd.Flags().StringVar(&generator, "generator", "", "Generator to use to generate the client")
-
 	clientListCmd.Flags().BoolVar(&listJSONOutput, "json", false, "Output the list of available clients in JSON format")
 
 	clientCmd.AddCommand(clientInstallCmd)
