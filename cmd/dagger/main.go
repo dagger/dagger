@@ -69,15 +69,14 @@ var (
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
-	engineHost               = os.Getenv("DAGGER_ENGINE_HOST")
-	engineImage              = os.Getenv("DAGGER_ENGINE_IMAGE")
-	engineImageCommand       = os.Getenv("DAGGER_ENGINE_IMAGE_COMMAND")
-	engineImageProvider      = os.Getenv("DAGGER_ENGINE_IMAGE_PROVIDER")
-	// FIXME: add _IMAGE_ for consistency:
-	engineVersion        = os.Getenv("DAGGER_ENGINE_VERSION")
-	_, gpuSupport        = os.LookupEnv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT")
-	imageLoader          = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE")
-	deprecatedRunnerHost = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	engineHost               = os.Getenv("DAGGER_HOST")
+	engineImage              = os.Getenv("DAGGER_IMAGE")
+	engineImageCommand       = os.Getenv("DAGGER_IMAGE_COMMAND")
+	engineImageRunner        = os.Getenv("DAGGER_IMAGE_RUNNER")
+	engineImageVersion       = os.Getenv("DAGGER_IMAGE_VERSION")
+	_, gpuSupport            = os.LookupEnv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+	imageLoader              = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE")
+	deprecatedRunnerHost     = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -96,7 +95,7 @@ func init() {
 	if deprecatedRunnerHost == "" {
 		return
 	}
-	slog.Warn("_EXPERIMENTAL_DAGGER_RUNNER_HOST is deprecated. Use DAGGER_ENGINE_HOST or DAGGER_ENGINE_IMAGE instead")
+	slog.Warn("_EXPERIMENTAL_DAGGER_RUNNER_HOST is deprecated. Use DAGGER_HOST or DAGGER_IMAGE")
 	u, err := url.Parse(deprecatedRunnerHost)
 	if err != nil {
 		return
@@ -105,7 +104,7 @@ func init() {
 	case "tcp", "unix", "ssh", "kube-pod", "container":
 		if engineHost == "" {
 			slog.Warn(fmt.Sprintf(
-				"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_ENGINE_HOST=%q",
+				"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_HOST=%q",
 				deprecatedRunnerHost,
 				u.String(),
 			))
@@ -114,7 +113,7 @@ func init() {
 	case "docker-container", "podman-container":
 		u.Scheme = "container"
 		slog.Warn(fmt.Sprintf(
-			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_ENGINE_HOST=%q",
+			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_HOST=%q",
 			deprecatedRunnerHost,
 			u.String(),
 		))
@@ -122,7 +121,7 @@ func init() {
 	case "docker-image":
 		withoutScheme := u.Host + u.RequestURI()
 		slog.Warn(fmt.Sprintf(
-			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_ENGINE_IMAGE=%q",
+			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_IMAGE=%q",
 			deprecatedRunnerHost,
 			withoutScheme,
 		))

@@ -55,14 +55,14 @@ func withEngine(
 		if engineImage != "" {
 			params.EngineImage = engineImage
 		}
-		if engineVersion != "" {
-			params.EngineVersion = engineVersion
+		if engineImageVersion != "" {
+			params.EngineVersion = engineImageVersion
 		}
 		if engineImageCommand != "" {
 			params.EngineImageCommand = engineImageCommand
 		}
-		if engineImageProvider != "" {
-			params.EngineImageProvider = engineImageProvider
+		if engineImageRunner != "" {
+			params.EngineImageProvider = engineImageRunner
 		}
 		if imageLoader != "" {
 			backend, err := imageload.GetBackend(imageLoader)

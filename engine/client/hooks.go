@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -8,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type Hook struct {
@@ -53,12 +56,24 @@ func (hook Hook) Connect(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if err := cmd.Start(); err != nil {
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
 		return nil, err
 	}
 
-	cmd.Stderr = os.Stderr
+	// Start a goroutine to read stderr line by line and log it
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			slog.Info(scanner.Text(), "hook", "engine-run")
+		}
+		if err := scanner.Err(); err != nil {
+			slog.Error("error reading hook stderr", "error", err)
+		}
+	}()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
 
 	conn := &stdioConn{
 		stdin:  stdin,
