@@ -588,20 +588,13 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 		return str.String(), nil
 	}
 
-	if val == nil {
-		// Handle null response.
-		return toolStructuredResponse(map[string]any{
-			"result": nil,
-		})
-	}
-
 	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
 		// Unwrap any Result[T]s
 		val = anyRes.Unwrap()
 	}
 
-	if val == (Void{}) {
-		// TODO: should there be a message here?
+	if val == nil || val == (Void{}) {
+		// No response; just show logs, if any.
 		return "", nil
 	}
 
@@ -2133,7 +2126,7 @@ func toolStructuredResponse(val any) (string, error) {
 
 func limitLines(logs []string, limit, maxLineLen int) []string {
 	if limit > 0 && len(logs) > limit {
-		snipped := fmt.Sprintf("... %d lines omitted ...", len(logs)-limit)
+		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs to read more) ...", len(logs)-limit)
 		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
 	}
 	for i, line := range logs {
